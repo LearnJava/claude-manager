@@ -1,0 +1,27 @@
+# Build output
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Orchestrator runtime files
+scripts/.taskstate.json
+scripts/.stop
+scripts/.jobstatus
+
+# Wails
+wailsjs/

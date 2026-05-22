@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(claude -p --help)",
+      "Bash(claude mcp *)",
+      "Bash(claude -p --output-format stream-json --verbose)",
+      "Bash(ls \"D:\\\\RustProjects\\\\lumen-browser\\\\scripts\")",
+      "Bash(python scripts/orchestrator.py --status)",
+      "Bash(python scripts/orchestrator.py --help)"
+    ]
+  }
+}
