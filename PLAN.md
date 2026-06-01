@@ -3023,3 +3023,220 @@ internal/
     ├── routing.go       # Auto model routing по сложности
     └── reporter.go      # Сводный отчёт по экономии
 ```
+
+## 21. Тестовый и управляющий harness
+
+Цель раздела — описать инфраструктуру, позволяющую **полностью управлять приложением и тестировать все кнопки и параметры без GUI и без расхода API-токенов**. Harness даёт агенту (или CI) тот же набор действий и событий, что доступен UI, плюс детерминированный двойник Claude CLI.
+
+### 21.1 Принципы
+
+1. **UI ≡ набор bind-методов.** Всё, что делает фронтенд, — это вызовы экспортированных методов `SessionManager` и подписка на события `runtime.EventsEmit`. Значит «нажать любую кнопку» = вызвать тот же метод; «увидеть результат» = получить то же событие.
+2. **Детерминизм и нулевая стоимость.** Реальный `claude` заменяется на `fakeclaude` — бинарь, эмитящий заранее заданный stream-json. Тесты воспроизводимы и бесплатны.
+3. **Один источник событий.** Все события проходят через интерфейс `Emitter`, у которого две реализации: Wails (для UI) и broadcast в control-plane (для агента/CI). Никаких прямых `runtime.EventsEmit` в бизнес-логике.
+4. **Покрытие состояний, а не строк.** Сценарии перекрывают весь Session Status Flow (Working / WaitingPermission / RateLimited / Retrying / Error / auto-restart / loop).
+
+### 21.2 Компоненты
+
+```
+Claude / CI --MCP--> cm-mcp --RPC/WS--> control-plane --> SessionManager (методы)
+     ^                                        ^                    |
+     +---------- events (session:*) ----------+            spawns claude_path
+                                                                   |
+                                                            = fakeclaude (scripted stream-json)
+```
+
+| Компонент | Пакет / бинарь | Зависит от приложения |
+|---|---|---|
+| `fakeclaude` | `cmd/fakeclaude` | нет (только формат stream-json) |
+| Сценарии + conformance | `internal/testkit`, `testdata/scenarios` | parser (TASK-03) |
+| Control-plane + Emitter | `internal/control` | manager (TASK-06) |
+| MCP-сервер | `cmd/cm-mcp` | control-plane |
+| E2E scenario-runner | `internal/control` (тесты) | MCP + fakeclaude |
+| DOM-харнес | `frontend/tests` | frontend (TASK-07/08) + control-plane |
+
+### 21.3 `fakeclaude` — двойник CLI
+
+Бинарь, ведущий себя как `claude -p --input-format stream-json --output-format stream-json`: читает из stdin сообщения (`user_message`, `permission_response`), пишет в stdout события по сценарию.
+
+**21.3.1 Поведение**
+
+- Игнорирует все CLI-флаги приложения, кроме нужных для идентификации (`--session-id`, `--name`, `--model`) — они доступны для подстановки в события.
+- Сценарий выбирается переменной окружения `FAKECLAUDE_SCENARIO`:
+  - путь к файлу `.json` → используется он;
+  - путь к каталогу → бинарь читает первый `user_message` из stdin и выбирает сценарий, чей `match` (regex) совпал с текстом промпта. Это позволяет одному `fakeclaude` обслуживать много сессий в e2e.
+- Шаг `await_stdin` блокирует вывод, пока не придёт сообщение нужного типа, — точно как реальный CLI блокируется на permission и на стартовом `user_message`.
+- Задержки (`delay_ms`) эмулируют реалтайм-стриминг; в тестах множитель ускорения через `FAKECLAUDE_SPEED` (по умолчанию 1.0).
+
+**21.3.2 Формат сценария**
+
+```json
+{
+  "name": "permission-then-result",
+  "match": "(?i)refactor auth",
+  "model": "claude-sonnet-4-6",
+  "context_window": 200000,
+  "steps": [
+    { "type": "await_stdin", "expect": "user_message", "timeout_ms": 5000 },
+    { "type": "emit", "delay_ms": 0,
+      "event": { "type": "system", "subtype": "init",
+        "session_id": "${session_id}", "model": "${model}",
+        "tools": ["Read","Edit","Bash"], "cwd": "${cwd}" } },
+    { "type": "emit", "delay_ms": 80,
+      "event": { "type": "assistant",
+        "message": { "content": [{"type":"text","text":"Reading the auth module..."}],
+          "usage": {"input_tokens": 12000, "output_tokens": 400,
+                    "cache_read_input_tokens": 9000} } } },
+    { "type": "emit", "delay_ms": 60,
+      "event": { "type": "assistant",
+        "message": { "content": [{"type":"tool_use","id":"t1","name":"Edit",
+          "input": {"file_path":"src/auth/provider.go"}}] } } },
+    { "type": "emit",
+      "event": { "type": "permission_request",
+        "request_id": "p1", "tool_name": "Edit",
+        "input": {"file_path":"src/auth/provider.go"} } },
+    { "type": "await_stdin", "expect": "permission_response",
+      "timeout_ms": 30000, "store_as": "perm" },
+    { "type": "emit", "delay_ms": 40,
+      "event": { "type": "assistant",
+        "message": { "content": [{"type":"text","text":"Fixed token validation."}],
+          "usage": {"input_tokens": 16000, "output_tokens": 1200,
+                    "cache_read_input_tokens": 13000} } } },
+    { "type": "emit",
+      "event": { "type": "result", "subtype": "success",
+        "total_cost_usd": 0.035, "num_turns": 3,
+        "usage": {"input_tokens": 40000, "output_tokens": 2100,
+                  "cache_read_input_tokens": 31000},
+        "modelUsage": {"claude-sonnet-4-6": {"costUSD": 0.035}} } }
+  ]
+}
+```
+
+Подстановки `${session_id}`, `${model}`, `${cwd}`, `${name}` берутся из реальных CLI-флагов, переданных приложением. Реактивный вариант: шаг может содержать `"on": {"perm.decision":"deny"}` — ветвление по сохранённому через `store_as` ответу (например, эмитить `result subtype:"error"` при deny).
+
+**21.3.3 Обязательный набор сценариев** (`testdata/scenarios/`)
+
+| Файл | Состояние / проверка |
+|---|---|
+| `happy-path.json` | init → assistant×N → result success |
+| `permission-allow.json` | permission_request → allow → result |
+| `permission-deny.json` | permission_request → deny → ветка отказа |
+| `rate-limit.json` | `rate_limit_event` (utilization 0.9, resetsAt) → пауза → продолжение |
+| `error-exit.json` | result subtype:"error" + ненулевой exit code |
+| `loop.json` | один `tool_use` с идентичным input 3× (триггер LoopDetector) |
+| `context-growth.json` | usage растёт до >75% `context_window` (триггер auto-restart) |
+| `multi-turn.json` | реакция на несколько `user_message` подряд (bidirectional) |
+| `budget-exceeded.json` | result с `total_cost_usd` выше `max_budget_usd` |
+
+### 21.4 Control-plane (headless bridge)
+
+**21.4.1 Активация.** При `CM_CONTROL=1` (или флаге `-control`) приложение поднимает локальный сервер на `127.0.0.1:${CM_CONTROL_PORT:-7333}`. Слушает только loopback. Требует заголовок `X-CM-Token`, значение — из `CM_CONTROL_TOKEN` (генерируется и печатается в stdout при старте, если не задан). GUI при этом работает как обычно — control-plane дополняет, а не заменяет UI.
+
+**21.4.2 Emitter-индирекция.** Вся бизнес-логика эмитит события через интерфейс:
+
+```go
+type Emitter interface {
+    Emit(event string, data any) // event: "session:status", "session:log", ...
+}
+```
+
+- `WailsEmitter` — обёртка над `runtime.EventsEmit` (прод/GUI).
+- `MultiEmitter` — раздаёт в несколько Emitter-реализаций; в control-режиме = Wails + ControlEmitter.
+- `ControlEmitter` — сериализует `{event, data, ts}` и broadcast в WS-клиентов; буферизует последние N событий на сессию для `wait_for_*`.
+
+`SessionManager` принимает `Emitter` в конструкторе. Никаких прямых вызовов `runtime` вне `WailsEmitter`.
+
+**21.4.3 RPC-протокол.** HTTP `POST /rpc`, тело JSON-RPC 2.0:
+
+```json
+{ "jsonrpc":"2.0", "id":1, "method":"StartSession",
+  "params": {"project":"lumen","session":"P1"} }
+```
+
+Методы один-в-один с публичным API `SessionManager` (см. §6.1, §8): `StartSession`, `StopSession`, `StopAll`, `RestartSession`, `ResumeSession`, `SendMessage`, `RespondPermission`, `GetPendingPermissions`, `GetAllSessions`, `GetSessionLog`, `GetHistory`, `GetSessionMetrics`, `GetDailyCost`, `GetProjectCost`, `GetRateLimitStatus`, `StartProject`, `StopProject`, `GetConfig`, `UpdateConfig`, `RunAnalysis`, `ApprovePlan`, `ExecutePlan`. Роутер строится из единого реестра, общего с Wails-биндингами, — добавление метода в манагер автоматически доступно и UI, и control-plane.
+
+**21.4.4 Event stream.** WS `GET /events` — поток всех событий `session:*` в формате `ControlEmitter`. Плюс эндпоинт для блокирующих ожиданий (см. MCP `wait_for_*`): `POST /wait` с `{event, match, timeout_ms}` — отвечает первым событием, удовлетворяющим `match` (или из буфера, если уже наступило), либо таймаутом.
+
+### 21.5 MCP-сервер `claude-manager-mcp`
+
+`cmd/cm-mcp` — stdio MCP-сервер, тонкий прокси в control-plane. Регистрируется в Claude Code: `claude mcp add cm -- cm-mcp` (адрес/токен control-plane через env). Делает действия приложения нативными инструментами агента.
+
+| Инструмент | Параметры | Возвращает |
+|---|---|---|
+| `start_session` | project, session | status |
+| `stop_session` | project, session, [after_task] | ok |
+| `restart_session` | project, session, [resume] | ok |
+| `send_message` | project, session, text | ok |
+| `approve_permission` | request_id, [scope: once\|session\|always] | ok |
+| `deny_permission` | request_id, [scope] | ok |
+| `get_sessions` | — | список сессий + статусы/метрики |
+| `get_session_logs` | project, session, [tail] | строки лога |
+| `get_pending_permissions` | — | очередь ожидающих разрешений |
+| `get_metrics` | [project], [period] | cost/tokens/cache |
+| `set_global_settings` | partial config | новый config |
+| `run_preflight` | project, task | план анализа |
+| `execute_plan` | plan_id | ok |
+| `wait_for_status` | project, session, status, [timeout_ms] | финальный статус |
+| `wait_for_event` | event, [match], [timeout_ms] | событие |
+
+**`wait_for_*` — ключевой примитив.** Реализован через `POST /wait`: подписывается на поток и/или сверяется с буфером. Делает асинхронные проверки надёжными: «запусти → дождись WaitingPermission → одобри → дождись Idle». Без него тесты флакают на гонках.
+
+### 21.6 Сквозной scenario-runner (e2e)
+
+**21.6.1 Формат e2e-сценария** (`testdata/e2e/*.json`) — список шагов «действие → ожидание»:
+
+```json
+{
+  "name": "permission-flow",
+  "fakeclaude_dir": "testdata/scenarios",
+  "config": "testdata/configs/one-session.toml",
+  "steps": [
+    { "do": "StartSession", "with": {"project":"lumen","session":"P1"} },
+    { "wait": "session:status", "match": {"id":"lumen/P1","status":"WaitingPermission"} },
+    { "do": "RespondPermission", "with": {"request_id":"p1","decision":"allow"} },
+    { "wait": "session:status", "match": {"id":"lumen/P1","status":"Idle"} },
+    { "assert": "GetSessionMetrics", "with": {"id":"lumen/P1"},
+      "expect": {"cost_usd": 0.035, "turns": 3} }
+  ]
+}
+```
+
+**21.6.2 Запуск под тестом.** Go-тест поднимает приложение в `CM_CONTROL=1` с `claude_path=$(which fakeclaude)` и `FAKECLAUDE_SCENARIO=testdata/scenarios`, проигрывает каждый e2e-сценарий через RPC/WS, проверяет `assert`. Один и тот же файл сценария используется и тестом, и интерактивно агентом через MCP.
+
+### 21.7 Frontend DOM-харнес (Playwright)
+
+Слои §21.3–21.6 покрывают бэкенд-логику. Для проверки реальных кнопок:
+
+- `frontend/playwright.config.ts` + `frontend/tests/*.spec.ts`.
+- Фронт поднимается через vite dev-server (или `wails dev`), бэкенд — в control-режиме с `fakeclaude`.
+- Тесты кликают реальный DOM: start в `Sidebar`, ввод в `SessionInput`, Allow/Deny в `PermissionBanner`, вкладки в `Settings`, строки в `History`.
+- Проверка — двойная: состояние DOM + соответствующее событие в WS control-plane. Это ловит рассинхрон «кнопка нажата, но метод не вызван».
+
+### 21.8 Структура каталогов harness
+
+```
+cmd/
+  fakeclaude/          # двойник CLI (§21.3)
+  cm-mcp/              # MCP-сервер (§21.5)
+internal/
+  testkit/
+    scenario.go        # структура Scenario, загрузчик, подстановки
+    conformance_test.go  # fakeclaude-вывод <-> session/parser
+  control/
+    server.go          # WS+HTTP, CM_CONTROL, токен
+    rpc.go             # JSON-RPC роутер на методы манагера
+    emit.go            # Emitter, WailsEmitter, MultiEmitter, ControlEmitter
+    wait.go            # /wait, буфер событий, wait_for_*
+    mcptools.go        # определения MCP-инструментов
+    e2e_test.go        # сквозной scenario-runner (§21.6)
+testdata/
+  scenarios/           # сценарии fakeclaude (§21.3.3)
+  e2e/                 # сквозные сценарии (§21.6.1)
+  configs/             # тест-конфиги TOML
+frontend/
+  playwright.config.ts
+  tests/               # DOM-спеки (§21.7)
+```
+
+### 21.9 Связь с TASKS
+
+Детальная разбивка harness на сессионные задачи — в [HARNESS-TASKS.md](./HARNESS-TASKS.md) (H1–H6). Условие сцепки: `SessionManager` (TASK-06) должен с самого начала эмитить события через `Emitter` (§21.4.2), иначе потребуется рефакторинг. Это требование добавлено в промпт TASK-06.

@@ -64,8 +64,18 @@ claude-manager/
 │   │   └── RateLimitBanner.svelte   # Rate limit countdown banner
 │   └── lib/
 │       └── formatters.ts            # Log formatting, time, cost
+├── cmd/                             # Test/control harness binaries (see PLAN.md §21)
+│   ├── fakeclaude/                  # Scripted Claude CLI double (deterministic stream-json)
+│   └── cm-mcp/                      # MCP server: drive the app as agent tools
+├── internal/
+│   ├── testkit/                     # Scenario loader + fakeclaude<->parser conformance
+│   └── control/                     # Headless control-plane: Emitter, RPC, WS, wait, MCP tools
+├── testdata/                        # scenarios/ (fakeclaude), e2e/ (runner), configs/
+├── frontend/tests/                  # Playwright DOM specs
 ├── config.example.toml
-└── PLAN.md                          # Full specification (~2800 lines)
+├── PLAN.md                          # Full specification (§14-21)
+├── TASKS.md                         # App task breakdown (TASK-01..15)
+└── HARNESS-TASKS.md                 # Test/control harness task breakdown (H1..H6)
 ```
 
 ## Key Design Decisions
@@ -138,6 +148,17 @@ github.com/mattn/go-sqlite3
 
 No DI frameworks, no ORMs. Standard library for everything else.
 
+### Testing & Control Harness
+The app is fully drivable and testable without a GUI and without spending API tokens (see PLAN.md §21):
+- **`fakeclaude`** (`cmd/fakeclaude`) — a scripted Claude CLI double. Set as `claude_path`, it emits deterministic stream-json from JSON scenarios in `testdata/scenarios/`. Covers every Session Status (permission, rate limit, error, loop, context-growth).
+- **`Emitter` indirection** (`internal/control/emit.go`) — all `session:*` events flow through an `Emitter` interface, not direct `runtime.EventsEmit`. `WailsEmitter` feeds the UI; `ControlEmitter` broadcasts to the control-plane. The SessionManager takes an `Emitter` in its constructor.
+- **Control-plane** (`internal/control`) — at `CM_CONTROL=1`, a loopback HTTP+WS server exposes every SessionManager method via JSON-RPC and streams events, plus `/wait` for blocking until a status/event. Additive to the GUI.
+- **MCP server** (`cmd/cm-mcp`) — proxies the control-plane into agent tools (`start_session`, `send_message`, `approve_permission`, `wait_for_status`, …) so Claude can press every button.
+- **E2E runner** (`internal/control/e2e_test.go`) — replays `testdata/e2e/*.json` (`do`/`wait`/`assert`) against the app + fakeclaude, deterministically.
+- **Playwright** (`frontend/tests`) — clicks the real DOM and double-checks via the control-plane event stream.
+
+Task breakdown: [HARNESS-TASKS.md](./HARNESS-TASKS.md) (H1-H6).
+
 ## SQLite Tables
 
 - `session_runs` — completed runs with cost/tokens/duration/model
@@ -157,4 +178,6 @@ No DI frameworks, no ORMs. Standard library for everything else.
 
 ## Reference
 
-Full specification: [PLAN.md](./PLAN.md) — sections 14-20 cover CLI flags, bidirectional streaming, permissions, pre-flight analysis, token metrics, optimization.
+Full specification: [PLAN.md](./PLAN.md) — sections 14-21 cover CLI flags, bidirectional streaming, permissions, pre-flight analysis, token metrics, optimization, and the test/control harness.
+
+Task breakdowns: [TASKS.md](./TASKS.md) (app, TASK-01..15) and [HARNESS-TASKS.md](./HARNESS-TASKS.md) (harness, H1..H6).
