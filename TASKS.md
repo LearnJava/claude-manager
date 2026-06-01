@@ -100,7 +100,7 @@ Read CLAUDE.md and PLAN.md section 16 (Permission handling). Create the permissi
 
 **Prompt:**
 ```
-Read CLAUDE.md and PLAN.md sections 6.1 (SessionManager), 8 (Wails bindings). Create manager.go with SessionManager struct that owns sessions map, config, store, wails runtime. Implement all public methods from section 6.1. Wire sessions to store (save runs on completion). Use runtime.EventsEmit for events: session:status, session:log, session:task_done, session:rate_limit, session:permission, session:context. Update app.go to create SessionManager in OnStartup, expose all methods as Wails bindings. Implement cache warming delay (stagger session starts by session_start_delay seconds).
+Read CLAUDE.md and PLAN.md sections 6.1 (SessionManager), 8 (Wails bindings), 21.4.2 (Emitter). Create manager.go with SessionManager struct that owns sessions map, config, store, and an Emitter (NOT the wails runtime directly). Implement all public methods from section 6.1. Wire sessions to store (save runs on completion). Emit ALL events (session:status, session:log, session:task_done, session:rate_limit, session:permission, session:context) through the injected Emitter interface { Emit(event string, data any) } — never call runtime.EventsEmit directly (that lives only inside WailsEmitter, per §21.4.2). In OnStartup, construct the SessionManager with a WailsEmitter; this lets HARNESS-03 add a ControlEmitter without refactoring. Update app.go to create SessionManager in OnStartup, expose all methods as Wails bindings. Implement cache warming delay (stagger session starts by session_start_delay seconds).
 ```
 
 ---
