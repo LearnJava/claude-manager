@@ -10,6 +10,17 @@
 
 Каждая задача обязана сопровождаться тестами (правило проекта: каждая функция имеет тест; учитывать регрессию).
 
+## Status: ALL HARNESS TASKS COMPLETE ✓
+
+| Задача | Статус | Ключевые файлы |
+|---|---|---|
+| H1 | ✓ DONE | cmd/fakeclaude/, internal/testkit/scenario.go, runner.go |
+| H2 | ✓ DONE | testdata/scenarios/ (9 сценариев), testkit/conformance_test.go |
+| H3 | ✓ DONE | internal/control/emit.go, server.go, rpc.go, wait.go |
+| H4 | ✓ DONE | cmd/cm-mcp/main.go, internal/control/mcptools.go |
+| H5 | ✓ DONE | internal/control/e2e_runner.go, e2e_test.go, testdata/e2e/ |
+| H6 | ✓ DONE | frontend/playwright.config.ts, frontend/tests/*.spec.ts |
+
 ---
 
 ## HARNESS-01: `fakeclaude` — двойник CLI + формат сценариев

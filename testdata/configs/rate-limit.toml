@@ -1,0 +1,9 @@
+[[project]]
+name = "lumen"
+path = "."
+
+[[project.session]]
+name = "P1"
+prompt = "Test rate limit behavior"
+auto_restart = false
+model = "claude-sonnet-4-6"

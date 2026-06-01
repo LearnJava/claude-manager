@@ -47,7 +47,9 @@ claude-manager/
 │   │   ├── routing.go               # ModelRouter: auto model routing by task complexity
 │   │   ├── context.go               # Context utilization monitor, auto-restart at threshold
 │   │   ├── cache.go                 # Cache efficiency tracking, warming delay between session starts
-│   │   └── loop.go                  # Loop detection (repeated tool calls, ring buffer)
+│   │   ├── loop.go                  # Loop detection (repeated tool calls, ring buffer)
+│   │   └── reporter.go              # Reporter: aggregates ContextMonitor+CacheTracker+LoopDetector
+│   │                                #   into Snapshot(sessionID) and GlobalReport() for the UI
 │   ├── store/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics
 │   │   └── migrations.go            # CREATE TABLE statements, indexes
@@ -186,6 +188,28 @@ The crash-recovery state file is cleared on auth errors (not resumable).
 - Use `--exclude-dynamic-system-prompt-sections` to share system prompt cache across sessions.
 - Stagger session starts by `session_start_delay` seconds for cache warming.
 - Loop detection: if same tool+input appears 3+ times in last 20 calls, alert/hint/restart.
+
+### Optimization Reporter
+`internal/optimization/reporter.go` is the read-only aggregator that the session manager uses to emit `session:context` events to the frontend. It wraps all three optimization monitors into one place:
+
+```go
+r := optimization.NewReporter(ctxMonitor, cacheTracker, loopDetector)
+
+// Per session — called after every assistant event:
+snap := r.Snapshot(sessionID)
+// snap.ContextUtilization  — 0..1, fraction of context window used
+// snap.CacheEfficiency      — cache_read / (input + cache_read + cache_creation)
+// snap.LastLoop             — non-nil when a loop was detected
+
+// After loop is detected and handled:
+r.RecordLoop(sessionID, loopResult)
+r.ClearLoop(sessionID)
+
+// Global stats across all sessions:
+g := r.GlobalReport()
+```
+
+`Snapshot` reads from `ContextMonitor.Utilization()`, `CacheTracker.SessionStats()`, and the internal loop map — all under their respective locks, no extra state.
 
 ### Sidebar Resizing
 The sidebar width is controlled from `App.svelte` via a draggable 4px divider. Width is stored in a reactive variable (150–500px). The `<Sidebar>` component uses `w-full` and fills its parent container.

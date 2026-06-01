@@ -1,0 +1,52 @@
+{
+  "name": "multi-turn",
+  "match": "(?i)\\bmulti.?turn\\b|\\bconversation\\b",
+  "model": "claude-sonnet-4-6",
+  "context_window": 200000,
+  "exit_code": 0,
+  "steps": [
+    {
+      "type": "await_stdin",
+      "expect": "user_message",
+      "timeout_ms": 5000,
+      "store_as": "msg1"
+    },
+    {
+      "type": "emit",
+      "delay_ms": 0,
+      "event": {"type":"system","subtype":"init","session_id":"${session_id}","model":"${model}","tools":["Read","Edit","Bash"],"cwd":"${cwd}"}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 50,
+      "event": {"type":"assistant","message":{"content":[{"type":"text","text":"I understand your request. What is the first step?"}],"usage":{"input_tokens":1200,"output_tokens":80,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+    },
+    {
+      "type": "await_stdin",
+      "expect": "user_message",
+      "timeout_ms": 10000,
+      "store_as": "msg2"
+    },
+    {
+      "type": "emit",
+      "delay_ms": 50,
+      "event": {"type":"assistant","message":{"content":[{"type":"text","text":"Got it, moving to step 2."}],"usage":{"input_tokens":1400,"output_tokens":60,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+    },
+    {
+      "type": "await_stdin",
+      "expect": "user_message",
+      "timeout_ms": 10000,
+      "store_as": "msg3"
+    },
+    {
+      "type": "emit",
+      "delay_ms": 50,
+      "event": {"type":"assistant","message":{"content":[{"type":"text","text":"All steps complete."}],"usage":{"input_tokens":1600,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 30,
+      "event": {"type":"result","subtype":"success","total_cost_usd":0.009,"num_turns":3,"duration_ms":5000,"usage":{"input_tokens":4200,"output_tokens":190,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"modelUsage":{"claude-sonnet-4-6":{"inputTokens":4200,"outputTokens":190,"cacheReadInputTokens":0,"cacheCreationInputTokens":0,"costUSD":0.009,"contextWindow":200000,"maxOutputTokens":32000}}}
+    }
+  ]
+}

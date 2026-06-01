@@ -1,0 +1,30 @@
+{
+  "name": "permission-flow",
+  "fakeclaude_dir": "testdata/scenarios",
+  "config": "testdata/configs/permission-flow.toml",
+  "steps": [
+    {
+      "do": "StartSession",
+      "with": {"project": "lumen", "session": "P1"}
+    },
+    {
+      "wait": "session:status",
+      "match": {"id": "lumen/P1", "status": "waiting_permission"},
+      "timeout_ms": 8000
+    },
+    {
+      "do": "RespondPermission",
+      "with": {"id": "lumen/P1", "request_id": "p1", "decision": "allow"}
+    },
+    {
+      "wait": "session:status",
+      "match": {"id": "lumen/P1", "status": "idle"},
+      "timeout_ms": 8000
+    },
+    {
+      "assert": "GetSessionMetrics",
+      "with": {"id": "lumen/P1"},
+      "expect": {"total_cost_usd": 0.015, "num_turns": 2}
+    }
+  ]
+}

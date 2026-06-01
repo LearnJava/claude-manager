@@ -1,0 +1,25 @@
+{
+  "name": "rate-limit-recovery",
+  "fakeclaude_dir": "testdata/scenarios",
+  "config": "testdata/configs/rate-limit.toml",
+  "steps": [
+    {
+      "do": "StartSession",
+      "with": {"project": "lumen", "session": "P1"}
+    },
+    {
+      "wait": "session:rate_limit",
+      "match": {"id": "lumen/P1"},
+      "timeout_ms": 8000
+    },
+    {
+      "do": "StopSession",
+      "with": {"id": "lumen/P1", "soft": false}
+    },
+    {
+      "wait": "session:status",
+      "match": {"id": "lumen/P1", "status": "idle"},
+      "timeout_ms": 8000
+    }
+  ]
+}

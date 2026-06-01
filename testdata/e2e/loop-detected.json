@@ -1,0 +1,26 @@
+{
+  "name": "loop-detected",
+  "fakeclaude_dir": "testdata/scenarios",
+  "config": "testdata/configs/loop.toml",
+  "steps": [
+    {
+      "do": "StartSession",
+      "with": {"project": "lumen", "session": "P1"}
+    },
+    {
+      "wait": "session:status",
+      "match": {"id": "lumen/P1", "status": "working"},
+      "timeout_ms": 8000
+    },
+    {
+      "wait": "session:status",
+      "match": {"id": "lumen/P1", "status": "idle"},
+      "timeout_ms": 8000
+    },
+    {
+      "assert": "GetSessionMetrics",
+      "with": {"id": "lumen/P1"},
+      "expect": {"num_turns": 3}
+    }
+  ]
+}

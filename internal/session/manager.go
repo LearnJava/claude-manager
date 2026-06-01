@@ -12,9 +12,14 @@ import (
 	"claude-manager/internal/logger"
 	"claude-manager/internal/permission"
 	"claude-manager/internal/store"
-
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// Emitter broadcasts named session events to one or more consumers.
+// The interface is defined here (consumed) and implemented in internal/control
+// (WailsEmitter, MultiEmitter, ControlEmitter) without an import cycle.
+type Emitter interface {
+	Emit(event string, data any)
+}
 
 // Event names emitted to the Wails frontend (see PLAN.md section 8).
 const (
@@ -170,10 +175,10 @@ type managedSession struct {
 type SessionManager struct {
 	mu sync.Mutex
 
-	ctx     context.Context
 	cfg     *config.AppConfig
 	cfgPath string
 	store   *store.Store
+	emitter Emitter
 
 	runtimeRules *permission.RuntimeRuleSet
 	queue        *permission.PendingQueue
@@ -186,14 +191,15 @@ type SessionManager struct {
 	lastStartTime time.Time
 }
 
-// NewSessionManager constructs a manager. ctx is the Wails runtime context
-// and may be nil at construction; SetContext can update it later.
-func NewSessionManager(cfg *config.AppConfig, cfgPath string, st *store.Store) *SessionManager {
+// NewSessionManager constructs a manager. emitter receives all session:*
+// events; pass nil for a no-op emitter (useful in tests).
+func NewSessionManager(cfg *config.AppConfig, cfgPath string, st *store.Store, emitter Emitter) *SessionManager {
 	stateDir := filepath.Join(filepath.Dir(cfgPath), "state")
 	return &SessionManager{
 		cfg:          cfg,
 		cfgPath:      cfgPath,
 		store:        st,
+		emitter:      emitter,
 		sessions:     make(map[string]*managedSession),
 		stateStore:   NewStateStore(stateDir),
 		runtimeRules: permission.NewRuntimeRuleSet(),
@@ -201,12 +207,17 @@ func NewSessionManager(cfg *config.AppConfig, cfgPath string, st *store.Store) *
 	}
 }
 
-// SetContext binds the Wails runtime context. EventsEmit is a no-op until
-// this is called.
+// SetContext propagates a Wails runtime context to the emitter when it
+// supports it (i.e. *control.WailsEmitter or *control.MultiEmitter).
+// This keeps backwards-compatibility with the app.go startup sequence.
 func (m *SessionManager) SetContext(ctx context.Context) {
+	type ctxSetter interface{ SetContext(context.Context) }
 	m.mu.Lock()
-	m.ctx = ctx
+	e := m.emitter
 	m.mu.Unlock()
+	if cs, ok := e.(ctxSetter); ok {
+		cs.SetContext(ctx)
+	}
 }
 
 // SetConfig swaps the in-memory config (e.g. after a UI save).
@@ -257,12 +268,12 @@ func (m *SessionManager) get(id string) *managedSession {
 
 func (m *SessionManager) emit(name string, payload any) {
 	m.mu.Lock()
-	ctx := m.ctx
+	e := m.emitter
 	m.mu.Unlock()
-	if ctx == nil {
+	if e == nil {
 		return
 	}
-	wruntime.EventsEmit(ctx, name, payload)
+	e.Emit(name, payload)
 }
 
 // reserveStartSlot returns the duration the caller should wait before starting

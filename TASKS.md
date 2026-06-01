@@ -3,6 +3,26 @@
 Each task is scoped to fit within one Claude Code Sonnet session (~15-30 turns, ~5-10 files).
 Tasks are ordered by dependency. A task can only start after all its prerequisites are done.
 
+## Status: ALL TASKS COMPLETE ✓
+
+| Task | Status | Key files |
+|---|---|---|
+| TASK-01 | ✓ DONE | main.go, app.go, internal/config/ |
+| TASK-02 | ✓ DONE | internal/store/store.go, migrations.go, store_test.go |
+| TASK-03 | ✓ DONE | internal/session/parser.go, parser_test.go |
+| TASK-04 | ✓ DONE | internal/session/session.go, input.go, ratelimit.go |
+| TASK-05 | ✓ DONE | internal/permission/rules.go, handler.go, queue.go |
+| TASK-06 | ✓ DONE | internal/session/manager.go, app.go (39 bindings) |
+| TASK-07 | ✓ DONE | frontend/src/App.svelte, stores/, Sidebar, StatusBar |
+| TASK-08 | ✓ DONE | LogStream, SessionCard, SessionInput, formatters.ts |
+| TASK-09 | ✓ DONE | PermissionBanner.svelte, PermissionQueue.svelte |
+| TASK-10 | ✓ DONE | Settings.svelte (1021 lines, 3 tabs) |
+| TASK-11 | ✓ DONE | History.svelte, CostDashboard.svelte |
+| TASK-12 | ✓ DONE | internal/optimization/context.go, cache.go, loop.go, reporter.go |
+| TASK-13 | ✓ DONE | internal/analysis/schema.go, preflight.go, plan.go |
+| TASK-14 | ✓ DONE | frontend/src/components/PlanReview.svelte |
+| TASK-15 | ✓ DONE | internal/hooks/hooks.go, theme, shortcuts, tray, toast |
+
 ---
 
 ## TASK-01: Project scaffold + config system

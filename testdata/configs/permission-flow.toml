@@ -1,0 +1,9 @@
+[[project]]
+name = "lumen"
+path = "."
+
+[[project.session]]
+name = "P1"
+prompt = "Please refactor this code"
+auto_restart = false
+model = "claude-sonnet-4-6"

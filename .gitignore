@@ -20,11 +20,20 @@ frontend/dist/
 
 # Orchestrator runtime files
 scripts/.taskstate.json
+scripts/.taskstate.json.tmp
 scripts/.stop
 scripts/.jobstatus
+scripts/.session.json
+scripts/.session.json.tmp
 
 # Wails
 wailsjs/
 
 # Python
 scripts/__pycache__/
+
+# Playwright
+frontend/.playwright-state.json
+frontend/playwright-report/
+frontend/test-results/
+testdata/configs/playwright-runtime.toml

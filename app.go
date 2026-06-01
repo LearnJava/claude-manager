@@ -12,6 +12,7 @@ import (
 
 	"claude-manager/internal/analysis"
 	"claude-manager/internal/config"
+	"claude-manager/internal/control"
 	"claude-manager/internal/logger"
 	"claude-manager/internal/optimization"
 	"claude-manager/internal/permission"
@@ -28,12 +29,14 @@ const toastAppID = "Claude Session Manager"
 // App is the Wails application struct. All exported methods become callable
 // from the frontend via auto-generated JS bindings.
 type App struct {
-	ctx      context.Context
-	cfg      *config.AppConfig
-	cfgPath  string
-	store    *store.Store
-	manager  *session.SessionManager
-	closeLog func() // shuts down the file logger on exit
+	ctx          context.Context
+	cfg          *config.AppConfig
+	cfgPath      string
+	store        *store.Store
+	manager      *session.SessionManager
+	wailsEmitter *control.WailsEmitter
+	ctrlServer   *control.Server
+	closeLog     func() // shuts down the file logger on exit
 }
 
 // NewApp creates a new App with the default config path.
@@ -94,8 +97,29 @@ func (a *App) startup(ctx context.Context) {
 		}
 	}
 
-	a.manager = session.NewSessionManager(cfg, a.cfgPath, a.store)
-	a.manager.SetContext(ctx)
+	// Build the emitter chain. If CM_CONTROL=1 we fan-out to both Wails and
+	// the ControlEmitter so the GUI and the headless bridge receive all events.
+	a.wailsEmitter = control.NewWailsEmitter()
+	a.wailsEmitter.SetContext(ctx)
+
+	var sessionEmitter session.Emitter = a.wailsEmitter
+	var controlEmitter *control.ControlEmitter
+	if os.Getenv("CM_CONTROL") == "1" {
+		controlEmitter = control.NewControlEmitter(200)
+		sessionEmitter = control.NewMultiEmitter(a.wailsEmitter, controlEmitter)
+	}
+
+	a.manager = session.NewSessionManager(cfg, a.cfgPath, a.store, sessionEmitter)
+
+	// Start the control-plane server (no-op when CM_CONTROL != "1").
+	if controlEmitter != nil {
+		srv, err := control.StartFromEnv(ctx, a.manager, a, controlEmitter)
+		if err != nil {
+			logger.L.Error("control.start", "error", err)
+		} else {
+			a.ctrlServer = srv
+		}
+	}
 
 	// Register the app with Windows so toast notifications can target it.
 	// SetAppData is a best-effort call: it writes to the registry on Windows

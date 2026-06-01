@@ -1,0 +1,46 @@
+{
+  "name": "permission-allow",
+  "match": "(?i)\\brefactor\\b|\\bedit\\b",
+  "model": "claude-sonnet-4-6",
+  "context_window": 200000,
+  "exit_code": 0,
+  "steps": [
+    {
+      "type": "await_stdin",
+      "expect": "user_message",
+      "timeout_ms": 5000,
+      "store_as": "msg"
+    },
+    {
+      "type": "emit",
+      "delay_ms": 0,
+      "event": {"type":"system","subtype":"init","session_id":"${session_id}","model":"${model}","tools":["Read","Edit","Bash"],"cwd":"${cwd}"}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 50,
+      "event": {"type":"assistant","message":{"content":[{"type":"text","text":"Checking the file..."}],"usage":{"input_tokens":800,"output_tokens":40,"cache_read_input_tokens":0}}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 20,
+      "event": {"type":"permission_request","id":"p1","tool":"Edit","file_path":"src/main.go","description":"Edit source file","risk_level":"low"}
+    },
+    {
+      "type": "await_stdin",
+      "expect": "permission_response",
+      "timeout_ms": 30000,
+      "store_as": "perm"
+    },
+    {
+      "type": "emit",
+      "delay_ms": 30,
+      "event": {"type":"assistant","message":{"content":[{"type":"text","text":"File updated successfully."}],"usage":{"input_tokens":900,"output_tokens":50,"cache_read_input_tokens":0}}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 20,
+      "event": {"type":"result","subtype":"success","total_cost_usd":0.015,"num_turns":2,"usage":{"input_tokens":1700,"output_tokens":90},"modelUsage":{"claude-sonnet-4-6":{"costUSD":0.015}}}
+    }
+  ]
+}

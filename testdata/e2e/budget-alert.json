@@ -1,0 +1,26 @@
+{
+  "name": "budget-alert",
+  "fakeclaude_dir": "testdata/scenarios",
+  "config": "testdata/configs/budget.toml",
+  "steps": [
+    {
+      "do": "StartSession",
+      "with": {"project": "lumen", "session": "P1"}
+    },
+    {
+      "wait": "session:result",
+      "match": {"id": "lumen/P1"},
+      "timeout_ms": 8000
+    },
+    {
+      "wait": "session:status",
+      "match": {"id": "lumen/P1", "status": "idle"},
+      "timeout_ms": 8000
+    },
+    {
+      "assert": "GetSessionMetrics",
+      "with": {"id": "lumen/P1"},
+      "expect": {"total_cost_usd": 1.5}
+    }
+  ]
+}

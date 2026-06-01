@@ -1,0 +1,30 @@
+# Playwright test config.
+# claude_path is overridden by playwright-server at runtime via -config flag
+# with the absolute path to the built fakeclaude binary injected by globalSetup.
+
+[settings]
+claude_path = "fakeclaude"
+log_retention_days = 1
+crash_recovery = false
+preflight_analysis = false
+session_start_delay = 0
+
+[[project]]
+name = "test"
+path = "."
+
+# S1 — happy-path scenario (matches "simple|happy|hello")
+[[project.session]]
+name = "S1"
+prompt = "Please do the simple hello task"
+auto_restart = false
+model = "claude-sonnet-4-6"
+permission_mode = "default"
+
+# S2 — permission-allow scenario (matches "refactor|edit")
+[[project.session]]
+name = "S2"
+prompt = "Please refactor this code"
+auto_restart = false
+model = "claude-sonnet-4-6"
+permission_mode = "default"
