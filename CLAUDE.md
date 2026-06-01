@@ -296,6 +296,84 @@ The app is fully drivable and testable without a GUI and without spending API to
 
 Task breakdown: [HARNESS-TASKS.md](./HARNESS-TASKS.md) (H1-H6).
 
+### GUI Testing by Claude (via cm-mcp)
+
+Claude can interact with the running application directly — starting sessions, approving permissions, reading logs, waiting for state transitions — without human intervention. This is the primary way to test UI flows end-to-end.
+
+#### One-time setup (already done)
+
+```bash
+# Build all harness binaries
+go build -o build/cm-mcp.exe          ./cmd/cm-mcp
+go build -o build/fakeclaude.exe       ./cmd/fakeclaude
+go build -o build/playwright-server.exe ./cmd/playwright-server
+
+# Register cm-mcp as an MCP server in Claude Code (project-local)
+claude mcp add cm -- D:/GoProjects/claude-manager/build/cm-mcp.exe
+```
+
+The registration is stored in `.claude.json` (project scope) and persists across sessions.
+
+#### Starting a testable instance
+
+In **PowerShell**:
+```powershell
+$env:CM_CONTROL=1; wails dev
+```
+In **bash / Git Bash**:
+```bash
+CM_CONTROL=1 wails dev
+```
+
+This starts the full Wails GUI **and** binds the control-plane on `http://127.0.0.1:7333`. The cm-mcp server connects to that address automatically.
+
+> For headless (no Wails GUI) backend-only testing, use `playwright-server` instead:
+> ```bash
+> ./build/playwright-server.exe -config testdata/configs/playwright.toml -scenarios testdata/scenarios
+> ```
+
+#### cm-mcp tools available to Claude
+
+| Tool | What it does |
+|---|---|
+| `start_session` | Start a session by project + name |
+| `stop_session` | Stop a session (soft=true waits for current task) |
+| `restart_session` | Hard restart or resume from saved CLI session ID |
+| `send_message` | Send a user message to a running session |
+| `approve_permission` | Approve a pending permission request |
+| `deny_permission` | Deny a pending permission request |
+| `get_sessions` | Snapshot of all sessions (status, model, metrics) |
+| `get_session_logs` | Tail log entries for a session |
+| `get_pending_permissions` | List all pending permission requests |
+| `get_metrics` | Cost/token metrics for a project |
+| `wait_for_status` | Block until session reaches a target status |
+| `wait_for_event` | Block until a specific event is emitted |
+| `set_global_settings` | Partial-update AppConfig at runtime |
+| `run_preflight` | Run pre-flight analysis for a task |
+| `execute_plan` | Execute a pre-generated task plan |
+
+#### Typical test workflow
+
+```
+1. User runs: CM_CONTROL=1 wails dev   (or playwright-server for headless)
+2. Claude starts a new conversation — cm-mcp tools are now available
+3. Claude calls start_session → wait_for_status(working)
+4. Claude reads get_session_logs to verify output
+5. Claude calls approve_permission if the session is waiting
+6. Claude calls stop_session → wait_for_status(idle)
+7. Claude asserts final state via get_sessions / get_metrics
+```
+
+#### Using fakeclaude for deterministic scenarios
+
+Set `claude_path` in the config to `build/fakeclaude.exe` and point `FAKECLAUDE_SCENARIO` at `testdata/scenarios/`. Each scenario file is a JSON array of stream-json events that fakeclaude emits deterministically — no real Claude CLI, no API tokens spent.
+
+```toml
+# testdata/configs/playwright.toml
+[settings]
+claude_path = "build/fakeclaude.exe"
+```
+
 ## SQLite Tables
 
 - `session_runs` — completed runs with cost/tokens/duration/model
