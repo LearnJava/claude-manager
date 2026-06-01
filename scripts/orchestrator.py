@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -32,6 +33,14 @@ TASKS_FILE = PROJECT_DIR / "TASKS.md"
 STATE_FILE = SCRIPTS_DIR / ".taskstate.json"
 STOP_FILE = SCRIPTS_DIR / ".stop"
 JOBSTATUS_FILE = SCRIPTS_DIR / ".jobstatus"
+
+# Принудительно UTF-8 для stdout/stderr. Без этого print с em-dash, стрелками
+# и любым символом за пределами активной Windows-кодовой страницы кидает
+# UnicodeEncodeError прямо из print() — так умер TASK-10. errors="replace"
+# гарантирует, что даже совсем экзотический байт не уронит логирование.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 def log(message: str):
@@ -99,9 +108,14 @@ def load_state() -> dict:
 
 
 def save_state(state: dict):
-    STATE_FILE.write_text(
+    # Атомарная запись: пишем во временный файл и подменяем оригинал через
+    # os.replace. Так половинный write не сможет испортить JSON и потерять
+    # прогресс при падении/убийстве процесса посреди записи.
+    tmp = STATE_FILE.with_suffix(".json.tmp")
+    tmp.write_text(
         json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8"
     )
+    os.replace(tmp, STATE_FILE)
 
 
 def get_next_task(
@@ -338,15 +352,10 @@ def run_claude(task: Task) -> tuple[int, bool, float]:
         if not line:
             continue
 
-        # Детект rate limit в сыром тексте
-        if "hit your limit" in line.lower() or "rate limit" in line.lower():
-            rate_limited = True
-            log(f"  Rate limit: {line[:120]}")
-            continue
-
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
+            # Только в не-JSON тексте проверяем rate limit
             if "hit your limit" in line.lower() or "rate limit" in line.lower():
                 rate_limited = True
                 log(f"  Rate limit: {line[:120]}")
@@ -420,104 +429,140 @@ def run_task_loop(tasks: list[Task], max_tasks: int = 0, specific_task: str = No
     log("")
     set_jobstatus("запущен")
 
+    all_done = False
+
     while True:
-        # Проверка стоп-файла
-        if STOP_FILE.exists():
-            log("Найден стоп-файл. Останавливаюсь.")
-            STOP_FILE.unlink()
-            break
-
-        # Проверка лимита задач
-        if max_tasks > 0 and task_count >= max_tasks:
-            log(f"Достигнут лимит задач ({max_tasks}). Останавливаюсь.")
-            break
-
-        # Найти следующую задачу
-        state = load_state()
-        task = get_next_task(tasks, state, specific_task if task_count == 0 else None)
-
-        if task is None:
-            if len(state.get("completed", {})) == len(tasks):
-                log("Все задачи выполнены!")
-            else:
-                log("Нет доступных задач (зависимости не выполнены или все сделано).")
-            break
-
-        task_count += 1
-        log(f"{'=' * 60}")
-        log(f"Задача #{task_count}: {task.id} — {task.title}")
-        if task.depends:
-            log(f"  Зависимости: {', '.join(task.depends)}")
-        log(f"{'=' * 60}")
-
-        # Пометить как «в работе»
-        state["in_progress"] = task.id
-        save_state(state)
-        set_jobstatus("работает", f"{task.id}: {task.title}")
-
-        start_time = time.time()
-
-        log("Запуск claude...")
         try:
-            exit_code, rate_limited, cost = run_claude(task)
-        except FileNotFoundError:
-            log("claude не найден в PATH.")
-            break
-        except Exception as e:
-            log(f"Ошибка запуска: {e}")
-            break
+            # Проверка стоп-файла
+            if STOP_FILE.exists():
+                log("Найден стоп-файл. Останавливаюсь.")
+                STOP_FILE.unlink()
+                break
 
-        elapsed = time.time() - start_time
-        duration = format_duration(elapsed)
+            # Проверка лимита задач
+            if max_tasks > 0 and task_count >= max_tasks:
+                log(f"Достигнут лимит задач ({max_tasks}). Останавливаюсь.")
+                break
 
-        if rate_limited and exit_code != 0:
-            # Rate limit — не считать как попытку, подождать и повторить
-            task_count -= 1
-            state["in_progress"] = None
+            # Найти следующую задачу
+            state = load_state()
+            task = get_next_task(tasks, state, specific_task if task_count == 0 else None)
+
+            if task is None:
+                if len(state.get("completed", {})) == len(tasks):
+                    log("Все задачи выполнены!")
+                    all_done = True
+                else:
+                    log("Нет доступных задач (зависимости не выполнены или все сделано).")
+                break
+
+            task_count += 1
+            log(f"{'=' * 60}")
+            log(f"Задача #{task_count}: {task.id} — {task.title}")
+            if task.depends:
+                log(f"  Зависимости: {', '.join(task.depends)}")
+            log(f"{'=' * 60}")
+
+            # Пометить как «в работе»
+            state["in_progress"] = task.id
             save_state(state)
-            wait_for_rate_limit()
+            set_jobstatus("работает", f"{task.id}: {task.title}")
 
-        elif exit_code != 0:
-            # Ошибка — подсчитать попытки
-            task_count -= 1
-            log(f"Claude завершился с кодом {exit_code}. ({duration})")
+            start_time = time.time()
 
-            failed = state.get("failed", {})
-            fail_info = failed.get(task.id, {"attempts": 0})
-            fail_info["attempts"] += 1
-            fail_info["last_attempt"] = datetime.now().strftime("%H:%M:%S")
-            failed[task.id] = fail_info
-            state["failed"] = failed
-            state["in_progress"] = None
-            save_state(state)
+            log("Запуск claude...")
+            try:
+                exit_code, rate_limited, cost = run_claude(task)
+            except FileNotFoundError:
+                log("claude не найден в PATH.")
+                break
+            except Exception as e:
+                log(f"Ошибка запуска: {e!r}")
+                break
 
-            if fail_info["attempts"] >= 3:
-                log(f"{task.id} провалилась {fail_info['attempts']} раз. Пропускаю.")
+            elapsed = time.time() - start_time
+            duration = format_duration(elapsed)
+
+            if rate_limited and exit_code != 0:
+                # Rate limit — не считать как попытку, подождать и повторить
+                task_count -= 1
+                state["in_progress"] = None
+                save_state(state)
+                wait_for_rate_limit()
+
+            elif exit_code != 0:
+                # Ошибка — подсчитать попытки
+                task_count -= 1
+                log(f"Claude завершился с кодом {exit_code}. ({duration})")
+
+                failed = state.get("failed", {})
+                fail_info = failed.get(task.id, {"attempts": 0})
+                fail_info["attempts"] += 1
+                fail_info["last_attempt"] = datetime.now().strftime("%H:%M:%S")
+                failed[task.id] = fail_info
+                state["failed"] = failed
+                state["in_progress"] = None
+                save_state(state)
+
+                if fail_info["attempts"] >= 3:
+                    log(f"{task.id} провалилась {fail_info['attempts']} раз. Пропускаю.")
+                    specific_task = None
+                    continue
+
+                log("Пауза 30 секунд перед повтором...")
+                time.sleep(30)
+
+            else:
+                # Успех — фиксируем результат СРАЗУ, до log() и прочих
+                # необязательных операций. Иначе любой краш ниже (например
+                # UnicodeEncodeError при печати summary в Windows-консоль)
+                # потеряет уже сделанную задачу — ровно так и пропал TASK-10.
+                state["completed"][task.id] = {
+                    "completed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "duration": duration,
+                    "cost_usd": cost,
+                }
+                state["in_progress"] = None
+                if task.id in state.get("failed", {}):
+                    del state["failed"][task.id]
+                save_state(state)
+
+                total_cost += cost
+                log(f"{task.id} завершена. ({duration}, ${cost:.4f})")
                 specific_task = None
-                continue
 
-            log("Пауза 30 секунд перед повтором...")
-            time.sleep(30)
+        except KeyboardInterrupt:
+            log("Прервано пользователем (Ctrl+C). Останавливаюсь.")
+            break
+        except Exception:
+            # Сетка безопасности: что бы ни упало внутри итерации — логируем
+            # полный traceback и продолжаем со следующей итерации, чтобы один
+            # битый print/save не убивал весь оркестратор.
+            log("!!! Необработанное исключение в цикле:")
+            for line in traceback.format_exc().splitlines():
+                log(f"    {line}")
+            try:
+                st = load_state()
+                if st.get("in_progress"):
+                    log(f"  Сбрасываю in_progress={st['in_progress']!r} → None")
+                    st["in_progress"] = None
+                    save_state(st)
+            except Exception as e2:
+                log(f"  Не удалось сбросить in_progress: {e2!r}")
+            log("Пауза 10 секунд перед продолжением цикла...")
+            time.sleep(10)
+            continue
 
-        else:
-            # Успех
-            total_cost += cost
-            log(f"{task.id} завершена. ({duration}, ${cost:.4f})")
-
-            state["completed"][task.id] = {
-                "completed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "duration": duration,
-                "cost_usd": cost,
-            }
-            state["in_progress"] = None
-            # Сбросить счётчик ошибок при успехе
-            if task.id in state.get("failed", {}):
-                del state["failed"][task.id]
-            save_state(state)
-
-            specific_task = None
-
-    set_jobstatus("остановлен", f"выполнено: {task_count}, стоимость: ${total_cost:.4f}")
+    if all_done:
+        set_jobstatus(
+            "завершено",
+            f"все задачи ({len(tasks)}), стоимость: ${total_cost:.4f}",
+        )
+    else:
+        set_jobstatus(
+            "остановлен",
+            f"выполнено: {task_count}, стоимость: ${total_cost:.4f}",
+        )
     log("")
     log(f"Цикл завершён. Выполнено задач: {task_count}. Стоимость: ${total_cost:.4f}")
 

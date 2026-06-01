@@ -1,0 +1,133 @@
+# Claude Session Manager — example configuration
+# Copy to ~/.claude-manager/config.toml and edit to suit your projects.
+
+[settings]
+claude_path = "claude"                  # path to CLI; "claude" if it's in PATH
+default_retry_delay = 30               # seconds between retries on error
+rate_limit_pause = 300                 # seconds to pause when rate-limited
+log_retention_days = 30                # days to keep session history in SQLite
+theme = "dark"                         # dark | light
+
+# Crash recovery: persist session_id to ~/.claude-manager/state/ before each
+# task so an interrupted session can be resumed via --resume after a restart.
+# Equivalent to the orchestrator.py session state files (.session-PN.json).
+# Use ClearSessionState() / the UI button to force a fresh start (--new).
+crash_recovery = true
+
+# Pre-flight analysis (runs a haiku analyst before launching sessions)
+preflight_analysis = true
+preflight_model = "haiku"
+preflight_max_budget = 0               # 0 = no limit, >0 = USD cap
+preflight_auto_approve_single = true   # skip review dialog when plan has one session
+
+# Permission handling
+permission_notify_after = 30           # seconds before escalating notification
+permission_timeout = 0                 # 0 = wait forever; >0 = timeout in seconds
+permission_timeout_action = "deny"     # deny | pause_session
+permission_native_notification = true  # Windows toast when minimised
+permission_sound = true                # audible alert on permission request
+
+# Budget alerts (0 = disabled)
+daily_budget_alert = 0                 # notify if daily spend exceeds this USD
+weekly_budget_alert = 0                # notify if weekly spend exceeds this USD
+rate_limit_alert_threshold = 0.80      # notify when rate-limit utilisation > 80%
+
+# ─── Project 1 ────────────────────────────────────────────────────────────────
+
+[[project]]
+name = "lumen-browser"
+path = 'D:\RustProjects\lumen-browser'
+
+  [[project.session]]
+  name = "P1"
+  prompt = """
+  You are developer P1. Read STATUS-P1.md.
+  If there is an 'In progress' task, continue it. Otherwise take the first 'Next' task.
+  When the task is done, call /lumen-task-finish.
+  """
+  auto_restart = true
+  max_tasks = 0                        # 0 = no limit
+  stop_when_no_tasks = true
+  task_source = "STATUS-P1.md"
+
+  # Model and performance
+  model = "sonnet"                     # opus | sonnet | haiku | full model id
+  fallback_model = ""                  # fallback model when rate-limited or overloaded
+  fallback_model_on_rate_limit = false # true: switch to fallback_model immediately on
+                                       #   rate limit and restart without waiting 5 min
+                                       #   (mirrors orchestrator.py fallback behaviour)
+  effort = "high"                      # low | medium | high | xhigh | max
+
+  # Permissions
+  permission_mode = "acceptEdits"      # default | acceptEdits | auto | plan | dontAsk | bypassPermissions
+  allowed_tools = ["Bash(cargo *)", "Bash(npm *)"]
+  disallowed_tools = ["Bash(rm -rf *)"]
+
+  # Budget (0 = no limit)
+  max_budget_usd = 0
+
+  # Worktree
+  use_worktree = true
+
+  # Additional context
+  system_prompt_append = ""
+  add_dirs = []
+
+  # Pre-flight override (always | auto | never)
+  preflight = "auto"
+
+  # Hooks (shell commands run before/after each task)
+  pre_task_hook = ""
+  post_task_hook = ""
+
+  # Crash recovery prompt: message sent to Claude when resuming an interrupted
+  # session via --resume. Leave empty to use the built-in English default.
+  # crash_recovery_prompt = "Сессия была прервана. Проверь git status и STATUS-P1.md, продолжи задачу."
+
+  # Auto-approve rules evaluated in order; first match wins
+  [[project.session.permission_rule]]
+  tool = "Bash"
+  pattern = "cargo *"
+  decision = "allow"
+
+  [[project.session.permission_rule]]
+  tool = "Edit"
+  pattern = "*"
+  decision = "allow"
+
+  [[project.session.permission_rule]]
+  tool = "Bash"
+  pattern = "rm *"
+  decision = "deny"
+
+  [[project.session]]
+  name = "P2"
+  prompt = "You are developer P2. Read STATUS-P2.md and continue the next task."
+  auto_restart = true
+  permission_mode = "bypassPermissions"
+
+  [[project.session]]
+  name = "P3"
+  prompt = "You are developer P3. Read STATUS-P3.md and continue the next task."
+  auto_restart = true
+  permission_mode = "bypassPermissions"
+
+# ─── Project 2 ────────────────────────────────────────────────────────────────
+
+[[project]]
+name = "my-api"
+path = 'D:\Projects\my-api'
+
+  [[project.session]]
+  name = "backend"
+  prompt = "Work on the next backend task from TODO.md."
+  auto_restart = false
+  model = "sonnet"
+  permission_mode = "acceptEdits"
+
+  [[project.session]]
+  name = "frontend"
+  prompt = "Work on the next frontend task from TODO.md."
+  auto_restart = false
+  model = "sonnet"
+  permission_mode = "acceptEdits"

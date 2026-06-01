@@ -1,0 +1,759 @@
+<script lang="ts">
+    import { createEventDispatcher } from 'svelte';
+    import { ApprovePlan, ExecutePlan } from '../../wailsjs/go/main/App';
+    import { formatCost, formatTokens, formatDuration } from '../lib/formatters';
+
+    // ---- Local types (mirror internal/analysis/plan.go JSON tags) ----
+
+    interface FeasibilityInfo {
+        single_session: boolean;
+        confidence: number;
+        reasoning: string;
+        estimated_complexity: string;
+        estimated_files_affected: number;
+        estimated_tokens: number;
+        risks: string[];
+    }
+
+    interface AnalysisResult {
+        feasibility: FeasibilityInfo;
+        recommended_approach: string;
+        recommended_model: string;
+        recommended_effort: string;
+        subtasks: PlannedSubtask[];
+        execution_order: string[][];
+        shared_context: string;
+    }
+
+    interface PlannedSubtask {
+        id: string;
+        name: string;
+        prompt: string;
+        depends_on?: string[];
+        model?: string;
+        effort?: string;
+        use_worktree?: boolean;
+        estimated_tokens?: number;
+        files_to_touch?: string[];
+        session_id?: string;
+        status?: string;
+        result_summary?: string;
+        files_changed?: string[];
+        cost_usd?: number;
+    }
+
+    interface TaskPlan {
+        id: number;
+        project: string;
+        original_task: string;
+        analysis: AnalysisResult;
+        subtasks: PlannedSubtask[];
+        execution_order: string[][];
+        status: string;
+        shared_context: string;
+        created_at: string;
+        completed_at?: string;
+        total_cost_usd: number;
+        total_tokens: number;
+    }
+
+    export let plan: TaskPlan;
+
+    const dispatch = createEventDispatcher();
+
+    // Local working copy so user edits don't mutate the parent's plan until
+    // they hit Execute / Approve.
+    let working: TaskPlan = clone(plan);
+    let editMode = false;
+    let editingSubtaskId: string | null = null;
+    let busy: '' | 'approve' | 'execute' = '';
+    let error = '';
+
+    // Re-clone if the parent passes a new plan object.
+    $: if (plan && plan !== _lastPlan) {
+        _lastPlan = plan;
+        working = clone(plan);
+        editingSubtaskId = null;
+    }
+    let _lastPlan: TaskPlan | null = null;
+
+    function clone<T>(v: T): T {
+        return JSON.parse(JSON.stringify(v));
+    }
+
+    // ---- Derived UI state ----
+
+    $: feas = working.analysis?.feasibility ?? ({} as FeasibilityInfo);
+    $: groups = working.execution_order ?? [];
+    $: isMultiSession =
+        (working.subtasks?.length ?? 0) > 1 ||
+        (working.analysis?.recommended_approach &&
+            working.analysis.recommended_approach !== 'single_session');
+    $: estTotalTokens = sumTokens(working.subtasks);
+    $: estTotalCost = estimatedCost(working.subtasks);
+    $: estTotalMs = estimatedDurationMs(working.subtasks, groups);
+
+    function indexById(subs: PlannedSubtask[]): Record<string, PlannedSubtask> {
+        const out: Record<string, PlannedSubtask> = {};
+        for (const s of subs ?? []) out[s.id] = s;
+        return out;
+    }
+
+    function sumTokens(subs: PlannedSubtask[]): number {
+        return (subs ?? []).reduce((acc, s) => acc + (s.estimated_tokens ?? 0), 0);
+    }
+
+    // Rough per-million-token blended cost per model family.
+    function modelRate(model: string | undefined): number {
+        const m = (model ?? '').toLowerCase();
+        if (m.includes('opus')) return 20;
+        if (m.includes('haiku')) return 1;
+        return 5; // sonnet / default
+    }
+
+    function estimatedCost(subs: PlannedSubtask[]): number {
+        let usd = 0;
+        for (const s of subs ?? []) {
+            const tok = s.estimated_tokens ?? 0;
+            usd += (tok / 1_000_000) * modelRate(s.model);
+        }
+        return usd;
+    }
+
+    // Time model: assume each session processes ~10k tokens/minute.
+    // Subtasks within a group run in parallel, groups run sequentially.
+    function estimatedDurationMs(
+        subs: PlannedSubtask[],
+        order: string[][],
+    ): number {
+        const idx = indexById(subs);
+        const groupsArr = order && order.length > 0 ? order : [(subs ?? []).map((s) => s.id)];
+        let totalMs = 0;
+        for (const g of groupsArr) {
+            let groupMaxMs = 0;
+            for (const id of g) {
+                const s = idx[id];
+                if (!s) continue;
+                const tok = s.estimated_tokens ?? 0;
+                const ms = (tok / 10_000) * 60_000;
+                if (ms > groupMaxMs) groupMaxMs = ms;
+            }
+            totalMs += groupMaxMs;
+        }
+        return totalMs;
+    }
+
+    // ---- Complexity bar ----
+    const complexityLevels = ['trivial', 'small', 'medium', 'large', 'epic'];
+    function complexityIdx(c: string): number {
+        const i = complexityLevels.indexOf((c ?? '').toLowerCase());
+        return i < 0 ? 2 : i;
+    }
+    function complexityLabel(c: string): string {
+        const v = (c ?? '').toLowerCase();
+        if (!v) return 'Unknown';
+        return v.charAt(0).toUpperCase() + v.slice(1);
+    }
+    function complexityColor(idx: number): string {
+        if (idx <= 0) return 'bg-status-working';
+        if (idx === 1) return 'bg-status-working';
+        if (idx === 2) return 'bg-status-ratelimit';
+        if (idx === 3) return 'bg-status-waiting';
+        return 'bg-status-error';
+    }
+
+    // ---- Approach label / banner ----
+    function approachLabel(a: string): string {
+        switch (a) {
+            case 'single_session':
+                return 'Single session';
+            case 'sequential_sessions':
+                return 'Sequential sessions';
+            case 'parallel_sessions':
+                return 'Parallel sessions';
+            case 'mixed':
+                return 'Mixed (sequential + parallel)';
+            default:
+                return a || '—';
+        }
+    }
+
+    // ---- Group / subtask mutation helpers ----
+
+    function moveGroup(idx: number, delta: number) {
+        const g = working.execution_order;
+        const target = idx + delta;
+        if (target < 0 || target >= g.length) return;
+        const next = g.slice();
+        const [item] = next.splice(idx, 1);
+        next.splice(target, 0, item);
+        working.execution_order = next;
+        working = working;
+    }
+
+    function removeSubtask(id: string) {
+        working.subtasks = working.subtasks.filter((s) => s.id !== id);
+        working.execution_order = working.execution_order
+            .map((g) => g.filter((sid) => sid !== id))
+            .filter((g) => g.length > 0);
+        // Also drop the dependency from other subtasks.
+        for (const s of working.subtasks) {
+            if (s.depends_on) {
+                s.depends_on = s.depends_on.filter((d) => d !== id);
+            }
+        }
+        if (editingSubtaskId === id) editingSubtaskId = null;
+        working = working;
+    }
+
+    function addStep() {
+        const id = nextSubtaskID();
+        const fresh: PlannedSubtask = {
+            id,
+            name: 'new-step',
+            prompt: '',
+            model: working.analysis?.recommended_model || 'sonnet',
+            effort: working.analysis?.recommended_effort || 'medium',
+            estimated_tokens: 20000,
+            files_to_touch: [],
+            depends_on: [],
+            status: 'pending',
+        };
+        working.subtasks = [...working.subtasks, fresh];
+        working.execution_order = [...working.execution_order, [id]];
+        editingSubtaskId = id;
+        working = working;
+    }
+
+    function nextSubtaskID(): string {
+        let n = working.subtasks.length + 1;
+        while (working.subtasks.some((s) => s.id === `step-${n}`)) n++;
+        return `step-${n}`;
+    }
+
+    function toggleEdit(id: string) {
+        editingSubtaskId = editingSubtaskId === id ? null : id;
+    }
+
+    // ---- Actions ----
+
+    async function onExecute() {
+        if (busy) return;
+        busy = 'execute';
+        error = '';
+        try {
+            // First persist the (possibly edited) plan as approved.
+            await ApprovePlan(working);
+            const id = working.id ?? 0;
+            await ExecutePlan(id);
+            dispatch('executed', { plan: working });
+        } catch (e: any) {
+            error = `Execute failed: ${e?.message ?? String(e)}`;
+        } finally {
+            busy = '';
+        }
+    }
+
+    async function onApprove() {
+        if (busy) return;
+        busy = 'approve';
+        error = '';
+        try {
+            await ApprovePlan(working);
+            editMode = false;
+            dispatch('approved', { plan: working });
+        } catch (e: any) {
+            error = `Approve failed: ${e?.message ?? String(e)}`;
+        } finally {
+            busy = '';
+        }
+    }
+
+    function onCancel() {
+        dispatch('cancel');
+    }
+
+    function onReanalyze() {
+        dispatch('reanalyze');
+    }
+
+    // ---- Drag-and-drop reorder for groups ----
+    let dragIdx: number | null = null;
+    function onDragStart(idx: number) {
+        if (!editMode) return;
+        dragIdx = idx;
+    }
+    function onDragOver(e: DragEvent) {
+        if (!editMode) return;
+        e.preventDefault();
+    }
+    function onDrop(idx: number) {
+        if (!editMode || dragIdx === null) return;
+        if (dragIdx === idx) {
+            dragIdx = null;
+            return;
+        }
+        const next = working.execution_order.slice();
+        const [item] = next.splice(dragIdx, 1);
+        next.splice(idx, 0, item);
+        working.execution_order = next;
+        dragIdx = null;
+        working = working;
+    }
+</script>
+
+<div
+    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+    on:click={onCancel}
+    on:keydown={(e) => e.key === 'Escape' && onCancel()}
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1">
+    <div
+        class="bg-bg-panel border border-bg-border rounded-md shadow-xl w-[900px] max-w-[95vw] h-[760px] max-h-[95vh] flex flex-col"
+        role="document"
+        on:click|stopPropagation
+        on:keydown|stopPropagation>
+        <!-- Header -->
+        <div class="px-4 py-3 border-b border-bg-border flex items-center justify-between shrink-0">
+            <div>
+                <h2 class="text-text font-semibold text-base">Task Analysis</h2>
+                {#if working.original_task}
+                    <div class="text-text-muted text-xs mt-0.5 truncate max-w-[660px]"
+                        title={working.original_task}>
+                        {working.original_task}
+                    </div>
+                {/if}
+            </div>
+            <div class="flex items-center gap-2">
+                <button
+                    type="button"
+                    on:click={onReanalyze}
+                    class="px-2.5 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
+                    Re-analyze
+                </button>
+                <button
+                    class="text-text-muted hover:text-text text-sm px-2 py-0.5"
+                    on:click={onCancel}
+                    type="button">✕</button>
+            </div>
+        </div>
+
+        <!-- Body -->
+        <div class="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-5">
+            <!-- ───── Feasibility ───── -->
+            <section>
+                {#if feas.single_session}
+                    <div class="flex items-center gap-2 text-sm font-semibold text-status-working mb-3">
+                        <span>✓</span>
+                        <span>Task fits in a single session.</span>
+                    </div>
+                {:else}
+                    <div class="flex items-center gap-2 text-sm font-semibold text-status-waiting mb-3">
+                        <span>⚠</span>
+                        <span>Task does NOT fit in a single session.</span>
+                    </div>
+                {/if}
+
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <div class="text-text-muted text-xs mb-1">Complexity</div>
+                        <div class="flex items-center gap-2">
+                            <div class="flex-1 flex gap-0.5">
+                                {#each complexityLevels as _, i}
+                                    <div
+                                        class="h-2 flex-1 rounded-sm
+                                            {i <= complexityIdx(feas.estimated_complexity)
+                                                ? complexityColor(complexityIdx(feas.estimated_complexity))
+                                                : 'bg-bg-elevated'}">
+                                    </div>
+                                {/each}
+                            </div>
+                            <span class="text-text text-xs whitespace-nowrap">
+                                {complexityLabel(feas.estimated_complexity)}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="text-text-muted text-xs mb-1">Files affected</div>
+                        <div class="text-text text-sm font-mono">
+                            ~{feas.estimated_files_affected ?? 0}
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="text-text-muted text-xs mb-1">Tokens</div>
+                        <div class="text-text text-sm font-mono">
+                            ~{formatTokens(feas.estimated_tokens)}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-3 text-xs text-text-muted">
+                    Confidence:
+                    <span class="text-text font-semibold ml-1">
+                        {Math.round((feas.confidence ?? 0) * 100)}%
+                    </span>
+                </div>
+
+                {#if feas.reasoning}
+                    <div class="mt-2 text-xs text-text-muted">
+                        <span class="text-text-muted">Reasoning:</span>
+                        <span class="text-text ml-1">{feas.reasoning}</span>
+                    </div>
+                {/if}
+            </section>
+
+            <!-- ───── Risks ───── -->
+            {#if feas.risks && feas.risks.length > 0}
+                <section>
+                    <h3 class="text-text font-semibold text-sm mb-2">Risks</h3>
+                    <ul class="space-y-1">
+                        {#each feas.risks as r}
+                            <li class="text-text text-sm flex gap-2">
+                                <span class="text-status-waiting">•</span>
+                                <span>{r}</span>
+                            </li>
+                        {/each}
+                    </ul>
+                </section>
+            {/if}
+
+            <!-- ───── Recommended approach ───── -->
+            <section>
+                <h3 class="text-text font-semibold text-sm mb-2">Recommended approach</h3>
+                <div class="grid grid-cols-3 gap-4 text-xs">
+                    <div>
+                        <div class="text-text-muted mb-0.5">Approach</div>
+                        <div class="text-text font-medium">
+                            {approachLabel(working.analysis?.recommended_approach)}
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-text-muted mb-0.5">Default model</div>
+                        <div class="text-text font-mono">
+                            {working.analysis?.recommended_model || '—'}
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-text-muted mb-0.5">Effort</div>
+                        <div class="text-text font-mono">
+                            {working.analysis?.recommended_effort || '—'}
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ───── Proposed plan ───── -->
+            <section>
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-text font-semibold text-sm">
+                        Proposed plan
+                        <span class="text-text-muted font-normal ml-1">
+                            ({working.subtasks.length} subtask{working.subtasks.length === 1 ? '' : 's'},
+                            {groups.length} group{groups.length === 1 ? '' : 's'})
+                        </span>
+                    </h3>
+                    {#if editMode}
+                        <button
+                            type="button"
+                            on:click={addStep}
+                            class="px-2 py-0.5 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white">
+                            + Add step
+                        </button>
+                    {/if}
+                </div>
+
+                {#if working.subtasks.length === 0}
+                    <div class="text-text-muted text-sm italic py-4 text-center">
+                        No subtasks defined.
+                    </div>
+                {:else if !isMultiSession && working.subtasks.length === 1}
+                    <!-- Single-session card -->
+                    {@const only = working.subtasks[0]}
+                    <div class="bg-bg-elevated border border-bg-border rounded p-3">
+                        <div class="flex items-baseline justify-between">
+                            <div class="text-text font-semibold text-sm">{only.name}</div>
+                            <div class="text-text-muted text-xs font-mono">
+                                {only.model || '—'} · {only.effort || '—'}
+                            </div>
+                        </div>
+                        {#if only.prompt}
+                            <div class="text-text text-xs mt-1 line-clamp-2">{only.prompt}</div>
+                        {/if}
+                        <div class="text-text-muted text-xs mt-2 flex gap-4">
+                            <span>~{formatTokens(only.estimated_tokens)} tokens</span>
+                            <span>{(only.files_to_touch ?? []).length} files</span>
+                        </div>
+                    </div>
+                {:else}
+                    <ol class="space-y-1">
+                        {#each groups as group, gi (gi)}
+                            <li>
+                                <div
+                                    class="rounded border border-bg-border bg-bg-elevated p-2
+                                        {dragIdx === gi ? 'opacity-50' : ''}"
+                                    draggable={editMode}
+                                    on:dragstart={() => onDragStart(gi)}
+                                    on:dragover={onDragOver}
+                                    on:drop={() => onDrop(gi)}
+                                    role="listitem">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <div class="text-text-muted text-xs">
+                                            Step {gi + 1}
+                                            {#if group.length > 1}
+                                                <span class="ml-2 px-1.5 py-0.5 rounded
+                                                    bg-status-starting/20 text-status-starting text-[10px] uppercase">
+                                                    parallel × {group.length}
+                                                </span>
+                                            {/if}
+                                        </div>
+                                        {#if editMode}
+                                            <div class="flex items-center gap-1">
+                                                <button
+                                                    type="button"
+                                                    title="Move up"
+                                                    on:click={() => moveGroup(gi, -1)}
+                                                    disabled={gi === 0}
+                                                    class="px-1.5 py-0.5 text-xs rounded
+                                                           bg-bg border border-bg-border text-text hover:bg-bg-panel
+                                                           disabled:opacity-30 disabled:cursor-not-allowed">
+                                                    ↑
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    title="Move down"
+                                                    on:click={() => moveGroup(gi, 1)}
+                                                    disabled={gi === groups.length - 1}
+                                                    class="px-1.5 py-0.5 text-xs rounded
+                                                           bg-bg border border-bg-border text-text hover:bg-bg-panel
+                                                           disabled:opacity-30 disabled:cursor-not-allowed">
+                                                    ↓
+                                                </button>
+                                            </div>
+                                        {/if}
+                                    </div>
+
+                                    <div class="grid gap-2 {group.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}">
+                                        {#each group as subId (subId)}
+                                            {@const sIdx = working.subtasks.findIndex((x) => x.id === subId)}
+                                            {#if sIdx >= 0}
+                                                <div class="bg-bg border border-bg-border rounded p-2.5">
+                                                    {#if editingSubtaskId === subId}
+                                                        <!-- Edit form -->
+                                                        <div class="space-y-2">
+                                                            <label class="flex flex-col text-xs text-text-muted gap-1">
+                                                                Name
+                                                                <input
+                                                                    type="text"
+                                                                    bind:value={working.subtasks[sIdx].name}
+                                                                    class="bg-bg-elevated border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                                                            </label>
+                                                            <div class="grid grid-cols-2 gap-2">
+                                                                <label class="flex flex-col text-xs text-text-muted gap-1">
+                                                                    Model
+                                                                    <select
+                                                                        bind:value={working.subtasks[sIdx].model}
+                                                                        class="bg-bg-elevated border border-bg-border rounded px-2 py-1 text-sm text-text">
+                                                                        <option value="opus">opus</option>
+                                                                        <option value="sonnet">sonnet</option>
+                                                                        <option value="haiku">haiku</option>
+                                                                    </select>
+                                                                </label>
+                                                                <label class="flex flex-col text-xs text-text-muted gap-1">
+                                                                    Effort
+                                                                    <select
+                                                                        bind:value={working.subtasks[sIdx].effort}
+                                                                        class="bg-bg-elevated border border-bg-border rounded px-2 py-1 text-sm text-text">
+                                                                        <option value="low">low</option>
+                                                                        <option value="medium">medium</option>
+                                                                        <option value="high">high</option>
+                                                                        <option value="xhigh">xhigh</option>
+                                                                        <option value="max">max</option>
+                                                                    </select>
+                                                                </label>
+                                                            </div>
+                                                            <label class="flex flex-col text-xs text-text-muted gap-1">
+                                                                Estimated tokens
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    step="1000"
+                                                                    bind:value={working.subtasks[sIdx].estimated_tokens}
+                                                                    class="bg-bg-elevated border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                                                            </label>
+                                                            <label class="flex flex-col text-xs text-text-muted gap-1">
+                                                                Prompt
+                                                                <textarea
+                                                                    bind:value={working.subtasks[sIdx].prompt}
+                                                                    rows="4"
+                                                                    class="bg-bg-elevated border border-bg-border rounded px-2 py-1 text-sm text-text font-mono resize-y"
+                                                                ></textarea>
+                                                            </label>
+                                                            <div class="flex justify-end gap-2 pt-1">
+                                                                <button
+                                                                    type="button"
+                                                                    on:click={() => (editingSubtaskId = null)}
+                                                                    class="px-2 py-0.5 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white">
+                                                                    Done
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    {:else}
+                                                        <!-- View card -->
+                                                        {@const s = working.subtasks[sIdx]}
+                                                        <div class="flex items-baseline justify-between gap-2">
+                                                            <div class="text-text font-semibold text-sm truncate"
+                                                                title={s.name}>
+                                                                {s.name}
+                                                                <span class="text-text-muted font-normal text-xs ml-1">
+                                                                    ({s.id})
+                                                                </span>
+                                                            </div>
+                                                            <div class="text-text-muted text-xs font-mono whitespace-nowrap">
+                                                                {s.model || '—'} · {s.effort || '—'}
+                                                            </div>
+                                                        </div>
+                                                        {#if s.prompt}
+                                                            <div class="text-text-muted text-xs mt-1 line-clamp-2"
+                                                                title={s.prompt}>
+                                                                {s.prompt}
+                                                            </div>
+                                                        {/if}
+                                                        <div class="text-text-muted text-xs mt-2 flex flex-wrap gap-3">
+                                                            <span title="Estimated tokens">
+                                                                ~{formatTokens(s.estimated_tokens)} tokens
+                                                            </span>
+                                                            <span title="Files to touch">
+                                                                {(s.files_to_touch ?? []).length} file{(s.files_to_touch ?? []).length === 1 ? '' : 's'}
+                                                            </span>
+                                                            {#if s.depends_on && s.depends_on.length > 0}
+                                                                <span title="Depends on" class="font-mono">
+                                                                    ← {s.depends_on.join(', ')}
+                                                                </span>
+                                                            {/if}
+                                                        </div>
+                                                        {#if editMode}
+                                                            <div class="mt-2 flex gap-2 justify-end">
+                                                                <button
+                                                                    type="button"
+                                                                    on:click={() => toggleEdit(s.id)}
+                                                                    class="px-2 py-0.5 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg-panel">
+                                                                    Edit
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    on:click={() => removeSubtask(s.id)}
+                                                                    title="Remove step"
+                                                                    class="px-2 py-0.5 text-xs rounded bg-status-error/80 hover:bg-status-error text-white">
+                                                                    ✕
+                                                                </button>
+                                                            </div>
+                                                        {/if}
+                                                    {/if}
+                                                </div>
+                                            {:else}
+                                                <div class="bg-bg border border-bg-border rounded p-2.5 text-text-muted text-xs italic">
+                                                    Missing subtask: {subId}
+                                                </div>
+                                            {/if}
+                                        {/each}
+                                    </div>
+                                </div>
+
+                                {#if gi < groups.length - 1}
+                                    <div class="flex justify-center text-text-muted text-lg leading-none my-0.5">
+                                        ↓
+                                    </div>
+                                {/if}
+                            </li>
+                        {/each}
+                    </ol>
+
+                    {#if editMode}
+                        <div class="mt-3 text-text-muted text-xs italic">
+                            Drag steps to reorder, or use the ↑/↓ buttons.
+                        </div>
+                    {/if}
+                {/if}
+            </section>
+
+            <!-- ───── Totals ───── -->
+            <section class="bg-bg-elevated border border-bg-border rounded px-3 py-2">
+                <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
+                    <div>
+                        <span class="text-text-muted text-xs mr-1">Estimated cost:</span>
+                        <span class="text-text font-semibold tabular-nums">{formatCost(estTotalCost)}</span>
+                    </div>
+                    <div>
+                        <span class="text-text-muted text-xs mr-1">Estimated time:</span>
+                        <span class="text-text font-semibold tabular-nums">~{formatDuration(estTotalMs)}</span>
+                    </div>
+                    <div>
+                        <span class="text-text-muted text-xs mr-1">Total tokens:</span>
+                        <span class="text-text font-semibold tabular-nums">~{formatTokens(estTotalTokens)}</span>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-4 py-3 border-t border-bg-border flex items-center justify-between shrink-0">
+            <div class="text-xs">
+                {#if error}
+                    <span class="text-status-error">{error}</span>
+                {:else if editMode}
+                    <span class="text-text-muted">
+                        Editing — changes apply on Execute or Save.
+                    </span>
+                {:else}
+                    <span class="text-text-muted">
+                        Plan status: <span class="text-text font-medium">{working.status || 'draft'}</span>
+                    </span>
+                {/if}
+            </div>
+            <div class="flex gap-2">
+                <button
+                    type="button"
+                    on:click={onCancel}
+                    disabled={busy !== ''}
+                    class="px-3 py-1 text-sm rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg
+                           disabled:opacity-50 disabled:cursor-not-allowed">
+                    Cancel
+                </button>
+                {#if editMode}
+                    <button
+                        type="button"
+                        on:click={onApprove}
+                        disabled={busy !== ''}
+                        class="px-3 py-1 text-sm rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg
+                               disabled:opacity-50 disabled:cursor-not-allowed">
+                        {busy === 'approve' ? 'Saving…' : 'Save plan'}
+                    </button>
+                    <button
+                        type="button"
+                        on:click={() => (editMode = false)}
+                        class="px-3 py-1 text-sm rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
+                        Done editing
+                    </button>
+                {:else}
+                    <button
+                        type="button"
+                        on:click={() => (editMode = true)}
+                        class="px-3 py-1 text-sm rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
+                        Edit plan
+                    </button>
+                {/if}
+                <button
+                    type="button"
+                    on:click={onExecute}
+                    disabled={busy !== '' || working.subtasks.length === 0}
+                    class="px-3 py-1 text-sm rounded font-medium bg-blue-600 hover:bg-blue-500 text-white
+                           disabled:opacity-50 disabled:cursor-not-allowed">
+                    {busy === 'execute' ? 'Starting…' : 'Execute plan'}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

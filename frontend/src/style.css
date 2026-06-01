@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Light theme palette (default — used when <html> lacks the `dark` class). */
+:root {
+    --c-bg:           247 248 250;  /* #f7f8fa */
+    --c-bg-panel:    255 255 255;  /* #ffffff */
+    --c-bg-elevated: 238 240 245;  /* #eef0f5 */
+    --c-bg-border:   217 220 230;  /* #d9dce6 */
+    --c-text:         24  28  40;  /* #181c28 */
+    --c-text-muted:   90  95 110;  /* #5a5f6e */
+    --c-text-dim:    140 145 160;  /* #8c91a0 */
+}
+
+/* Dark theme palette. */
+html.dark {
+    --c-bg:            15  17  21;  /* #0f1115 */
+    --c-bg-panel:     22  25  34;  /* #161922 */
+    --c-bg-elevated:  28  32  48;  /* #1c2030 */
+    --c-bg-border:    38  43  58;  /* #262b3a */
+    --c-text:        230 231 235;  /* #e6e7eb */
+    --c-text-muted:  138 144 162;  /* #8a90a2 */
+    --c-text-dim:     90  95 114;  /* #5a5f72 */
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background-color: rgb(var(--c-bg));
+    color: rgb(var(--c-text));
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+        "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans",
+        "Helvetica Neue", sans-serif;
+    font-size: 26px;
+    -webkit-font-smoothing: antialiased;
+}
+
+#app {
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+}
+
+/* Scrollbar styling — uses CSS vars so it follows the active theme. */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: rgb(var(--c-bg-panel));
+}
+::-webkit-scrollbar-thumb {
+    background: rgb(var(--c-bg-border));
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--c-text-dim));
+}
+
+/* Blinking dot used for "waiting permission" status */
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+.dot-blink {
+    animation: blink 1.2s ease-in-out infinite;
+}

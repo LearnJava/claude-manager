@@ -15,19 +15,28 @@ Desktop app (Windows) to launch, monitor, and control parallel Claude Code CLI s
 ```
 claude-manager/
 ├── main.go                          # Wails bootstrap
-├── app.go                           # App struct, Wails lifecycle, exported methods
+├── app.go                           # App struct, Wails lifecycle, 29 exported methods
 ├── internal/
 │   ├── config/
-│   │   ├── types.go                 # AppConfig, GlobalSettings, ProjectConfig, SessionConfig, PermissionRule
+│   │   ├── types.go                 # AppConfig, GlobalSettings, OptimizationSettings,
+│   │   │                            #   ProjectConfig, SessionConfig, PermissionRule
 │   │   └── config.go                # Load/save TOML, defaults, validation
+│   ├── logger/
+│   │   └── logger.go                # Global slog logger (logger.L); Init() opens app.log
 │   ├── session/
-│   │   ├── manager.go               # SessionManager: Start/Stop/Resume/SendMessage/GetAll
-│   │   ├── session.go               # Session goroutine: bidirectional streaming, CLI args builder
-│   │   ├── parser.go                # Parse stream-json: assistant, tool_use, result, permission_request, rate_limit_event, init
+│   │   ├── manager.go               # SessionManager: Start/Stop/Resume/Override/SendMessage/GetAll
+│   │   │                            #   + ClearSessionState/GetSessionState (crash recovery)
+│   │   ├── session.go               # Session goroutine: bidirectional streaming, CLI args builder,
+│   │   │                            #   task source check (hasTasks), crash recovery (--resume),
+│   │   │                            #   rate-limit fallback restart, auth error (403) handling
+│   │   ├── state.go                 # StateStore: persist session_id to ~/.claude-manager/state/
+│   │   │                            #   for crash recovery; atomic write (tmp → rename)
+│   │   ├── parser.go                # Parse stream-json: assistant, tool_use, result,
+│   │   │                            #   permission_request, rate_limit_event, init
 │   │   ├── input.go                 # Write to stdin: user_message, permission_response
 │   │   └── ratelimit.go             # Rate limit detection, retry logic, timers
 │   ├── permission/
-│   │   ├── handler.go               # Handle permission_request: auto-approve rules -> UI queue -> respond via stdin
+│   │   ├── handler.go               # Handle permission_request: auto-approve rules -> UI queue -> stdin
 │   │   ├── rules.go                 # Match rules from TOML + runtime (glob patterns)
 │   │   └── queue.go                 # Global pending permissions queue
 │   ├── analysis/
@@ -35,35 +44,40 @@ claude-manager/
 │   │   ├── plan.go                  # TaskPlan: subtasks, execution order, dependencies, context passing
 │   │   └── schema.go                # JSON Schema for analyst structured output
 │   ├── optimization/
+│   │   ├── routing.go               # ModelRouter: auto model routing by task complexity
 │   │   ├── context.go               # Context utilization monitor, auto-restart at threshold
 │   │   ├── cache.go                 # Cache efficiency tracking, warming delay between session starts
-│   │   ├── loop.go                  # Loop detection (repeated tool calls)
-│   │   ├── routing.go               # Auto model routing by task complexity
-│   │   └── reporter.go              # Optimization summary report
+│   │   └── loop.go                  # Loop detection (repeated tool calls, ring buffer)
 │   ├── store/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics
 │   │   └── migrations.go            # CREATE TABLE statements, indexes
 │   └── hooks/
 │       └── hooks.go                 # Pre/post task hooks (shell commands)
 ├── frontend/src/
-│   ├── App.svelte                   # Root layout: sidebar + main panel + status bar
+│   ├── App.svelte                   # Root layout: sidebar + main panel + status bar + modals
 │   ├── stores/
 │   │   ├── sessions.ts              # Session state, Wails event subscriptions
-│   │   └── projects.ts              # Projects state
+│   │   ├── projects.ts              # Projects state
+│   │   ├── theme.ts                 # Dark/light theme toggle, localStorage persistence
+│   │   └── logSearch.ts             # Log filter store, Ctrl+F focus
 │   ├── components/
-│   │   ├── Sidebar.svelte           # Project tree, session status indicators, start/stop
-│   │   ├── LogStream.svelte         # Real-time log with color coding, autoscroll
-│   │   ├── SessionCard.svelte       # Session header: metrics, context bar, cost
+│   │   ├── Sidebar.svelte           # Project tree, session indicators, start/stop/delete,
+│   │   │                            #   auto-routing trigger, resizable via drag handle
+│   │   ├── ModelPicker.svelte       # Pre-start model selector: recommendation + override dropdowns
+│   │   ├── LogStream.svelte         # Real-time log with color coding, autoscroll, search filter
+│   │   ├── SessionView.svelte       # Session header: metrics, context bar, cost, export
+│   │   ├── SessionCard.svelte       # Session status badge, model, effort, task count, branch
 │   │   ├── SessionInput.svelte      # Message input for bidirectional streaming
-│   │   ├── PermissionBanner.svelte  # Permission request overlay on log
+│   │   ├── PermissionBanner.svelte  # Permission request inline overlay on log
 │   │   ├── PermissionQueue.svelte   # Global permission queue (all sessions)
-│   │   ├── PlanReview.svelte        # Pre-flight analysis plan view/edit
+│   │   ├── PlanReview.svelte        # Pre-flight analysis plan view/edit/approve
 │   │   ├── StatusBar.svelte         # Bottom bar: active count, waiting, cost, rate limit
-│   │   ├── History.svelte           # Past runs table with expandable logs
-│   │   ├── Settings.svelte          # Global/project/session settings modals
+│   │   ├── History.svelte           # Past runs table with filter, sort, CSV export
+│   │   ├── Settings.svelte          # Global/project/session settings, model routing toggle
+│   │   ├── CostDashboard.svelte     # Cost by period/project, cache efficiency, rate limit
 │   │   └── RateLimitBanner.svelte   # Rate limit countdown banner
 │   └── lib/
-│       └── formatters.ts            # Log formatting, time, cost
+│       └── formatters.ts            # Log formatting, time, cost, tokens, percent
 ├── config.example.toml
 └── PLAN.md                          # Full specification (~2800 lines)
 ```
@@ -103,12 +117,71 @@ When `permission_mode != "bypassPermissions"`, Claude CLI sends permission reque
 4. Wait for user response via UI → write response to stdin
 5. Never ignore — session hangs forever if no response
 
+### Auto Model Routing
+When `optimization.auto_model_routing = true`, clicking ▶ on a session triggers:
+1. Pre-flight analysis (haiku, one-shot) on the session's configured prompt
+2. `ModelRouter.Route()` maps `estimated_complexity` → model/effort recommendation
+3. Frontend shows `ModelPicker` with the recommendation
+4. User can **accept** or **override** model/effort before the session starts
+5. `StartSessionWithOverride(project, name, model, effort)` launches with chosen values
+
+Routing table (`internal/optimization/routing.go`):
+
+| Complexity | Model | Effort |
+|---|---|---|
+| trivial | haiku | low |
+| standard | sonnet | medium |
+| complex | sonnet | high |
+| architectural | opus | high |
+
+If `auto_model_routing = false` (default), clicking ▶ starts the session immediately with the model from config.
+
+### Task Source Check
+When `stop_when_no_tasks = true` and `task_source` is set, `Run()` checks the file before each iteration using `hasTasks()`:
+- Returns `true` if the file contains `"In progress:"` (a task is started)
+- Returns `true` if the file contains both `"Next:"` and `"- ["` (queued tasks)
+- Returns `false` (and stops the loop) otherwise or if the file is missing
+The `task_source` path is resolved relative to `ProjectPath` when not absolute.
+
+### Crash Recovery
+Mirrors `orchestrator.py` session state files (`.session-PN.json`).
+
+**How it works:**
+1. Before each `runOnce()`, `StateStore.Save()` writes `~/.claude-manager/state/<project>-<session>.json` with `{started_at}` (atomic: tmp → rename).
+2. When the `system/init` event arrives, `StateStore.UpdateSessionID()` patches the file with `session_id`.
+3. On successful task completion, `StateStore.Clear()` deletes the file.
+4. On app restart, `Run()` loads the state file. If `session_id` is present, it sets `resumeSessionID` and `buildCLIArgs()` uses `--resume <id>` instead of `--session-id <uuid>`.
+5. The recovery prompt is `CrashRecoveryPrompt` from config (or a built-in English default).
+6. `ClearSessionState(project, name)` / the UI button is the equivalent of `--new`: deletes the state file so the next start is fresh.
+
+**Config:** `crash_recovery = true` in `[settings]` (default: true). Per-session: `crash_recovery_prompt`.
+
+### Rate-Limit Fallback Model
+When `fallback_model_on_rate_limit = true` and `fallback_model` is set:
+- On the first rate-limit hit, `Run()` sets `usingFallback = true` and `activeModel = FallbackModel`.
+- `buildCLIArgs()` passes `--model <activeModel>` and **omits** `--fallback-model` (to avoid circular fallback).
+- The session restarts immediately — no 5-minute wait.
+- If the fallback model is also rate-limited, the standard `waitRateLimit` pause applies.
+
+**Config:** `fallback_model_on_rate_limit = true` per session (default: false). Set `fallback_model = "haiku"`.
+
+### Auth Error Handling (403)
+`drainStderr()` detects lines containing `"403"` + `"forbidden"` / `"authenticate"` / `"unauthorized"`.
+On detection, `authErrorHit` atomic is set → `runOnce()` returns `errAuthError` → `Run()` pauses 60 seconds and retries.
+The crash-recovery state file is cleared on auth errors (not resumable).
+
 ### Token Optimization
-- Context grows with every turn (all messages re-sent). Monitor `usage` in each `assistant` event
-- Auto-restart session when context > 75% of `contextWindow` (from init event)
-- Use `--exclude-dynamic-system-prompt-sections` to share system prompt cache across sessions
-- Stagger session starts by 3s for cache warming (first session pays cache creation, others get cache reads)
-- Loop detection: if same tool+input appears 3+ times in last 20 calls, alert/hint
+- Context grows with every turn (all messages re-sent). Monitor `usage` in each `assistant` event.
+- Auto-restart session when context > 75% of `contextWindow` (from init event).
+- Use `--exclude-dynamic-system-prompt-sections` to share system prompt cache across sessions.
+- Stagger session starts by `session_start_delay` seconds for cache warming.
+- Loop detection: if same tool+input appears 3+ times in last 20 calls, alert/hint/restart.
+
+### Sidebar Resizing
+The sidebar width is controlled from `App.svelte` via a draggable 4px divider. Width is stored in a reactive variable (150–500px). The `<Sidebar>` component uses `w-full` and fills its parent container.
+
+### Project Deletion (Two-Click Confirm)
+`window.confirm()` is disabled in Wails WebView2 and always returns `false`. Project deletion uses a two-click pattern: first click arms the `✕` button (turns it red `?`, auto-cancels after 3s), second click executes `GetConfig → filter → UpdateConfig → initProjects()`.
 
 ### Session Status Flow
 ```
@@ -120,6 +193,44 @@ Idle → Starting → Working ⇄ WaitingPermission
                     ↓
                  Error
 ```
+
+## Wails Bindings (app.go)
+
+All exported methods become async JS functions via auto-generated bindings in `frontend/wailsjs/`.
+
+| Method | Description |
+|---|---|
+| `GetConfig()` | Full AppConfig including Optimization settings |
+| `UpdateConfig(cfg)` | Persist config to TOML, reload session manager |
+| `GetProjects()` | Project list shortcut |
+| `GetAutoModelRouting()` | Whether auto_model_routing is enabled |
+| `GetModelRecommendation(project, name)` | Run preflight analysis, return ModelRecommendation or null |
+| `StartSession(project, name)` | Launch session with config model/effort |
+| `StartSessionWithModel(project, name, model, effort)` | Launch with model/effort override |
+| `StopSession(id, soft)` | Stop (soft=true finishes current task first) |
+| `RestartSession(id)` | Hard stop + restart |
+| `ResumeSession(id)` | Resume from saved CLI session ID |
+| `StartProject(project)` | Start all sessions in a project |
+| `StopProject(project)` | Stop all sessions in a project |
+| `StopAll()` | Stop every session |
+| `SendMessage(id, message)` | Write user_message to stdin |
+| `RespondPermission(id, requestID, decision)` | Write permission response to stdin |
+| `GetPendingPermissions()` | All sessions with pending permission requests |
+| `GetAllSessions()` | Snapshot of all session states |
+| `GetSessionLog(id, offset, limit)` | Paginated log entries |
+| `GetSessionMetrics(id)` | Token/cost metrics for one session |
+| `GetHistory(project, limit)` | Past session runs from SQLite |
+| `GetDailyCost(date)` | Cost aggregate for a date |
+| `GetProjectCost(project, days)` | Cost aggregate for a project over N days |
+| `GetRateLimitStatus()` | Current rate limit info |
+| `ExportLog(id, entries, format)` | Save log as MD/JSON/TXT via native dialog |
+| `CleanOldLogs(days)` | Delete logs older than N days from SQLite |
+| `ClearSessionState(project, name)` | Delete crash-recovery state file (equivalent to --new) |
+| `GetSessionState(project, name)` | Return persisted state (session_id + started_at) or nil |
+| `PickDirectory(title)` | Native folder picker dialog |
+| `ShowMainWindow()` | Restore window from tray |
+| `MinimizeToTray()` | Hide window to system tray |
+| `Notify(title, body)` | Windows toast notification |
 
 ## Build & Run
 
@@ -134,6 +245,8 @@ wails build        # Production: build/bin/claude-manager.exe (~15-20 MB)
 github.com/wailsapp/wails/v2
 github.com/BurntSushi/toml
 github.com/mattn/go-sqlite3
+github.com/google/uuid
+git.sr.ht/~jackmordaunt/go-toast/v2
 ```
 
 No DI frameworks, no ORMs. Standard library for everything else.
@@ -146,6 +259,57 @@ No DI frameworks, no ORMs. Standard library for everything else.
 - `task_plans` — pre-flight analysis plans
 - `plan_subtasks` — subtasks within plans
 
+## File Logging
+
+All application events are written to **`~/.claude-manager/logs/app.log`** in append mode (never truncated between runs). The logger is initialised in `app.go:startup()` before anything else, so every event from startup to shutdown is captured.
+
+### Implementation
+
+- Package: `internal/logger/logger.go`
+- Global variable: `logger.L` (`*slog.Logger`) — safe to use before `Init()` (defaults to stderr)
+- Format: `slog.TextHandler` — human-readable key=value pairs
+- Destination: file **and** stderr simultaneously (stderr is useful during `wails dev`)
+- Level: `DEBUG` and above
+
+### What is logged
+
+| Source | Event | Level | Key fields |
+|---|---|---|---|
+| `app.go` | Application startup | INFO | `cfg=`, `projects=`, `claude_path=`, `auto_model_routing=` |
+| `app.go` | Store open | INFO | `path=` |
+| `app.go` | Shutdown | INFO | — |
+| `manager.go` | Session start requested | INFO | `id=`, `path=`, `model=`, `effort=`, `permission_mode=`, `auto_restart=`, `prompt_len=` |
+| `manager.go` | Session stop requested | INFO | `id=`, `soft=` |
+| `manager.go` | Init event received | INFO | `id=`, `model=`, `cli_session_id=`, `tools_count=` |
+| `manager.go` | Result event | INFO | `id=`, `cost_usd=`, `num_turns=`, `duration_ms=` |
+| `manager.go` | Permission request | INFO | `id=`, `tool=`, `description=`, `risk=` |
+| `manager.go` | Rate limit hit | WARN | `id=`, `utilization=`, `resets_at=` |
+| `manager.go` | Session error event | ERROR | `id=`, `error=` |
+| `session.go` | Claude CLI command | DEBUG | `id=`, `claude=`, `cwd=`, full `args=` |
+| `session.go` | Process spawned | INFO | `id=`, `pid=` |
+| `session.go` | Initial prompt sent | DEBUG | `id=`, `prompt_preview=` (first 200 chars) |
+| `session.go` | Status change | INFO | `id=`, `from=`, `to=` |
+| `session.go` | Stderr line from Claude | WARN | `id=`, `line=` |
+| `session.go` | Process exit (ok) | INFO | `id=`, `ok=true` |
+| `session.go` | Process exit (error) | ERROR | `id=`, `error=` |
+| `session.go` | Run-loop error + retry | ERROR | `id=`, `error=`, `retry_delay_sec=` |
+| `session.go` | Task completed | INFO | `id=`, `tasks_done=` |
+
+### Example output
+
+```
+time=2025-05-24T10:23:44Z level=INFO  msg=startup cfg=C:\Users\user\.claude-manager\config.toml
+time=2025-05-24T10:23:44Z level=INFO  msg=config.loaded projects=2 claude_path=claude auto_model_routing=false
+time=2025-05-24T10:23:45Z level=INFO  msg=manager.start_session id=lumen-browser/S2 model=sonnet effort=high permission_mode=acceptEdits
+time=2025-05-24T10:23:45Z level=DEBUG msg=session.launch id=lumen-browser/S2 claude=claude args="-p --verbose --input-format stream-json --output-format stream-json ..."
+time=2025-05-24T10:23:45Z level=INFO  msg=session.spawned id=lumen-browser/S2 pid=19432
+time=2025-05-24T10:23:45Z level=INFO  msg=session.status id=lumen-browser/S2 from=starting to=working
+time=2025-05-24T10:23:46Z level=INFO  msg=session.init id=lumen-browser/S2 model=claude-sonnet-4-6 cli_session_id=abc-123
+time=2025-05-24T10:23:50Z level=WARN  msg=session.stderr id=lumen-browser/S2 line="Error: some CLI error"
+time=2025-05-24T10:23:50Z level=ERROR msg=session.process_exit id=lumen-browser/S2 error="exit status 1"
+time=2025-05-24T10:23:50Z level=ERROR msg=session.error id=lumen-browser/S2 error="claude exited: exit status 1"
+```
+
 ## Conventions
 
 - Go: standard project layout, `internal/` for private packages
@@ -154,6 +318,7 @@ No DI frameworks, no ORMs. Standard library for everything else.
 - Frontend: Svelte stores subscribe to Wails events via `runtime.EventsOn()`. Call Go via auto-generated bindings
 - Config: TOML with sensible defaults. Zero values mean "disabled" or "unlimited" (e.g., `max_budget_usd = 0` means no limit)
 - IDs: sessions identified as `"{project}/{session}"` (e.g., `"lumen/P1"`)
+- No `window.confirm()` — disabled in Wails WebView2. Use two-click or custom modal patterns instead
 
 ## Reference
 
