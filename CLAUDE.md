@@ -448,3 +448,5 @@ time=2025-05-24T10:23:50Z level=ERROR msg=session.error id=lumen-browser/S2 erro
 Full specification: [PLAN.md](./PLAN.md) — sections 14-21 cover CLI flags, bidirectional streaming, permissions, pre-flight analysis, token metrics, optimization, and the test/control harness.
 
 Task breakdowns: [TASKS.md](./TASKS.md) (app, TASK-01..15) and [HARNESS-TASKS.md](./HARNESS-TASKS.md) (harness, H1..H6).
+
+GUI test descriptions (Playwright): [GUI-TESTS.md](./GUI-TESTS.md) — ~100 test cases across all Svelte components, with status (✓ exists / ○ missing).
