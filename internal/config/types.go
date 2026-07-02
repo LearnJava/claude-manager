@@ -6,6 +6,27 @@ type AppConfig struct {
 	Settings     GlobalSettings       `toml:"settings"`
 	Optimization OptimizationSettings `toml:"optimization"`
 	Projects     []ProjectConfig      `toml:"project"`
+	Workers      []WorkerConfig       `toml:"worker"`
+}
+
+// WorkerConfig describes an external OpenAI-compatible model used for mixed
+// programming (MIXED-TASKS.md): the manager sends it a self-contained brief,
+// receives FIND/REPLACE patches, applies them in a worktree and runs gates.
+// Quirk fields encode per-model behaviour learned from the lumen bench
+// (2026-07-02); see WorkerPresets for the two validated models.
+type WorkerConfig struct {
+	Name    string `toml:"name"`     // unique worker id, e.g. "step37"
+	BaseURL string `toml:"base_url"` // OpenAI-compatible gateway, e.g. https://api.kilo.ai/api/gateway
+	Model   string `toml:"model"`    // model id, e.g. stepfun/step-3.7-flash:free
+	KeyEnv  string `toml:"key_env"`  // env var holding the API key (never stored in config)
+	Role    string `toml:"role"`     // hands | quality | eyes
+
+	// Quirks. Zero values are filled in by applyDefaults.
+	ReasoningEffort   string `toml:"reasoning_effort"`    // none | low | medium | high (default low)
+	MaxOutputTokens   int    `toml:"max_output_tokens"`   // completion cap per call (default 16000)
+	ContinuationCap   int    `toml:"continuation_cap"`    // max finish_reason=length continuations (default 3)
+	ASCIIAnchorsOnly  bool   `toml:"ascii_anchors_only"`  // briefs must use pure-ASCII FIND anchors
+	RequestTimeoutSec int    `toml:"request_timeout_sec"` // per-request timeout (default 180)
 }
 
 // OptimizationSettings mirrors the [optimization] TOML block from PLAN.md
@@ -77,6 +98,19 @@ type ProjectConfig struct {
 	Name     string          `toml:"name"`
 	Path     string          `toml:"path"`
 	Sessions []SessionConfig `toml:"session"`
+
+	// Mixed programming (MIXED-TASKS.md). Explicit privacy opt-in: briefs and
+	// verbatim code excerpts are sent to external free endpoints that log
+	// requests. Off by default; enabling requires non-empty Gates.
+	MixedProgramming bool `toml:"mixed_programming"`
+	// Gates are blocking check commands run in the task worktree after worker
+	// patches are applied (e.g. "go build ./...", "go test ./..."). A non-zero
+	// exit rejects the round; the output is returned to the model as feedback.
+	// Model-written tests are never trusted as the ground truth — gates are.
+	Gates []string `toml:"gates"`
+	// MixedMaxRounds caps feedback rounds per subtask before the task is marked
+	// needs-human (default 3).
+	MixedMaxRounds int `toml:"mixed_max_rounds"`
 }
 
 type SessionConfig struct {

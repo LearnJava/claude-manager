@@ -248,6 +248,15 @@ func TestHasTasks(t *testing.T) {
 		{"next_without_checkbox", "## Next:\nsome text without checkboxes\n", false},
 		{"empty", "", false},
 		{"unrelated", "# Done\n- [x] old task\n", false},
+		// New canonical format: bare pointer lines `<source>:NN`.
+		{"pointer_single", "ROADMAP.md:92\n", true},
+		{"pointer_list", "BUGS.md:283\nBUGS.md:284\nCSS-SPECS.md:221\n", true},
+		{"pointer_code_anchor", "crates/engine/layout/src/ruby.rs:76\n", true},
+		{"pointer_with_prose_header", "# STATUS-P1\n> приоритет сверху вниз\nROADMAP.md:185\n", true},
+		{"pointer_markers_ignored", "# heading\n- ROADMAP.md:92\n> ROADMAP.md:92\n_ROADMAP.md:92\n", false},
+		{"pointer_not_bare", "see ROADMAP.md:92 for details\n", false},
+		{"pointer_no_line_number", "ROADMAP.md\n", false},
+		{"pointers_all_done_empty", "# STATUS-MP\n_(пусто)_\n", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -478,15 +479,35 @@ func (s *Session) Run(ctx context.Context) {
 	}
 }
 
+// taskPointerPattern matches a bare pointer line `<source>:NN` — the canonical
+// lumen task format (one open task per line, e.g. "ROADMAP.md:92" or
+// "crates/x/src/lib.rs:76").
+var taskPointerPattern = regexp.MustCompile(`^\S+:\d+$`)
+
 // hasTasks reports whether a task source file contains pending work.
-// It mirrors orchestrator.py has_tasks(): returns true when the file contains
-// "In progress:" (a task already started) or both "Next:" and "- [" (queued tasks).
+// It mirrors orchestrator.py has_tasks() and supports both formats:
+//
+//  1. New (canonical): bare pointer lines `<source>:NN`, one per open task.
+//     Headings, quotes and list markers are ignored; any bare pointer line
+//     means work exists. Completed tasks are removed from the file.
+//  2. Old: the file contains "In progress:" (a task already started) or both
+//     "Next:" and "- [" (queued tasks).
 func hasTasks(path string) bool {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false
 	}
 	content := string(data)
+	for _, line := range strings.Split(content, "\n") {
+		s := strings.TrimSpace(line)
+		if s == "" || strings.HasPrefix(s, "#") || strings.HasPrefix(s, ">") ||
+			strings.HasPrefix(s, "-") || strings.HasPrefix(s, "_") || strings.HasPrefix(s, "*") {
+			continue
+		}
+		if taskPointerPattern.MatchString(s) {
+			return true
+		}
+	}
 	if strings.Contains(content, "In progress:") {
 		return true
 	}

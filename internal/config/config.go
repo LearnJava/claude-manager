@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -146,9 +147,16 @@ func applyDefaults(cfg *AppConfig) {
 	applyOptimizationDefaults(&cfg.Optimization)
 
 	for i := range cfg.Projects {
+		if cfg.Projects[i].MixedMaxRounds == 0 {
+			cfg.Projects[i].MixedMaxRounds = 3
+		}
 		for j := range cfg.Projects[i].Sessions {
 			applySessionDefaults(&cfg.Projects[i].Sessions[j])
 		}
+	}
+
+	for i := range cfg.Workers {
+		applyWorkerDefaults(&cfg.Workers[i])
 	}
 }
 
@@ -197,6 +205,55 @@ func applySessionDefaults(s *SessionConfig) {
 	}
 }
 
+func applyWorkerDefaults(w *WorkerConfig) {
+	if w.Role == "" {
+		w.Role = "hands"
+	}
+	if w.ReasoningEffort == "" {
+		w.ReasoningEffort = "low"
+	}
+	if w.MaxOutputTokens == 0 {
+		w.MaxOutputTokens = 16000
+	}
+	if w.ContinuationCap == 0 {
+		w.ContinuationCap = 3
+	}
+	if w.RequestTimeoutSec == 0 {
+		w.RequestTimeoutSec = 180
+	}
+}
+
+// kiloGatewayURL is the OpenAI-compatible gateway both preset workers use.
+const kiloGatewayURL = "https://api.kilo.ai/api/gateway"
+
+// WorkerPresets returns ready-made configs for the two models validated by the
+// lumen bench (2026-07-02, ranking: step37 >= ultra >> the rest): Step 3.7
+// Flash as "hands" (fast, precise on well-specified briefs) and Nemotron 3
+// Ultra as "quality" (honest feedback cycle; needs pure-ASCII FIND anchors).
+func WorkerPresets() []WorkerConfig {
+	presets := []WorkerConfig{
+		{
+			Name:    "step37",
+			BaseURL: kiloGatewayURL,
+			Model:   "stepfun/step-3.7-flash:free",
+			KeyEnv:  "KILO_API_KEY",
+			Role:    "hands",
+		},
+		{
+			Name:             "nemotron-ultra",
+			BaseURL:          kiloGatewayURL,
+			Model:            "nvidia/nemotron-3-ultra-550b-a55b:free",
+			KeyEnv:           "KILO_API_KEY",
+			Role:             "quality",
+			ASCIIAnchorsOnly: true,
+		},
+	}
+	for i := range presets {
+		applyWorkerDefaults(&presets[i])
+	}
+	return presets
+}
+
 func validate(cfg *AppConfig) error {
 	for _, p := range cfg.Projects {
 		if p.Name == "" {
@@ -215,6 +272,60 @@ func validate(cfg *AppConfig) error {
 			}
 			names[s.Name] = true
 		}
+		if p.MixedProgramming {
+			// Gates are the ground truth of mixed programming — a project must
+			// not accept worker patches unchecked (model tests are untrusted).
+			if len(p.Gates) == 0 {
+				return fmt.Errorf("config: project %q enables mixed_programming but defines no gates", p.Name)
+			}
+			if len(cfg.Workers) == 0 {
+				return fmt.Errorf("config: project %q enables mixed_programming but no [[worker]] is configured", p.Name)
+			}
+		}
+	}
+
+	workerNames := map[string]bool{}
+	for _, w := range cfg.Workers {
+		if err := validateWorker(w); err != nil {
+			return err
+		}
+		if workerNames[w.Name] {
+			return fmt.Errorf("config: duplicate worker name %q", w.Name)
+		}
+		workerNames[w.Name] = true
+	}
+	return nil
+}
+
+var workerRoles = map[string]bool{"hands": true, "quality": true, "eyes": true}
+
+var workerEfforts = map[string]bool{"none": true, "low": true, "medium": true, "high": true}
+
+func validateWorker(w WorkerConfig) error {
+	if w.Name == "" {
+		return fmt.Errorf("config: worker missing name")
+	}
+	if w.BaseURL == "" {
+		return fmt.Errorf("config: worker %q missing base_url", w.Name)
+	}
+	u, err := url.Parse(w.BaseURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("config: worker %q has invalid base_url %q", w.Name, w.BaseURL)
+	}
+	if w.Model == "" {
+		return fmt.Errorf("config: worker %q missing model", w.Name)
+	}
+	if w.KeyEnv == "" {
+		return fmt.Errorf("config: worker %q missing key_env (API keys are read from the environment, never from config)", w.Name)
+	}
+	if !workerRoles[w.Role] {
+		return fmt.Errorf("config: worker %q has invalid role %q (want hands|quality|eyes)", w.Name, w.Role)
+	}
+	if !workerEfforts[w.ReasoningEffort] {
+		return fmt.Errorf("config: worker %q has invalid reasoning_effort %q (want none|low|medium|high)", w.Name, w.ReasoningEffort)
+	}
+	if w.ContinuationCap < 0 || w.MaxOutputTokens < 0 || w.RequestTimeoutSec < 0 {
+		return fmt.Errorf("config: worker %q has negative limits", w.Name)
 	}
 	return nil
 }

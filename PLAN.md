@@ -196,14 +196,17 @@ path = 'D:\RustProjects\lumen-browser'
   [[project.session]]
   name = "P1"
   prompt = """
-  Ты разработчик P1. Прочитай STATUS-P1.md.
-  Если есть 'In progress' — продолжи. Если нет — возьми первую из 'Next'.
-  Когда задача завершена — вызови /lumen-task-finish.
+  Ты разработчик P1. Прочитай STATUS-P1.md — это голые строки-указатели
+  `<источник>:NN` (одна открытая задача на строку, приоритет сверху вниз).
+  Продолжи задачу, помеченную «в работе» в мастер-списке, иначе возьми
+  верхний указатель. Когда задача завершена — вызови /lumen-task-finish
+  и удали её строку-указатель.
   """
   auto_restart = true                     # Перезапуск после завершения задачи
   max_tasks = 0                           # 0 = без лимита
   stop_when_no_tasks = true               # Остановка если нет задач
-  task_source = "STATUS-P1.md"            # Файл для проверки наличия задач (опц.)
+  task_source = "STATUS-P1.md"            # Файл-очередь: указатели `<источник>:NN`
+                                          #   (канон) или legacy In progress/Next
 
   # Модель и производительность
   model = "sonnet"                        # Модель: opus | sonnet | haiku | полное имя
@@ -520,6 +523,11 @@ goroutine Session.Run(ctx):
         if softStop → return
         if maxTasks > 0 && tasksDone >= maxTasks → return
         if taskSource != "" && !hasTasks(taskSource) → return
+        // hasTasks — два формата (зеркалит orchestrator.py has_tasks()):
+        //   1) канон: голые строки-указатели `<источник>:NN` (^\S+:\d+$ после
+        //      trim; строки с #, >, -, _, * игнорируются) — любая = задача есть;
+        //      завершение задачи = удаление строки, пустой файл = стоп;
+        //   2) legacy: "In progress:" либо "Next:" + "- [".
 
         // Собрать аргументы CLI (см. секцию 14 — полный справочник флагов)
         args = buildCLIArgs(config)

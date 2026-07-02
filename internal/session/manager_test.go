@@ -34,7 +34,7 @@ func newTestManager(t *testing.T) *SessionManager {
 			},
 		},
 	}
-	return NewSessionManager(cfg, filepath.Join(dir, "config.toml"), nil)
+	return NewSessionManager(cfg, filepath.Join(dir, "config.toml"), nil, nil)
 }
 
 func newTestManagerWithStore(t *testing.T) (*SessionManager, *store.Store) {

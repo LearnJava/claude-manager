@@ -32,23 +32,58 @@ daily_budget_alert = 0                 # notify if daily spend exceeds this USD
 weekly_budget_alert = 0                # notify if weekly spend exceeds this USD
 rate_limit_alert_threshold = 0.80      # notify when rate-limit utilisation > 80%
 
+# ─── Mixed-programming workers (MIXED-TASKS.md) ──────────────────────────────
+# External OpenAI-compatible models that write code as FIND/REPLACE patches.
+# The manager applies patches in a worktree, runs the project gates and returns
+# failures as feedback (max mixed_max_rounds). API keys are read from the env
+# var named in key_env — never stored in this file. Free endpoints log requests:
+# enable mixed_programming per project only for code that may leave the machine.
+# The two workers below match config.WorkerPresets() (lumen bench 2026-07-02).
+
+[[worker]]
+name = "step37"                          # role "hands": fast, precise on strict briefs
+base_url = "https://api.kilo.ai/api/gateway"
+model = "stepfun/step-3.7-flash:free"
+key_env = "KILO_API_KEY"
+role = "hands"
+reasoning_effort = "low"                 # default; anything higher burns tokens on thinking
+max_output_tokens = 16000                # gateway truncates past this; manager auto-continues
+continuation_cap = 3                     # max finish_reason=length continuations
+request_timeout_sec = 180
+
+[[worker]]
+name = "nemotron-ultra"                  # role "quality": honest feedback cycle
+base_url = "https://api.kilo.ai/api/gateway"
+model = "nvidia/nemotron-3-ultra-550b-a55b:free"
+key_env = "KILO_API_KEY"
+role = "quality"
+ascii_anchors_only = true                # Cyrillic in FIND anchors is unsafe for nemotron
+
 # ─── Project 1 ────────────────────────────────────────────────────────────────
 
 [[project]]
 name = "lumen-browser"
 path = 'D:\RustProjects\lumen-browser'
 
+# Mixed programming: explicit privacy opt-in per project. Requires gates —
+# blocking check commands run after worker patches (model tests are untrusted).
+# mixed_programming = true
+# gates = ["cargo check", "cargo clippy --all-targets -- -D warnings", "cargo test"]
+# mixed_max_rounds = 3                   # feedback rounds before needs-human
+
   [[project.session]]
   name = "P1"
   prompt = """
-  You are developer P1. Read STATUS-P1.md.
-  If there is an 'In progress' task, continue it. Otherwise take the first 'Next' task.
-  When the task is done, call /lumen-task-finish.
+  You are developer P1. Read STATUS-P1.md — it contains bare pointer lines
+  `<source>:NN` (one open task per line, priority top-down). Continue the task
+  marked in progress in the master list, otherwise take the topmost pointer.
+  When the task is done, call /lumen-task-finish and remove its pointer line.
   """
   auto_restart = true
   max_tasks = 0                        # 0 = no limit
   stop_when_no_tasks = true
-  task_source = "STATUS-P1.md"
+  task_source = "STATUS-P1.md"         # pointer lines `<source>:NN` (canonical)
+                                       #   or legacy In progress/Next sections
 
   # Model and performance
   model = "sonnet"                     # opus | sonnet | haiku | full model id

@@ -19,7 +19,8 @@ claude-manager/
 ├── internal/
 │   ├── config/
 │   │   ├── types.go                 # AppConfig, GlobalSettings, OptimizationSettings,
-│   │   │                            #   ProjectConfig, SessionConfig, PermissionRule
+│   │   │                            #   ProjectConfig, SessionConfig, PermissionRule,
+│   │   │                            #   WorkerConfig (mixed programming, MIXED-TASKS.md)
 │   │   └── config.go                # Load/save TOML, defaults, validation
 │   ├── logger/
 │   │   └── logger.go                # Global slog logger (logger.L); Init() opens app.log
@@ -149,10 +150,12 @@ Routing table (`internal/optimization/routing.go`):
 If `auto_model_routing = false` (default), clicking ▶ starts the session immediately with the model from config.
 
 ### Task Source Check
-When `stop_when_no_tasks = true` and `task_source` is set, `Run()` checks the file before each iteration using `hasTasks()`:
-- Returns `true` if the file contains `"In progress:"` (a task is started)
-- Returns `true` if the file contains both `"Next:"` and `"- ["` (queued tasks)
-- Returns `false` (and stops the loop) otherwise or if the file is missing
+When `stop_when_no_tasks = true` and `task_source` is set, `Run()` checks the file before each iteration using `hasTasks()`. Two formats are supported (mirrors `orchestrator.py has_tasks()`):
+
+1. **Pointer format (canonical, primary).** The file contains bare pointer lines `<source>:NN` — one open task per line, priority top-down (e.g. `ROADMAP.md:92`, `MIXED-TASKS.md:102`, `crates/x/src/lib.rs:76`). Any bare pointer line (`^\S+:\d+$` after trim; headings `#`, quotes `>`, list markers `-`/`_`/`*` are ignored) → `true`. Completing a task = deleting its line; an empty file stops the loop. No In progress/Next sections, no checkboxes — "in progress" is tracked in the master list the pointers point to.
+2. **Legacy format.** Returns `true` if the file contains `"In progress:"` (a task is started) or both `"Next:"` and `"- ["` (queued tasks).
+
+Returns `false` (and stops the loop) otherwise or if the file is missing.
 The `task_source` path is resolved relative to `ProjectPath` when not absolute.
 
 ### Crash Recovery
@@ -447,6 +450,6 @@ time=2025-05-24T10:23:50Z level=ERROR msg=session.error id=lumen-browser/S2 erro
 
 Full specification: [PLAN.md](./PLAN.md) — sections 14-21 cover CLI flags, bidirectional streaming, permissions, pre-flight analysis, token metrics, optimization, and the test/control harness.
 
-Task breakdowns: [TASKS.md](./TASKS.md) (app, TASK-01..15) and [HARNESS-TASKS.md](./HARNESS-TASKS.md) (harness, H1..H6).
+Task breakdowns: [TASKS.md](./TASKS.md) (app, TASK-01..15), [HARNESS-TASKS.md](./HARNESS-TASKS.md) (harness, H1..H6), and [MIXED-TASKS.md](./MIXED-TASKS.md) (mixed programming, MP-01..08 — включает очередь задач для сессий и стартовый промпт).
 
 GUI test descriptions (Playwright): [GUI-TESTS.md](./GUI-TESTS.md) — ~100 test cases across all Svelte components, with status (✓ exists / ○ missing).
