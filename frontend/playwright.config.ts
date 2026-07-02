@@ -6,6 +6,9 @@ export default defineConfig({
   testDir: './tests',
   timeout: 30_000,
   retries: process.env.CI ? 2 : 0,
+  // Sequential execution prevents shared control-plane events from leaking
+  // between tests (e.g. a session:permission overlay blocking sidebar clicks).
+  workers: 1,
 
   // Paths are relative to this config file.
   globalSetup: './tests/global-setup.ts',

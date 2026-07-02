@@ -131,12 +131,62 @@ export const errorSessions = derived(sessionList, ($list) =>
 
 // ---- Mutations ----
 
+function makeBlankSession(id: string): SessionState {
+    const slash = id.indexOf('/');
+    const project = slash >= 0 ? id.slice(0, slash) : id;
+    const name = slash >= 0 ? id.slice(slash + 1) : id;
+    return {
+        id, project, name,
+        status: 'idle', model: '', effort: '', permission_mode: '',
+        started_at: '', last_activity: '', rate_limit_until: '',
+        tasks_done: 0, current_task: '', branch: '', cli_session_id: '',
+        pending_permission: null,
+        input_tokens: 0, output_tokens: 0, cache_read: 0, cache_creation: 0,
+        num_turns: 0, total_cost_usd: 0, context_window: 0, context_util: 0,
+    };
+}
+
+async function refreshSessions(): Promise<void> {
+    try {
+        const list = (await GetAllSessions()) as SessionState[];
+        sessions.update((map) => {
+            const updated = { ...map };
+            (list ?? []).forEach((s) => {
+                if (!updated[s.id]) updated[s.id] = s;
+            });
+            return updated;
+        });
+    } catch { /* non-critical */ }
+}
+
+// Coalesce backend refreshes triggered by unknown-session events. A burst of
+// events must never fire one GetAllSessions per event, and the refresh must run
+// OUTSIDE the sessions.update() callback — calling sessions.update() from within
+// another sessions.update() re-renders every subscriber synchronously on every
+// event, which detaches sidebar rows mid-interaction and saturates the renderer.
+let refreshScheduled = false;
+function scheduleRefresh() {
+    if (refreshScheduled) return;
+    refreshScheduled = true;
+    setTimeout(() => {
+        refreshScheduled = false;
+        void refreshSessions();
+    }, 0);
+}
+
 function setSession(id: string, mutator: (s: SessionState) => SessionState) {
+    let unknown = false;
     sessions.update((map) => {
         const existing = map[id];
-        if (!existing) return map;
+        if (!existing) {
+            // First event for an unknown session: create a blank entry immediately
+            // so the UI can render; full state is fetched once, debounced, below.
+            unknown = true;
+            return { ...map, [id]: mutator(makeBlankSession(id)) };
+        }
         return { ...map, [id]: mutator(existing) };
     });
+    if (unknown) scheduleRefresh();
 }
 
 function appendLog(id: string, entry: LogEntry) {
@@ -187,7 +237,12 @@ export async function initSessions(): Promise<void> {
 
     EventsOn('session:status', (evt: { id: string; status: SessionStatus }) => {
         if (!evt || !evt.id) return;
-        setSession(evt.id, (s) => ({ ...s, status: evt.status }));
+        const clearPerm = (['idle', 'error', 'stopping'] as SessionStatus[]).includes(evt.status);
+        setSession(evt.id, (s) => ({
+            ...s,
+            status: evt.status,
+            pending_permission: clearPerm ? null : s.pending_permission,
+        }));
     });
 
     EventsOn('session:log', (evt: { id: string; entry: LogEntry }) => {

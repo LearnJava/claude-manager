@@ -443,6 +443,7 @@ func (m *SessionManager) StopSession(id string, soft bool) error {
 	}
 	logger.L.Info("manager.stop_session", "id", id, "soft", soft)
 	ms.session.Stop(soft)
+	m.queue.RemoveBySession(id)
 	if !soft {
 		ms.mu.Lock()
 		cancel := ms.cancel
@@ -653,7 +654,7 @@ func (m *SessionManager) GetSession(id string) (SessionState, bool) {
 		ContextWindow:  ms.contextWindow,
 		ContextUtil:    ms.contextUtil,
 	}
-	if snap.PendingPerm != nil {
+	if snap.PendingPerm != nil && snap.Status == config.StatusWaitingPermission {
 		req := permission.PermissionRequest{
 			ID:          snap.PendingPerm.ID,
 			SessionID:   ms.session.ID,

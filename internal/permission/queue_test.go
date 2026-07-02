@@ -111,6 +111,31 @@ func TestPendingQueueBySession(t *testing.T) {
 	}
 }
 
+func TestPendingQueueRemoveBySession(t *testing.T) {
+	q := NewPendingQueue()
+	q.Add(PermissionRequest{ID: "1", SessionID: "lumen/P1"})
+	q.Add(PermissionRequest{ID: "2", SessionID: "lumen/P2"})
+	q.Add(PermissionRequest{ID: "3", SessionID: "lumen/P1"})
+
+	q.RemoveBySession("lumen/P1")
+
+	if q.Len() != 1 {
+		t.Fatalf("Len after RemoveBySession = %d, want 1", q.Len())
+	}
+	if left := q.BySession("lumen/P2"); len(left) != 1 || left[0].ID != "2" {
+		t.Fatalf("unrelated session entries must survive, got %+v", left)
+	}
+	if gone := q.BySession("lumen/P1"); len(gone) != 0 {
+		t.Fatalf("removed session entries still present: %+v", gone)
+	}
+
+	// Removing a session with no entries is a no-op.
+	q.RemoveBySession("none")
+	if q.Len() != 1 {
+		t.Fatalf("RemoveBySession(none) changed queue, Len = %d, want 1", q.Len())
+	}
+}
+
 func TestPendingQueueClear(t *testing.T) {
 	q := NewPendingQueue()
 	q.Add(PermissionRequest{ID: "a"})

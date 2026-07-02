@@ -67,8 +67,15 @@
         }
     });
 
-    // Reset autoscroll state when the selected session changes.
-    $: if (sessionId) {
+    // Reset autoscroll state ONLY when the selected session actually changes.
+    // Guarding on a remembered id is essential: this block re-evaluates on every
+    // reactive update, and re-running its body each time resets prevLogLen to 0,
+    // which makes afterUpdate perpetually detect "grew" and re-scroll, whose
+    // scroll event re-invalidates stuckToBottom — an infinite render loop that
+    // hard-freezes the page. The id guard makes the body run once per session.
+    let lastSessionId: string | undefined;
+    $: if (sessionId !== lastSessionId) {
+        lastSessionId = sessionId;
         stuckToBottom = true;
         prevLogLen = 0;
         // Wait until the new entries are rendered, then pin to bottom.

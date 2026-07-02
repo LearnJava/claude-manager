@@ -23,7 +23,7 @@
     },
     {
       "type": "emit",
-      "delay_ms": 30,
+      "delay_ms": 2500,
       "event": {"type":"result","subtype":"success","total_cost_usd":0.003,"num_turns":1,"usage":{"input_tokens":1200,"output_tokens":80},"modelUsage":{"claude-sonnet-4-6":{"costUSD":0.003}}}
     }
   ]

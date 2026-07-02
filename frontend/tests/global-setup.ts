@@ -14,8 +14,12 @@ import { execSync, spawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { fileURLToPath } from 'url';
 
-const ROOT = path.resolve(__dirname, '../../..');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const ROOT = path.resolve(__dirname, '../..');
 const STATE_FILE = path.join(__dirname, '../.playwright-state.json');
 const CM_PORT = process.env.CM_CONTROL_PORT ?? '7334';
 const SCENARIOS_DIR = path.join(ROOT, 'testdata', 'scenarios');

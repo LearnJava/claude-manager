@@ -343,8 +343,8 @@
     }
 
     $: gs = cfg?.Settings;
-    $: sess = currentSession();
     $: proj = cfg?.Projects[selectedProjectIdx] ?? null;
+    $: sess = proj?.Sessions[selectedSessionIdx] ?? null;
 </script>
 
 <svelte:window on:keydown={handleKey} />

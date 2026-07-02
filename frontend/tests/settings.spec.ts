@@ -43,10 +43,16 @@ test.describe('Settings modal', () => {
     const sessionsTab = modal.getByRole('button', { name: 'Sessions' });
     await sessionsTab.click();
 
-    // Select session S1.
+    // S1 is at index 0 — the default selected session. Wait for the editor to
+    // appear; it renders as soon as config is loaded and selectedSessionIdx=0.
     const sessionListItem = modal.getByRole('button', { name: 'S1' }).first();
     await expect(sessionListItem).toBeVisible({ timeout: 3_000 });
+    // Click to ensure S1 is active (no-op if already selected at idx 0).
     await sessionListItem.click();
+
+    // Wait for the right-panel editor to render (the "Identity" section is the
+    // first section inside the session editor; its presence proves sess !== null).
+    await expect(modal.locator('h3').filter({ hasText: 'Identity' })).toBeVisible({ timeout: 5_000 });
 
     // The session editor should show the Model select.
     const modelSelect = modal.locator('label', { hasText: 'Model' }).locator('select').first();

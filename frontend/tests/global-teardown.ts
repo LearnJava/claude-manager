@@ -1,6 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import type { PlaywrightState } from './global-setup';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const STATE_FILE = path.join(__dirname, '../.playwright-state.json');
 

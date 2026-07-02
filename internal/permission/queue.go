@@ -84,6 +84,19 @@ func (q *PendingQueue) Len() int {
 	return len(q.items)
 }
 
+// RemoveBySession removes all pending requests belonging to sessionID.
+func (q *PendingQueue) RemoveBySession(sessionID string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	kept := q.items[:0]
+	for _, r := range q.items {
+		if r.SessionID != sessionID {
+			kept = append(kept, r)
+		}
+	}
+	q.items = kept
+}
+
 // Clear empties the queue.
 func (q *PendingQueue) Clear() {
 	q.mu.Lock()
