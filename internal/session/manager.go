@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"claude-manager/internal/analysis"
 	"claude-manager/internal/config"
 	"claude-manager/internal/logger"
 	"claude-manager/internal/permission"
@@ -42,8 +43,8 @@ type StatusEvent struct {
 }
 
 type LogEvent struct {
-	ID    string           `json:"id"`
-	Entry config.LogEntry  `json:"entry"`
+	ID    string          `json:"id"`
+	Entry config.LogEntry `json:"entry"`
 }
 
 type TaskDoneEvent struct {
@@ -58,7 +59,7 @@ type RateLimitEvent struct {
 }
 
 type PermissionEvent struct {
-	ID      string                        `json:"id"`
+	ID      string                       `json:"id"`
 	Request permission.PermissionRequest `json:"request"`
 }
 
@@ -1147,4 +1148,122 @@ func (m *SessionManager) handlePermission(ms *managedSession, req *PermissionReq
 	// Otherwise queue + notify the UI.
 	m.queue.Add(permReq)
 	m.emit(EventNamePermission, PermissionEvent{ID: ms.session.ID, Request: permReq})
+}
+
+// ---- Pre-flight plans (PLAN.md section 17) ----
+
+// EventNamePlanStatus notifies the frontend/control-plane about plan lifecycle
+// transitions (executing → completed/failed).
+const EventNamePlanStatus = "plan:status"
+
+// PlanStatusEvent is the payload of EventNamePlanStatus.
+type PlanStatusEvent struct {
+	PlanID  int64  `json:"plan_id"`
+	Project string `json:"project"`
+	Status  string `json:"status"`
+}
+
+// analyzeFn abstracts analysis.RunAnalysis so tests can stub the analyst CLI.
+type analyzeFn func(ctx context.Context, projectPath, task string, cfg analysis.AnalysisConfig) (*analysis.AnalysisResult, error)
+
+// RunPreflight runs the analyst on an ad-hoc task for the project and persists
+// the resulting draft plan. The returned plan carries its store ID.
+func (m *SessionManager) RunPreflight(project, task string) (*analysis.TaskPlan, error) {
+	return m.runPreflight(context.Background(), project, task, analysis.RunAnalysis)
+}
+
+func (m *SessionManager) runPreflight(ctx context.Context, project, task string, analyze analyzeFn) (*analysis.TaskPlan, error) {
+	path, err := m.projectPath(project)
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	acfg := analysis.AnalysisConfig{
+		ClaudePath:   m.cfg.Settings.ClaudePath,
+		Model:        m.cfg.Settings.PreflightModel,
+		MaxBudgetUSD: m.cfg.Settings.PreflightMaxBudget,
+	}
+	m.mu.Unlock()
+
+	result, err := analyze(ctx, path, task, acfg)
+	if err != nil {
+		return nil, fmt.Errorf("preflight: %w", err)
+	}
+	plan := analysis.NewPlanFromAnalysis(project, task, result)
+	if err := analysis.SavePlan(m.store, plan); err != nil {
+		return nil, err
+	}
+	logger.L.Info("manager.preflight",
+		"project", project, "plan_id", plan.ID, "subtasks", len(plan.Subtasks))
+	return plan, nil
+}
+
+// ApprovePlan persists an (operator-edited) plan with status approved and
+// returns it — the store ID is assigned on first save, so the frontend must
+// use the returned plan for the follow-up ExecutePlan call.
+func (m *SessionManager) ApprovePlan(plan *analysis.TaskPlan) (*analysis.TaskPlan, error) {
+	if plan == nil {
+		return nil, fmt.Errorf("approve plan: nil plan")
+	}
+	plan.Status = analysis.PlanStatusApproved
+	if err := analysis.SavePlan(m.store, plan); err != nil {
+		return nil, err
+	}
+	logger.L.Info("manager.plan_approved", "plan_id", plan.ID, "project", plan.Project)
+	return plan, nil
+}
+
+// ExecutePlan loads plan planID from the store and executes it with the
+// one-shot CLI executor. Blocks until the plan completes or fails; progress is
+// flushed to the store after every subtask state change (poll GetPlan) and the
+// final transition is emitted as EventNamePlanStatus.
+func (m *SessionManager) ExecutePlan(planID int64) error {
+	m.mu.Lock()
+	ex := &analysis.CLIExecutor{ClaudePath: m.cfg.Settings.ClaudePath}
+	m.mu.Unlock()
+	return m.executePlan(context.Background(), planID, ex)
+}
+
+func (m *SessionManager) executePlan(ctx context.Context, planID int64, ex analysis.SubtaskExecutor) error {
+	plan, err := analysis.LoadPlan(m.store, planID)
+	if err != nil {
+		return err
+	}
+	if plan == nil {
+		return fmt.Errorf("execute plan: plan %d not found", planID)
+	}
+	path, err := m.projectPath(plan.Project)
+	if err != nil {
+		return err
+	}
+
+	logger.L.Info("manager.plan_execute", "plan_id", plan.ID, "project", plan.Project, "subtasks", len(plan.Subtasks))
+	m.emit(EventNamePlanStatus, PlanStatusEvent{PlanID: plan.ID, Project: plan.Project, Status: string(analysis.PlanStatusExecuting)})
+
+	execErr := analysis.ExecutePlan(ctx, plan, path, ex, m.store)
+
+	m.emit(EventNamePlanStatus, PlanStatusEvent{PlanID: plan.ID, Project: plan.Project, Status: string(plan.Status)})
+	if execErr != nil {
+		logger.L.Error("manager.plan_failed", "plan_id", plan.ID, "error", execErr)
+		return execErr
+	}
+	logger.L.Info("manager.plan_completed", "plan_id", plan.ID, "cost_usd", plan.TotalCostUSD)
+	return nil
+}
+
+// GetPlan returns a persisted plan (with subtasks) by ID, or nil if absent.
+func (m *SessionManager) GetPlan(planID int64) (*analysis.TaskPlan, error) {
+	return analysis.LoadPlan(m.store, planID)
+}
+
+// projectPath resolves a configured project name to its filesystem path.
+func (m *SessionManager) projectPath(project string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.cfg.Projects {
+		if m.cfg.Projects[i].Name == project {
+			return m.cfg.Projects[i].Path, nil
+		}
+	}
+	return "", fmt.Errorf("project %q not found", project)
 }

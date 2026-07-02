@@ -3,12 +3,14 @@ package control
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"claude-manager/internal/analysis"
 	"claude-manager/internal/config"
 	"claude-manager/internal/permission"
 	"claude-manager/internal/session"
@@ -20,6 +22,11 @@ import (
 type mockManager struct {
 	allSessions []session.SessionState
 	startErr    error
+	calls       []string // "<method> <args...>" of plan-related invocations
+}
+
+func (m *mockManager) record(method string, args ...string) {
+	m.calls = append(m.calls, strings.TrimSpace(method+" "+strings.Join(args, " ")))
 }
 
 func (m *mockManager) StartSession(project, name string) error { return m.startErr }
@@ -51,6 +58,23 @@ func (m *mockManager) GetProjectCost(project string, days int) (float64, error) 
 func (m *mockManager) GetRateLimitStatus() *session.RateLimitInfo              { return nil }
 func (m *mockManager) ClearSessionState(project, name string)                  {}
 func (m *mockManager) GetSessionState(project, name string) *session.PersistedState { return nil }
+func (m *mockManager) RunPreflight(project, task string) (*analysis.TaskPlan, error) {
+	m.record("RunPreflight", project, task)
+	return &analysis.TaskPlan{Project: project, OriginalTask: task}, nil
+}
+func (m *mockManager) ApprovePlan(plan *analysis.TaskPlan) (*analysis.TaskPlan, error) {
+	m.record("ApprovePlan", plan.Project)
+	plan.Status = analysis.PlanStatusApproved
+	return plan, nil
+}
+func (m *mockManager) ExecutePlan(planID int64) error {
+	m.record("ExecutePlan", fmt.Sprint(planID))
+	return nil
+}
+func (m *mockManager) GetPlan(planID int64) (*analysis.TaskPlan, error) {
+	m.record("GetPlan", fmt.Sprint(planID))
+	return &analysis.TaskPlan{ID: planID}, nil
+}
 
 type mockApp struct{}
 

@@ -232,6 +232,31 @@ func (a *App) StartSessionWithModel(project, name, model, effort string) error {
 	return a.manager.StartSessionWithOverride(project, name, model, effort)
 }
 
+// ---- Pre-flight plan bindings (PLAN.md section 17) ----
+
+// RunPreflight runs the analyst on an ad-hoc task and returns the persisted
+// draft plan for review in PlanReview.svelte.
+func (a *App) RunPreflight(project, task string) (*analysis.TaskPlan, error) {
+	return a.manager.RunPreflight(project, task)
+}
+
+// ApprovePlan persists an (edited) plan as approved. The returned plan carries
+// the store ID assigned on first save — use it for the ExecutePlan call.
+func (a *App) ApprovePlan(plan analysis.TaskPlan) (*analysis.TaskPlan, error) {
+	return a.manager.ApprovePlan(&plan)
+}
+
+// ExecutePlan executes a persisted plan by ID. Blocks until the plan finishes;
+// subtask progress is flushed to the store and can be polled via GetPlan.
+func (a *App) ExecutePlan(planID int64) error {
+	return a.manager.ExecutePlan(planID)
+}
+
+// GetPlan returns a persisted plan with its subtasks, or null if absent.
+func (a *App) GetPlan(planID int64) (*analysis.TaskPlan, error) {
+	return a.manager.GetPlan(planID)
+}
+
 // ---- Session lifecycle bindings ----
 
 func (a *App) StartSession(project, name string) error {

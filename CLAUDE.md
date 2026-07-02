@@ -242,6 +242,10 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetProjects()` | Project list shortcut |
 | `GetAutoModelRouting()` | Whether auto_model_routing is enabled |
 | `GetModelRecommendation(project, name)` | Run preflight analysis, return ModelRecommendation or null |
+| `RunPreflight(project, task)` | Run analyst on an ad-hoc task, persist and return draft TaskPlan |
+| `ApprovePlan(plan)` | Persist an (edited) plan as approved; returns plan with store ID |
+| `ExecutePlan(planID)` | Execute persisted plan (one-shot CLI per subtask, context handoff) |
+| `GetPlan(planID)` | Load persisted plan with subtasks (poll during execution) |
 | `StartSession(project, name)` | Launch session with config model/effort |
 | `StartSessionWithModel(project, name, model, effort)` | Launch with model/effort override |
 | `StopSession(id, soft)` | Stop (soft=true finishes current task first) |

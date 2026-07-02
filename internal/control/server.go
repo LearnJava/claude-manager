@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"claude-manager/internal/analysis"
 	"claude-manager/internal/config"
 	"claude-manager/internal/logger"
 	"claude-manager/internal/permission"
@@ -41,6 +42,10 @@ type ManagerAPI interface {
 	GetRateLimitStatus() *session.RateLimitInfo
 	ClearSessionState(project, name string)
 	GetSessionState(project, name string) *session.PersistedState
+	RunPreflight(project, task string) (*analysis.TaskPlan, error)
+	ApprovePlan(plan *analysis.TaskPlan) (*analysis.TaskPlan, error)
+	ExecutePlan(planID int64) error
+	GetPlan(planID int64) (*analysis.TaskPlan, error)
 }
 
 // AppAPI is the subset of *App used for config read/write.

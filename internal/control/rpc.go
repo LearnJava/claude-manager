@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
+	"claude-manager/internal/analysis"
 	"claude-manager/internal/config"
 )
 
@@ -291,6 +294,57 @@ func (s *Server) buildRegistry() map[string]handler {
 		return m.GetSessionState(args.Project, args.Session), nil
 	}
 
+	// ── Pre-flight plans (PLAN.md section 17) ────────────────────────────────
+
+	reg["RunPreflight"] = func(p json.RawMessage) (any, error) {
+		var args struct {
+			Project string `json:"project"`
+			Task    string `json:"task"`
+		}
+		if err := json.Unmarshal(p, &args); err != nil {
+			return nil, err
+		}
+		return m.RunPreflight(args.Project, args.Task)
+	}
+
+	reg["ApprovePlan"] = func(p json.RawMessage) (any, error) {
+		var args struct {
+			Plan analysis.TaskPlan `json:"plan"`
+		}
+		if err := json.Unmarshal(p, &args); err != nil {
+			return nil, err
+		}
+		return m.ApprovePlan(&args.Plan)
+	}
+
+	reg["ExecutePlan"] = func(p json.RawMessage) (any, error) {
+		var args struct {
+			PlanID json.RawMessage `json:"plan_id"`
+		}
+		if err := json.Unmarshal(p, &args); err != nil {
+			return nil, err
+		}
+		id, err := parsePlanID(args.PlanID)
+		if err != nil {
+			return nil, err
+		}
+		return nil, m.ExecutePlan(id)
+	}
+
+	reg["GetPlan"] = func(p json.RawMessage) (any, error) {
+		var args struct {
+			PlanID json.RawMessage `json:"plan_id"`
+		}
+		if err := json.Unmarshal(p, &args); err != nil {
+			return nil, err
+		}
+		id, err := parsePlanID(args.PlanID)
+		if err != nil {
+			return nil, err
+		}
+		return m.GetPlan(id)
+	}
+
 	// ── Config (via AppAPI) ───────────────────────────────────────────────────
 
 	if s.app != nil {
@@ -310,4 +364,25 @@ func (s *Server) buildRegistry() map[string]handler {
 	}
 
 	return reg
+}
+
+// parsePlanID accepts a plan id as either a JSON number (Wails/JS callers) or
+// a numeric string (the MCP tool schema passes string params).
+func parsePlanID(raw json.RawMessage) (int64, error) {
+	if len(raw) == 0 {
+		return 0, fmt.Errorf("plan_id is required")
+	}
+	var n int64
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n, nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		n, convErr := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+		if convErr != nil {
+			return 0, fmt.Errorf("plan_id %q is not a number", s)
+		}
+		return n, nil
+	}
+	return 0, fmt.Errorf("plan_id has unsupported type: %s", string(raw))
 }

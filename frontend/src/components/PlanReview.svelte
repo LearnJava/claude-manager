@@ -1,6 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher } from 'svelte';
     import { ApprovePlan, ExecutePlan } from '../../wailsjs/go/main/App';
+    import { analysis } from '../../wailsjs/go/models';
     import { formatCost, formatTokens, formatDuration } from '../lib/formatters';
 
     // ---- Local types (mirror internal/analysis/plan.go JSON tags) ----
@@ -242,10 +243,11 @@
         busy = 'execute';
         error = '';
         try {
-            // First persist the (possibly edited) plan as approved.
-            await ApprovePlan(working);
-            const id = working.id ?? 0;
-            await ExecutePlan(id);
+            // First persist the (possibly edited) plan as approved. The store
+            // ID is assigned on first save — take it from the returned plan.
+            const saved = await ApprovePlan(analysis.TaskPlan.createFrom(working));
+            working.id = saved.id;
+            await ExecutePlan(saved.id);
             dispatch('executed', { plan: working });
         } catch (e: any) {
             error = `Execute failed: ${e?.message ?? String(e)}`;
@@ -259,7 +261,8 @@
         busy = 'approve';
         error = '';
         try {
-            await ApprovePlan(working);
+            const saved = await ApprovePlan(analysis.TaskPlan.createFrom(working));
+            working.id = saved.id;
             editMode = false;
             dispatch('approved', { plan: working });
         } catch (e: any) {
