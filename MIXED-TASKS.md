@@ -69,7 +69,7 @@ stop_when_no_tasks = true
 | MP-04 | ✓ DONE (2026-07-03) | internal/worker/gates.go, gates_test.go |
 | MP-05 | ✓ DONE (2026-07-03) | internal/worker/round.go, round_test.go, manager.go, manager_mixed_test.go, app.go |
 | MP-06 | ✓ DONE (2026-07-03) | internal/analysis/brief.go, brief_test.go, schema.go, internal/store/migrations.go, store.go, store_test.go |
-| MP-07 | ○ TODO | cmd/fakeworker/, testdata/worker-scenarios/, e2e |
+| MP-07 | ✓ DONE (2026-07-03) | internal/testkit/fakeworker.go, cmd/fakeworker/, testdata/worker-scenarios/, internal/worker/fakeworker_test.go, internal/control/{rpc,mcptools,server,e2e_runner}.go, testdata/e2e/mixed-*.json |
 | MP-08 | ○ TODO | frontend/src/components/MixedRun.svelte, Settings |
 
 ## Рабочие модели (бенч lumen 2026-07-02, `.tmp/kilo_bench_results.json`)

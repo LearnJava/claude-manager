@@ -1,0 +1,20 @@
+# Mixed-programming e2e config (MIXED-TASKS.md MP-07).
+# The harness overrides project path (temp seeded git repo) and worker
+# base_url (fakeworker httptest server) at runtime.
+
+[[project]]
+name = "mixedproj"
+path = "."
+mixed_programming = true
+gates = ["git --version"]
+
+[[project.session]]
+name = "P1"
+prompt = "unused in mixed e2e"
+auto_restart = false
+
+[[worker]]
+name = "fake"
+base_url = "http://127.0.0.1:1"
+model = "fake/model"
+key_env = "FAKEWORKER_KEY"

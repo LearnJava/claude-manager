@@ -1,0 +1,9 @@
+{
+  "name": "missing-end",
+  "responses": [
+    {
+      "content": "### PATCH 1\nFILE greet.go\n<<<FIND\n\treturn \"TODO\"\n===REPLACE\n\treturn \"Hello, \" + name\n### PATCH 2\nFILE farewell.go\n<<<FIND\n\treturn \"BYE-TODO\"\n===REPLACE\n\treturn \"Goodbye, \" + name\n>>>END\n",
+      "finish_reason": "stop"
+    }
+  ]
+}

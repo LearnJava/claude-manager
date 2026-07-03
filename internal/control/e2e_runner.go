@@ -20,6 +20,13 @@ type E2EScenario struct {
 	FakeclaudeDir string    `json:"fakeclaude_dir"` // relative path to fakeclaude scenarios dir
 	Config        string    `json:"config"`         // relative path to TOML config
 	Steps         []E2EStep `json:"steps"`
+
+	// Mixed-programming scenarios (MIXED-TASKS.md MP-07). When WorkerScenario
+	// is set, the harness starts a fakeworker on it, points every [[worker]]
+	// base_url at it, and runs the project in a temp git repo seeded with
+	// SeedFiles (relative path -> content) so worker patches have real anchors.
+	WorkerScenario string            `json:"worker_scenario,omitempty"`
+	SeedFiles      map[string]string `json:"seed_files,omitempty"`
 }
 
 // E2EStep is one step in an E2EScenario. Exactly one of Do/Wait/Assert must

@@ -1,0 +1,33 @@
+{
+  "name": "mixed-feedback-loop",
+  "config": "testdata/configs/mixed.toml",
+  "worker_scenario": "testdata/worker-scenarios/broken-then-clean.json",
+  "seed_files": {
+    "greet.go": "package greet\n\n// Greet returns a greeting for name.\nfunc Greet(name string) string {\n\treturn \"TODO\"\n}\n"
+  },
+  "steps": [
+    {
+      "do": "RegisterMixedBrief",
+      "with": {"id": "greet", "task": "Implement Greet: replace the TODO return with a real greeting."}
+    },
+    {
+      "do": "DispatchMixedTask",
+      "with": {"project": "mixedproj", "brief_id": "greet", "worker": "fake"}
+    },
+    {
+      "wait": "worker:patch",
+      "match": {"task_id": "mixedproj/greet/fake", "round": 1, "applied": 0, "rejected": 1},
+      "timeout_ms": 20000
+    },
+    {
+      "wait": "worker:patch",
+      "match": {"task_id": "mixedproj/greet/fake", "round": 2, "applied": 1, "rejected": 0},
+      "timeout_ms": 20000
+    },
+    {
+      "wait": "worker:done",
+      "match": {"task_id": "mixedproj/greet/fake", "status": "done", "rounds": 2},
+      "timeout_ms": 20000
+    }
+  ]
+}

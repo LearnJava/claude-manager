@@ -1,0 +1,9 @@
+{
+  "name": "clean-round1",
+  "responses": [
+    {
+      "content": "### PATCH 1\nFILE greet.go\n<<<FIND\n\treturn \"TODO\"\n===REPLACE\n\treturn \"Hello, \" + name\n>>>END\n",
+      "finish_reason": "stop"
+    }
+  ]
+}

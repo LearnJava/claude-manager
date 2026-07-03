@@ -16,6 +16,7 @@ import (
 	"claude-manager/internal/permission"
 	"claude-manager/internal/session"
 	"claude-manager/internal/store"
+	"claude-manager/internal/worker"
 )
 
 // ManagerAPI is the subset of *session.SessionManager consumed by the RPC
@@ -46,6 +47,10 @@ type ManagerAPI interface {
 	ApprovePlan(plan *analysis.TaskPlan) (*analysis.TaskPlan, error)
 	ExecutePlan(planID int64) error
 	GetPlan(planID int64) (*analysis.TaskPlan, error)
+	RegisterMixedBrief(id string, brief worker.Brief)
+	DispatchMixedTask(project, briefID, workerName string) (*worker.MixedTask, error)
+	GetMixedRounds(project string) ([]*worker.MixedTask, error)
+	CancelMixedTask(id string) error
 }
 
 // AppAPI is the subset of *App used for config read/write.

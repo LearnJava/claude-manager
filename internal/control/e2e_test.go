@@ -10,6 +10,7 @@ import (
 
 	"claude-manager/internal/config"
 	"claude-manager/internal/session"
+	"claude-manager/internal/testkit"
 )
 
 // projectRoot returns the project root directory, derived from the working
@@ -52,8 +53,10 @@ func buildFakeclaude(t *testing.T) string {
 // newE2EHarness loads the TOML at cfgPath, patches it for test use
 // (fast retries, no crash recovery, zero start delay, fakeclaude path), and
 // starts an httptest.Server backed by a real SessionManager and ControlEmitter.
+// When workerURL is non-empty, every [[worker]] is pointed at it (a fakeworker)
+// and its key env var is set to a dummy value.
 // Returns the server and the auth token. Both are cleaned up with t.Cleanup.
-func newE2EHarness(t *testing.T, cfgPath, claudePath, projectDir string) (*httptest.Server, string) {
+func newE2EHarness(t *testing.T, cfgPath, claudePath, projectDir, workerURL string) (*httptest.Server, string) {
 	t.Helper()
 
 	cfg, err := config.Load(cfgPath)
@@ -71,6 +74,14 @@ func newE2EHarness(t *testing.T, cfgPath, claudePath, projectDir string) (*httpt
 	// Point all projects at a real directory so the subprocess can start.
 	for i := range cfg.Projects {
 		cfg.Projects[i].Path = projectDir
+	}
+
+	// Point all workers at the fakeworker server started for this scenario.
+	if workerURL != "" {
+		for i := range cfg.Workers {
+			cfg.Workers[i].BaseURL = workerURL
+			t.Setenv(cfg.Workers[i].KeyEnv, "fakeworker-e2e-key")
+		}
 	}
 
 	// Use a temp dir as the state-file directory (cfgPath determines the dir).
@@ -120,11 +131,62 @@ func TestE2E(t *testing.T) {
 		sc := sc // capture
 		t.Run(sc.Name, func(t *testing.T) {
 			cfgPath := filepath.Join(root, sc.Config)
-			ts, token := newE2EHarness(t, cfgPath, claudePath, root)
+			projectDir, workerURL := root, ""
+			if sc.WorkerScenario != "" {
+				workerURL = startFakeWorker(t, filepath.Join(root, sc.WorkerScenario))
+				projectDir = newSeededGitRepo(t, sc.SeedFiles)
+			}
+			ts, token := newE2EHarness(t, cfgPath, claudePath, projectDir, workerURL)
 			runner := NewE2ERunner(ts.URL, token)
 			if err := runner.Run(sc); err != nil {
 				t.Fatalf("scenario %q failed: %v", sc.Name, err)
 			}
 		})
 	}
+}
+
+// startFakeWorker serves the worker scenario at scenarioPath over httptest and
+// returns its base URL (cleaned up with t.Cleanup).
+func startFakeWorker(t *testing.T, scenarioPath string) string {
+	t.Helper()
+	sc, err := testkit.LoadWorkerScenario(scenarioPath)
+	if err != nil {
+		t.Fatalf("load worker scenario %s: %v", scenarioPath, err)
+	}
+	srv := httptest.NewServer(testkit.NewFakeWorker(sc))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// newSeededGitRepo creates a temp git repository containing files (relative
+// path -> content) in a single seed commit, so `git worktree add` and worker
+// patches have a HEAD and anchors to work against.
+func newSeededGitRepo(t *testing.T, files map[string]string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH, skipping mixed e2e: " + err.Error())
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	run("config", "user.email", "e2e@test.local")
+	run("config", "user.name", "e2e")
+	for rel, content := range files {
+		full := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("add", "-A")
+	run("commit", "-q", "-m", "seed")
+	return dir
 }

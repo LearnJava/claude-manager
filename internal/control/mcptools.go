@@ -64,6 +64,27 @@ func buildMCPTools() []ToolDef {
 			Description: "Execute a pre-generated task plan by plan ID.",
 			InputSchema: mustSchemaJSON(`{"type":"object","properties":{"plan_id":{"type":"string"}},"required":["plan_id"]}`),
 		},
+		// ── Mixed programming (MIXED-TASKS.md MP-07) ─────────────────────────
+		{
+			Name:        "register_mixed_brief",
+			Description: "Register a mixed-programming brief so it can be dispatched to a worker model. The brief must be self-contained: task description in English, verbatim code excerpts, accepted decisions, target files.",
+			InputSchema: mustSchemaJSON(`{"type":"object","properties":{"id":{"type":"string","description":"Stable brief ID, e.g. the subtask name"},"task":{"type":"string","description":"Self-contained task specification sent to the worker"},"system_prompt":{"type":"string","description":"Optional override of the FIND/REPLACE protocol prompt"}},"required":["id","task"]}`),
+		},
+		{
+			Name:        "dispatch_mixed_task",
+			Description: "Run the mixed-programming round loop (brief -> patches -> gates -> feedback) for a registered brief against a configured worker model. Blocks until the task is done or needs_human; use wait_for_worker_status/get_mixed_rounds to observe progress from another call.",
+			InputSchema: mustSchemaJSON(`{"type":"object","properties":{"project":{"type":"string"},"brief_id":{"type":"string","description":"ID of a brief registered via register_mixed_brief"},"worker":{"type":"string","description":"Worker name from the [[worker]] config"}},"required":["project","brief_id","worker"]}`),
+		},
+		{
+			Name:        "get_mixed_rounds",
+			Description: "Get persisted mixed-programming task state (rounds, patches, gate results, status) for a project.",
+			InputSchema: mustSchemaJSON(`{"type":"object","properties":{"project":{"type":"string"}},"required":["project"]}`),
+		},
+		{
+			Name:        "wait_for_worker_status",
+			Description: "Block until a mixed-programming task reaches a terminal status (done or needs_human), or until timeout. Checks past events first, so it can be called after dispatch_mixed_task returned.",
+			InputSchema: mustSchemaJSON(`{"type":"object","properties":{"task_id":{"type":"string","description":"Task ID (project/brief/worker) as returned by dispatch_mixed_task"},"status":{"type":"string","enum":["done","needs_human"],"description":"Terminal status to wait for; omit to match either"},"timeout_ms":{"type":"integer","description":"Timeout in milliseconds (default 60000)"}},"required":["task_id"]}`),
+		},
 		// ── Queries ───────────────────────────────────────────────────────────
 		{
 			Name:        "get_sessions",
@@ -214,6 +235,34 @@ func TranslateTool(name string, args json.RawMessage) (endpoint string, body any
 		return "/rpc", rpcCallBody("ExecutePlan", map[string]string{
 			"plan_id": str("plan_id"),
 		}), nil
+
+	// ── Mixed programming ─────────────────────────────────────────────────────
+
+	case "register_mixed_brief":
+		return "/rpc", rpcCallBody("RegisterMixedBrief", map[string]string{
+			"id":            str("id"),
+			"task":          str("task"),
+			"system_prompt": str("system_prompt"),
+		}), nil
+
+	case "dispatch_mixed_task":
+		return "/rpc", rpcCallBody("DispatchMixedTask", map[string]string{
+			"project":  str("project"),
+			"brief_id": str("brief_id"),
+			"worker":   str("worker"),
+		}), nil
+
+	case "get_mixed_rounds":
+		return "/rpc", rpcCallBody("GetMixedRounds", map[string]string{
+			"project": str("project"),
+		}), nil
+
+	case "wait_for_worker_status":
+		match := map[string]any{"task_id": str("task_id")}
+		if status := str("status"); status != "" {
+			match["status"] = status
+		}
+		return "/wait", waitCallBody("worker:done", match, integer("timeout_ms", 60000)), nil
 
 	// ── Queries ───────────────────────────────────────────────────────────────
 

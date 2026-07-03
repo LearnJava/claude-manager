@@ -9,6 +9,7 @@ import (
 
 	"claude-manager/internal/analysis"
 	"claude-manager/internal/config"
+	"claude-manager/internal/worker"
 )
 
 // rpcRequest is a JSON-RPC 2.0 request envelope.
@@ -343,6 +344,56 @@ func (s *Server) buildRegistry() map[string]handler {
 			return nil, err
 		}
 		return m.GetPlan(id)
+	}
+
+	// ── Mixed programming (MIXED-TASKS.md MP-05/MP-07) ───────────────────────
+
+	reg["RegisterMixedBrief"] = func(p json.RawMessage) (any, error) {
+		var args struct {
+			ID           string `json:"id"`
+			Task         string `json:"task"`
+			SystemPrompt string `json:"system_prompt"`
+		}
+		if err := json.Unmarshal(p, &args); err != nil {
+			return nil, err
+		}
+		if args.ID == "" || args.Task == "" {
+			return nil, fmt.Errorf("register brief: id and task are required")
+		}
+		m.RegisterMixedBrief(args.ID, worker.Brief{Task: args.Task, SystemPrompt: args.SystemPrompt})
+		return nil, nil
+	}
+
+	reg["DispatchMixedTask"] = func(p json.RawMessage) (any, error) {
+		var args struct {
+			Project string `json:"project"`
+			BriefID string `json:"brief_id"`
+			Worker  string `json:"worker"`
+		}
+		if err := json.Unmarshal(p, &args); err != nil {
+			return nil, err
+		}
+		return m.DispatchMixedTask(args.Project, args.BriefID, args.Worker)
+	}
+
+	reg["GetMixedRounds"] = func(p json.RawMessage) (any, error) {
+		var args struct {
+			Project string `json:"project"`
+		}
+		if err := json.Unmarshal(p, &args); err != nil {
+			return nil, err
+		}
+		return m.GetMixedRounds(args.Project)
+	}
+
+	reg["CancelMixedTask"] = func(p json.RawMessage) (any, error) {
+		var args struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(p, &args); err != nil {
+			return nil, err
+		}
+		return nil, m.CancelMixedTask(args.ID)
 	}
 
 	// ── Config (via AppAPI) ───────────────────────────────────────────────────

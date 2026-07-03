@@ -83,6 +83,7 @@ claude-manager/
 │       └── formatters.ts            # Log formatting, time, cost, tokens, percent
 ├── cmd/                             # Test/control harness binaries (see PLAN.md §21)
 │   ├── fakeclaude/                  # Scripted Claude CLI double (deterministic stream-json)
+│   ├── fakeworker/                  # Scripted OpenAI-compatible worker double (SSE, MP-07)
 │   └── cm-mcp/                      # MCP server: drive the app as agent tools
 ├── internal/
 │   ├── testkit/                     # Scenario loader + fakeclaude<->parser conformance
@@ -295,6 +296,7 @@ No DI frameworks, no ORMs. Standard library for everything else.
 ### Testing & Control Harness
 The app is fully drivable and testable without a GUI and without spending API tokens (see PLAN.md §21):
 - **`fakeclaude`** (`cmd/fakeclaude`) — a scripted Claude CLI double. Set as `claude_path`, it emits deterministic stream-json from JSON scenarios in `testdata/scenarios/`. Covers every Session Status (permission, rate limit, error, loop, context-growth).
+- **`fakeworker`** (`cmd/fakeworker`) — a scripted OpenAI-compatible worker double for mixed programming (MP-07). Serves `POST /chat/completions` as SSE from JSON scenarios in `testdata/worker-scenarios/` (clean patch, broken patch → feedback, 429 storm, `finish_reason=length` continuation/loop, missing `>>>END`). Point a `[[worker]]` `base_url` at it; scenario via `-scenario` flag or `FAKEWORKER_SCENARIO`.
 - **`Emitter` indirection** (`internal/control/emit.go`) — all `session:*` events flow through an `Emitter` interface, not direct `runtime.EventsEmit`. `WailsEmitter` feeds the UI; `ControlEmitter` broadcasts to the control-plane. The SessionManager takes an `Emitter` in its constructor.
 - **Control-plane** (`internal/control`) — at `CM_CONTROL=1`, a loopback HTTP+WS server exposes every SessionManager method via JSON-RPC and streams events, plus `/wait` for blocking until a status/event. Additive to the GUI.
 - **MCP server** (`cmd/cm-mcp`) — proxies the control-plane into agent tools (`start_session`, `send_message`, `approve_permission`, `wait_for_status`, …) so Claude can press every button.
@@ -358,6 +360,10 @@ This starts the full Wails GUI **and** binds the control-plane on `http://127.0.
 | `set_global_settings` | Partial-update AppConfig at runtime |
 | `run_preflight` | Run pre-flight analysis for a task |
 | `execute_plan` | Execute a pre-generated task plan |
+| `register_mixed_brief` | Register a mixed-programming brief for dispatch |
+| `dispatch_mixed_task` | Run the mixed-programming round loop (brief → patches → gates) |
+| `get_mixed_rounds` | Persisted mixed-task state (rounds, patches, gates) per project |
+| `wait_for_worker_status` | Block until a mixed task reaches done / needs_human |
 
 #### Typical test workflow
 

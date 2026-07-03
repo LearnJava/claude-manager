@@ -1,0 +1,17 @@
+{
+  "name": "length-continuation",
+  "responses": [
+    {
+      "content": "### PATCH 1\nFILE greet.go\n<<<FIND\n\treturn \"TODO\"\n",
+      "finish_reason": "length"
+    },
+    {
+      "content": "===REPLACE\n\treturn \"Hello, \" + name\n",
+      "finish_reason": "length"
+    },
+    {
+      "content": ">>>END\n",
+      "finish_reason": "stop"
+    }
+  ]
+}

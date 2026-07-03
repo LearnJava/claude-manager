@@ -1,0 +1,10 @@
+{
+  "name": "length-loop",
+  "responses": [
+    {
+      "content": "### PATCH 1\nFILE greet.go\n<<<FIND\n",
+      "finish_reason": "length",
+      "repeat": 10
+    }
+  ]
+}

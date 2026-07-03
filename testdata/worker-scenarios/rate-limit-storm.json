@@ -1,0 +1,14 @@
+{
+  "name": "rate-limit-storm",
+  "responses": [
+    {
+      "status": 429,
+      "body": "Too Many Requests: free-tier throttling, slow down",
+      "repeat": 3
+    },
+    {
+      "content": "### PATCH 1\nFILE greet.go\n<<<FIND\n\treturn \"TODO\"\n===REPLACE\n\treturn \"Hello, \" + name\n>>>END\n",
+      "finish_reason": "stop"
+    }
+  ]
+}

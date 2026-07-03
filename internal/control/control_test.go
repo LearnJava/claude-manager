@@ -15,6 +15,7 @@ import (
 	"claude-manager/internal/permission"
 	"claude-manager/internal/session"
 	"claude-manager/internal/store"
+	"claude-manager/internal/worker"
 )
 
 // ── mock implementations ──────────────────────────────────────────────────────
@@ -74,6 +75,24 @@ func (m *mockManager) ExecutePlan(planID int64) error {
 func (m *mockManager) GetPlan(planID int64) (*analysis.TaskPlan, error) {
 	m.record("GetPlan", fmt.Sprint(planID))
 	return &analysis.TaskPlan{ID: planID}, nil
+}
+func (m *mockManager) RegisterMixedBrief(id string, brief worker.Brief) {
+	m.record("RegisterMixedBrief", id, brief.Task)
+}
+func (m *mockManager) DispatchMixedTask(project, briefID, workerName string) (*worker.MixedTask, error) {
+	m.record("DispatchMixedTask", project, briefID, workerName)
+	return &worker.MixedTask{
+		ID: project + "/" + briefID + "/" + workerName, Project: project,
+		BriefID: briefID, WorkerName: workerName, Status: worker.TaskStatusDone,
+	}, nil
+}
+func (m *mockManager) GetMixedRounds(project string) ([]*worker.MixedTask, error) {
+	m.record("GetMixedRounds", project)
+	return []*worker.MixedTask{{Project: project, Status: worker.TaskStatusDone}}, nil
+}
+func (m *mockManager) CancelMixedTask(id string) error {
+	m.record("CancelMixedTask", id)
+	return nil
 }
 
 type mockApp struct{}
