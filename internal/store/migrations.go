@@ -76,8 +76,19 @@ CREATE TABLE IF NOT EXISTS daily_metrics (
     PRIMARY KEY (date, project)
 )`
 
-	sqlIdxLogsRun     = `CREATE INDEX IF NOT EXISTS idx_logs_run ON session_logs(run_id)`
-	sqlIdxRunsProject = `CREATE INDEX IF NOT EXISTS idx_runs_project ON session_runs(project, session)`
+	sqlCreateMixedBriefs = `
+CREATE TABLE IF NOT EXISTS mixed_briefs (
+    id         INTEGER PRIMARY KEY,
+    brief_id   TEXT NOT NULL UNIQUE,
+    project    TEXT NOT NULL,
+    task       TEXT NOT NULL,
+    files      TEXT,
+    created_at DATETIME NOT NULL
+)`
+
+	sqlIdxLogsRun       = `CREATE INDEX IF NOT EXISTS idx_logs_run ON session_logs(run_id)`
+	sqlIdxRunsProject   = `CREATE INDEX IF NOT EXISTS idx_runs_project ON session_runs(project, session)`
+	sqlIdxBriefsProject = `CREATE INDEX IF NOT EXISTS idx_briefs_project ON mixed_briefs(project)`
 )
 
 func migrate(db *sql.DB) error {
@@ -87,8 +98,10 @@ func migrate(db *sql.DB) error {
 		sqlCreateTaskPlans,
 		sqlCreatePlanSubtasks,
 		sqlCreateDailyMetrics,
+		sqlCreateMixedBriefs,
 		sqlIdxLogsRun,
 		sqlIdxRunsProject,
+		sqlIdxBriefsProject,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {

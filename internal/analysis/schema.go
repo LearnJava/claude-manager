@@ -75,3 +75,50 @@ Rules:
 - Tasks with testing phase → sequential (tests depend on implementation)
 - Always prefer fewer, larger sessions over many tiny ones
 - Each subtask prompt must be self-contained and actionable`
+
+// BriefJSONSchema is the structured-output JSON Schema passed to a
+// brief-generation session via `--json-schema` (MIXED-TASKS.md MP-06). It
+// produces the input to worker.Brief: everything an external, less capable
+// model needs to write a FIND/REPLACE patch without browsing the repo itself.
+const BriefJSONSchema = `{
+  "type": "object",
+  "properties": {
+    "task": {
+      "type": "string",
+      "description": "Self-contained brief in English: verbatim code excerpts with exact line numbers, decisions already made (no open choices), typed-locals hints, and a short patch-format reminder."
+    },
+    "files": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Existing files the worker must touch, relative to the repo root."
+    },
+    "new_files": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Files that do not exist yet. Each is pre-created with a single \"// PLACEHOLDER\" line so the worker can FIND/REPLACE against it instead of inventing new-file syntax."
+    }
+  },
+  "required": ["task", "files"]
+}`
+
+// BriefSystemPrompt is appended to a brief-generation CLI invocation via
+// `--append-system-prompt`. Ports the brief-writing rules from the lumen
+// bench (MIXED-TASKS.md "Правила из боевого опыта lumen").
+const BriefSystemPrompt = `You write self-contained task briefs for an external, less capable
+code-writing model (the "worker"). The worker cannot browse the repository,
+run commands, or ask questions — your brief is its entire task input.
+
+Rules:
+1. Write the brief task text in English, even if the request was in another
+   language.
+2. Quote the exact code the worker must change, verbatim, with the real line
+   numbers from the current file content.
+3. Make every decision yourself. Never leave an open choice like "either use
+   X or Y" or "pick whichever approach fits" — decide and state it as fact.
+4. Call out the exact types of any variables/functions the change must match
+   (typed-locals hints), so the worker does not guess signatures.
+5. End the brief with a short reminder of the patch format: FIND/REPLACE
+   blocks (### PATCH n / FILE path / <<<FIND / ===REPLACE / >>>END), where
+   FIND must be a verbatim, unique excerpt of the current file.
+6. List every file the worker must touch in "files". If a file does not
+   exist yet, list it in "new_files" instead of "files".`

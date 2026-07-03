@@ -552,6 +552,108 @@ func TestListSubtasksEmpty(t *testing.T) {
 	}
 }
 
+// --- MixedBrief ---
+
+func TestInsertGetBriefByBriefID(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	b := &MixedBrief{
+		BriefID:   "brief-1",
+		Project:   "proj",
+		Task:      "Replace the retry loop with backoff.",
+		Files:     `["a.go","b.go"]`,
+		CreatedAt: now,
+	}
+	if err := s.InsertBrief(b); err != nil {
+		t.Fatalf("InsertBrief: %v", err)
+	}
+	if b.ID == 0 {
+		t.Fatal("expected non-zero ID")
+	}
+
+	got, err := s.GetBriefByBriefID("brief-1")
+	if err != nil {
+		t.Fatalf("GetBriefByBriefID: %v", err)
+	}
+	if got == nil {
+		t.Fatal("GetBriefByBriefID returned nil")
+	}
+	if got.Task != b.Task || got.Project != "proj" || got.Files != b.Files {
+		t.Errorf("unexpected brief: %+v", got)
+	}
+	if !got.CreatedAt.Equal(now) {
+		t.Errorf("CreatedAt: got %v want %v", got.CreatedAt, now)
+	}
+}
+
+func TestGetBriefByBriefIDNotFound(t *testing.T) {
+	s := newTestStore(t)
+	got, err := s.GetBriefByBriefID("no-such-brief")
+	if err != nil {
+		t.Fatalf("GetBriefByBriefID(missing): %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil, got %+v", got)
+	}
+}
+
+func TestInsertBriefDuplicateBriefIDFails(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC()
+	b1 := &MixedBrief{BriefID: "dup", Project: "p", Task: "t1", CreatedAt: now}
+	if err := s.InsertBrief(b1); err != nil {
+		t.Fatalf("InsertBrief: %v", err)
+	}
+	b2 := &MixedBrief{BriefID: "dup", Project: "p", Task: "t2", CreatedAt: now}
+	if err := s.InsertBrief(b2); err == nil {
+		t.Error("expected error inserting a duplicate brief_id")
+	}
+}
+
+func TestListBriefs(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC()
+	for i := 0; i < 3; i++ {
+		b := &MixedBrief{
+			BriefID: strings.Repeat("x", i+1), Project: "p", Task: "t",
+			CreatedAt: now.Add(time.Duration(i) * time.Second),
+		}
+		if err := s.InsertBrief(b); err != nil {
+			t.Fatalf("InsertBrief: %v", err)
+		}
+	}
+	if err := s.InsertBrief(&MixedBrief{BriefID: "other-proj", Project: "other", Task: "t", CreatedAt: now}); err != nil {
+		t.Fatalf("InsertBrief other: %v", err)
+	}
+
+	all, err := s.ListBriefs("p", 0)
+	if err != nil {
+		t.Fatalf("ListBriefs: %v", err)
+	}
+	if len(all) != 3 {
+		t.Errorf("ListBriefs: got %d, want 3", len(all))
+	}
+
+	limited, err := s.ListBriefs("p", 2)
+	if err != nil {
+		t.Fatalf("ListBriefs limited: %v", err)
+	}
+	if len(limited) != 2 {
+		t.Errorf("ListBriefs limit 2: got %d", len(limited))
+	}
+}
+
+func TestListBriefsEmpty(t *testing.T) {
+	s := newTestStore(t)
+	list, err := s.ListBriefs("no-such-project", 0)
+	if err != nil {
+		t.Fatalf("ListBriefs: %v", err)
+	}
+	if len(list) != 0 {
+		t.Errorf("expected empty list, got %d", len(list))
+	}
+}
+
 // --- Close ---
 
 func TestClose(t *testing.T) {

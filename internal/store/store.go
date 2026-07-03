@@ -81,6 +81,16 @@ type PlanSubtask struct {
 	FilesChanged  string // JSON array
 }
 
+// MixedBrief represents a row in mixed_briefs (MIXED-TASKS.md MP-06).
+type MixedBrief struct {
+	ID        int64
+	BriefID   string // stable external ID (worker.Brief.ID)
+	Project   string
+	Task      string
+	Files     string // JSON array of files the brief targets
+	CreatedAt time.Time
+}
+
 // Store wraps a SQLite database and provides CRUD for all tables.
 type Store struct {
 	db *sql.DB
@@ -528,6 +538,67 @@ func (s *Store) ListSubtasks(planID int64) ([]*PlanSubtask, error) {
 		subs = append(subs, sub)
 	}
 	return subs, rows.Err()
+}
+
+// --- mixed_briefs ---
+
+func scanBrief(row rowScanner) (*MixedBrief, error) {
+	var b MixedBrief
+	var files sql.NullString
+	err := row.Scan(&b.ID, &b.BriefID, &b.Project, &b.Task, &files, &b.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	b.Files = files.String
+	return &b, nil
+}
+
+// InsertBrief inserts a MixedBrief and sets b.ID to the generated row ID.
+func (s *Store) InsertBrief(b *MixedBrief) error {
+	const q = `INSERT INTO mixed_briefs (brief_id, project, task, files, created_at) VALUES (?, ?, ?, ?, ?)`
+	res, err := s.db.Exec(q, b.BriefID, b.Project, b.Task, nullStr(b.Files), b.CreatedAt)
+	if err != nil {
+		return err
+	}
+	b.ID, err = res.LastInsertId()
+	return err
+}
+
+// GetBriefByBriefID returns a MixedBrief by its external brief_id, or nil if
+// not found.
+func (s *Store) GetBriefByBriefID(briefID string) (*MixedBrief, error) {
+	const q = `SELECT id, brief_id, project, task, files, created_at FROM mixed_briefs WHERE brief_id=?`
+	b, err := scanBrief(s.db.QueryRow(q, briefID))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return b, err
+}
+
+// ListBriefs returns up to limit briefs for a project, newest first.
+func (s *Store) ListBriefs(project string, limit int) ([]*MixedBrief, error) {
+	q := `SELECT id, brief_id, project, task, files, created_at FROM mixed_briefs WHERE project=? ORDER BY created_at DESC`
+	args := []any{project}
+	if limit > 0 {
+		q += " LIMIT ?"
+		args = append(args, limit)
+	}
+
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var briefs []*MixedBrief
+	for rows.Next() {
+		b, err := scanBrief(rows)
+		if err != nil {
+			return nil, err
+		}
+		briefs = append(briefs, b)
+	}
+	return briefs, rows.Err()
 }
 
 // --- helpers ---
