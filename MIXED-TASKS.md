@@ -64,7 +64,7 @@ stop_when_no_tasks = true
 | Задача | Статус | Ключевые файлы |
 |---|---|---|
 | MP-01 | ✓ DONE (2026-07-02) | internal/config/types.go, config.go, config_test.go, config.example.toml |
-| MP-02 | ○ TODO | internal/worker/client.go, persist.go |
+| MP-02 | ✓ DONE (2026-07-03) | internal/worker/client.go, persist.go, client_test.go, persist_test.go |
 | MP-03 | ✓ DONE (2026-07-03) | internal/worker/patch.go, patch_test.go |
 | MP-04 | ○ TODO | internal/worker/gates.go |
 | MP-05 | ○ TODO | internal/worker/round.go, manager wiring |
