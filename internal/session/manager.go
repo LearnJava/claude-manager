@@ -13,6 +13,7 @@ import (
 	"claude-manager/internal/logger"
 	"claude-manager/internal/permission"
 	"claude-manager/internal/store"
+	"claude-manager/internal/worker"
 )
 
 // Emitter broadcasts named session events to one or more consumers.
@@ -190,6 +191,15 @@ type SessionManager struct {
 	// lastStartTime tracks the most recent reserved StartSession slot, so we
 	// can stagger session starts by session_start_delay seconds (PLAN 20.3.3).
 	lastStartTime time.Time
+
+	// Mixed programming (MIXED-TASKS.md MP-05). Guarded by mixedMu, not mu,
+	// so a long-running DispatchMixedTask call never blocks session control.
+	mixedMu     sync.Mutex
+	workerStore *worker.Store                 // worker dialogue persistence (MP-02)
+	taskStore   *worker.TaskStore             // round-state persistence (MP-05)
+	worktreeDir string                        // base dir mixed-task worktrees are created under
+	mixedTasks  map[string]context.CancelFunc // task ID -> cancel, while running
+	mixedBriefs map[string]worker.Brief       // in-memory brief registry (MP-06 will replace this)
 }
 
 // NewSessionManager constructs a manager. emitter receives all session:*
@@ -205,6 +215,11 @@ func NewSessionManager(cfg *config.AppConfig, cfgPath string, st *store.Store, e
 		stateStore:   NewStateStore(stateDir),
 		runtimeRules: permission.NewRuntimeRuleSet(),
 		queue:        permission.NewPendingQueue(),
+		workerStore:  worker.NewStore(stateDir),
+		taskStore:    worker.NewTaskStore(stateDir),
+		worktreeDir:  filepath.Join(filepath.Dir(cfgPath), "worktrees"),
+		mixedTasks:   make(map[string]context.CancelFunc),
+		mixedBriefs:  make(map[string]worker.Brief),
 	}
 }
 
@@ -1266,4 +1281,130 @@ func (m *SessionManager) projectPath(project string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("project %q not found", project)
+}
+
+// ---- Mixed programming (MIXED-TASKS.md MP-05) ----
+
+// RegisterMixedBrief makes brief available to DispatchMixedTask under id.
+// MP-06 (automatic brief generation) will call this once wired; until then,
+// callers (tests, manual dispatch) register briefs directly.
+func (m *SessionManager) RegisterMixedBrief(id string, brief worker.Brief) {
+	brief.ID = id
+	m.mixedMu.Lock()
+	m.mixedBriefs[id] = brief
+	m.mixedMu.Unlock()
+}
+
+func (m *SessionManager) findProjectConfig(project string) *config.ProjectConfig {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.cfg.Projects {
+		if m.cfg.Projects[i].Name == project {
+			return &m.cfg.Projects[i]
+		}
+	}
+	return nil
+}
+
+func (m *SessionManager) findWorkerConfig(name string) *config.WorkerConfig {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.cfg.Workers {
+		if m.cfg.Workers[i].Name == name {
+			return &m.cfg.Workers[i]
+		}
+	}
+	return nil
+}
+
+// DispatchMixedTask runs the mixed-programming round loop (brief -> patches
+// -> apply -> gates, MP-02..MP-04) for briefID against workerName, in project.
+// Blocks until the task reaches a terminal state (done or needs_human) or is
+// cancelled via CancelMixedTask; progress is flushed to disk and emitted as
+// worker:round/patch/gate/done so callers can poll GetMixedRounds instead of
+// waiting on this call alone.
+func (m *SessionManager) DispatchMixedTask(project, briefID, workerName string) (*worker.MixedTask, error) {
+	pcfg := m.findProjectConfig(project)
+	if pcfg == nil {
+		return nil, fmt.Errorf("mixed task: project %q not found", project)
+	}
+	if !pcfg.MixedProgramming {
+		return nil, fmt.Errorf("mixed task: project %q has mixed_programming disabled", project)
+	}
+	wcfg := m.findWorkerConfig(workerName)
+	if wcfg == nil {
+		return nil, fmt.Errorf("mixed task: worker %q not configured", workerName)
+	}
+
+	m.mixedMu.Lock()
+	brief, ok := m.mixedBriefs[briefID]
+	m.mixedMu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("mixed task: brief %q not registered", briefID)
+	}
+
+	apiKey, err := worker.ResolveAPIKey(*wcfg)
+	if err != nil {
+		return nil, err
+	}
+
+	taskID := project + "/" + briefID + "/" + workerName
+	task, err := m.taskStore.Load(taskID)
+	if err != nil {
+		return nil, fmt.Errorf("mixed task: load state: %w", err)
+	}
+	if task == nil {
+		task = &worker.MixedTask{
+			ID: taskID, Project: project, BriefID: briefID, WorkerName: workerName,
+			MaxRounds: pcfg.MixedMaxRounds,
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.mixedMu.Lock()
+	m.mixedTasks[taskID] = cancel
+	m.mixedMu.Unlock()
+	defer func() {
+		m.mixedMu.Lock()
+		delete(m.mixedTasks, taskID)
+		m.mixedMu.Unlock()
+	}()
+
+	orch := &worker.RoundOrchestrator{
+		Client:      worker.NewClient(*wcfg, apiKey),
+		Dialogue:    m.workerStore,
+		Tasks:       m.taskStore,
+		Emitter:     m.emitter,
+		Gates:       pcfg.Gates,
+		MaxRounds:   pcfg.MixedMaxRounds,
+		WorktreeDir: m.worktreeDir,
+	}
+
+	logger.L.Info("manager.mixed_dispatch", "task_id", taskID, "worker", workerName)
+	err = orch.RunTask(ctx, pcfg.Path, task, brief)
+	if err != nil {
+		logger.L.Error("manager.mixed_failed", "task_id", taskID, "error", err)
+	} else {
+		logger.L.Info("manager.mixed_done", "task_id", taskID, "status", task.Status)
+	}
+	return task, err
+}
+
+// GetMixedRounds returns persisted mixed-programming task state for project.
+func (m *SessionManager) GetMixedRounds(project string) ([]*worker.MixedTask, error) {
+	return m.taskStore.ListForProject(project)
+}
+
+// CancelMixedTask cancels a running mixed-programming task by ID (the same ID
+// returned in MixedTask.ID / DispatchMixedTask's result). Returns an error if
+// the task is not currently running.
+func (m *SessionManager) CancelMixedTask(id string) error {
+	m.mixedMu.Lock()
+	cancel, ok := m.mixedTasks[id]
+	m.mixedMu.Unlock()
+	if !ok {
+		return fmt.Errorf("mixed task %q is not running", id)
+	}
+	cancel()
+	return nil
 }

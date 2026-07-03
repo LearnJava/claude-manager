@@ -18,6 +18,7 @@ import (
 	"claude-manager/internal/permission"
 	"claude-manager/internal/session"
 	"claude-manager/internal/store"
+	"claude-manager/internal/worker"
 
 	toast "git.sr.ht/~jackmordaunt/go-toast/v2"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -255,6 +256,25 @@ func (a *App) ExecutePlan(planID int64) error {
 // GetPlan returns a persisted plan with its subtasks, or null if absent.
 func (a *App) GetPlan(planID int64) (*analysis.TaskPlan, error) {
 	return a.manager.GetPlan(planID)
+}
+
+// ---- Mixed programming bindings (MIXED-TASKS.md MP-05) ----
+
+// DispatchMixedTask runs the mixed-programming round loop for briefID against
+// workerName in project. Blocks until the task reaches done/needs_human, or
+// is cancelled via CancelMixedTask; progress can be polled via GetMixedRounds.
+func (a *App) DispatchMixedTask(project, briefID, workerName string) (*worker.MixedTask, error) {
+	return a.manager.DispatchMixedTask(project, briefID, workerName)
+}
+
+// GetMixedRounds returns persisted mixed-programming task state for project.
+func (a *App) GetMixedRounds(project string) ([]*worker.MixedTask, error) {
+	return a.manager.GetMixedRounds(project)
+}
+
+// CancelMixedTask cancels a running mixed-programming task by ID.
+func (a *App) CancelMixedTask(id string) error {
+	return a.manager.CancelMixedTask(id)
 }
 
 // ---- Session lifecycle bindings ----

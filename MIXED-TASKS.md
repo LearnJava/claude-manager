@@ -67,7 +67,7 @@ stop_when_no_tasks = true
 | MP-02 | ✓ DONE (2026-07-03) | internal/worker/client.go, persist.go, client_test.go, persist_test.go |
 | MP-03 | ✓ DONE (2026-07-03) | internal/worker/patch.go, patch_test.go |
 | MP-04 | ✓ DONE (2026-07-03) | internal/worker/gates.go, gates_test.go |
-| MP-05 | ○ TODO | internal/worker/round.go, manager wiring |
+| MP-05 | ✓ DONE (2026-07-03) | internal/worker/round.go, round_test.go, manager.go, manager_mixed_test.go, app.go |
 | MP-06 | ○ TODO | internal/analysis/brief.go, schema |
 | MP-07 | ○ TODO | cmd/fakeworker/, testdata/worker-scenarios/, e2e |
 | MP-08 | ○ TODO | frontend/src/components/MixedRun.svelte, Settings |
