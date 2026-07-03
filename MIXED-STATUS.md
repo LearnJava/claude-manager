@@ -5,7 +5,6 @@
 > Завершённая задача = строка удаляется. Статус «в работе» — в таблице Status
 > файла MIXED-TASKS.md, не здесь. Протокол — MIXED-TASKS.md «Как сессия берёт задачу».
 
-MIXED-TASKS.md:148
 MIXED-TASKS.md:160
 MIXED-TASKS.md:178
 MIXED-TASKS.md:191
