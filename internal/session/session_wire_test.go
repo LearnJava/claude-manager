@@ -50,17 +50,23 @@ func TestBuildCLIArgs_WorktreeNameExplicit(t *testing.T) {
 	}
 }
 
-// TestBuildCLIArgs_WorktreeNameFallsBackToSessionName verifies that, without an
-// explicit WorktreeName, the session name is used as the worktree name.
-func TestBuildCLIArgs_WorktreeNameFallsBackToSessionName(t *testing.T) {
+// TestBuildCLIArgs_WorktreeBareWhenNameUnset verifies that without an explicit
+// WorktreeName the flag stays bare (no value), so the CLI creates a fresh
+// worktree from HEAD each run — even when the session has a name. A fixed name
+// would reuse a stale worktree across the autonomous restart loop.
+func TestBuildCLIArgs_WorktreeBareWhenNameUnset(t *testing.T) {
 	s := New(Params{
 		Config: config.SessionConfig{
 			Name:        "P4",
 			UseWorktree: true,
 		},
 	})
-	if v := findFlag(s.buildCLIArgs(), "--worktree"); v != "P4" {
-		t.Errorf("--worktree = %q, want \"P4\" (session name fallback)", v)
+	args := s.buildCLIArgs()
+	if !hasFlag(args, "--worktree") {
+		t.Fatal("missing --worktree")
+	}
+	if v := findFlag(args, "--worktree"); v != "" && v[0] != '-' {
+		t.Errorf("--worktree should be bare when WorktreeName unset, got value %q", v)
 	}
 }
 

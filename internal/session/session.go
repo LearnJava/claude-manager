@@ -908,14 +908,12 @@ func (s *Session) buildCLIArgs() []string {
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(s.Config.MaxBudgetUSD, 'f', -1, 64))
 	}
 	if s.Config.UseWorktree {
-		// Give the worktree a stable, convention-friendly name instead of letting
-		// the CLI pick a random one. Falls back to the session name; `--worktree`
-		// takes an optional [name] argument (claude CLI v2.1+).
-		name := strings.TrimSpace(s.Config.WorktreeName)
-		if name == "" {
-			name = s.Config.Name
-		}
-		if name != "" {
+		// Pass an explicit name only when configured. A bare `--worktree` lets the
+		// CLI create a FRESH worktree from current HEAD on every run — which the
+		// autonomous restart loop relies on (a fixed name reuses a possibly-stale
+		// worktree, so the task file inside it can lag behind the main repo).
+		// `--worktree` takes an optional [name] argument (claude CLI v2.1+).
+		if name := strings.TrimSpace(s.Config.WorktreeName); name != "" {
 			args = append(args, "--worktree", name)
 		} else {
 			args = append(args, "--worktree")

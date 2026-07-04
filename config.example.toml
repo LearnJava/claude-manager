@@ -103,8 +103,11 @@ path = 'D:\RustProjects\lumen-browser'
 
   # Worktree
   use_worktree = true
-  # Optional worktree/branch name passed to `--worktree <name>`. Empty falls back
-  # to the session name, so the branch is stable instead of randomly generated.
+  # Optional stable worktree/branch name passed to `--worktree <name>`. Leave
+  # empty (default) to let the CLI create a FRESH worktree from HEAD on every run
+  # — required for the autonomous restart loop. Set a name only for a long-lived,
+  # manually-managed worktree (note: a fixed name reuses an existing worktree,
+  # which can go stale relative to the main repo).
   worktree_name = ""
 
   # Additional context
