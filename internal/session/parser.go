@@ -193,6 +193,11 @@ func parseLineAt(line string, now time.Time) ParsedEvent {
 		return handleRateLimit(ev)
 	case "permission_request":
 		return handlePermission(ev)
+	case "stream_event":
+		// Partial-message deltas emitted by --include-partial-messages. The full
+		// "assistant" message follows, so these are redundant; drop them silently
+		// instead of flooding the log with raw JSON.
+		return ParsedEvent{EventType: EventUnknown}
 	default:
 		return ParsedEvent{
 			EventType: EventUnknown,

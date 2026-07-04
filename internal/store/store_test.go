@@ -8,17 +8,12 @@ import (
 )
 
 // newTestStore opens a temporary in-memory SQLite store and registers a cleanup
-// function that closes it after the test. It skips the test automatically when
-// go-sqlite3 is unavailable (CGO disabled or GCC missing).
+// function that closes it after the test. The pure-Go modernc.org/sqlite driver
+// needs no cgo, so this works in every environment (including CGO_ENABLED=0).
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	s, err := New(":memory:")
 	if err != nil {
-		if strings.Contains(err.Error(), "CGO_ENABLED=0") ||
-			strings.Contains(err.Error(), "cgo") ||
-			strings.Contains(err.Error(), "stub") {
-			t.Skipf("skipping: go-sqlite3 requires CGO: %v", err)
-		}
 		t.Fatalf("New: %v", err)
 	}
 	t.Cleanup(func() { s.Close() })
@@ -292,13 +287,13 @@ func TestAddGetDailyMetrics(t *testing.T) {
 	date := "2026-05-01"
 
 	m := &DailyMetrics{
-		Date:               date,
-		Project:            "proj",
-		TotalCost:          0.10,
-		TotalInputTokens:   1000,
-		TotalOutputTokens:  200,
-		TotalRuns:          1,
-		TotalTasks:         3,
+		Date:              date,
+		Project:           "proj",
+		TotalCost:         0.10,
+		TotalInputTokens:  1000,
+		TotalOutputTokens: 200,
+		TotalRuns:         1,
+		TotalTasks:        3,
 	}
 	if err := s.AddDailyMetrics(m); err != nil {
 		t.Fatalf("AddDailyMetrics: %v", err)
@@ -516,8 +511,13 @@ func TestInsertUpdateListSubtasks(t *testing.T) {
 		t.Errorf("DependsOn: got %q", list[1].DependsOn)
 	}
 
-	// Update the first subtask.
-	runID := int64(99)
+	// Update the first subtask, linking it to a real run (session_run_id has a
+	// foreign key to session_runs, so the referenced run must exist).
+	run := &SessionRun{Project: "p", Session: "s1", Model: "haiku", StartedAt: time.Now(), Status: "completed"}
+	if err := s.InsertRun(run); err != nil {
+		t.Fatalf("InsertRun: %v", err)
+	}
+	runID := run.ID
 	subs[0].Status = "completed"
 	subs[0].SessionRunID = &runID
 	subs[0].ResultSummary = "done"
@@ -536,8 +536,8 @@ func TestInsertUpdateListSubtasks(t *testing.T) {
 	if updated[0].ResultSummary != "done" {
 		t.Errorf("ResultSummary: got %q", updated[0].ResultSummary)
 	}
-	if updated[0].SessionRunID == nil || *updated[0].SessionRunID != 99 {
-		t.Errorf("SessionRunID: got %v", updated[0].SessionRunID)
+	if updated[0].SessionRunID == nil || *updated[0].SessionRunID != runID {
+		t.Errorf("SessionRunID: got %v, want %d", updated[0].SessionRunID, runID)
 	}
 }
 
@@ -667,11 +667,6 @@ func TestClose(t *testing.T) {
 
 	s, err := New(path)
 	if err != nil {
-		if strings.Contains(err.Error(), "CGO_ENABLED=0") ||
-			strings.Contains(err.Error(), "cgo") ||
-			strings.Contains(err.Error(), "stub") {
-			t.Skipf("skipping: go-sqlite3 requires CGO: %v", err)
-		}
 		t.Fatalf("New: %v", err)
 	}
 	if err := s.Close(); err != nil {

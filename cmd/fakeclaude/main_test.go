@@ -44,7 +44,7 @@ func TestHappyPath(t *testing.T) {
 	// Write stdin in a goroutine to avoid deadlock.
 	go func() {
 		defer pipeW.Close()
-		pipeW.Write([]byte(`{"type":"user_message","message":"hello simple task"}` + "\n"))
+		pipeW.Write([]byte(`{"type":"user","message":{"role":"user","content":"hello simple task"}}` + "\n"))
 	}()
 
 	code := run([]string{"--session-id", "test-sid", "--model", "claude-sonnet-4-6"}, pipeR, &buf, path)
@@ -80,7 +80,7 @@ func TestPermissionAllow(t *testing.T) {
 
 	go func() {
 		defer pipeW.Close()
-		pipeW.Write([]byte(`{"type":"user_message","message":"please edit the file"}` + "\n"))
+		pipeW.Write([]byte(`{"type":"user","message":{"role":"user","content":"please edit the file"}}` + "\n"))
 		pipeW.Write([]byte(`{"type":"permission_response","request_id":"p1","decision":"allow"}` + "\n"))
 	}()
 
@@ -131,7 +131,7 @@ func TestPermissionDeny(t *testing.T) {
 
 	go func() {
 		defer pipeW.Close()
-		pipeW.Write([]byte(`{"type":"user_message","message":"delete the build artifacts"}` + "\n"))
+		pipeW.Write([]byte(`{"type":"user","message":{"role":"user","content":"delete the build artifacts"}}` + "\n"))
 		pipeW.Write([]byte(`{"type":"permission_response","request_id":"p2","decision":"deny"}` + "\n"))
 	}()
 
@@ -184,7 +184,7 @@ func TestErrorExit(t *testing.T) {
 
 	go func() {
 		defer pipeW.Close()
-		pipeW.Write([]byte(`{"type":"user_message","message":"this will crash and fail"}` + "\n"))
+		pipeW.Write([]byte(`{"type":"user","message":{"role":"user","content":"this will crash and fail"}}` + "\n"))
 	}()
 
 	code := run([]string{"--session-id", "test-sid"}, pipeR, &buf, path)

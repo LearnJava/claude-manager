@@ -59,10 +59,25 @@ type EventCallback func(sessionID string, ev SessionEvent)
 
 // ---- Stdin protocol messages ----
 
-// InputMessage is a stream-json user_message written to stdin.
+// InputMessage is a stream-json user message written to stdin. The Claude CLI
+// (--input-format stream-json) expects the Anthropic message envelope, i.e.
+// {"type":"user","message":{"role":"user","content":"..."}}. The earlier
+// {"type":"user_message","message":"..."} shape is NOT recognised by the CLI
+// and makes the process hang waiting on stdin.
 type InputMessage struct {
-	Type    string `json:"type"`
-	Message string `json:"message"`
+	Type    string       `json:"type"`
+	Message InputPayload `json:"message"`
+}
+
+// InputPayload is the nested Anthropic message object carried by InputMessage.
+type InputPayload struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// userMessage builds the stream-json envelope for a user turn.
+func userMessage(text string) InputMessage {
+	return InputMessage{Type: "user", Message: InputPayload{Role: "user", Content: text}}
 }
 
 // PermissionResponseMessage is the stream-json reply to a permission_request.
@@ -270,7 +285,7 @@ func (s *Session) SendMessage(msg string) error {
 	if st != config.StatusWorking && st != config.StatusWaitingPermission {
 		return fmt.Errorf("session %s is not active (status=%s)", s.ID, st)
 	}
-	data, err := json.Marshal(InputMessage{Type: "user_message", Message: msg})
+	data, err := json.Marshal(userMessage(msg))
 	if err != nil {
 		return err
 	}
@@ -609,14 +624,30 @@ func (s *Session) runOnce(ctx context.Context) error {
 
 	s.setStatus(config.StatusWorking)
 
+	// closeInput signals stdin EOF exactly once (idempotent). It is called both
+	// on turn completion (autonomous mode) and after the stdout stream ends.
+	var closeInputOnce sync.Once
+	closeInput := func() { closeInputOnce.Do(func() { close(inputCh) }) }
+
+	// In autonomous mode the manager owns the session lifecycle: one CLI process
+	// handles one task/turn, then restarts with a fresh context (see PLAN.md
+	// token optimization). Real Claude CLI keeps its process alive waiting on
+	// stdin after each result, so we must close stdin when the turn's `result`
+	// event arrives — otherwise the process idles forever and the Run loop never
+	// iterates to re-check the task source. Interactive sessions (no auto-restart
+	// and no task loop) keep stdin open so the user can continue the conversation.
+	autonomous := s.Config.AutoRestart || s.Config.StopWhenNoTasks
+
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
-		s.handleLine(scanner.Text())
+		if s.handleLine(scanner.Text()) && autonomous {
+			closeInput()
+		}
 	}
 	scanErr := scanner.Err()
 
-	close(inputCh)
+	closeInput()
 	<-writerDone
 	<-stderrDone
 
@@ -666,7 +697,7 @@ func (s *Session) initialPromptText() string {
 
 // sendInitialPrompt pushes prompt onto the input channel before any user messages.
 func (s *Session) sendInitialPrompt(ch chan<- []byte, prompt string) error {
-	data, err := json.Marshal(InputMessage{Type: "user_message", Message: prompt})
+	data, err := json.Marshal(userMessage(prompt))
 	if err != nil {
 		return err
 	}
@@ -678,8 +709,9 @@ func (s *Session) sendInitialPrompt(ch chan<- []byte, prompt string) error {
 	}
 }
 
-// handleLine parses one stream-json line and dispatches the event.
-func (s *Session) handleLine(line string) {
+// handleLine parses one stream-json line and dispatches the event. It returns
+// true when the line was a result event, i.e. the current turn/task finished.
+func (s *Session) handleLine(line string) bool {
 	ev := ParseLine(line)
 
 	s.mu.Lock()
@@ -724,6 +756,7 @@ func (s *Session) handleLine(line string) {
 		if ev.Result != nil {
 			s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
 		}
+		return true
 
 	case EventRateLimit:
 		if ev.RateLimit != nil {
@@ -746,6 +779,7 @@ func (s *Session) handleLine(line string) {
 			s.emit(SessionEvent{Type: EvtLog, Entry: &entry})
 		}
 	}
+	return false
 }
 
 // drainStderr reads stderr line by line, forwarding each line as a log
@@ -874,7 +908,18 @@ func (s *Session) buildCLIArgs() []string {
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(s.Config.MaxBudgetUSD, 'f', -1, 64))
 	}
 	if s.Config.UseWorktree {
-		args = append(args, "--worktree")
+		// Give the worktree a stable, convention-friendly name instead of letting
+		// the CLI pick a random one. Falls back to the session name; `--worktree`
+		// takes an optional [name] argument (claude CLI v2.1+).
+		name := strings.TrimSpace(s.Config.WorktreeName)
+		if name == "" {
+			name = s.Config.Name
+		}
+		if name != "" {
+			args = append(args, "--worktree", name)
+		} else {
+			args = append(args, "--worktree")
+		}
 	}
 	if len(s.Config.AllowedTools) > 0 {
 		args = append(args, "--allowedTools", strings.Join(s.Config.AllowedTools, " "))

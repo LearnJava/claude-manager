@@ -134,18 +134,48 @@ func readFirstLine(r io.Reader) (string, io.Reader, error) {
 	}
 }
 
-// extractPrompt parses a stream-json user_message line and returns the message field.
+// extractPrompt parses a stream-json user message line and returns its text.
+// It accepts the current CLI envelope
+// {"type":"user","message":{"role":"user","content":"..."}} (content may be a
+// string or an array of blocks) as well as the legacy
+// {"type":"user_message","message":"..."} shape for backward tolerance.
 func extractPrompt(line string) string {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return ""
 	}
 	var m struct {
-		Type    string `json:"type"`
-		Message string `json:"message"`
+		Type    string          `json:"type"`
+		Message json.RawMessage `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(line), &m); err != nil {
 		return line
 	}
-	return m.Message
+	// Legacy: message is a plain string.
+	var legacy string
+	if err := json.Unmarshal(m.Message, &legacy); err == nil {
+		return legacy
+	}
+	// Current: message is an object {role, content}, content string or blocks.
+	var msg struct {
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(m.Message, &msg); err != nil {
+		return ""
+	}
+	var content string
+	if err := json.Unmarshal(msg.Content, &content); err == nil {
+		return content
+	}
+	var blocks []struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(msg.Content, &blocks); err == nil {
+		for _, b := range blocks {
+			if b.Text != "" {
+				return b.Text
+			}
+		}
+	}
+	return ""
 }

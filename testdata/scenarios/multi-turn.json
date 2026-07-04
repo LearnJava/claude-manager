@@ -7,7 +7,7 @@
   "steps": [
     {
       "type": "await_stdin",
-      "expect": "user_message",
+      "expect": "user",
       "timeout_ms": 5000,
       "store_as": "msg1"
     },
@@ -23,7 +23,7 @@
     },
     {
       "type": "await_stdin",
-      "expect": "user_message",
+      "expect": "user",
       "timeout_ms": 10000,
       "store_as": "msg2"
     },
@@ -34,7 +34,7 @@
     },
     {
       "type": "await_stdin",
-      "expect": "user_message",
+      "expect": "user",
       "timeout_ms": 10000,
       "store_as": "msg3"
     },

@@ -135,14 +135,22 @@ claude -p \
   [--append-system-prompt <text>] [--add-dir <dirs>] \
   [--exclude-dynamic-system-prompt-sections]
 ```
-Initial prompt sent via stdin as `{"type":"user_message","message":"..."}`.
+Initial prompt (and every user turn) is sent via stdin using the Claude CLI
+stream-json envelope: `{"type":"user","message":{"role":"user","content":"..."}}`.
+The `type` **must** be `user` with a nested `{role,content}` message — the CLI
+does not recognise a flat `{"type":"user_message","message":"..."}` and hangs on
+stdin if it receives one. In autonomous mode (`auto_restart`/`stop_when_no_tasks`)
+the manager closes stdin when the turn's `result` event arrives so the CLI exits
+cleanly and the run loop can iterate; real Claude keeps the process alive on open
+stdin otherwise.
 
 ### Stream-JSON Events (stdout)
 Key event types to parse:
 - `{"type":"system","subtype":"init",...}` — session info, model, tools, version
 - `{"type":"assistant","message":{"content":[...],"usage":{...}}}` — text/tool_use with per-turn token usage
 - `{"type":"result","total_cost_usd":...,"usage":{...},"modelUsage":{...}}` — final metrics
-- `{"type":"rate_limit_event","rate_limit_info":{"utilization":0.88,"resetsAt":...}}` — rate limit status
+- `{"type":"stream_event",...}` — partial-message deltas (from `--include-partial-messages`); dropped silently, the full `assistant` message follows
+- `{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"|"allowed_warning"|"rejected",...}}` — rate limit status. Real Claude emits an informational `status:"allowed"` event on **every** session; only a rejecting status (`rejected`/`exceeded`/…) pauses/restarts the run. `allowed_warning` (with utilization) is surfaced to the UI but does not abort.
 
 ### Permission Handling
 When `permission_mode != "bypassPermissions"`, Claude CLI sends permission requests via stdout and blocks waiting for response on stdin. The manager MUST:
@@ -375,7 +383,7 @@ wails build        # Production: build/bin/claude-manager.exe (~15-20 MB)
 ```
 github.com/wailsapp/wails/v2
 github.com/BurntSushi/toml
-github.com/mattn/go-sqlite3
+modernc.org/sqlite            # pure-Go SQLite driver (no cgo/C toolchain needed)
 github.com/google/uuid
 git.sr.ht/~jackmordaunt/go-toast/v2
 ```

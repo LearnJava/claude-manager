@@ -6,29 +6,32 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	// Pure-Go SQLite driver (registers driver name "sqlite"). Unlike
+	// github.com/mattn/go-sqlite3 it needs no cgo/C toolchain, so history and
+	// logs work in a CGO_ENABLED=0 build too.
+	_ "modernc.org/sqlite"
 )
 
 // SessionRun represents a row in session_runs.
 type SessionRun struct {
-	ID                   int64
-	Project              string
-	Session              string
-	CLISessionID         string
-	Model                string
-	StartedAt            time.Time
-	FinishedAt           *time.Time
-	Status               string // "completed" | "error" | "stopped" | "rate_limited"
-	TasksDone            int
-	ExitCode             *int
-	ErrorMsg             string
-	TotalCostUSD         float64
-	InputTokens          int64
-	OutputTokens         int64
-	CacheReadTokens      int64
-	CacheCreationTokens  int64
-	NumTurns             int
-	DurationMs           int64
+	ID                  int64
+	Project             string
+	Session             string
+	CLISessionID        string
+	Model               string
+	StartedAt           time.Time
+	FinishedAt          *time.Time
+	Status              string // "completed" | "error" | "stopped" | "rate_limited"
+	TasksDone           int
+	ExitCode            *int
+	ErrorMsg            string
+	TotalCostUSD        float64
+	InputTokens         int64
+	OutputTokens        int64
+	CacheReadTokens     int64
+	CacheCreationTokens int64
+	NumTurns            int
+	DurationMs          int64
 }
 
 // LogEntry represents a row in session_logs.
@@ -44,13 +47,13 @@ type LogEntry struct {
 
 // DailyMetrics represents a row in daily_metrics.
 type DailyMetrics struct {
-	Date               string // "2026-05-22"
-	Project            string
-	TotalCost          float64
-	TotalInputTokens   int64
-	TotalOutputTokens  int64
-	TotalRuns          int
-	TotalTasks         int
+	Date              string // "2026-05-22"
+	Project           string
+	TotalCost         float64
+	TotalInputTokens  int64
+	TotalOutputTokens int64
+	TotalRuns         int
+	TotalTasks        int
 }
 
 // TaskPlan represents a row in task_plans.
@@ -98,7 +101,7 @@ type Store struct {
 
 // New opens the SQLite database at dbPath, runs migrations, and returns a Store.
 func New(dbPath string) (*Store, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_foreign_keys=on")
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(on)")
 	if err != nil {
 		return nil, fmt.Errorf("store open: %w", err)
 	}

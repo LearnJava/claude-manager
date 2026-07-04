@@ -47,10 +47,10 @@ type OptimizationSettings struct {
 
 	// Loop detection (PLAN.md 20.3.8)
 	LoopDetection           bool   `toml:"loop_detection"`
-	LoopThreshold           int    `toml:"loop_threshold"`             // repeats before detection (e.g. 3)
-	LoopAction              string `toml:"loop_action"`                // warn | send_hint | restart
-	LoopHint                string `toml:"loop_hint"`                  // text sent to stdin on send_hint
-	LoopWindow              int    `toml:"loop_window"`                // ring buffer size (e.g. 20)
+	LoopThreshold           int    `toml:"loop_threshold"` // repeats before detection (e.g. 3)
+	LoopAction              string `toml:"loop_action"`    // warn | send_hint | restart
+	LoopHint                string `toml:"loop_hint"`      // text sent to stdin on send_hint
+	LoopWindow              int    `toml:"loop_window"`    // ring buffer size (e.g. 20)
 	LoopIgnoreReadAfterEdit bool   `toml:"loop_ignore_read_after_edit"`
 
 	// Auto routing (PLAN.md 20.3.4)
@@ -86,9 +86,9 @@ type GlobalSettings struct {
 	PermissionSound              bool   `toml:"permission_sound"`
 
 	// Budget alerts
-	DailyBudgetAlert          float64 `toml:"daily_budget_alert"`
-	WeeklyBudgetAlert         float64 `toml:"weekly_budget_alert"`
-	RateLimitAlertThreshold   float64 `toml:"rate_limit_alert_threshold"`
+	DailyBudgetAlert        float64 `toml:"daily_budget_alert"`
+	WeeklyBudgetAlert       float64 `toml:"weekly_budget_alert"`
+	RateLimitAlertThreshold float64 `toml:"rate_limit_alert_threshold"`
 
 	// Cache warming: stagger session starts by this many seconds (PLAN.md 20.3.3).
 	SessionStartDelay int `toml:"session_start_delay"`
@@ -114,23 +114,23 @@ type ProjectConfig struct {
 }
 
 type SessionConfig struct {
-	Name            string          `toml:"name"`
-	Prompt          string          `toml:"prompt"`
-	AutoRestart     bool            `toml:"auto_restart"`
-	MaxTasks        int             `toml:"max_tasks"`
-	StopWhenNoTasks bool            `toml:"stop_when_no_tasks"`
-	TaskSource      string          `toml:"task_source"`
+	Name            string `toml:"name"`
+	Prompt          string `toml:"prompt"`
+	AutoRestart     bool   `toml:"auto_restart"`
+	MaxTasks        int    `toml:"max_tasks"`
+	StopWhenNoTasks bool   `toml:"stop_when_no_tasks"`
+	TaskSource      string `toml:"task_source"`
 
 	// Model and performance
-	Model                   string `toml:"model"`
-	FallbackModel           string `toml:"fallback_model"`
+	Model                    string `toml:"model"`
+	FallbackModel            string `toml:"fallback_model"`
 	FallbackModelOnRateLimit bool   `toml:"fallback_model_on_rate_limit"`
-	Effort                  string `toml:"effort"`
+	Effort                   string `toml:"effort"`
 
 	// Permissions
-	PermissionMode  string          `toml:"permission_mode"`
-	AllowedTools    []string        `toml:"allowed_tools"`
-	DisallowedTools []string        `toml:"disallowed_tools"`
+	PermissionMode  string           `toml:"permission_mode"`
+	AllowedTools    []string         `toml:"allowed_tools"`
+	DisallowedTools []string         `toml:"disallowed_tools"`
 	PermissionRules []PermissionRule `toml:"permission_rule"`
 
 	// Budget
@@ -138,6 +138,9 @@ type SessionConfig struct {
 
 	// Worktree
 	UseWorktree bool `toml:"use_worktree"`
+	// WorktreeName is passed to `--worktree <name>` so the branch/worktree has a
+	// stable name instead of a random one. Empty falls back to the session name.
+	WorktreeName string `toml:"worktree_name"`
 
 	// Context
 	SystemPromptAppend string   `toml:"system_prompt_append"`
@@ -165,7 +168,7 @@ type PermissionRule struct {
 type SessionStatus int
 
 const (
-	StatusIdle              SessionStatus = iota
+	StatusIdle SessionStatus = iota
 	StatusStarting
 	StatusAnalyzing
 	StatusWorking
@@ -203,8 +206,8 @@ func (s SessionStatus) String() string {
 
 type LogEntry struct {
 	Time      time.Time `json:"time"`
-	Level     string    `json:"level"`     // "text" | "tool" | "error" | "result" | "system"
-	Source    string    `json:"source"`    // "claude" | "manager"
+	Level     string    `json:"level"`  // "text" | "tool" | "error" | "result" | "system"
+	Source    string    `json:"source"` // "claude" | "manager"
 	Message   string    `json:"message"`
 	ToolName  string    `json:"tool_name"`  // for tool calls
 	ToolInput string    `json:"tool_input"` // abbreviated input

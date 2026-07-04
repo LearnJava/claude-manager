@@ -55,13 +55,36 @@ func parseResetClock(raw string, now time.Time) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// throttled reports whether a rate_limit_event means the request was actually
+// limited. The real CLI emits an informational event with status "allowed" (and
+// "allowed_warning" as the limit approaches) on every session; only a rejecting
+// status should pause/restart the run.
+func (info *RateLimitInfo) throttled() bool {
+	switch strings.ToLower(strings.TrimSpace(info.Status)) {
+	case "", "allowed", "allowed_warning", "ok", "within_limit":
+		return false
+	default: // "exceeded", "rejected", "throttled", "limited", ...
+		return true
+	}
+}
+
 // onRateLimit records a rate-limit signal on the session and emits the
-// corresponding event. The actual wait happens in Run() between runs.
+// corresponding event. It only marks the session rate-limited (which aborts the
+// run so Run() can pause/fallback) when the event actually indicates a throttle;
+// otherwise the event is surfaced to the UI as an informational
+// utilization/countdown update. The purely informational status="allowed" event
+// the CLI emits on every session (no utilization) is ignored entirely so it
+// neither aborts the run nor shows a bogus countdown.
 func (s *Session) onRateLimit(info *RateLimitInfo) {
 	if info == nil {
 		return
 	}
 	cp := *info
+	throttled := cp.throttled()
+
+	if !throttled && cp.Utilization <= 0 {
+		return
+	}
 
 	until := time.Time{}
 	if cp.ResetsAt > 0 {
@@ -72,7 +95,9 @@ func (s *Session) onRateLimit(info *RateLimitInfo) {
 	s.rateLimitUntil = until
 	s.mu.Unlock()
 
-	s.rateLimited.Store(true)
+	if throttled {
+		s.rateLimited.Store(true)
+	}
 	s.rateLimitInf.Store(&cp)
 	s.emit(SessionEvent{Type: EvtRateLimit, RateLimit: &cp})
 }

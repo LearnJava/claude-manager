@@ -103,6 +103,9 @@ path = 'D:\RustProjects\lumen-browser'
 
   # Worktree
   use_worktree = true
+  # Optional worktree/branch name passed to `--worktree <name>`. Empty falls back
+  # to the session name, so the branch is stable instead of randomly generated.
+  worktree_name = ""
 
   # Additional context
   system_prompt_append = ""
