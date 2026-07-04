@@ -1,5 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// VISUAL=1 turns the run into a watchable walkthrough: a headed browser, slow
+// motion between actions, video capture and a screenshot per step. Normal
+// (CI/headless) runs are unaffected. Tune the pace with SLOWMO (ms).
+const VISUAL = !!process.env.VISUAL;
+const SLOWMO = Number(process.env.SLOWMO ?? 500);
+
 // CM_CONTROL_PORT / CM_CONTROL_TOKEN are set by global-setup (or externally).
 // The Vite dev server is started automatically by the webServer config below.
 export default defineConfig({
@@ -25,7 +31,10 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',
-    screenshot: 'only-on-failure',
+    screenshot: VISUAL ? 'on' : 'only-on-failure',
+    video: VISUAL ? 'on' : 'off',
+    headless: VISUAL ? false : undefined,
+    launchOptions: { slowMo: VISUAL ? SLOWMO : 0 },
     ignoreHTTPSErrors: true,
   },
 

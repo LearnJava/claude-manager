@@ -223,6 +223,16 @@ function writeTestConfig(tmpDir: string, fakeclaudePath: string, mixed: MixedOpt
     'auto_restart = false',
     'model = "claude-sonnet-4-6"',
     'permission_mode = "default"',
+    '',
+    // S3 maps to the multi-turn scenario, which awaits stdin and therefore
+    // stays alive — used by the visual "send a message" walkthrough where slow
+    // motion would otherwise outlast the short-lived happy-path session.
+    '[[project.session]]',
+    'name = "S3"',
+    'prompt = "Let us have a multi-turn conversation"',
+    'auto_restart = false',
+    'model = "claude-sonnet-4-6"',
+    'permission_mode = "default"',
   ];
 
   if (mixed.mixedEnabled) {
