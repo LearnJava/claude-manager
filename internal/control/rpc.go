@@ -386,6 +386,16 @@ func (s *Server) buildRegistry() map[string]handler {
 		return m.GetMixedRounds(args.Project)
 	}
 
+	reg["GetMixedQuality"] = func(p json.RawMessage) (any, error) {
+		var args struct {
+			Project string `json:"project"`
+		}
+		if err := json.Unmarshal(p, &args); err != nil {
+			return nil, err
+		}
+		return m.GetMixedQuality(args.Project)
+	}
+
 	reg["CancelMixedTask"] = func(p json.RawMessage) (any, error) {
 		var args struct {
 			ID string `json:"id"`

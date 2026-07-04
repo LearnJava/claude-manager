@@ -29,6 +29,11 @@ func TestRPC_MixedMethodsDispatch(t *testing.T) {
 			"GetMixedRounds proj",
 		},
 		{
+			"get_mixed_quality",
+			`{"jsonrpc":"2.0","id":5,"method":"GetMixedQuality","params":{"project":"proj"}}`,
+			"GetMixedQuality proj",
+		},
+		{
 			"cancel_mixed_task",
 			`{"jsonrpc":"2.0","id":4,"method":"CancelMixedTask","params":{"id":"proj/b1/step37"}}`,
 			"CancelMixedTask proj/b1/step37",

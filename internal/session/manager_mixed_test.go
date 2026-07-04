@@ -153,6 +153,57 @@ func TestDispatchMixedTaskFullRoundTrip(t *testing.T) {
 	}
 }
 
+func TestGetMixedQuality(t *testing.T) {
+	m := newMixedTestManager(t, t.TempDir(), "http://example.invalid")
+
+	// Empty state dir: empty report, no error.
+	report, err := m.GetMixedQuality("lumen")
+	if err != nil {
+		t.Fatalf("GetMixedQuality (empty): %v", err)
+	}
+	if len(report) != 0 {
+		t.Fatalf("empty state: want no entries, got %+v", report)
+	}
+
+	// Persist two tasks for the project (and one for another project that
+	// must not leak into the report).
+	save := func(task *worker.MixedTask) {
+		t.Helper()
+		if err := m.taskStore.Save(task); err != nil {
+			t.Fatalf("taskStore.Save(%s): %v", task.ID, err)
+		}
+	}
+	save(&worker.MixedTask{
+		ID: "lumen/b1/step37", Project: "lumen", BriefID: "b1", WorkerName: "step37",
+		Status: worker.TaskStatusDone,
+		Rounds: []worker.RoundRecord{{Number: 1, Applied: []worker.Patch{{File: "a.txt"}}, Passed: true}},
+	})
+	save(&worker.MixedTask{
+		ID: "lumen/b2/step37", Project: "lumen", BriefID: "b2", WorkerName: "step37",
+		Status: worker.TaskStatusNeedsHuman,
+		Rounds: []worker.RoundRecord{{Number: 1, ParseError: "missing >>>END"}},
+	})
+	save(&worker.MixedTask{
+		ID: "other/b1/step37", Project: "other", BriefID: "b1", WorkerName: "step37",
+		Status: worker.TaskStatusDone,
+	})
+
+	report, err = m.GetMixedQuality("lumen")
+	if err != nil {
+		t.Fatalf("GetMixedQuality: %v", err)
+	}
+	if len(report) != 1 {
+		t.Fatalf("want 1 worker entry, got %+v", report)
+	}
+	q := report[0]
+	if q.Worker != "step37" || q.TasksTotal != 2 || q.TasksDone != 1 || q.TasksNeedsHuman != 1 {
+		t.Errorf("aggregate wrong: %+v", q)
+	}
+	if q.ParseErrors != 1 || q.PatchesApplied != 1 {
+		t.Errorf("defects/patches wrong: %+v", q)
+	}
+}
+
 func TestCancelMixedTaskNotRunning(t *testing.T) {
 	m := newMixedTestManager(t, t.TempDir(), "http://example.invalid")
 	if err := m.CancelMixedTask("not-a-real-task"); err == nil {

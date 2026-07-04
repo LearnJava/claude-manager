@@ -260,6 +260,14 @@ func (a *App) GetPlan(planID int64) (*analysis.TaskPlan, error) {
 
 // ---- Mixed programming bindings (MIXED-TASKS.md MP-05) ----
 
+// RegisterMixedBrief registers a self-contained brief under id so it can be
+// dispatched to a worker (MP-06 generates these; the GUI also lets an operator
+// enter one by hand). Returns the id so the frontend can chain DispatchMixedTask.
+func (a *App) RegisterMixedBrief(id, task, systemPrompt string) string {
+	a.manager.RegisterMixedBrief(id, worker.Brief{Task: task, SystemPrompt: systemPrompt})
+	return id
+}
+
 // DispatchMixedTask runs the mixed-programming round loop for briefID against
 // workerName in project. Blocks until the task reaches done/needs_human, or
 // is cancelled via CancelMixedTask; progress can be polled via GetMixedRounds.
@@ -270,6 +278,12 @@ func (a *App) DispatchMixedTask(project, briefID, workerName string) (*worker.Mi
 // GetMixedRounds returns persisted mixed-programming task state for project.
 func (a *App) GetMixedRounds(project string) ([]*worker.MixedTask, error) {
 	return a.manager.GetMixedRounds(project)
+}
+
+// GetMixedQuality returns the per-worker comparative quality report for
+// project, aggregated from persisted mixed-task state (MP-08).
+func (a *App) GetMixedQuality(project string) ([]worker.ModelQuality, error) {
+	return a.manager.GetMixedQuality(project)
 }
 
 // CancelMixedTask cancels a running mixed-programming task by ID.

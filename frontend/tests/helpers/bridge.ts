@@ -115,6 +115,14 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         GetSessionState: (project: string, name: string) =>
           rpc('GetSessionState', { project, session: name }),
         GetModelRecommendation: () => Promise.resolve(null),
+        // Mixed programming (MIXED-TASKS.md MP-08).
+        RegisterMixedBrief: (id: string, task: string, systemPrompt: string) =>
+          rpc('RegisterMixedBrief', { id, task, system_prompt: systemPrompt }).then(() => id),
+        DispatchMixedTask: (project: string, briefId: string, workerName: string) =>
+          rpc('DispatchMixedTask', { project, brief_id: briefId, worker: workerName }),
+        GetMixedRounds: (project: string) => rpc('GetMixedRounds', { project }),
+        GetMixedQuality: (project: string) => rpc('GetMixedQuality', { project }),
+        CancelMixedTask: (id: string) => rpc('CancelMixedTask', { id }),
         // Stubs for platform-specific calls that don't exist in the test server.
         PickDirectory: () => Promise.resolve(''),
         Notify: () => Promise.resolve(undefined),

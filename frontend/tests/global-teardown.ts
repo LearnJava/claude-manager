@@ -18,16 +18,25 @@ export default async function globalTeardown(): Promise<void> {
     return;
   }
 
-  if (state.pid) {
-    try {
-      process.kill(state.pid, 'SIGTERM');
-    } catch {
-      // Process may have already exited.
+  for (const pid of [state.pid, state.workerPid]) {
+    if (pid) {
+      try {
+        process.kill(pid, 'SIGTERM');
+      } catch {
+        // Process may have already exited.
+      }
     }
   }
 
-  // Clean up runtime-generated config.
-  if (state.cfgPath && fs.existsSync(state.cfgPath)) {
+  // Clean up the isolated temp working dir (config, state, worktrees, seed repo).
+  if (state.tmpDir && fs.existsSync(state.tmpDir)) {
+    try {
+      fs.rmSync(state.tmpDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  } else if (state.cfgPath && fs.existsSync(state.cfgPath)) {
+    // Backwards-compatible path for configs written outside a temp dir.
     try { fs.unlinkSync(state.cfgPath); } catch { /* ignore */ }
   }
 

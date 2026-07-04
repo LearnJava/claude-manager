@@ -233,6 +233,22 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | ST-14 | Theme change applies immediately | Change theme dropdown | App theme changes without Save | ○ |
 | ST-15 | Close without save discards | Edit field, click Close | Config not updated; original value persists | ○ |
 | ST-16 | Error state on config load failure | Backend returns error | "No config loaded" error visible | ○ |
+| ST-17 | Workers tab: add preset persists | Open Workers, add Step 3.7 preset, save | GetConfig returns worker step37 with the preset model | **✓** |
+| ST-18 | Project mixed-programming opt-in | Projects tab, enable mixed on a project | Privacy warning + Gates textarea appear | ○ |
+
+---
+
+## MixedRun.svelte — Mixed Programming (MP-08)
+
+| ID | Title | Steps | Assert | Status |
+|----|-------|-------|--------|--------|
+| MX-01 | Modal opens from header | Click Mixed | Modal titled "Mixed programming" appears | **✓** |
+| MX-02 | Mixed project/worker preselected | Open modal | Project select = mixedproj, worker select = fake | **✓** |
+| MX-03 | Dispatch runs a round | Enter brief, click Dispatch | `worker:done` `status=done, rounds=1`; task timeline shows "done" and "Round 1" | **✓** |
+| MX-04 | Quality table populates | After a completed dispatch | Quality table lists the worker with done/total counts | **✓** |
+| MX-05 | Empty state when no mixed project | Open modal with mixed disabled everywhere | "No project has mixed programming enabled" message | ○ |
+| MX-06 | Cancel a running task | Dispatch a slow task, click Cancel | Task reaches needs_human; CancelMixedTask called | ○ |
+| MX-07 | Gate output expand/collapse | Task with gate failure, click "gates" | Gate stdout/stderr shown, toggles off on re-click | ○ |
 
 ---
 

@@ -6,7 +6,7 @@
 
     const dispatch = createEventDispatcher();
 
-    type Tab = 'global' | 'projects' | 'sessions';
+    type Tab = 'global' | 'projects' | 'sessions' | 'workers';
     export let initialTab: Tab = 'global';
     let activeTab: Tab = initialTab;
 
@@ -14,6 +14,7 @@
         { id: 'global', label: 'Global' },
         { id: 'projects', label: 'Projects' },
         { id: 'sessions', label: 'Sessions' },
+        { id: 'workers', label: 'Workers' },
     ];
 
     // ---- Local config types (mirror Go structs from internal/config/types.go) ----
@@ -53,6 +54,24 @@
         Name: string;
         Path: string;
         Sessions: SessionConfig[];
+        // Mixed programming (MIXED-TASKS.md). Privacy opt-in: code is sent to
+        // external worker endpoints. Enabling requires non-empty Gates.
+        MixedProgramming: boolean;
+        Gates: string[];
+        MixedMaxRounds: number;
+    }
+
+    interface WorkerConfig {
+        Name: string;
+        BaseURL: string;
+        Model: string;
+        KeyEnv: string;
+        Role: string;
+        ReasoningEffort: string;
+        MaxOutputTokens: number;
+        ContinuationCap: number;
+        ASCIIAnchorsOnly: boolean;
+        RequestTimeoutSec: number;
     }
 
     interface GlobalSettings {
@@ -85,6 +104,7 @@
         Settings: GlobalSettings;
         Optimization: OptimizationSettings;
         Projects: ProjectConfig[];
+        Workers: WorkerConfig[];
     }
 
     // ---- State ----
@@ -125,8 +145,79 @@
     }
 
     function emptyProject(name = 'new-project'): ProjectConfig {
-        return { Name: name, Path: '', Sessions: [] };
+        return {
+            Name: name,
+            Path: '',
+            Sessions: [],
+            MixedProgramming: false,
+            Gates: [],
+            MixedMaxRounds: 3,
+        };
     }
+
+    function emptyWorker(name = 'new-worker'): WorkerConfig {
+        return {
+            Name: name,
+            BaseURL: '',
+            Model: '',
+            KeyEnv: '',
+            Role: 'hands',
+            ReasoningEffort: 'low',
+            MaxOutputTokens: 16000,
+            ContinuationCap: 3,
+            ASCIIAnchorsOnly: false,
+            RequestTimeoutSec: 180,
+        };
+    }
+
+    // Presets from the lumen bench (MIXED-TASKS.md "Рабочие модели").
+    const KILO_URL = 'https://api.kilo.ai/api/gateway';
+    const workerPresets: { label: string; make: () => WorkerConfig }[] = [
+        {
+            label: 'Step 3.7 Flash (hands)',
+            make: () => ({
+                ...emptyWorker('step37'),
+                BaseURL: KILO_URL,
+                Model: 'stepfun/step-3.7-flash:free',
+                KeyEnv: 'KILO_API_KEY',
+                Role: 'hands',
+            }),
+        },
+        {
+            label: 'Nemotron 3 Ultra (quality)',
+            make: () => ({
+                ...emptyWorker('nemotron-ultra'),
+                BaseURL: KILO_URL,
+                Model: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+                KeyEnv: 'KILO_API_KEY',
+                Role: 'quality',
+                ASCIIAnchorsOnly: true,
+            }),
+        },
+    ];
+
+    let selectedWorkerIdx = 0;
+
+    function addWorker() {
+        if (!cfg) return;
+        cfg.Workers = [...cfg.Workers, emptyWorker(`worker-${cfg.Workers.length + 1}`)];
+        selectedWorkerIdx = cfg.Workers.length - 1;
+    }
+
+    function addWorkerPreset(idx: number) {
+        if (!cfg) return;
+        cfg.Workers = [...cfg.Workers, workerPresets[idx].make()];
+        selectedWorkerIdx = cfg.Workers.length - 1;
+    }
+
+    function removeWorker(idx: number) {
+        if (!cfg) return;
+        cfg.Workers = cfg.Workers.filter((_, i) => i !== idx);
+        if (selectedWorkerIdx >= cfg.Workers.length) {
+            selectedWorkerIdx = Math.max(0, cfg.Workers.length - 1);
+        }
+    }
+
 
     function normaliseConfig(raw: any): AppConfig {
         const settings: GlobalSettings = {
@@ -154,6 +245,9 @@
         const projects: ProjectConfig[] = (raw?.Projects ?? []).map((p: any) => ({
             Name: p?.Name ?? '',
             Path: p?.Path ?? '',
+            MixedProgramming: p?.MixedProgramming ?? false,
+            Gates: p?.Gates ?? [],
+            MixedMaxRounds: p?.MixedMaxRounds ?? 3,
             Sessions: (p?.Sessions ?? []).map((s: any) => ({
                 ...emptySession(s?.Name ?? ''),
                 ...s,
@@ -167,11 +261,15 @@
                 })),
             })),
         }));
+        const workers: WorkerConfig[] = (raw?.Workers ?? []).map((w: any) => ({
+            ...emptyWorker(w?.Name ?? ''),
+            ...w,
+        }));
         const optimization: OptimizationSettings = {
             AutoModelRouting: false,
             ...(raw?.Optimization ?? {}),
         };
-        return { Settings: settings, Optimization: optimization, Projects: projects };
+        return { Settings: settings, Optimization: optimization, Projects: projects, Workers: workers };
     }
 
     async function load() {
@@ -234,6 +332,9 @@
     }
     function onAddDirsInput(e: Event) {
         if (sess) sess.AddDirs = splitList((e.currentTarget as HTMLTextAreaElement).value);
+    }
+    function onProjectGatesInput(e: Event, idx: number) {
+        if (cfg) cfg.Projects[idx].Gates = splitList((e.currentTarget as HTMLTextAreaElement).value);
     }
 
     function onThemeChange(e: Event) {
@@ -345,6 +446,7 @@
     $: gs = cfg?.Settings;
     $: proj = cfg?.Projects[selectedProjectIdx] ?? null;
     $: sess = proj?.Sessions[selectedSessionIdx] ?? null;
+    $: wrk = cfg?.Workers[selectedWorkerIdx] ?? null;
 </script>
 
 <svelte:window on:keydown={handleKey} />
@@ -653,6 +755,43 @@
                                             class="px-2 py-0.5 text-xs rounded bg-bg border border-bg-border text-text-muted hover:text-text hover:border-text-muted">
                                             + Add session →
                                         </button>
+                                    </div>
+
+                                    <!-- Mixed programming (MIXED-TASKS.md) -->
+                                    <div class="border-t border-bg-border pt-2 mt-1 space-y-2">
+                                        <label class="flex items-center gap-2 text-sm text-text">
+                                            <input
+                                                type="checkbox"
+                                                data-testid={`mixed-enable-${i}`}
+                                                bind:checked={p.MixedProgramming} />
+                                            Enable mixed programming (external workers)
+                                        </label>
+                                        {#if p.MixedProgramming}
+                                            <p class="text-xs text-status-error/90 leading-relaxed">
+                                                ⚠ Briefs and verbatim code excerpts are sent to external
+                                                free endpoints that log requests. Only enable for projects
+                                                whose code may leave your machine.
+                                            </p>
+                                            <label class="flex flex-col text-xs text-text-muted gap-1">
+                                                Gates (one command per line — blocking; a non-zero exit
+                                                rejects the round)
+                                                <textarea
+                                                    rows="2"
+                                                    value={joinList(p.Gates)}
+                                                    on:input={(e) => onProjectGatesInput(e, i)}
+                                                    placeholder="go build ./...&#10;go test ./..."
+                                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono resize-y"
+                                                ></textarea>
+                                            </label>
+                                            <label class="flex flex-col text-xs text-text-muted gap-1 w-40">
+                                                Max feedback rounds
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    bind:value={p.MixedMaxRounds}
+                                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                                            </label>
+                                        {/if}
                                     </div>
                                 </li>
                             {/each}
@@ -986,6 +1125,163 @@
                         </div>
                     </div>
                 {/if}
+            {:else if activeTab === 'workers'}
+                <!-- ───────── WORKERS TAB ───────── -->
+                <div class="grid grid-cols-[200px_1fr] gap-4 h-full">
+                    <!-- Left rail: worker list -->
+                    <div class="flex flex-col gap-3 min-h-0">
+                        <div class="flex items-center justify-between">
+                            <span class="text-text-muted text-xs">Workers</span>
+                            <button
+                                type="button"
+                                data-testid="add-worker"
+                                on:click={addWorker}
+                                class="px-2 py-0.5 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white">
+                                + Add
+                            </button>
+                        </div>
+
+                        <ul class="border border-bg-border rounded divide-y divide-bg-border bg-bg-elevated overflow-y-auto">
+                            {#if cfg.Workers.length === 0}
+                                <li class="px-2 py-2 text-xs text-text-muted italic">No workers.</li>
+                            {/if}
+                            {#each cfg.Workers as w, i (i)}
+                                <li class="flex items-center">
+                                    <button
+                                        type="button"
+                                        on:click={() => (selectedWorkerIdx = i)}
+                                        class="flex-1 text-left px-2 py-1 text-sm truncate
+                                            {selectedWorkerIdx === i
+                                                ? 'bg-bg text-text'
+                                                : 'text-text-muted hover:text-text hover:bg-bg/50'}">
+                                        {w.Name || `(worker ${i + 1})`}
+                                        <span class="text-text-dim text-xs">· {w.Role}</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        on:click={() => removeWorker(i)}
+                                        title="Remove"
+                                        class="px-1.5 py-1 text-xs text-text-muted hover:text-status-error">✕</button>
+                                </li>
+                            {/each}
+                        </ul>
+
+                        <div class="flex flex-col gap-1">
+                            <span class="text-text-muted text-xs">Add from preset</span>
+                            {#each workerPresets as preset, pi}
+                                <button
+                                    type="button"
+                                    on:click={() => addWorkerPreset(pi)}
+                                    class="px-2 py-1 text-xs rounded bg-bg border border-bg-border text-text-muted hover:text-text hover:border-text-muted text-left">
+                                    + {preset.label}
+                                </button>
+                            {/each}
+                        </div>
+                    </div>
+
+                    <!-- Right pane: worker editor -->
+                    <div class="min-h-0 overflow-y-auto pr-1">
+                        {#if !wrk}
+                            <div class="text-text-muted text-sm italic py-6 text-center">
+                                Select or add a worker.
+                            </div>
+                        {:else}
+                            <div class="space-y-4" data-testid="worker-editor">
+                                <div class="grid grid-cols-2 gap-3">
+                                    <label class="flex flex-col text-xs text-text-muted gap-1">
+                                        Name
+                                        <input
+                                            type="text"
+                                            bind:value={wrk.Name}
+                                            class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono" />
+                                    </label>
+                                    <label class="flex flex-col text-xs text-text-muted gap-1">
+                                        Role
+                                        <select
+                                            bind:value={wrk.Role}
+                                            class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
+                                            <option value="hands">hands</option>
+                                            <option value="quality">quality</option>
+                                            <option value="eyes">eyes</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <label class="flex flex-col text-xs text-text-muted gap-1">
+                                    Base URL (OpenAI-compatible gateway)
+                                    <input
+                                        type="text"
+                                        bind:value={wrk.BaseURL}
+                                        placeholder="https://api.kilo.ai/api/gateway"
+                                        class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono" />
+                                </label>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <label class="flex flex-col text-xs text-text-muted gap-1">
+                                        Model id
+                                        <input
+                                            type="text"
+                                            bind:value={wrk.Model}
+                                            placeholder="stepfun/step-3.7-flash:free"
+                                            class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono" />
+                                    </label>
+                                    <label class="flex flex-col text-xs text-text-muted gap-1">
+                                        API key env var
+                                        <input
+                                            type="text"
+                                            bind:value={wrk.KeyEnv}
+                                            placeholder="KILO_API_KEY"
+                                            title="The API key is read from this environment variable — never stored in config."
+                                            class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono" />
+                                    </label>
+                                </div>
+                                <div class="grid grid-cols-3 gap-3">
+                                    <label class="flex flex-col text-xs text-text-muted gap-1">
+                                        Reasoning effort
+                                        <select
+                                            bind:value={wrk.ReasoningEffort}
+                                            class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
+                                            <option value="none">none</option>
+                                            <option value="low">low</option>
+                                            <option value="medium">medium</option>
+                                            <option value="high">high</option>
+                                        </select>
+                                    </label>
+                                    <label class="flex flex-col text-xs text-text-muted gap-1">
+                                        Max output tokens
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            bind:value={wrk.MaxOutputTokens}
+                                            class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                                    </label>
+                                    <label class="flex flex-col text-xs text-text-muted gap-1">
+                                        Continuation cap
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            bind:value={wrk.ContinuationCap}
+                                            title="Max finish_reason=length continuations before giving up (loop guard)."
+                                            class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                                    </label>
+                                </div>
+                                <div class="grid grid-cols-2 gap-3 items-end">
+                                    <label class="flex flex-col text-xs text-text-muted gap-1">
+                                        Request timeout (sec)
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            bind:value={wrk.RequestTimeoutSec}
+                                            class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                                    </label>
+                                    <label class="flex items-center gap-2 text-sm text-text mb-1"
+                                           title="Warn when generating a brief that its FIND anchors must be pure ASCII (Cyrillic anchors break some models).">
+                                        <input type="checkbox" bind:checked={wrk.ASCIIAnchorsOnly} />
+                                        ASCII-only FIND anchors
+                                    </label>
+                                </div>
+                            </div>
+                        {/if}
+                    </div>
+                </div>
             {/if}
         </div>
 

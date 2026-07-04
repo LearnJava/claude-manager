@@ -90,6 +90,10 @@ func (m *mockManager) GetMixedRounds(project string) ([]*worker.MixedTask, error
 	m.record("GetMixedRounds", project)
 	return []*worker.MixedTask{{Project: project, Status: worker.TaskStatusDone}}, nil
 }
+func (m *mockManager) GetMixedQuality(project string) ([]worker.ModelQuality, error) {
+	m.record("GetMixedQuality", project)
+	return []worker.ModelQuality{{Worker: "step37", TasksTotal: 1, TasksDone: 1}}, nil
+}
 func (m *mockManager) CancelMixedTask(id string) error {
 	m.record("CancelMixedTask", id)
 	return nil

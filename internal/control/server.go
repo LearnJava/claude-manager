@@ -50,6 +50,7 @@ type ManagerAPI interface {
 	RegisterMixedBrief(id string, brief worker.Brief)
 	DispatchMixedTask(project, briefID, workerName string) (*worker.MixedTask, error)
 	GetMixedRounds(project string) ([]*worker.MixedTask, error)
+	GetMixedQuality(project string) ([]worker.ModelQuality, error)
 	CancelMixedTask(id string) error
 }
 

@@ -7,6 +7,7 @@
     import Settings from './components/Settings.svelte';
     import History from './components/History.svelte';
     import CostDashboard from './components/CostDashboard.svelte';
+    import MixedRun from './components/MixedRun.svelte';
     import { initSessions, selectedSessionId, sessions, sessionList, waitingSessions } from './stores/sessions';
     import { initProjects } from './stores/projects';
     // Importing the store has the side effect of subscribing to localStorage
@@ -19,6 +20,7 @@
     let settingsInitialTab: 'global' | 'projects' | 'sessions' = 'global';
     let showHistory = false;
     let showDashboard = false;
+    let showMixedRun = false;
 
     // ---- Resizable sidebar ----
     let sidebarWidth = 250;
@@ -99,6 +101,10 @@
     <header class="h-9 bg-bg-panel border-b border-bg-border px-3 flex items-center justify-between select-none">
         <span class="font-semibold text-text">Claude Session Manager</span>
         <div class="flex items-center gap-2">
+            <button
+                class="text-text-muted hover:text-text text-xs px-2 py-0.5 rounded hover:bg-bg-elevated"
+                on:click={() => (showMixedRun = true)}
+                type="button">Mixed</button>
             <button
                 class="text-text-muted hover:text-text text-xs px-2 py-0.5 rounded hover:bg-bg-elevated"
                 on:click={() => (showDashboard = true)}
@@ -183,6 +189,10 @@
 
     {#if showDashboard}
         <CostDashboard on:close={() => (showDashboard = false)} />
+    {/if}
+
+    {#if showMixedRun}
+        <MixedRun on:close={() => (showMixedRun = false)} />
     {/if}
 </div>
 

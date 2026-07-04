@@ -1395,6 +1395,16 @@ func (m *SessionManager) GetMixedRounds(project string) ([]*worker.MixedTask, er
 	return m.taskStore.ListForProject(project)
 }
 
+// GetMixedQuality aggregates the project's persisted mixed tasks into the
+// per-worker comparative quality report shown by the UI (MP-08).
+func (m *SessionManager) GetMixedQuality(project string) ([]worker.ModelQuality, error) {
+	tasks, err := m.taskStore.ListForProject(project)
+	if err != nil {
+		return nil, err
+	}
+	return worker.BuildQualityReport(tasks), nil
+}
+
 // CancelMixedTask cancels a running mixed-programming task by ID (the same ID
 // returned in MixedTask.ID / DispatchMixedTask's result). Returns an error if
 // the task is not currently running.
