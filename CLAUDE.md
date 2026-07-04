@@ -15,7 +15,7 @@ Desktop app (Windows) to launch, monitor, and control parallel Claude Code CLI s
 ```
 claude-manager/
 ├── main.go                          # Wails bootstrap
-├── app.go                           # App struct, Wails lifecycle, 29 exported methods
+├── app.go                           # App struct, Wails lifecycle, 40 exported methods
 ├── internal/
 │   ├── config/
 │   │   ├── types.go                 # AppConfig, GlobalSettings, OptimizationSettings,
@@ -43,7 +43,10 @@ claude-manager/
 │   ├── analysis/
 │   │   ├── preflight.go             # Run analyst session (haiku, --permission-mode plan, --json-schema)
 │   │   ├── plan.go                  # TaskPlan: subtasks, execution order, dependencies, context passing
-│   │   └── schema.go                # JSON Schema for analyst structured output
+│   │   ├── executor.go              # One-shot CLI executor for approved plan subtasks (context handoff)
+│   │   ├── brief.go                 # Mixed-programming brief generation (MP-06): self-contained
+│   │   │                            #   English ТЗ, verbatim excerpts, patch-format instructions
+│   │   └── schema.go                # JSON Schema for analyst structured output + brief output
 │   ├── optimization/
 │   │   ├── routing.go               # ModelRouter: auto model routing by task complexity
 │   │   ├── context.go               # Context utilization monitor, auto-restart at threshold
@@ -51,8 +54,17 @@ claude-manager/
 │   │   ├── loop.go                  # Loop detection (repeated tool calls, ring buffer)
 │   │   └── reporter.go              # Reporter: aggregates ContextMonitor+CacheTracker+LoopDetector
 │   │                                #   into Snapshot(sessionID) and GlobalReport() for the UI
+│   ├── worker/                      # Mixed programming (MIXED-TASKS.md MP-02..06,08)
+│   │   ├── client.go                # OpenAI-compatible worker client: SSE, backoff,
+│   │   │                            #   length-continuation, per-key_env semaphore
+│   │   ├── persist.go               # Store: worker dialogue persistence (resume by replay)
+│   │   ├── patch.go                 # FIND/REPLACE parser + worktree-confined applicator
+│   │   ├── gates.go                 # Blocking gate runner + worktree commit (Co-Authored-By)
+│   │   ├── round.go                 # RoundOrchestrator: brief→patches→gates loop, TaskStore,
+│   │   │                            #   worker:round/patch/gate/done events, crash-resume
+│   │   └── quality.go               # BuildQualityReport: per-worker ModelQuality aggregate
 │   ├── store/
-│   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics
+│   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs
 │   │   └── migrations.go            # CREATE TABLE statements, indexes
 │   └── hooks/
 │       └── hooks.go                 # Pre/post task hooks (shell commands)
@@ -62,7 +74,9 @@ claude-manager/
 │   │   ├── sessions.ts              # Session state, Wails event subscriptions
 │   │   ├── projects.ts              # Projects state
 │   │   ├── theme.ts                 # Dark/light theme toggle, localStorage persistence
-│   │   └── logSearch.ts             # Log filter store, Ctrl+F focus
+│   │   ├── logSearch.ts             # Log filter store, Ctrl+F focus
+│   │   └── workers.ts               # Mixed programming: worker:* events, per-project tasks/
+│   │                                #   quality, register+dispatch+cancel actions (MP-08)
 │   ├── components/
 │   │   ├── Sidebar.svelte           # Project tree, session indicators, start/stop/delete,
 │   │   │                            #   auto-routing trigger, resizable via drag handle
@@ -76,8 +90,11 @@ claude-manager/
 │   │   ├── PlanReview.svelte        # Pre-flight analysis plan view/edit/approve
 │   │   ├── StatusBar.svelte         # Bottom bar: active count, waiting, cost, rate limit
 │   │   ├── History.svelte           # Past runs table with filter, sort, CSV export
-│   │   ├── Settings.svelte          # Global/project/session settings, model routing toggle
+│   │   ├── Settings.svelte          # Global/project/session/worker settings, model routing,
+│   │   │                            #   Workers tab (CRUD + presets), project mixed opt-in
 │   │   ├── CostDashboard.svelte     # Cost by period/project, cache efficiency, rate limit
+│   │   ├── MixedRun.svelte          # Mixed programming: dispatch form, live activity, round
+│   │   │                            #   timelines w/ gate output, model-quality table (MP-08)
 │   │   └── RateLimitBanner.svelte   # Rate limit countdown banner
 │   └── lib/
 │       └── formatters.ts            # Log formatting, time, cost, tokens, percent
@@ -86,14 +103,18 @@ claude-manager/
 │   ├── fakeworker/                  # Scripted OpenAI-compatible worker double (SSE, MP-07)
 │   └── cm-mcp/                      # MCP server: drive the app as agent tools
 ├── internal/
-│   ├── testkit/                     # Scenario loader + fakeclaude<->parser conformance
-│   └── control/                     # Headless control-plane: Emitter, RPC, WS, wait, MCP tools
-├── testdata/                        # scenarios/ (fakeclaude), e2e/ (runner), configs/
-├── frontend/tests/                  # Playwright DOM specs
+│   ├── testkit/                     # Scenario loaders + fakeclaude<->parser conformance,
+│   │                                #   fakeworker handler (MP-07)
+│   └── control/                     # Headless control-plane: Emitter, RPC (incl. mixed), WS,
+│                                    #   wait/wait-for-worker, MCP tools, e2e runner
+├── testdata/                        # scenarios/ (fakeclaude), worker-scenarios/ (fakeworker),
+│                                    #   e2e/ (runner, incl. mixed-*.json), configs/
+├── frontend/tests/                  # Playwright DOM specs (incl. mixed.spec.ts)
 ├── config.example.toml
 ├── PLAN.md                          # Full specification (§14-21)
 ├── TASKS.md                         # App task breakdown (TASK-01..15)
-└── HARNESS-TASKS.md                 # Test/control harness task breakdown (H1..H6)
+├── HARNESS-TASKS.md                 # Test/control harness task breakdown (H1..H6)
+└── MIXED-TASKS.md                   # Mixed programming task breakdown (MP-01..08, done)
 ```
 
 ## Key Design Decisions
@@ -232,6 +253,69 @@ Idle → Starting → Working ⇄ WaitingPermission
                  Error
 ```
 
+### Mixed Programming (MIXED-TASKS.md, MP-01..08)
+
+Claude prepares self-contained briefs; external free models write the code as
+FIND/REPLACE patches; the manager applies them in an isolated git worktree, runs
+blocking gates (build/lint/test), returns the exact gate output as feedback for
+up to `mixed_max_rounds` (default 3), and produces a comparative quality report.
+Ported from lumen-browser's «смешанное программирование» workflow.
+
+**Opt-in & config.** Per-project `mixed_programming = true` is an explicit
+privacy opt-in — briefs and verbatim code excerpts go to external endpoints that
+log requests. Enabling requires non-empty `[project.gates]` and at least one
+`[[worker]]`. `WorkerConfig` (`internal/config/types.go`) carries `base_url`,
+`model`, `key_env` (API key read from env, never stored), `role`
+(hands|quality|eyes) and quirks (`reasoning_effort`, `max_output_tokens`,
+`continuation_cap`, `ascii_anchors_only`, `request_timeout_sec`).
+`config.WorkerPresets()` ships `step37` and `nemotron-ultra` from the lumen bench.
+
+**Round loop** (`internal/worker/round.go`, `RoundOrchestrator.RunTask`):
+1. Create worktree + branch `mp-<brief>-<worker>-<HHMMSS>`.
+2. Send the brief to the worker (`Client.Complete`, SSE, per-`key_env` semaphore,
+   progressive backoff on 403/429, `finish_reason=length` continuation capped at
+   `continuation_cap`).
+3. Parse patches (`patch.go` — tolerant of missing `>>>END`, `===END`; rejects a
+   FIND that is not verbatim-unique with an exact expected/actual diff).
+4. Apply inside the worktree only (`_safe_path` analog, atomic writes).
+5. Run gates (`gates.go`) — **blocking**: a non-zero exit rejects the round.
+   Green → commit (`Co-Authored-By: <model>`), status `done`, worktree left for
+   review. Red / rejected / parse error → the exact output is fed back verbatim
+   (model-written tests are never trusted; gates are ground truth).
+6. After `max_rounds` without green → status `needs_human`.
+
+Every step emits `worker:round` / `worker:patch` / `worker:gate` / `worker:done`
+through the `Emitter`, so the UI, control-plane and MCP get progress for free.
+Round state + the reconstructable message list persist to
+`~/.claude-manager/state/mixed-task-<id>.json` (`TaskStore`) and
+`worker-<id>.json` (`Store`) for crash-resume by replay (the OpenAI API is
+stateless). Task ID = `<project>/<brief>/<worker>`.
+
+**Briefs** (`internal/analysis/brief.go`, MP-06) are generated by the preflight
+mechanic (haiku/sonnet, `--json-schema`): English task text, verbatim code
+excerpts with line numbers, accepted decisions (no "choose between A/B"),
+typed-locals hints, patch-format instructions; persisted to SQLite
+(`mixed_briefs`). For a new file, pre-create it with a `// PLACEHOLDER` anchor
+and patch via FIND on it.
+
+**Quality report** (`internal/worker/quality.go`) aggregates persisted tasks into
+one `ModelQuality` per worker: tasks done/needs-human, mean rounds-to-green,
+clean-patch rate (`applied / (applied + rejected)`), and defects by type (parse
+errors, gate failures). Surfaced in `MixedRun.svelte`.
+
+**UI** (`MixedRun.svelte` + `stores/workers.ts`, MP-08): the "Mixed" header
+button opens a modal to pick a mixed-enabled project + worker, enter a brief and
+dispatch; it shows a live activity feed, per-task round timelines with collapsible
+gate output, and the quality table. Worker CRUD (with presets) and the project
+privacy opt-in live in Settings → Workers.
+
+**Testing.** `fakeworker` (`cmd/fakeworker`) is the SSE double; scenarios in
+`testdata/worker-scenarios/`. Go e2e: `testdata/e2e/mixed-*.json` drive the full
+loop against a seeded temp repo via the control-plane. Playwright:
+`frontend/tests/mixed.spec.ts` covers the Workers tab and a dispatch→timeline→
+quality flow. MCP tools: `register_mixed_brief`, `dispatch_mixed_task`,
+`get_mixed_rounds`, `wait_for_worker_status`.
+
 ## Wails Bindings (app.go)
 
 All exported methods become async JS functions via auto-generated bindings in `frontend/wailsjs/`.
@@ -247,6 +331,11 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `ApprovePlan(plan)` | Persist an (edited) plan as approved; returns plan with store ID |
 | `ExecutePlan(planID)` | Execute persisted plan (one-shot CLI per subtask, context handoff) |
 | `GetPlan(planID)` | Load persisted plan with subtasks (poll during execution) |
+| `RegisterMixedBrief(id, task, systemPrompt)` | Register a mixed-programming brief; returns id |
+| `DispatchMixedTask(project, briefID, workerName)` | Run the round loop; blocks until done/needs_human |
+| `GetMixedRounds(project)` | Persisted mixed tasks (rounds, patches, gates) for a project |
+| `GetMixedQuality(project)` | Per-worker comparative quality report (ModelQuality) |
+| `CancelMixedTask(id)` | Cancel a running mixed task by ID |
 | `StartSession(project, name)` | Launch session with config model/effort |
 | `StartSessionWithModel(project, name, model, effort)` | Launch with model/effort override |
 | `StopSession(id, soft)` | Stop (soft=true finishes current task first) |
@@ -394,6 +483,7 @@ claude_path = "build/fakeclaude.exe"
 - `daily_metrics` — aggregated cost/tokens per day per project
 - `task_plans` — pre-flight analysis plans
 - `plan_subtasks` — subtasks within plans
+- `mixed_briefs` — generated mixed-programming briefs (MP-06)
 
 ## File Logging
 
@@ -421,6 +511,9 @@ All application events are written to **`~/.claude-manager/logs/app.log`** in ap
 | `manager.go` | Permission request | INFO | `id=`, `tool=`, `description=`, `risk=` |
 | `manager.go` | Rate limit hit | WARN | `id=`, `utilization=`, `resets_at=` |
 | `manager.go` | Session error event | ERROR | `id=`, `error=` |
+| `manager.go` | Mixed task dispatched | INFO | `task_id=`, `worker=` |
+| `manager.go` | Mixed task done | INFO | `task_id=`, `status=` |
+| `manager.go` | Mixed task failed | ERROR | `task_id=`, `error=` |
 | `session.go` | Claude CLI command | DEBUG | `id=`, `claude=`, `cwd=`, full `args=` |
 | `session.go` | Process spawned | INFO | `id=`, `pid=` |
 | `session.go` | Initial prompt sent | DEBUG | `id=`, `prompt_preview=` (first 200 chars) |
