@@ -171,6 +171,16 @@ func parseLineAt(line string, now time.Time) ParsedEvent {
 
 	var ev rawStreamEvent
 	if err := json.Unmarshal([]byte(line), &ev); err != nil {
+		// A valid JSON event can still fail this decode when its shape doesn't
+		// fit rawStreamEvent — notably `type:"user"` with a plain-string content
+		// (message.content is a string, but rawAssistantMessage.Content is an
+		// array). Peek the type and route it before treating the line as raw.
+		var probe struct {
+			Type string `json:"type"`
+		}
+		if perr := json.Unmarshal([]byte(line), &probe); perr == nil && probe.Type == "user" {
+			return handleUser(line, now)
+		}
 		return ParsedEvent{
 			EventType: EventLog,
 			Entries: []config.LogEntry{{
@@ -185,6 +195,8 @@ func parseLineAt(line string, now time.Time) ParsedEvent {
 	switch ev.Type {
 	case "system":
 		return handleSystem(ev, now)
+	case "user":
+		return handleUser(line, now)
 	case "assistant":
 		return handleAssistant(ev, now)
 	case "result":
@@ -287,6 +299,104 @@ func handleAssistant(ev rawStreamEvent, now time.Time) ParsedEvent {
 		Entries:   entries,
 		Usage:     ev.Message.Usage,
 	}
+}
+
+// rawUserEnvelope captures the two shapes a stream-json `type:"user"` event
+// can take: a replayed user turn (message.content is a plain string) or a batch
+// of tool results echoed back to us (message.content is an array of blocks).
+type rawUserEnvelope struct {
+	Message struct {
+		Content json.RawMessage `json:"content"`
+	} `json:"message"`
+}
+
+type rawToolResult struct {
+	Type      string          `json:"type"`
+	ToolUseID string          `json:"tool_use_id"`
+	Content   json.RawMessage `json:"content"`
+	IsError   bool            `json:"is_error"`
+}
+
+// handleUser turns a `type:"user"` event into concise log entries instead of
+// dumping the whole raw JSON envelope. These events (from --replay-user-messages
+// and tool_result echoes) are otherwise the single biggest source of log noise.
+// We keep the *content* — the user turn text or the tool output — and drop the
+// wrapper; long payloads are collapsed in the UI, not here.
+func handleUser(line string, now time.Time) ParsedEvent {
+	var env rawUserEnvelope
+	if err := json.Unmarshal([]byte(line), &env); err != nil || len(env.Message.Content) == 0 {
+		return ParsedEvent{EventType: EventUnknown}
+	}
+
+	// Shape 1: a plain string — a replayed user turn (the prompt we sent).
+	var text string
+	if err := json.Unmarshal(env.Message.Content, &text); err == nil {
+		if strings.TrimSpace(text) == "" {
+			return ParsedEvent{EventType: EventUnknown}
+		}
+		return ParsedEvent{
+			EventType: EventLog,
+			Entries: []config.LogEntry{{
+				Time:    now,
+				Level:   "user",
+				Source:  "claude",
+				Message: text,
+			}},
+		}
+	}
+
+	// Shape 2: an array of content blocks — tool results echoed back.
+	var blocks []rawToolResult
+	if err := json.Unmarshal(env.Message.Content, &blocks); err != nil {
+		return ParsedEvent{EventType: EventUnknown}
+	}
+	var entries []config.LogEntry
+	for _, b := range blocks {
+		if b.Type != "tool_result" {
+			continue
+		}
+		out := extractToolResultText(b.Content)
+		if strings.TrimSpace(out) == "" {
+			out = "(no output)"
+		}
+		level := "tool_result"
+		if b.IsError {
+			level = "error"
+		}
+		entries = append(entries, config.LogEntry{
+			Time:    now,
+			Level:   level,
+			Source:  "claude",
+			Message: out,
+		})
+	}
+	if len(entries) == 0 {
+		return ParsedEvent{EventType: EventUnknown}
+	}
+	return ParsedEvent{EventType: EventLog, Entries: entries}
+}
+
+// extractToolResultText pulls the human-readable text out of a tool_result's
+// `content`, which is either a bare string or an array of {type,text} blocks.
+func extractToolResultText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var parts []rawContent
+	if err := json.Unmarshal(raw, &parts); err == nil {
+		var b strings.Builder
+		for _, p := range parts {
+			if p.Type == "text" {
+				b.WriteString(p.Text)
+			}
+		}
+		return b.String()
+	}
+	return string(raw)
 }
 
 func handleResult(ev rawStreamEvent, now time.Time) ParsedEvent {

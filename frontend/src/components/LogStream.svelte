@@ -18,6 +18,31 @@
     let stuckToBottom = true;
     let prevLogLen = 0;
 
+    // Entries longer than this (or multi-line) are collapsed to their first line
+    // behind a ＋/− toggle so verbose tool output / prompts don't flood the view.
+    const COLLAPSE_CHARS = 200;
+    // Indices (into `entries`) the user has explicitly expanded.
+    let expanded = new Set<number>();
+
+    function isCollapsible(msg: string): boolean {
+        if (!msg) return false;
+        return msg.includes('\n') || msg.length > COLLAPSE_CHARS;
+    }
+
+    // First line, capped at COLLAPSE_CHARS, with an ellipsis marking hidden rest.
+    function summarize(msg: string): string {
+        const nl = msg.indexOf('\n');
+        let head = nl >= 0 ? msg.slice(0, nl) : msg;
+        if (head.length > COLLAPSE_CHARS) head = head.slice(0, COLLAPSE_CHARS);
+        return head + ' …';
+    }
+
+    function toggle(i: number) {
+        if (expanded.has(i)) expanded.delete(i);
+        else expanded.add(i);
+        expanded = expanded; // trigger Svelte reactivity
+    }
+
     $: allEntries = ($sessionLogs[sessionId] ?? []) as LogEntry[];
     $: filter = ($logSearchText ?? '').toLowerCase();
     $: entries = filter
@@ -78,6 +103,7 @@
         lastSessionId = sessionId;
         stuckToBottom = true;
         prevLogLen = 0;
+        expanded = new Set();
         // Wait until the new entries are rendered, then pin to bottom.
         tick().then(() => {
             if (container) container.scrollTop = container.scrollHeight;
@@ -147,6 +173,9 @@
             </div>
         {:else}
             {#each entries as e, i (i)}
+                {@const msg = e.message ?? ''}
+                {@const collapsible = isCollapsible(msg)}
+                {@const isOpen = expanded.has(i)}
                 <div class="flex items-start gap-2 py-px {logEntryColor(e)}">
                     <span class="text-text-dim shrink-0 select-none">
                         [{formatTime(e.time)}]
@@ -154,8 +183,20 @@
                     <span class="shrink-0 select-none w-4 text-center">
                         {logEntryIcon(e)}
                     </span>
+                    {#if collapsible}
+                        <button
+                            type="button"
+                            on:click={() => toggle(i)}
+                            title={isOpen ? 'Collapse' : 'Expand'}
+                            class="shrink-0 select-none w-4 text-center text-text-dim
+                                   hover:text-text font-bold leading-5">
+                            {isOpen ? '−' : '＋'}
+                        </button>
+                    {:else}
+                        <span class="shrink-0 w-4 select-none"></span>
+                    {/if}
                     <span class="whitespace-pre-wrap break-words">
-                        {e.message ?? ''}
+                        {collapsible && !isOpen ? summarize(msg) : msg}
                     </span>
                 </div>
             {/each}

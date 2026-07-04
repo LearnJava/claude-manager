@@ -88,6 +88,8 @@ export function logEntryColor(e: LogEntryLike): string {
     if (level === 'system') return 'text-text-dim';
     if (level === 'thinking') return 'text-text-dim italic';
     if (level === 'cost') return 'text-status-ratelimit';
+    if (level === 'user') return 'text-amber-300';
+    if (level === 'tool_result') return 'text-text-dim';
     if (level === 'tool') {
         const t = e.tool_name ?? '';
         if (READ_TOOLS.has(t)) return 'text-sky-400';
@@ -107,6 +109,8 @@ export function logEntryIcon(e: LogEntryLike): string {
     if (level === 'system') return 'ℹ';
     if (level === 'thinking') return '…';
     if (level === 'cost') return '📊';
+    if (level === 'user') return '›';
+    if (level === 'tool_result') return '↳';
     if (level === 'tool') {
         const t = e.tool_name ?? '';
         if (READ_TOOLS.has(t)) return '🔍';

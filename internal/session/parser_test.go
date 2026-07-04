@@ -460,6 +460,89 @@ func TestParsePermissionRequestFilePath(t *testing.T) {
 	}
 }
 
+// TestParseUserReplayMessage: a replayed user turn (string content) becomes a
+// single concise "user" entry carrying the text, not the raw JSON envelope.
+func TestParseUserReplayMessage(t *testing.T) {
+	line := `{"type":"user","message":{"role":"user","content":"Read STATUS-P4.md and implement the property."},"session_id":"abc","isReplay":true}`
+	ev := parseLineAt(line, testTime)
+	if ev.EventType != EventLog {
+		t.Fatalf("expected %s, got %s", EventLog, ev.EventType)
+	}
+	if len(ev.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(ev.Entries))
+	}
+	e := ev.Entries[0]
+	if e.Level != "user" {
+		t.Errorf("expected level user, got %s", e.Level)
+	}
+	if e.Message != "Read STATUS-P4.md and implement the property." {
+		t.Errorf("unexpected message: %s", e.Message)
+	}
+}
+
+// TestParseUserToolResult: a tool_result echo (string content) becomes a
+// "tool_result" entry with just the output, dropping the JSON wrapper.
+func TestParseUserToolResult(t *testing.T) {
+	line := `{"type":"user","message":{"role":"user","content":[{"tool_use_id":"toolu_1","type":"tool_result","content":"line1\nline2","is_error":false}]}}`
+	ev := parseLineAt(line, testTime)
+	if ev.EventType != EventLog {
+		t.Fatalf("expected %s, got %s", EventLog, ev.EventType)
+	}
+	if len(ev.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(ev.Entries))
+	}
+	e := ev.Entries[0]
+	if e.Level != "tool_result" {
+		t.Errorf("expected level tool_result, got %s", e.Level)
+	}
+	if e.Message != "line1\nline2" {
+		t.Errorf("unexpected message: %q", e.Message)
+	}
+}
+
+// TestParseUserToolResultError: is_error marks the entry as an error level.
+func TestParseUserToolResultError(t *testing.T) {
+	line := `{"type":"user","message":{"role":"user","content":[{"tool_use_id":"t","type":"tool_result","content":"boom","is_error":true}]}}`
+	ev := parseLineAt(line, testTime)
+	if len(ev.Entries) != 1 || ev.Entries[0].Level != "error" {
+		t.Fatalf("expected 1 error entry, got %+v", ev.Entries)
+	}
+	if ev.Entries[0].Message != "boom" {
+		t.Errorf("unexpected message: %s", ev.Entries[0].Message)
+	}
+}
+
+// TestParseUserToolResultBlockContent: tool_result content given as an array of
+// {type,text} blocks is flattened to its text.
+func TestParseUserToolResultBlockContent(t *testing.T) {
+	line := `{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":[{"type":"text","text":"hello "},{"type":"text","text":"world"}]}]}}`
+	ev := parseLineAt(line, testTime)
+	if len(ev.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(ev.Entries))
+	}
+	if ev.Entries[0].Message != "hello world" {
+		t.Errorf("unexpected message: %q", ev.Entries[0].Message)
+	}
+}
+
+// TestParseUserToolResultEmpty: empty output is labelled rather than blank.
+func TestParseUserToolResultEmpty(t *testing.T) {
+	line := `{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"","is_error":false}]}}`
+	ev := parseLineAt(line, testTime)
+	if len(ev.Entries) != 1 || ev.Entries[0].Message != "(no output)" {
+		t.Fatalf("expected (no output) entry, got %+v", ev.Entries)
+	}
+}
+
+// TestParseUserWhitespaceMessageSkipped: a blank replayed turn is dropped.
+func TestParseUserWhitespaceMessageSkipped(t *testing.T) {
+	line := `{"type":"user","message":{"role":"user","content":"   "}}`
+	ev := parseLineAt(line, testTime)
+	if ev.EventType != EventUnknown || len(ev.Entries) != 0 {
+		t.Errorf("expected whitespace user message dropped, got %+v", ev)
+	}
+}
+
 func TestParseUnknownEventType(t *testing.T) {
 	line := `{"type":"future_event","data":"something"}`
 	ev := parseLineAt(line, testTime)
