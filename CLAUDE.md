@@ -119,6 +119,38 @@ claude-manager/
 
 ## Key Design Decisions
 
+### Config Layering (Per-Project Settings in the Project Folder)
+Config is layered like Claude Code's own `user → project → local`, so a project's
+context travels with its repo instead of living only in a global file:
+
+| Layer | File | Holds | Committed? |
+|---|---|---|---|
+| Global | `~/.claude-manager/config.toml` | `[settings]`, `[optimization]`, project registry (`name`+`path`), shared `[[worker]]` presets | n/a (home dir) |
+| Project (shared) | `<project>/.claude-manager/config.toml` | `[[session]]`, `gates` | **yes** — share project setup |
+| Project (private) | `<project>/.claude-manager/config.local.toml` | `mixed_programming` opt-in, `mixed_max_rounds`, private `[[worker]]` | **no** — auto-added to `.claude-manager/.gitignore` |
+
+**Load** (`config.go`): after decoding the global file, `applyProjectOverlays`
+merges each project's overlay onto its `[[project]]` entry (via
+`LoadProjectOverlay` → `config.toml` then `config.local.toml`, local wins),
+merges overlay workers into the global registry (dedup by name), *then* runs
+`applyDefaults`/`validate` on the merged result. Missing overlay → the global
+inline `[[project]]` is used unchanged (additive: nothing is required in the
+folder, so test fixtures and quick global setups still work).
+
+**Save** (`SaveProjectOverlay`): splits a `ProjectConfig` into the committed
+file (sessions, gates) and the private file (mixed opt-in, workers), atomic
+tmp→rename, and appends `config.local.toml` to `.gitignore` (idempotent).
+`app.go:UpdateConfig` folds each project whose `Path` is a real dir into its
+overlay and shrinks the global `[[project]]` to a registry pointer; projects
+without a writable folder keep their settings inline in the global file.
+
+**Privacy rationale.** `mixed_programming = true` is the "my code may leave this
+machine" opt-in, so it lives only in the gitignored `config.local.toml` — a
+teammate cloning the repo gets sessions+gates but must opt into external workers
+themselves. Workers stay global (reusable presets, and the home-dir file is
+never in a repo). `MixedProgramming` is a `*bool` in `ProjectOverlay` so an
+absent overlay field leaves the global value untouched.
+
 ### Bidirectional Streaming
 Sessions use `--input-format stream-json` + `--output-format stream-json`. Manager writes to stdin (user messages, permission responses) and reads stdout (events). This enables interactive sessions, not just one-shot `-p` calls.
 

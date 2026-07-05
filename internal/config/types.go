@@ -94,6 +94,25 @@ type GlobalSettings struct {
 	SessionStartDelay int `toml:"session_start_delay"`
 }
 
+// ProjectOverlay is the per-project configuration stored inside the project
+// folder itself (like .git), so the context travels with the repo. It is split
+// across two files under <project>/.claude-manager/ and merged onto the global
+// [[project]] entry at load time (local wins over committed wins over global):
+//
+//	config.toml        committed  — shared, non-sensitive: sessions, gates
+//	config.local.toml  gitignored — privacy opt-in + external endpoints:
+//	                                 mixed_programming, [[worker]] base_urls
+//
+// MixedProgramming is a pointer so an absent overlay field leaves the global
+// value untouched (a plain bool cannot distinguish "unset" from "false").
+type ProjectOverlay struct {
+	Sessions         []SessionConfig `toml:"session"`
+	Gates            []string        `toml:"gates"`
+	MixedProgramming *bool           `toml:"mixed_programming"`
+	MixedMaxRounds   int             `toml:"mixed_max_rounds"`
+	Workers          []WorkerConfig  `toml:"worker"`
+}
+
 type ProjectConfig struct {
 	Name     string          `toml:"name"`
 	Path     string          `toml:"path"`

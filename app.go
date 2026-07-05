@@ -384,13 +384,34 @@ func (a *App) GetRateLimitStatus() *session.RateLimitInfo {
 
 // ---- Settings / config persistence ----
 
-// UpdateConfig replaces the in-memory config, writes it to disk as TOML, and
-// re-applies defaults so that subsequent reads see normalised values.
+// UpdateConfig persists the config across its layers and re-applies defaults so
+// subsequent reads see normalised values. Per-project settings (sessions, gates,
+// the mixed-programming opt-in) are written into <project>/.claude-manager/ so
+// they travel with the repo; the global file keeps app-wide settings, the
+// project registry (name+path), and the shared worker presets. Workers stay in
+// the global file — it lives in the home dir and is never committed to a repo.
 func (a *App) UpdateConfig(cfg config.AppConfig) error {
-	if err := config.Save(&cfg, a.cfgPath); err != nil {
+	global := cfg
+	global.Projects = make([]config.ProjectConfig, len(cfg.Projects))
+	for i, p := range cfg.Projects {
+		if p.Path != "" && isDir(p.Path) {
+			// Fold this project's context into its folder; the global entry
+			// shrinks to a registry pointer that the overlay is merged onto.
+			if err := config.SaveProjectOverlay(p.Path, p, nil); err != nil {
+				return err
+			}
+			global.Projects[i] = config.ProjectConfig{Name: p.Name, Path: p.Path}
+		} else {
+			// No writable project folder — keep the settings inline so they
+			// are not lost (e.g. a project whose path does not exist yet).
+			global.Projects[i] = p
+		}
+	}
+
+	if err := config.Save(&global, a.cfgPath); err != nil {
 		return err
 	}
-	// Re-read so applyDefaults/validate run on the saved file.
+	// Re-read so applyDefaults/validate run on the merged (global + overlay) result.
 	reloaded, err := config.Load(a.cfgPath)
 	if err != nil {
 		return err
@@ -400,6 +421,12 @@ func (a *App) UpdateConfig(cfg config.AppConfig) error {
 		a.manager.SetConfig(reloaded)
 	}
 	return nil
+}
+
+// isDir reports whether path exists and is a directory.
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // PickDirectory opens the native folder picker and returns the chosen path.

@@ -743,6 +743,19 @@
                                                 Browse…
                                             </button>
                                         </div>
+                                        {#if p.Path}
+                                            <span class="text-[11px] text-text-muted/80 leading-snug" data-testid={`storage-note-${i}`}>
+                                                📁 Sessions &amp; gates are saved in
+                                                <code class="font-mono">{p.Path}\.claude-manager\config.toml</code>
+                                                (commit it to share project context). The mixed-programming
+                                                opt-in goes to <code class="font-mono">config.local.toml</code>
+                                                (gitignored, never committed).
+                                            </span>
+                                        {:else}
+                                            <span class="text-[11px] text-text-muted/60 leading-snug">
+                                                Without a project folder, settings stay in the global config.
+                                            </span>
+                                        {/if}
                                     </label>
 
                                     <div class="flex items-center justify-between">
@@ -771,6 +784,9 @@
                                                 ⚠ Briefs and verbatim code excerpts are sent to external
                                                 free endpoints that log requests. Only enable for projects
                                                 whose code may leave your machine.
+                                                <span class="text-text-muted">This opt-in is stored in
+                                                <code class="font-mono">config.local.toml</code> and is not
+                                                committed — each teammate opts in for themselves.</span>
                                             </p>
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
                                                 Gates (one command per line — blocking; a non-zero exit

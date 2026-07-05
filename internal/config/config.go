@@ -5,12 +5,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
 
 const defaultConfigDir = ".claude-manager"
 const defaultConfigFile = "config.toml"
+const projectLocalConfigFile = "config.local.toml"
 
 // DefaultConfigPath returns the default path to the config file (~/.claude-manager/config.toml).
 func DefaultConfigPath() string {
@@ -19,6 +21,22 @@ func DefaultConfigPath() string {
 		home = "."
 	}
 	return filepath.Join(home, defaultConfigDir, defaultConfigFile)
+}
+
+// ProjectConfigDir returns <projectPath>/.claude-manager — the per-project
+// config folder that travels with the repository.
+func ProjectConfigDir(projectPath string) string {
+	return filepath.Join(projectPath, defaultConfigDir)
+}
+
+// ProjectConfigPath returns the committed, shared per-project config file.
+func ProjectConfigPath(projectPath string) string {
+	return filepath.Join(projectPath, defaultConfigDir, defaultConfigFile)
+}
+
+// ProjectLocalConfigPath returns the gitignored, private per-project config file.
+func ProjectLocalConfigPath(projectPath string) string {
+	return filepath.Join(projectPath, defaultConfigDir, projectLocalConfigFile)
 }
 
 // Load reads the TOML config from path. If the file does not exist, Load returns
@@ -34,12 +52,119 @@ func Load(path string) (*AppConfig, error) {
 		return nil, fmt.Errorf("config: decode %s: %w", path, err)
 	}
 
+	if err := applyProjectOverlays(cfg); err != nil {
+		return nil, err
+	}
+
 	applyDefaults(cfg)
 	if err := validate(cfg); err != nil {
 		return nil, err
 	}
 
 	return cfg, nil
+}
+
+// applyProjectOverlays merges each project's <path>/.claude-manager overlay onto
+// its global [[project]] entry, and merges any overlay-declared workers into the
+// global worker registry (overlay wins, deduped by name).
+func applyProjectOverlays(cfg *AppConfig) error {
+	for i := range cfg.Projects {
+		p := &cfg.Projects[i]
+		if p.Path == "" {
+			continue
+		}
+		ov, err := LoadProjectOverlay(p.Path)
+		if err != nil {
+			return err
+		}
+		if ov == nil {
+			continue
+		}
+		if len(ov.Sessions) > 0 {
+			p.Sessions = ov.Sessions
+		}
+		if len(ov.Gates) > 0 {
+			p.Gates = ov.Gates
+		}
+		if ov.MixedProgramming != nil {
+			p.MixedProgramming = *ov.MixedProgramming
+		}
+		if ov.MixedMaxRounds != 0 {
+			p.MixedMaxRounds = ov.MixedMaxRounds
+		}
+		if len(ov.Workers) > 0 {
+			cfg.Workers = mergeWorkers(cfg.Workers, ov.Workers)
+		}
+	}
+	return nil
+}
+
+// LoadProjectOverlay reads and merges the per-project config files under
+// <projectPath>/.claude-manager/. It returns (nil, nil) when neither file
+// exists. config.local.toml overrides config.toml field-by-field.
+func LoadProjectOverlay(projectPath string) (*ProjectOverlay, error) {
+	shared, sharedOK, err := decodeOverlay(ProjectConfigPath(projectPath))
+	if err != nil {
+		return nil, err
+	}
+	local, localOK, err := decodeOverlay(ProjectLocalConfigPath(projectPath))
+	if err != nil {
+		return nil, err
+	}
+	if !sharedOK && !localOK {
+		return nil, nil
+	}
+	merged := shared
+	mergeOverlay(&merged, local)
+	return &merged, nil
+}
+
+func decodeOverlay(path string) (ProjectOverlay, bool, error) {
+	var o ProjectOverlay
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return o, false, nil
+	}
+	if _, err := toml.DecodeFile(path, &o); err != nil {
+		return o, false, fmt.Errorf("config: decode overlay %s: %w", path, err)
+	}
+	return o, true, nil
+}
+
+// mergeOverlay applies the non-empty fields of src onto dst (src = local layer).
+func mergeOverlay(dst *ProjectOverlay, src ProjectOverlay) {
+	if len(src.Sessions) > 0 {
+		dst.Sessions = src.Sessions
+	}
+	if len(src.Gates) > 0 {
+		dst.Gates = src.Gates
+	}
+	if src.MixedProgramming != nil {
+		dst.MixedProgramming = src.MixedProgramming
+	}
+	if src.MixedMaxRounds != 0 {
+		dst.MixedMaxRounds = src.MixedMaxRounds
+	}
+	if len(src.Workers) > 0 {
+		dst.Workers = mergeWorkers(dst.Workers, src.Workers)
+	}
+}
+
+// mergeWorkers returns base with extra merged in, deduped by Name (extra wins).
+func mergeWorkers(base, extra []WorkerConfig) []WorkerConfig {
+	out := append([]WorkerConfig(nil), base...)
+	idx := map[string]int{}
+	for i, w := range out {
+		idx[w.Name] = i
+	}
+	for _, w := range extra {
+		if i, ok := idx[w.Name]; ok {
+			out[i] = w
+		} else {
+			idx[w.Name] = len(out)
+			out = append(out, w)
+		}
+	}
+	return out
 }
 
 // Save writes cfg to path in TOML format, creating directories as needed.
@@ -56,6 +181,82 @@ func Save(cfg *AppConfig, path string) error {
 
 	if err := toml.NewEncoder(f).Encode(cfg); err != nil {
 		return fmt.Errorf("config: encode: %w", err)
+	}
+	return nil
+}
+
+// SaveProjectOverlay writes the per-project config into <projectPath>/.claude-manager/,
+// splitting it into the committed config.toml (sessions, gates) and the
+// gitignored config.local.toml (mixed_programming opt-in, private workers). The
+// caller passes only the workers that belong to this project's local layer.
+// config.local.toml is added to the folder's .gitignore.
+func SaveProjectOverlay(projectPath string, p ProjectConfig, localWorkers []WorkerConfig) error {
+	dir := ProjectConfigDir(projectPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("config: mkdir %s: %w", dir, err)
+	}
+
+	// Committed layer: safe to share, no external endpoints.
+	shared := struct {
+		Sessions []SessionConfig `toml:"session"`
+		Gates    []string        `toml:"gates"`
+	}{Sessions: p.Sessions, Gates: p.Gates}
+	if err := encodeAtomic(ProjectConfigPath(projectPath), shared); err != nil {
+		return err
+	}
+
+	// Private layer: the privacy opt-in and the endpoints it sends code to.
+	local := struct {
+		MixedProgramming bool           `toml:"mixed_programming"`
+		MixedMaxRounds   int            `toml:"mixed_max_rounds"`
+		Workers          []WorkerConfig `toml:"worker"`
+	}{MixedProgramming: p.MixedProgramming, MixedMaxRounds: p.MixedMaxRounds, Workers: localWorkers}
+	if err := encodeAtomic(ProjectLocalConfigPath(projectPath), local); err != nil {
+		return err
+	}
+
+	return ensureGitignore(dir, projectLocalConfigFile)
+}
+
+// encodeAtomic TOML-encodes v to path via a temp file + rename.
+func encodeAtomic(path string, v any) error {
+	tmp := path + ".tmp"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return fmt.Errorf("config: create %s: %w", tmp, err)
+	}
+	if err := toml.NewEncoder(f).Encode(v); err != nil {
+		f.Close()
+		return fmt.Errorf("config: encode %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("config: close %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("config: rename %s: %w", tmp, err)
+	}
+	return nil
+}
+
+// ensureGitignore appends entry to dir/.gitignore unless already present.
+func ensureGitignore(dir, entry string) error {
+	p := filepath.Join(dir, ".gitignore")
+	existing, err := os.ReadFile(p)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("config: read %s: %w", p, err)
+	}
+	for _, line := range strings.Split(string(existing), "\n") {
+		if strings.TrimSpace(line) == entry {
+			return nil
+		}
+	}
+	content := string(existing)
+	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	content += entry + "\n"
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("config: write %s: %w", p, err)
 	}
 	return nil
 }
