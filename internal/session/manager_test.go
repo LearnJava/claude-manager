@@ -465,3 +465,57 @@ func TestManagerStateStoreDir(t *testing.T) {
 		t.Fatal("stateStore must be initialised by NewSessionManager")
 	}
 }
+
+// captureEmitter records every emitted event for assertions.
+type captureEmitter struct {
+	events []struct {
+		Name string
+		Data any
+	}
+}
+
+func (c *captureEmitter) Emit(name string, data any) {
+	c.events = append(c.events, struct {
+		Name string
+		Data any
+	}{name, data})
+}
+
+func TestManager_ForwardsTodoEvent(t *testing.T) {
+	m := newTestManager(t)
+	em := &captureEmitter{}
+	m.emitter = em
+	ms := addStubSession(m, "lumen", "P1")
+
+	todos := []TodoItem{
+		{Content: "Step A", Status: "completed"},
+		{Content: "Step B", Status: "in_progress", ActiveForm: "Doing step B"},
+	}
+	ms.session.updateTodos(todos)
+
+	var todoEv *TodoEvent
+	for _, e := range em.events {
+		if e.Name == EventNameTodo {
+			ev := e.Data.(TodoEvent)
+			todoEv = &ev
+		}
+	}
+	if todoEv == nil {
+		t.Fatal("expected a session:todo event")
+	}
+	if todoEv.ID != "lumen/P1" {
+		t.Errorf("unexpected id: %q", todoEv.ID)
+	}
+	if len(todoEv.Todos) != 2 || todoEv.CurrentTask != "Doing step B" {
+		t.Errorf("unexpected payload: %+v", todoEv)
+	}
+
+	// The snapshot returned to the UI carries the same todo list.
+	st, ok := m.GetSession("lumen/P1")
+	if !ok {
+		t.Fatal("GetSession failed")
+	}
+	if len(st.Todos) != 2 || st.CurrentTask != "Doing step B" {
+		t.Errorf("unexpected session state: todos=%+v current=%q", st.Todos, st.CurrentTask)
+	}
+}

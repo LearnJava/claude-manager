@@ -559,10 +559,10 @@ func TestAbbreviateInput(t *testing.T) {
 	longStr := strings.Repeat("x", 130)
 
 	tests := []struct {
-		name      string
-		toolName  string
-		input     json.RawMessage
-		want      string
+		name     string
+		toolName string
+		input    json.RawMessage
+		want     string
 	}{
 		{
 			"bash short",
@@ -651,5 +651,56 @@ func TestTruncate(t *testing.T) {
 	}
 	if got := truncate("exact", 5); got != "exact" {
 		t.Errorf("unexpected: %s", got)
+	}
+}
+
+func TestParseAssistantTodoWrite(t *testing.T) {
+	line := `{"type":"assistant","message":{"model":"claude-sonnet-4-6","content":[{"type":"tool_use","name":"TodoWrite","input":{"todos":[{"content":"Fix parser","status":"completed","activeForm":"Fixing parser"},{"content":"Add tests","status":"in_progress","activeForm":"Adding tests"},{"content":"Update docs","status":"pending","activeForm":"Updating docs"}]}}],"usage":{"input_tokens":10,"output_tokens":5}}}`
+
+	ev := parseLineAt(line, testTime)
+	if ev.EventType != EventLog {
+		t.Fatalf("expected %s, got %s", EventLog, ev.EventType)
+	}
+	if len(ev.Todos) != 3 {
+		t.Fatalf("expected 3 todos, got %d", len(ev.Todos))
+	}
+	if ev.Todos[0].Content != "Fix parser" || ev.Todos[0].Status != "completed" {
+		t.Errorf("unexpected todo[0]: %+v", ev.Todos[0])
+	}
+	if ev.Todos[1].Status != "in_progress" || ev.Todos[1].ActiveForm != "Adding tests" {
+		t.Errorf("unexpected todo[1]: %+v", ev.Todos[1])
+	}
+	// The TodoWrite call must still show up in the log stream as a tool entry.
+	if len(ev.Entries) != 1 || ev.Entries[0].ToolName != "TodoWrite" {
+		t.Errorf("expected 1 TodoWrite tool entry, got %+v", ev.Entries)
+	}
+}
+
+func TestParseAssistantWithoutTodoWrite_TodosNil(t *testing.T) {
+	line := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}`
+	ev := parseLineAt(line, testTime)
+	if ev.Todos != nil {
+		t.Errorf("expected nil Todos, got %+v", ev.Todos)
+	}
+}
+
+func TestParseTodoInput(t *testing.T) {
+	todos, ok := parseTodoInput([]byte(`{"todos":[{"content":"a","status":"pending"}]}`))
+	if !ok || len(todos) != 1 || todos[0].Content != "a" {
+		t.Errorf("unexpected: ok=%v todos=%+v", ok, todos)
+	}
+	// Empty array is a valid "cleared" list.
+	todos, ok = parseTodoInput([]byte(`{"todos":[]}`))
+	if !ok || len(todos) != 0 {
+		t.Errorf("expected ok with empty list, got ok=%v todos=%+v", ok, todos)
+	}
+	if _, ok := parseTodoInput([]byte(`{"other":1}`)); ok {
+		t.Error("expected ok=false without todos key")
+	}
+	if _, ok := parseTodoInput(nil); ok {
+		t.Error("expected ok=false for empty input")
+	}
+	if _, ok := parseTodoInput([]byte(`not json`)); ok {
+		t.Error("expected ok=false for invalid json")
 	}
 }

@@ -33,7 +33,8 @@ claude-manager/
 │   │   ├── state.go                 # StateStore: persist session_id to ~/.claude-manager/state/
 │   │   │                            #   for crash recovery; atomic write (tmp → rename)
 │   │   ├── parser.go                # Parse stream-json: assistant, tool_use, result,
-│   │   │                            #   permission_request, rate_limit_event, init
+│   │   │                            #   permission_request, rate_limit_event, init,
+│   │   │                            #   TodoWrite todos (current task + progress)
 │   │   ├── input.go                 # Write to stdin: user_message, permission_response
 │   │   └── ratelimit.go             # Rate limit detection, retry logic, timers
 │   ├── permission/
@@ -82,6 +83,8 @@ claude-manager/
 │   │   │                            #   auto-routing trigger, resizable via drag handle
 │   │   ├── ModelPicker.svelte       # Pre-start model selector: recommendation + override dropdowns
 │   │   ├── LogStream.svelte         # Real-time log with color coding, autoscroll, search filter
+│   │   ├── TaskPanel.svelte         # Right of the log: current task (TodoWrite), todo
+│   │   │                            #   checklist, progress %, collapsible session prompt
 │   │   ├── SessionView.svelte       # Session header: metrics, context bar, cost, export
 │   │   ├── SessionCard.svelte       # Session status badge, model, effort, task count, branch
 │   │   ├── SessionInput.svelte      # Message input for bidirectional streaming

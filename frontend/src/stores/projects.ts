@@ -93,6 +93,8 @@ function placeholder(project: string, name: string): SessionState {
         rate_limit_until: '',
         tasks_done: 0,
         current_task: '',
+        prompt: '',
+        todos: [],
         branch: '',
         cli_session_id: '',
         pending_permission: null,

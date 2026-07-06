@@ -36,6 +36,7 @@ const (
 	EvtPermission = "permission"
 	EvtUsage      = "usage"
 	EvtTaskDone   = "task_done"
+	EvtTodo       = "todo"
 	EvtError      = "error"
 )
 
@@ -51,6 +52,7 @@ type SessionEvent struct {
 	Permission *PermissionRequest
 	Usage      *TokenUsage
 	TasksDone  int
+	Todos      []TodoItem
 	Err        error
 }
 
@@ -124,6 +126,7 @@ type Session struct {
 	mu             sync.Mutex
 	status         config.SessionStatus
 	currentTask    string
+	todos          []TodoItem
 	branch         string
 	tasksDone      int
 	startedAt      time.Time
@@ -234,6 +237,7 @@ type Snapshot struct {
 	LastActivity   time.Time
 	RateLimitUntil time.Time
 	CurrentTask    string
+	Todos          []TodoItem
 	Branch         string
 	TasksDone      int
 	CLISessionID   string
@@ -250,6 +254,7 @@ func (s *Session) Snapshot() Snapshot {
 		LastActivity:   s.lastActivity,
 		RateLimitUntil: s.rateLimitUntil,
 		CurrentTask:    s.currentTask,
+		Todos:          append([]TodoItem(nil), s.todos...),
 		Branch:         s.branch,
 		TasksDone:      s.tasksDone,
 		CLISessionID:   s.CLISessionID,
@@ -550,6 +555,10 @@ func isAuthError(line string) bool {
 
 // runOnce launches one Claude CLI process and pumps its I/O until exit.
 func (s *Session) runOnce(ctx context.Context) error {
+	// Each run is a fresh CLI conversation (one task per process), so the
+	// previous task's todo list no longer describes what this run is doing.
+	s.updateTodos(nil)
+
 	if err := s.runPreTaskHook(ctx); err != nil {
 		return err
 	}
@@ -765,6 +774,9 @@ func (s *Session) handleLine(line string) bool {
 			entry := e
 			s.emit(SessionEvent{Type: EvtLog, Entry: &entry})
 		}
+		if ev.Todos != nil {
+			s.updateTodos(ev.Todos)
+		}
 		if ev.Usage != nil {
 			usage := *ev.Usage
 			s.emit(SessionEvent{Type: EvtUsage, Usage: &usage})
@@ -808,6 +820,41 @@ func (s *Session) handleLine(line string) bool {
 		}
 	}
 	return false
+}
+
+// updateTodos stores Claude's latest TodoWrite list, derives the current task
+// from it, and emits an EvtTodo event. Passing an empty (non-nil handled by the
+// caller) or nil slice clears the list — used at the start of each run.
+func (s *Session) updateTodos(todos []TodoItem) {
+	s.mu.Lock()
+	s.todos = append([]TodoItem(nil), todos...)
+	s.currentTask = currentTaskFromTodos(todos)
+	cp := append([]TodoItem(nil), todos...)
+	s.mu.Unlock()
+	s.emit(SessionEvent{Type: EvtTodo, Todos: cp})
+}
+
+// currentTaskFromTodos picks the human-readable "what is happening now" line:
+// the in_progress item (its activeForm reads naturally), else the first pending
+// item, else the last completed one.
+func currentTaskFromTodos(todos []TodoItem) string {
+	for _, t := range todos {
+		if t.Status == "in_progress" {
+			if t.ActiveForm != "" {
+				return t.ActiveForm
+			}
+			return t.Content
+		}
+	}
+	for _, t := range todos {
+		if t.Status == "pending" {
+			return t.Content
+		}
+	}
+	if n := len(todos); n > 0 {
+		return todos[n-1].Content
+	}
+	return ""
 }
 
 // drainStderr reads stderr line by line, forwarding each line as a log
