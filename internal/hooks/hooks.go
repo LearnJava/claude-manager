@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"claude-manager/internal/proc"
 )
 
 // Result holds the outcome of running a hook command.
@@ -66,6 +68,7 @@ func RunHookContext(ctx context.Context, command, cwd string, timeout time.Durat
 	} else {
 		execCmd = exec.CommandContext(ctx, "sh", "-c", cmd)
 	}
+	proc.HideConsole(execCmd)
 	if cwd != "" {
 		execCmd.Dir = cwd
 	}

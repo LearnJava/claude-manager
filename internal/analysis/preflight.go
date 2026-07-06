@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+
+	"claude-manager/internal/proc"
 )
 
 // AnalysisConfig controls a single RunAnalysis invocation. Zero values fall
@@ -175,6 +177,7 @@ func RunAnalysis(ctx context.Context, projectPath, task string, cfg AnalysisConf
 
 	args := BuildAnalysisArgs(cfg, task)
 	cmd := exec.CommandContext(ctx, bin, args...)
+	proc.HideConsole(cmd)
 	if projectPath != "" {
 		cmd.Dir = projectPath
 	}

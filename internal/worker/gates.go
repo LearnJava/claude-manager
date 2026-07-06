@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"claude-manager/internal/hooks"
+	"claude-manager/internal/proc"
 )
 
 // FeedbackByteLimit caps the size of GateResult.Feedback, mirroring the
@@ -138,6 +139,7 @@ func CommitWorktree(ctx context.Context, root, workerName, model, message string
 // paths never pass through shell quoting/interpolation.
 func runGit(ctx context.Context, root string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
+	proc.HideConsole(cmd)
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
 	if err != nil {

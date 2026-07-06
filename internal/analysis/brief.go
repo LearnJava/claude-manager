@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"claude-manager/internal/proc"
 	"claude-manager/internal/store"
 	"claude-manager/internal/worker"
 
@@ -206,6 +207,7 @@ func GenerateBrief(ctx context.Context, projectPath, task string, cfg AnalysisCo
 	}
 
 	cmd := exec.CommandContext(ctx, bin, BuildBriefArgs(cfg, task)...)
+	proc.HideConsole(cmd)
 	if projectPath != "" {
 		cmd.Dir = projectPath
 	}

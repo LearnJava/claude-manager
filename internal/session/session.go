@@ -20,6 +20,7 @@ import (
 	"claude-manager/internal/config"
 	"claude-manager/internal/hooks"
 	"claude-manager/internal/logger"
+	"claude-manager/internal/proc"
 
 	"github.com/google/uuid"
 )
@@ -458,6 +459,11 @@ func (s *Session) Run(ctx context.Context) {
 			if s.crashRecovery && s.stateStore != nil {
 				s.stateStore.Clear(s.ProjectName, s.Config.Name)
 			}
+			// Rotate the CLI session UUID: --session-id with the old value would
+			// resume the same on-disk conversation and hit the same 403 again.
+			s.mu.Lock()
+			s.CLISessionID = uuid.NewString()
+			s.mu.Unlock()
 			if !s.sleepCtx(ctx, 60*time.Second) {
 				s.setStatus(config.StatusIdle)
 				return
@@ -478,6 +484,10 @@ func (s *Session) Run(ctx context.Context) {
 			s.mu.Lock()
 			s.tasksDone++
 			done := s.tasksDone
+			// Each task gets a fresh CLI session: reusing the previous
+			// --session-id would resume the old conversation and drag the whole
+			// finished task's dialogue into the next task's context.
+			s.CLISessionID = uuid.NewString()
 			s.mu.Unlock()
 			logger.L.Info("session.run.task_done", "id", s.ID, "tasks_done", done)
 			// Post-task hook is informational: failures are logged but do not
@@ -566,6 +576,7 @@ func (s *Session) runOnce(ctx context.Context) error {
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, s.claudePath, args...)
+	proc.HideConsole(cmd)
 	if s.ProjectPath != "" {
 		cmd.Dir = s.ProjectPath
 	}
@@ -588,6 +599,17 @@ func (s *Session) runOnce(ctx context.Context) error {
 		return fmt.Errorf("start claude: %w", err)
 	}
 	logger.L.Info("session.spawned", "id", s.ID, "pid", cmd.Process.Pid)
+
+	// Group the CLI with everything it spawns (bash, cargo, subagents) so the
+	// whole tree is reaped when this run ends, however it ends.
+	job, jobErr := proc.NewJob()
+	if jobErr != nil {
+		logger.L.Warn("session.job_create_failed", "id", s.ID, "error", jobErr)
+	}
+	defer job.Close()
+	if err := job.Assign(cmd.Process.Pid); err != nil {
+		logger.L.Warn("session.job_assign_failed", "id", s.ID, "pid", cmd.Process.Pid, "error", err)
+	}
 
 	inputCh := make(chan []byte, 16)
 	s.mu.Lock()
@@ -754,6 +776,12 @@ func (s *Session) handleLine(line string) bool {
 			s.emit(SessionEvent{Type: EvtLog, Entry: &entry})
 		}
 		if ev.Result != nil {
+			// Auth failures surface as result text on stdout (e.g. "Failed to
+			// authenticate. API Error: 403 Request not allowed"), not on stderr.
+			if isAuthError(ev.Result.ResultText) {
+				s.authErrorHit.Store(true)
+				logger.L.Error("session.auth_error_detected", "id", s.ID, "line", ev.Result.ResultText)
+			}
 			s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
 		}
 		return true

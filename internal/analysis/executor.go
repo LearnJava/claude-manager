@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+
+	"claude-manager/internal/proc"
 )
 
 // subtaskSummaryLimit caps the summary stored per subtask. The summary is
@@ -110,6 +112,7 @@ func (e *CLIExecutor) Execute(ctx context.Context, projectPath string, sub Plann
 	}
 
 	cmd := exec.CommandContext(ctx, bin, BuildSubtaskArgs(*e, sub, contextAppend)...)
+	proc.HideConsole(cmd)
 	if projectPath != "" {
 		cmd.Dir = projectPath
 	}
