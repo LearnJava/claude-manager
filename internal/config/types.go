@@ -229,5 +229,5 @@ type LogEntry struct {
 	Source    string    `json:"source"` // "claude" | "manager"
 	Message   string    `json:"message"`
 	ToolName  string    `json:"tool_name"`  // for tool calls
-	ToolInput string    `json:"tool_input"` // abbreviated input
+	ToolInput string    `json:"tool_input"` // salient input field, full text (UI collapses long values)
 }

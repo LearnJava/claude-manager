@@ -21,7 +21,9 @@
     // Entries longer than this (or multi-line) are collapsed to their first line
     // behind a ＋/− toggle so verbose tool output / prompts don't flood the view.
     const COLLAPSE_CHARS = 200;
-    // Indices (into `entries`) the user has explicitly expanded.
+    // Seq ids (LogEntry.seq) the user has explicitly expanded. Keyed by seq, not
+    // by array index: indices shift when the ring buffer trims old entries or
+    // the search filter changes, which would silently expand the wrong rows.
     let expanded = new Set<number>();
 
     function isCollapsible(msg: string): boolean {
@@ -37,9 +39,15 @@
         return head + ' …';
     }
 
-    function toggle(i: number) {
-        if (expanded.has(i)) expanded.delete(i);
-        else expanded.add(i);
+    // Fallback key for entries without a seq (should not happen for live
+    // entries; negative range avoids colliding with real seq values).
+    function entryKey(e: LogEntry, i: number): number {
+        return e.seq ?? -(i + 1);
+    }
+
+    function toggle(key: number) {
+        if (expanded.has(key)) expanded.delete(key);
+        else expanded.add(key);
         expanded = expanded; // trigger Svelte reactivity
     }
 
@@ -98,12 +106,13 @@
     // which makes afterUpdate perpetually detect "grew" and re-scroll, whose
     // scroll event re-invalidates stuckToBottom — an infinite render loop that
     // hard-freezes the page. The id guard makes the body run once per session.
+    // `expanded` is intentionally NOT reset here: seq keys are globally unique,
+    // so entries a user opened in another session stay open when switching back.
     let lastSessionId: string | undefined;
     $: if (sessionId !== lastSessionId) {
         lastSessionId = sessionId;
         stuckToBottom = true;
         prevLogLen = 0;
-        expanded = new Set();
         // Wait until the new entries are rendered, then pin to bottom.
         tick().then(() => {
             if (container) container.scrollTop = container.scrollHeight;
@@ -172,10 +181,11 @@
                 {/if}
             </div>
         {:else}
-            {#each entries as e, i (i)}
+            {#each entries as e, i (entryKey(e, i))}
                 {@const msg = e.message ?? ''}
+                {@const key = entryKey(e, i)}
                 {@const collapsible = isCollapsible(msg)}
-                {@const isOpen = expanded.has(i)}
+                {@const isOpen = expanded.has(key)}
                 <div class="flex items-start gap-2 py-px {logEntryColor(e)}">
                     <span class="text-text-dim shrink-0 select-none">
                         [{formatTime(e.time)}]
@@ -186,7 +196,7 @@
                     {#if collapsible}
                         <button
                             type="button"
-                            on:click={() => toggle(i)}
+                            on:click={() => toggle(key)}
                             title={isOpen ? 'Collapse' : 'Expand'}
                             class="shrink-0 select-none w-4 text-center text-text-dim
                                    hover:text-text font-bold leading-5">

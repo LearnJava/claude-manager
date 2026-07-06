@@ -571,10 +571,11 @@ func TestAbbreviateInput(t *testing.T) {
 			"go test ./...",
 		},
 		{
-			"bash truncated",
+			// Long inputs are kept verbatim — display truncation is the UI's job.
+			"bash long command kept in full",
 			"Bash",
 			json.RawMessage(`{"command":"` + longStr + `"}`),
-			longStr[:120] + "...",
+			longStr,
 		},
 		{
 			"read",
@@ -613,10 +614,10 @@ func TestAbbreviateInput(t *testing.T) {
 			"Explore the codebase",
 		},
 		{
-			"agent truncated",
+			"agent long description kept in full",
 			"Agent",
 			json.RawMessage(`{"description":"` + longStr + `"}`),
-			longStr[:120] + "...",
+			longStr,
 		},
 		{
 			"unknown tool",
@@ -642,15 +643,13 @@ func TestAbbreviateInput(t *testing.T) {
 	}
 }
 
-func TestTruncate(t *testing.T) {
-	if got := truncate("hello", 10); got != "hello" {
-		t.Errorf("unexpected: %s", got)
-	}
-	if got := truncate("hello world foo", 5); got != "hello..." {
-		t.Errorf("unexpected: %s", got)
-	}
-	if got := truncate("exact", 5); got != "exact" {
-		t.Errorf("unexpected: %s", got)
+func TestAbbreviateInput_NeverTruncates(t *testing.T) {
+	// A Write with a whole file as content must survive the parser intact:
+	// the UI collapses it behind a ＋ toggle instead.
+	body := strings.Repeat("line of code\\n", 500)
+	got := abbreviateInput("MyCustomTool", json.RawMessage(`{"content":"`+body+`"}`))
+	if !strings.Contains(got, body) {
+		t.Errorf("long input was truncated: len=%d", len(got))
 	}
 }
 

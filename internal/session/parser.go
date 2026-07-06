@@ -488,8 +488,11 @@ func handlePermission(ev rawStreamEvent) ParsedEvent {
 
 // ---- Helpers ----
 
-// abbreviateInput returns a short display string for a tool_use input.
-// Rules from PLAN.md section 6.3.
+// abbreviateInput reduces a tool_use input to its salient field (the Bash
+// command, the file path, the search pattern — rules from PLAN.md section 6.3)
+// but does NOT truncate the value: the full text must reach the UI and the log
+// store so nothing is lost. Long entries are collapsed at display time by
+// LogStream.svelte, not here.
 func abbreviateInput(toolName string, inputJSON json.RawMessage) string {
 	if len(inputJSON) == 0 {
 		return ""
@@ -497,7 +500,7 @@ func abbreviateInput(toolName string, inputJSON json.RawMessage) string {
 
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(inputJSON, &m); err != nil {
-		return truncate(string(inputJSON), 120)
+		return string(inputJSON)
 	}
 
 	getString := func(key string) (string, bool) {
@@ -515,7 +518,7 @@ func abbreviateInput(toolName string, inputJSON json.RawMessage) string {
 	switch toolName {
 	case "Bash":
 		if cmd, ok := getString("command"); ok {
-			return truncate(cmd, 120)
+			return cmd
 		}
 	case "Read", "Edit", "Write":
 		if path, ok := getString("file_path"); ok {
@@ -527,16 +530,9 @@ func abbreviateInput(toolName string, inputJSON json.RawMessage) string {
 		}
 	case "Agent":
 		if desc, ok := getString("description"); ok {
-			return truncate(desc, 120)
+			return desc
 		}
 	}
 
-	return truncate(string(inputJSON), 120)
-}
-
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
+	return string(inputJSON)
 }

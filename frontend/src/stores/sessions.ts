@@ -76,6 +76,9 @@ export interface LogEntry {
     message: string;
     tool_name?: string;
     tool_input?: string;
+    // Client-side monotonic id assigned in appendLog. Stable across buffer
+    // trimming and filtering — LogStream keys rows and expand-state on it.
+    seq?: number;
 }
 
 export interface RateLimitInfo {
@@ -197,12 +200,15 @@ function setSession(id: string, mutator: (s: SessionState) => SessionState) {
     if (unknown) scheduleRefresh();
 }
 
+let logSeq = 0;
+
 function appendLog(id: string, entry: LogEntry) {
+    const stamped = { ...entry, seq: ++logSeq };
     sessionLogs.update((map) => {
         const cur = map[id] ?? [];
         const next = cur.length >= LOG_BUFFER_LIMIT
-            ? [...cur.slice(cur.length - LOG_BUFFER_LIMIT + 1), entry]
-            : [...cur, entry];
+            ? [...cur.slice(cur.length - LOG_BUFFER_LIMIT + 1), stamped]
+            : [...cur, stamped];
         return { ...map, [id]: next };
     });
 }
