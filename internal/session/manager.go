@@ -31,6 +31,7 @@ const (
 	EventNameRateLimit  = "session:rate_limit"
 	EventNamePermission = "session:permission"
 	EventNameContext    = "session:context"
+	EventNameTodo       = "session:todo"
 	EventNameInit       = "session:init"
 	EventNameResult     = "session:result"
 	EventNameError      = "session:error"
@@ -74,6 +75,14 @@ type ContextEvent struct {
 	Utilization   float64 `json:"utilization"`
 }
 
+// TodoEvent carries Claude's own todo list (from TodoWrite) so the UI can show
+// what the session is working on and how far along it is.
+type TodoEvent struct {
+	ID          string     `json:"id"`
+	Todos       []TodoItem `json:"todos"`
+	CurrentTask string     `json:"current_task"`
+}
+
 type InitEvent struct {
 	ID   string    `json:"id"`
 	Info *InitInfo `json:"info"`
@@ -93,20 +102,22 @@ type ErrorEvent struct {
 
 // SessionState is a snapshot of a session's full state returned to the UI.
 type SessionState struct {
-	ID             string    `json:"id"`
-	Project        string    `json:"project"`
-	Name           string    `json:"name"`
-	Status         string    `json:"status"`
-	Model          string    `json:"model"`
-	Effort         string    `json:"effort"`
-	PermissionMode string    `json:"permission_mode"`
-	StartedAt      time.Time `json:"started_at"`
-	LastActivity   time.Time `json:"last_activity"`
-	RateLimitUntil time.Time `json:"rate_limit_until"`
-	TasksDone      int       `json:"tasks_done"`
-	CurrentTask    string    `json:"current_task"`
-	Branch         string    `json:"branch"`
-	CLISessionID   string    `json:"cli_session_id"`
+	ID             string     `json:"id"`
+	Project        string     `json:"project"`
+	Name           string     `json:"name"`
+	Status         string     `json:"status"`
+	Model          string     `json:"model"`
+	Effort         string     `json:"effort"`
+	PermissionMode string     `json:"permission_mode"`
+	StartedAt      time.Time  `json:"started_at"`
+	LastActivity   time.Time  `json:"last_activity"`
+	RateLimitUntil time.Time  `json:"rate_limit_until"`
+	TasksDone      int        `json:"tasks_done"`
+	CurrentTask    string     `json:"current_task"`
+	Prompt         string     `json:"prompt"`
+	Todos          []TodoItem `json:"todos"`
+	Branch         string     `json:"branch"`
+	CLISessionID   string     `json:"cli_session_id"`
 
 	PendingPermission *permission.PermissionRequest `json:"pending_permission,omitempty"`
 
@@ -659,6 +670,8 @@ func (m *SessionManager) GetSession(id string) (SessionState, bool) {
 		RateLimitUntil: ms.rateLimitUntil,
 		TasksDone:      snap.TasksDone,
 		CurrentTask:    snap.CurrentTask,
+		Prompt:         ms.session.Config.Prompt,
+		Todos:          snap.Todos,
 		Branch:         snap.Branch,
 		CLISessionID:   snap.CLISessionID,
 		InputTokens:    ms.inputTokens,
@@ -857,6 +870,13 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 		if ev.Usage != nil {
 			m.handleUsage(ms, ev.Usage)
 		}
+
+	case EvtTodo:
+		m.emit(EventNameTodo, TodoEvent{
+			ID:          id,
+			Todos:       ev.Todos,
+			CurrentTask: currentTaskFromTodos(ev.Todos),
+		})
 
 	case EvtResult:
 		if ev.Result != nil {

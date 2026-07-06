@@ -35,6 +35,12 @@ export interface PermissionRequest {
     [k: string]: any;
 }
 
+export interface TodoItem {
+    content: string;
+    status: 'pending' | 'in_progress' | 'completed' | string;
+    activeForm?: string;
+}
+
 export interface SessionState {
     id: string;
     project: string;
@@ -48,6 +54,8 @@ export interface SessionState {
     rate_limit_until: string;
     tasks_done: number;
     current_task: string;
+    prompt: string;
+    todos: TodoItem[];
     branch: string;
     cli_session_id: string;
     pending_permission?: PermissionRequest | null;
@@ -139,7 +147,7 @@ function makeBlankSession(id: string): SessionState {
         id, project, name,
         status: 'idle', model: '', effort: '', permission_mode: '',
         started_at: '', last_activity: '', rate_limit_until: '',
-        tasks_done: 0, current_task: '', branch: '', cli_session_id: '',
+        tasks_done: 0, current_task: '', prompt: '', todos: [], branch: '', cli_session_id: '',
         pending_permission: null,
         input_tokens: 0, output_tokens: 0, cache_read: 0, cache_creation: 0,
         num_turns: 0, total_cost_usd: 0, context_window: 0, context_util: 0,
@@ -293,6 +301,15 @@ export async function initSessions(): Promise<void> {
             cache_creation: evt.cache_creation,
             context_window: evt.context_window,
             context_util: evt.utilization,
+        }));
+    });
+
+    EventsOn('session:todo', (evt: { id: string; todos: TodoItem[] | null; current_task: string }) => {
+        if (!evt || !evt.id) return;
+        setSession(evt.id, (s) => ({
+            ...s,
+            todos: evt.todos ?? [],
+            current_task: evt.current_task ?? '',
         }));
     });
 

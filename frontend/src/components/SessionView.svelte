@@ -1,6 +1,7 @@
 <script lang="ts">
     import SessionCard from './SessionCard.svelte';
     import LogStream from './LogStream.svelte';
+    import TaskPanel from './TaskPanel.svelte';
     import SessionInput from './SessionInput.svelte';
     import PermissionBanner from './PermissionBanner.svelte';
     import {
@@ -115,12 +116,15 @@
         <SessionCard {session} />
     </div>
 
-    <!-- Log stream fills remaining vertical space -->
-    <div class="flex-1 min-h-0 mt-2 mx-3 border border-bg-border rounded overflow-hidden flex flex-col">
-        {#if session.pending_permission}
-            <PermissionBanner {session} />
-        {/if}
-        <LogStream sessionId={session.id} />
+    <!-- Log stream + task panel fill remaining vertical space -->
+    <div class="flex-1 min-h-0 mt-2 mx-3 border border-bg-border rounded overflow-hidden flex flex-row">
+        <div class="flex-1 min-w-0 flex flex-col">
+            {#if session.pending_permission}
+                <PermissionBanner {session} />
+            {/if}
+            <LogStream sessionId={session.id} />
+        </div>
+        <TaskPanel {session} />
     </div>
 
     <!-- Control bar -->

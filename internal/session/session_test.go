@@ -508,3 +508,104 @@ func TestSession_EmitInvokesCallback(t *testing.T) {
 		t.Errorf("unexpected status sequence: %+v", got)
 	}
 }
+
+func TestCurrentTaskFromTodos(t *testing.T) {
+	tests := []struct {
+		name  string
+		todos []TodoItem
+		want  string
+	}{
+		{"empty", nil, ""},
+		{
+			"in_progress wins, activeForm preferred",
+			[]TodoItem{
+				{Content: "Done one", Status: "completed"},
+				{Content: "Fix bug", Status: "in_progress", ActiveForm: "Fixing bug"},
+				{Content: "Next", Status: "pending"},
+			},
+			"Fixing bug",
+		},
+		{
+			"in_progress without activeForm falls back to content",
+			[]TodoItem{{Content: "Fix bug", Status: "in_progress"}},
+			"Fix bug",
+		},
+		{
+			"no in_progress: first pending",
+			[]TodoItem{
+				{Content: "Done", Status: "completed"},
+				{Content: "Queued", Status: "pending"},
+			},
+			"Queued",
+		},
+		{
+			"all completed: last item",
+			[]TodoItem{
+				{Content: "First", Status: "completed"},
+				{Content: "Last", Status: "completed"},
+			},
+			"Last",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := currentTaskFromTodos(tc.todos); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSession_HandleLineTodoWrite(t *testing.T) {
+	var todoEvents [][]TodoItem
+	s := New(Params{
+		ID: "lumen/P1",
+		OnEvent: func(id string, ev SessionEvent) {
+			if ev.Type == EvtTodo {
+				todoEvents = append(todoEvents, ev.Todos)
+			}
+		},
+	})
+
+	line := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"TodoWrite","input":{"todos":[{"content":"Step A","status":"completed"},{"content":"Step B","status":"in_progress","activeForm":"Doing step B"}]}}]}}`
+	if done := s.handleLine(line); done {
+		t.Error("TodoWrite line must not end the turn")
+	}
+
+	if len(todoEvents) != 1 {
+		t.Fatalf("expected 1 EvtTodo, got %d", len(todoEvents))
+	}
+	if len(todoEvents[0]) != 2 || todoEvents[0][1].Content != "Step B" {
+		t.Errorf("unexpected todos: %+v", todoEvents[0])
+	}
+
+	snap := s.Snapshot()
+	if snap.CurrentTask != "Doing step B" {
+		t.Errorf("unexpected CurrentTask: %q", snap.CurrentTask)
+	}
+	if len(snap.Todos) != 2 {
+		t.Errorf("expected 2 todos in snapshot, got %d", len(snap.Todos))
+	}
+}
+
+func TestSession_UpdateTodosNilClears(t *testing.T) {
+	var events int
+	s := New(Params{
+		ID: "lumen/P1",
+		OnEvent: func(id string, ev SessionEvent) {
+			if ev.Type == EvtTodo {
+				events++
+			}
+		},
+	})
+	s.updateTodos([]TodoItem{{Content: "X", Status: "in_progress"}})
+	s.updateTodos(nil)
+
+	if events != 2 {
+		t.Fatalf("expected 2 EvtTodo events, got %d", events)
+	}
+	snap := s.Snapshot()
+	if snap.CurrentTask != "" || len(snap.Todos) != 0 {
+		t.Errorf("expected cleared state, got task=%q todos=%+v", snap.CurrentTask, snap.Todos)
+	}
+}

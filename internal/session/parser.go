@@ -69,6 +69,14 @@ type InitInfo struct {
 	CWD               string      `json:"cwd"`
 }
 
+// TodoItem is one entry of Claude's own todo list, captured from a TodoWrite
+// tool_use input. Status is one of pending | in_progress | completed.
+type TodoItem struct {
+	Content    string `json:"content"`
+	Status     string `json:"status"`
+	ActiveForm string `json:"activeForm"`
+}
+
 // PermissionRequest describes a permission request emitted by Claude CLI.
 type PermissionRequest struct {
 	ID          string `json:"id"`
@@ -99,6 +107,7 @@ type ParsedEvent struct {
 	Init       *InitInfo          // non-nil for EventInit
 	Permission *PermissionRequest // non-nil for EventPermission
 	Usage      *TokenUsage        // per-turn usage from assistant messages
+	Todos      []TodoItem         // non-nil when the turn contained a TodoWrite
 }
 
 // ---- Internal raw JSON structures ----
@@ -262,6 +271,7 @@ func handleAssistant(ev rawStreamEvent, now time.Time) ParsedEvent {
 		return ParsedEvent{EventType: EventUnknown}
 	}
 	var entries []config.LogEntry
+	var todos []TodoItem
 	for _, c := range ev.Message.Content {
 		switch c.Type {
 		case "text":
@@ -274,6 +284,11 @@ func handleAssistant(ev rawStreamEvent, now time.Time) ParsedEvent {
 				})
 			}
 		case "tool_use":
+			if c.Name == "TodoWrite" {
+				if parsed, ok := parseTodoInput(c.Input); ok {
+					todos = parsed
+				}
+			}
 			abbrev := abbreviateInput(c.Name, c.Input)
 			entries = append(entries, config.LogEntry{
 				Time:      now,
@@ -298,7 +313,24 @@ func handleAssistant(ev rawStreamEvent, now time.Time) ParsedEvent {
 		EventType: EventLog,
 		Entries:   entries,
 		Usage:     ev.Message.Usage,
+		Todos:     todos,
 	}
+}
+
+// parseTodoInput decodes a TodoWrite tool_use input ({"todos":[...]}) into the
+// todo list. ok is false when the input doesn't carry a todos array — an empty
+// array is still ok=true (Claude clearing its list).
+func parseTodoInput(input json.RawMessage) ([]TodoItem, bool) {
+	if len(input) == 0 {
+		return nil, false
+	}
+	var payload struct {
+		Todos []TodoItem `json:"todos"`
+	}
+	if err := json.Unmarshal(input, &payload); err != nil || payload.Todos == nil {
+		return nil, false
+	}
+	return payload.Todos, true
 }
 
 // rawUserEnvelope captures the two shapes a stream-json `type:"user"` event

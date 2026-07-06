@@ -1,0 +1,45 @@
+{
+  "name": "todo-progress",
+  "match": "(?i)\\btodo\\b|\\bprogress\\b",
+  "model": "claude-sonnet-4-6",
+  "context_window": 200000,
+  "exit_code": 0,
+  "steps": [
+    {
+      "type": "await_stdin",
+      "expect": "user",
+      "timeout_ms": 5000,
+      "store_as": "msg"
+    },
+    {
+      "type": "emit",
+      "delay_ms": 0,
+      "event": {"type":"system","subtype":"init","session_id":"${session_id}","model":"${model}","tools":["Read","Edit","Bash","TodoWrite"],"cwd":"${cwd}"}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 50,
+      "event": {"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu_todo_1","name":"TodoWrite","input":{"todos":[{"content":"Analyze the failing test","status":"in_progress","activeForm":"Analyzing the failing test"},{"content":"Fix the parser bug","status":"pending","activeForm":"Fixing the parser bug"},{"content":"Run the full test suite","status":"pending","activeForm":"Running the full test suite"}]}}],"usage":{"input_tokens":1200,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":80}}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 100,
+      "event": {"type":"assistant","message":{"content":[{"type":"text","text":"Found the root cause, applying the fix."}],"usage":{"input_tokens":1400,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":40}}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 100,
+      "event": {"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu_todo_2","name":"TodoWrite","input":{"todos":[{"content":"Analyze the failing test","status":"completed","activeForm":"Analyzing the failing test"},{"content":"Fix the parser bug","status":"in_progress","activeForm":"Fixing the parser bug"},{"content":"Run the full test suite","status":"pending","activeForm":"Running the full test suite"}]}}],"usage":{"input_tokens":1600,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":80}}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 100,
+      "event": {"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu_todo_3","name":"TodoWrite","input":{"todos":[{"content":"Analyze the failing test","status":"completed","activeForm":"Analyzing the failing test"},{"content":"Fix the parser bug","status":"completed","activeForm":"Fixing the parser bug"},{"content":"Run the full test suite","status":"completed","activeForm":"Running the full test suite"}]}}],"usage":{"input_tokens":1800,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":80}}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 50,
+      "event": {"type":"result","subtype":"success","total_cost_usd":0.02,"num_turns":4,"duration_ms":2000,"usage":{"input_tokens":1800,"output_tokens":280,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"modelUsage":{"claude-sonnet-4-6":{"inputTokens":1800,"outputTokens":280,"cacheReadInputTokens":0,"cacheCreationInputTokens":0,"costUSD":0.02,"contextWindow":200000,"maxOutputTokens":32000}}}
+    }
+  ]
+}
