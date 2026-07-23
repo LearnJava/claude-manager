@@ -488,6 +488,14 @@ func (s *Session) Run(ctx context.Context) {
 			logger.L.Error("session.run.error", "id", s.ID, "error", err, "retry_delay_sec", s.retryDelay)
 			s.setStatus(config.StatusRetrying)
 			s.emitErr(err)
+			// Rotate the CLI session UUID: a failed run may have already
+			// registered --session-id with the CLI before erroring out (e.g.
+			// API connection refused before the first request), so retrying
+			// with the same UUID fails with "Session ID ... is already in
+			// use" and loops forever.
+			s.mu.Lock()
+			s.CLISessionID = uuid.NewString()
+			s.mu.Unlock()
 			if !s.sleepCtx(ctx, time.Duration(s.retryDelay)*time.Second) {
 				s.setStatus(config.StatusIdle)
 				return

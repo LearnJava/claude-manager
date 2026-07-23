@@ -26,10 +26,15 @@
         if (tick) clearInterval(tick);
     });
 
+    // Guards against Go's zero time.Time ("0001-01-01T00:00:00Z"), which is a
+    // non-empty, validly-parsing string that would otherwise produce a
+    // multi-million-hour runtime instead of the intended "not started" 0.
+    const MIN_SANE_STARTED_AT_MS = Date.UTC(2000, 0, 1);
+
     function runtimeMs(s: SessionState, nowMs: number): number {
         if (!s.started_at) return 0;
         const t = new Date(s.started_at).getTime();
-        if (!t || isNaN(t)) return 0;
+        if (!t || isNaN(t) || t < MIN_SANE_STARTED_AT_MS) return 0;
         return Math.max(0, nowMs - t);
     }
 

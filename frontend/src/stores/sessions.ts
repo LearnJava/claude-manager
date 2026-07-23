@@ -163,8 +163,14 @@ async function refreshSessions(): Promise<void> {
         const list = (await GetAllSessions()) as SessionState[];
         sessions.update((map) => {
             const updated = { ...map };
+            // Overwrite unconditionally: this is the authoritative full
+            // snapshot from the backend, fetched specifically to replace the
+            // blank placeholder setSession() created for a session unknown
+            // to the store. Skipping already-known ids left that placeholder
+            // (started_at: '', model: '', ...) in place forever, since no
+            // Wails event ever carries those fields on its own.
             (list ?? []).forEach((s) => {
-                if (!updated[s.id]) updated[s.id] = s;
+                updated[s.id] = s;
             });
             return updated;
         });
