@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"claude-manager/internal/analysis"
 	"claude-manager/internal/config"
 )
 
@@ -271,6 +272,192 @@ func TestHasTasks(t *testing.T) {
 func TestHasTasks_MissingFile(t *testing.T) {
 	if hasTasks("/no/such/file.md") {
 		t.Error("missing file should return false")
+	}
+}
+
+// TestRoadmapFiles_ConsumedByTaskSourceCheck closes the loop between
+// analysis.WriteRoadmapFiles (the generator) and hasTasks/
+// resolveTaskSourceDescription (the consumer, already shipped): it confirms
+// they actually agree on the bare-pointer-line format, not just each in
+// isolation against a hand-written fixture.
+func TestRoadmapFiles_ConsumedByTaskSourceCheck(t *testing.T) {
+	dir := t.TempDir()
+	plan := &analysis.TaskPlan{
+		Project:       "demo",
+		SharedContext: "A demo project.",
+		Subtasks: []analysis.PlannedSubtask{
+			{ID: "setup", Name: "project-setup", Prompt: "Scaffold the repo."},
+			{ID: "auth", Name: "auth", Prompt: "Add JWT auth middleware.", DependsOn: []string{"setup"}},
+		},
+		ExecutionOrder: [][]string{{"setup"}, {"auth"}},
+	}
+
+	_, statusPath, err := analysis.WriteRoadmapFiles(dir, plan, false)
+	if err != nil {
+		t.Fatalf("WriteRoadmapFiles: %v", err)
+	}
+
+	if !hasTasks(statusPath) {
+		t.Fatal("hasTasks should see the generated STATUS-P1.md as having open tasks")
+	}
+
+	desc := resolveTaskSourceDescription(dir, statusPath)
+	if !strings.Contains(desc, "project-setup") {
+		t.Errorf("resolveTaskSourceDescription should resolve to the first (setup) task's row, got: %q", desc)
+	}
+}
+
+// ---- firstTaskPointer ----
+
+func TestFirstTaskPointer(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{"single", "ROADMAP.md:92\n", "ROADMAP.md:92"},
+		{"picks_first_of_several", "ROADMAP.md:92\nROADMAP.md:93\n", "ROADMAP.md:92"},
+		{"skips_headers_and_markers", "# heading\n> quote\n- ROADMAP.md:92\n_ROADMAP.md:92\nROADMAP.md:185\n", "ROADMAP.md:185"},
+		{"code_anchor", "crates/engine/layout/src/ruby.rs:76\n", "crates/engine/layout/src/ruby.rs:76"},
+		{"none_present", "## In progress:\n- Task A\n", ""},
+		{"empty", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := firstTaskPointer(tc.content); got != tc.want {
+				t.Errorf("firstTaskPointer(%q) = %q, want %q", tc.content, got, tc.want)
+			}
+		})
+	}
+}
+
+// ---- legacyTaskDescription ----
+
+func TestLegacyTaskDescription(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{"in_progress_same_paragraph", "## In progress:\nFix the toolbar overflow\n", "Fix the toolbar overflow"},
+		{"next_checkbox", "## Next:\n- [ ] Wire up the sidebar\n", "- [ ] Wire up the sidebar"},
+		{"prefers_in_progress_over_next", "## In progress:\nFix A\n## Next:\n- [ ] Do B\n", "Fix A"},
+		{"next_without_checkbox", "## Next:\nsome text without checkboxes\n", ""},
+		{"neither_marker", "# Done\n- [x] old task\n", ""},
+		{"empty", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := legacyTaskDescription(tc.content); got != tc.want {
+				t.Errorf("legacyTaskDescription(%q) = %q, want %q", tc.content, got, tc.want)
+			}
+		})
+	}
+}
+
+// ---- truncateRunes ----
+
+func TestTruncateRunes(t *testing.T) {
+	if got := truncateRunes("short", 200); got != "short" {
+		t.Errorf("truncateRunes should not alter strings under the limit, got %q", got)
+	}
+	long := strings.Repeat("а", 250) // multi-byte rune (Cyrillic) to catch byte-vs-rune bugs
+	got := truncateRunes(long, 200)
+	if n := len([]rune(got)); n != 200 {
+		t.Errorf("truncateRunes(250 runes, 200) = %d runes, want 200", n)
+	}
+}
+
+// ---- resolveTaskSourceDescription ----
+
+func TestResolveTaskSourceDescription(t *testing.T) {
+	projectDir := t.TempDir()
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(projectDir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("resolves_pointer_into_source_line", func(t *testing.T) {
+		write("ROADMAP.md", "line one\n| DS-14 | P3 | DS | planned | title |\nline three\n")
+		write("STATUS-P1.md", "ROADMAP.md:2\n")
+		got := resolveTaskSourceDescription(projectDir, filepath.Join(projectDir, "STATUS-P1.md"))
+		want := "| DS-14 | P3 | DS | planned | title |"
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("truncates_long_lines", func(t *testing.T) {
+		long := strings.Repeat("x", 300)
+		write("BUGS.md", long+"\n")
+		write("STATUS-P2.md", "BUGS.md:1\n")
+		got := resolveTaskSourceDescription(projectDir, filepath.Join(projectDir, "STATUS-P2.md"))
+		if len([]rune(got)) != 200 {
+			t.Errorf("expected truncation to 200 runes, got %d", len([]rune(got)))
+		}
+	})
+
+	t.Run("falls_back_to_pointer_when_source_missing", func(t *testing.T) {
+		write("STATUS-P3.md", "MISSING.md:5\n")
+		got := resolveTaskSourceDescription(projectDir, filepath.Join(projectDir, "STATUS-P3.md"))
+		if got != "MISSING.md:5" {
+			t.Errorf("got %q, want fallback to pointer text", got)
+		}
+	})
+
+	t.Run("falls_back_to_pointer_when_line_out_of_range", func(t *testing.T) {
+		write("SHORT.md", "only one line\n")
+		write("STATUS-P4.md", "SHORT.md:99\n")
+		got := resolveTaskSourceDescription(projectDir, filepath.Join(projectDir, "STATUS-P4.md"))
+		if got != "SHORT.md:99" {
+			t.Errorf("got %q, want fallback to pointer text", got)
+		}
+	})
+
+	t.Run("falls_back_to_legacy_format", func(t *testing.T) {
+		write("STATUS-P5.md", "## In progress:\nHealth sweep in progress\n")
+		got := resolveTaskSourceDescription(projectDir, filepath.Join(projectDir, "STATUS-P5.md"))
+		if got != "Health sweep in progress" {
+			t.Errorf("got %q, want legacy description", got)
+		}
+	})
+
+	t.Run("missing_task_source_file", func(t *testing.T) {
+		got := resolveTaskSourceDescription(projectDir, filepath.Join(projectDir, "no-such-status.md"))
+		if got != "" {
+			t.Errorf("got %q, want empty string for missing file", got)
+		}
+	})
+}
+
+// ---- Session.setTaskSourceDesc ----
+
+func TestSession_SetTaskSourceDesc(t *testing.T) {
+	var events []SessionEvent
+	s := New(Params{
+		ID:     "x",
+		Config: config.SessionConfig{},
+		OnEvent: func(id string, ev SessionEvent) {
+			events = append(events, ev)
+		},
+	})
+
+	s.setTaskSourceDesc("first description")
+	s.setTaskSourceDesc("first description") // no-op, must not re-emit
+	s.setTaskSourceDesc("second description")
+
+	if len(events) != 2 {
+		t.Fatalf("expected 2 emitted events (no dup for unchanged value), got %d", len(events))
+	}
+	if events[0].Type != EvtTaskSource || events[0].TaskSourceDesc != "first description" {
+		t.Errorf("unexpected first event: %+v", events[0])
+	}
+	if events[1].TaskSourceDesc != "second description" {
+		t.Errorf("unexpected second event: %+v", events[1])
+	}
+	if got := s.Snapshot().TaskSourceDesc; got != "second description" {
+		t.Errorf("Snapshot().TaskSourceDesc = %q, want %q", got, "second description")
 	}
 }
 

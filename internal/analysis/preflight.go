@@ -19,6 +19,7 @@ type AnalysisConfig struct {
 	Effort       string  // analyst effort (default: "medium")
 	MaxBudgetUSD float64 // 0 = no limit (--max-budget-usd is omitted)
 	SystemPrompt string  // override AnalystSystemPrompt; empty uses default
+	JSONSchema   string  // override AnalysisJSONSchema; empty uses default
 }
 
 // FeasibilityInfo mirrors the `feasibility` block of the analyst JSON output.
@@ -75,13 +76,17 @@ func BuildAnalysisArgs(cfg AnalysisConfig, task string) []string {
 	if sysPrompt == "" {
 		sysPrompt = AnalystSystemPrompt
 	}
+	schema := cfg.JSONSchema
+	if schema == "" {
+		schema = AnalysisJSONSchema
+	}
 
 	args := []string{
 		"-p",
 		"--model", model,
 		"--effort", effort,
 		"--permission-mode", "plan",
-		"--json-schema", AnalysisJSONSchema,
+		"--json-schema", schema,
 		"--output-format", "json",
 		"--append-system-prompt", sysPrompt,
 	}

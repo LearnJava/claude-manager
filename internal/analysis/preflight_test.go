@@ -61,6 +61,19 @@ func TestBuildAnalysisArgsOverrides(t *testing.T) {
 	}
 }
 
+func TestBuildAnalysisArgsSchemaOverride(t *testing.T) {
+	args := BuildAnalysisArgs(AnalysisConfig{JSONSchema: RoadmapJSONSchema}, "build a thing")
+	if !flagHasValue(args, "--json-schema", RoadmapJSONSchema) {
+		t.Error("expected the overridden schema, not AnalysisJSONSchema")
+	}
+
+	// Empty JSONSchema still falls back to the default.
+	args = BuildAnalysisArgs(AnalysisConfig{}, "build a thing")
+	if !flagHasValue(args, "--json-schema", AnalysisJSONSchema) {
+		t.Error("expected AnalysisJSONSchema when JSONSchema is unset")
+	}
+}
+
 func TestBuildAnalysisArgsJSONSchemaIsValidJSON(t *testing.T) {
 	args := BuildAnalysisArgs(AnalysisConfig{}, "x")
 	schema := flagValue(args, "--json-schema")
@@ -73,6 +86,28 @@ func TestBuildAnalysisArgsJSONSchemaIsValidJSON(t *testing.T) {
 	}
 	if v["type"] != "object" {
 		t.Errorf("schema root type should be object, got %v", v["type"])
+	}
+}
+
+func TestRoadmapJSONSchemaIsValidJSON(t *testing.T) {
+	var v map[string]any
+	if err := json.Unmarshal([]byte(RoadmapJSONSchema), &v); err != nil {
+		t.Fatalf("RoadmapJSONSchema is not valid JSON: %v", err)
+	}
+	if v["type"] != "object" {
+		t.Errorf("schema root type should be object, got %v", v["type"])
+	}
+	props, ok := v["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("expected a properties object")
+	}
+	for _, key := range []string{"subtasks", "execution_order", "shared_context"} {
+		if _, ok := props[key]; !ok {
+			t.Errorf("RoadmapJSONSchema missing property %q", key)
+		}
+	}
+	if _, ok := props["feasibility"]; ok {
+		t.Error("RoadmapJSONSchema should not carry a single-task feasibility block")
 	}
 }
 

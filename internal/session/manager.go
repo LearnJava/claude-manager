@@ -32,6 +32,7 @@ const (
 	EventNamePermission = "session:permission"
 	EventNameContext    = "session:context"
 	EventNameTodo       = "session:todo"
+	EventNameTaskSource = "session:task_source"
 	EventNameInit       = "session:init"
 	EventNameResult     = "session:result"
 	EventNameError      = "session:error"
@@ -83,6 +84,15 @@ type TodoEvent struct {
 	CurrentTask string     `json:"current_task"`
 }
 
+// TaskSourceEvent carries the description resolved from the session's
+// task_source pointer file (a ROADMAP.md row, task-file heading, etc. — see
+// resolveTaskSourceDescription), independent of Claude's own TodoWrite
+// output, so the UI has something to show before the first TodoWrite call.
+type TaskSourceEvent struct {
+	ID                    string `json:"id"`
+	TaskSourceDescription string `json:"task_source_description"`
+}
+
 type InitEvent struct {
 	ID   string    `json:"id"`
 	Info *InitInfo `json:"info"`
@@ -114,6 +124,7 @@ type SessionState struct {
 	RateLimitUntil time.Time  `json:"rate_limit_until"`
 	TasksDone      int        `json:"tasks_done"`
 	CurrentTask    string     `json:"current_task"`
+	TaskSourceDesc string     `json:"task_source_description"`
 	Prompt         string     `json:"prompt"`
 	Todos          []TodoItem `json:"todos"`
 	Branch         string     `json:"branch"`
@@ -670,6 +681,7 @@ func (m *SessionManager) GetSession(id string) (SessionState, bool) {
 		RateLimitUntil: ms.rateLimitUntil,
 		TasksDone:      snap.TasksDone,
 		CurrentTask:    snap.CurrentTask,
+		TaskSourceDesc: snap.TaskSourceDesc,
 		Prompt:         ms.session.Config.Prompt,
 		Todos:          snap.Todos,
 		Branch:         snap.Branch,
@@ -876,6 +888,12 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 			ID:          id,
 			Todos:       ev.Todos,
 			CurrentTask: currentTaskFromTodos(ev.Todos),
+		})
+
+	case EvtTaskSource:
+		m.emit(EventNameTaskSource, TaskSourceEvent{
+			ID:                    id,
+			TaskSourceDescription: ev.TaskSourceDesc,
 		})
 
 	case EvtResult:
@@ -1233,6 +1251,83 @@ func (m *SessionManager) runPreflight(ctx context.Context, project, task string,
 	return plan, nil
 }
 
+// GenerateRoadmap decomposes a whole project idea into a durable backlog
+// (draft roadmap plan), using Opus by default — unlike RunPreflight's
+// single-task triage, roadmap quality is the main lever on every downstream
+// session's success, so it defaults to the strongest model. model overrides
+// the default when non-empty (e.g. "sonnet"/"haiku" for cheaper iteration).
+func (m *SessionManager) GenerateRoadmap(project, idea, model string) (*analysis.TaskPlan, error) {
+	return m.generateRoadmap(context.Background(), project, idea, model, analysis.RunAnalysis)
+}
+
+func (m *SessionManager) generateRoadmap(ctx context.Context, project, idea, model string, analyze analyzeFn) (*analysis.TaskPlan, error) {
+	path, err := m.projectPath(project)
+	if err != nil {
+		return nil, err
+	}
+	if model == "" {
+		model = "opus"
+	}
+	m.mu.Lock()
+	acfg := analysis.AnalysisConfig{
+		ClaudePath:   m.cfg.Settings.ClaudePath,
+		Model:        model,
+		Effort:       "high",
+		SystemPrompt: analysis.RoadmapSystemPrompt,
+		JSONSchema:   analysis.RoadmapJSONSchema,
+		MaxBudgetUSD: m.cfg.Settings.PreflightMaxBudget,
+	}
+	m.mu.Unlock()
+
+	result, err := analyze(ctx, path, idea, acfg)
+	if err != nil {
+		return nil, fmt.Errorf("roadmap: %w", err)
+	}
+	plan := analysis.NewPlanFromAnalysis(project, idea, result)
+	plan.Kind = analysis.PlanKindRoadmap
+	if err := analysis.SavePlan(m.store, plan); err != nil {
+		return nil, err
+	}
+	logger.L.Info("manager.roadmap_generated",
+		"project", project, "plan_id", plan.ID, "subtasks", len(plan.Subtasks), "model", model)
+	return plan, nil
+}
+
+// ApproveRoadmapFiles materializes an approved roadmap plan into
+// <project>/ROADMAP.md + <project>/STATUS-P1.md (see analysis.WriteRoadmapFiles)
+// and marks the plan completed. Rejects plans that aren't PlanKindRoadmap, so
+// an ad-hoc plan can never be accidentally written as project files, and
+// ExecutePlan (below) rejects the reverse case.
+func (m *SessionManager) ApproveRoadmapFiles(planID int64, overwrite bool) (plan *analysis.TaskPlan, roadmapPath, statusPath string, err error) {
+	plan, err = analysis.LoadPlan(m.store, planID)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if plan == nil {
+		return nil, "", "", fmt.Errorf("approve roadmap: plan %d not found", planID)
+	}
+	if plan.Kind != analysis.PlanKindRoadmap {
+		return nil, "", "", fmt.Errorf("approve roadmap: plan %d is not a roadmap plan", planID)
+	}
+	path, err := m.projectPath(plan.Project)
+	if err != nil {
+		return nil, "", "", err
+	}
+	roadmapPath, statusPath, err = analysis.WriteRoadmapFiles(path, plan, overwrite)
+	if err != nil {
+		return nil, "", "", err
+	}
+	plan.Status = analysis.PlanStatusCompleted
+	now := time.Now()
+	plan.CompletedAt = &now
+	if err := analysis.SavePlan(m.store, plan); err != nil {
+		return nil, "", "", err
+	}
+	logger.L.Info("manager.roadmap_written",
+		"plan_id", plan.ID, "project", plan.Project, "roadmap", roadmapPath, "status_file", statusPath)
+	return plan, roadmapPath, statusPath, nil
+}
+
 // ApprovePlan persists an (operator-edited) plan with status approved and
 // returns it — the store ID is assigned on first save, so the frontend must
 // use the returned plan for the follow-up ExecutePlan call.
@@ -1266,6 +1361,9 @@ func (m *SessionManager) executePlan(ctx context.Context, planID int64, ex analy
 	}
 	if plan == nil {
 		return fmt.Errorf("execute plan: plan %d not found", planID)
+	}
+	if plan.Kind == analysis.PlanKindRoadmap {
+		return fmt.Errorf("execute plan: plan %d is a roadmap plan; use ApproveRoadmapFiles instead", planID)
 	}
 	path, err := m.projectPath(plan.Project)
 	if err != nil {

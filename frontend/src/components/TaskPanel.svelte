@@ -13,9 +13,15 @@
     $: inProgress = todos.filter((t) => t.status === 'in_progress').length;
     $: percent = total > 0 ? Math.round(((completed + inProgress * 0.5) / total) * 100) : 0;
 
+    // Precedence: Claude's own TodoWrite breakdown (most specific and live)
+    // beats the task_source-resolved description (coarser — a ROADMAP.md row
+    // or task-file heading — but available before the first TodoWrite call),
+    // which beats a bare "Working…" placeholder.
     $: currentLabel =
         session.current_task ||
+        session.task_source_description ||
         (session.status === 'working' ? 'Working…' : '');
+    $: currentLabelFromSource = !session.current_task && !!session.task_source_description;
 
     function icon(t: TodoItem): string {
         if (t.status === 'completed') return '✓';
@@ -48,7 +54,9 @@
 
         {#if currentLabel}
             <div>
-                <div class="text-[10px] uppercase tracking-wide text-text-muted mb-0.5">Now</div>
+                <div class="text-[10px] uppercase tracking-wide text-text-muted mb-0.5">
+                    {currentLabelFromSource ? 'Now · from task source' : 'Now'}
+                </div>
                 <div class="text-xs text-text break-words">{currentLabel}</div>
             </div>
         {/if}

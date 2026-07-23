@@ -1,8 +1,9 @@
 <script lang="ts">
     import { createEventDispatcher, onMount } from 'svelte';
-    import { GetConfig, UpdateConfig, PickDirectory } from '../../wailsjs/go/main/App';
+    import { GetConfig, UpdateConfig, PickDirectory, GenerateRoadmap } from '../../wailsjs/go/main/App';
     import { initProjects } from '../stores/projects';
     import { setTheme, type Theme } from '../stores/theme';
+    import PlanReview from './PlanReview.svelte';
 
     const dispatch = createEventDispatcher();
 
@@ -368,6 +369,40 @@
         } catch (e: any) {
             error = `Folder picker failed: ${e?.message ?? String(e)}`;
         }
+    }
+
+    // ---- AI roadmap generation ----
+    // Ephemeral, per-project-index state — not part of AppConfig, so it isn't
+    // saved/loaded and resets when Settings is reopened.
+    let roadmapIdea: Record<number, string> = {};
+    let roadmapModel: Record<number, string> = {};
+    let roadmapBusy: number | null = null;
+    let roadmapPlan: any = null;
+
+    async function generateRoadmapForProject(idx: number) {
+        if (!cfg) return;
+        const idea = (roadmapIdea[idx] ?? '').trim();
+        if (!idea) return;
+        roadmapBusy = idx;
+        error = '';
+        info = '';
+        try {
+            roadmapPlan = await GenerateRoadmap(cfg.Projects[idx].Name, idea, roadmapModel[idx] ?? 'opus');
+        } catch (e: any) {
+            error = `Roadmap generation failed: ${e?.message ?? String(e)}`;
+        } finally {
+            roadmapBusy = null;
+        }
+    }
+
+    function onRoadmapCancel() {
+        roadmapPlan = null;
+    }
+
+    async function onRoadmapWritten() {
+        roadmapPlan = null;
+        info = 'ROADMAP.md and STATUS-P1.md written — the "P1" session is configured.';
+        await load();
     }
 
     // ---- Sessions tab actions ----
@@ -807,6 +842,50 @@
                                                     bind:value={p.MixedMaxRounds}
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                                             </label>
+                                        {/if}
+                                    </div>
+
+                                    <!-- AI roadmap generation -->
+                                    <div class="border-t border-bg-border pt-2 mt-1 space-y-2">
+                                        <div class="text-xs text-text-muted">
+                                            🤖 Describe the project and let AI draft a roadmap: it decomposes
+                                            the idea into a backlog of session-sized tasks, writes
+                                            <code class="font-mono">ROADMAP.md</code> +
+                                            <code class="font-mono">STATUS-P1.md</code> into the project, and
+                                            configures a "P1" Sonnet session to work through them one at a time.
+                                        </div>
+                                        <label class="flex flex-col text-xs text-text-muted gap-1">
+                                            Project idea
+                                            <textarea
+                                                rows="3"
+                                                bind:value={roadmapIdea[i]}
+                                                disabled={!p.Path}
+                                                placeholder="What do you want to build?"
+                                                class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text resize-y disabled:opacity-50"
+                                            ></textarea>
+                                        </label>
+                                        <div class="flex items-center gap-2">
+                                            <select
+                                                bind:value={roadmapModel[i]}
+                                                disabled={!p.Path}
+                                                class="bg-bg border border-bg-border rounded px-2 py-1 text-xs text-text disabled:opacity-50">
+                                                <option value="opus">opus (recommended)</option>
+                                                <option value="sonnet">sonnet</option>
+                                                <option value="haiku">haiku</option>
+                                            </select>
+                                            <button
+                                                type="button"
+                                                on:click={() => generateRoadmapForProject(i)}
+                                                disabled={!p.Path || !(roadmapIdea[i] ?? '').trim() || roadmapBusy !== null}
+                                                class="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white
+                                                       disabled:opacity-50 disabled:cursor-not-allowed">
+                                                {roadmapBusy === i ? 'Generating…' : 'Generate Roadmap with AI'}
+                                            </button>
+                                        </div>
+                                        {#if !p.Path}
+                                            <span class="text-[11px] text-text-muted/60">
+                                                Set a project folder above first.
+                                            </span>
                                         {/if}
                                     </div>
                                 </li>
@@ -1331,3 +1410,7 @@
         </div>
     </div>
 </div>
+
+{#if roadmapPlan}
+    <PlanReview plan={roadmapPlan} mode="roadmap" on:cancel={onRoadmapCancel} on:roadmapWritten={onRoadmapWritten} />
+{/if}

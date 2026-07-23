@@ -223,6 +223,76 @@ When `stop_when_no_tasks = true` and `task_source` is set, `Run()` checks the fi
 Returns `false` (and stops the loop) otherwise or if the file is missing.
 The `task_source` path is resolved relative to `ProjectPath` when not absolute.
 
+**Task description resolution (TaskPanel).** Once `hasTasks()` confirms work
+remains, `resolveTaskSourceDescription()` (`internal/session/session.go`)
+mirrors `orchestrator.py`'s `resolve_pointer_desc()`: it takes the first bare
+pointer line (`ROADMAP.md:92`) and reads the exact text of that line from the
+referenced file (relative to `ProjectPath`), truncated to 200 chars — e.g. a
+ROADMAP.md table row or a task-file heading. Legacy-format files fall back to
+the text following `"In progress:"` or the first `"- ["` item under
+`"Next:"`. The result is stored on the session (`setTaskSourceDesc`, emits
+`session:task_source` only when it changes) and exposed as
+`SessionState.task_source_description`. `TaskPanel.svelte` shows it under
+"Now" whenever Claude hasn't yet emitted a `TodoWrite` for the new task —
+`current_task` (from TodoWrite) always takes precedence once available, since
+it's more specific and reflects Claude's own live breakdown. This only
+resolves the *description* of the top task; it does not change which task
+`hasTasks()`/Claude picks.
+
+### AI-Generated Project Roadmap → P1 Session Bootstrap
+Bridges "describe a project idea" to a running `task_source`-driven session, so
+`ROADMAP.md`/`STATUS-P1.md` no longer have to be hand-authored before the Task
+Source Check above has anything to consume.
+
+**Generation** (`GenerateRoadmap(project, idea, model)`, Opus by default —
+unlike pre-flight triage, roadmap quality is the main lever on every
+downstream session's success): runs `analysis.RunAnalysis` with a dedicated
+`RoadmapJSONSchema`/`RoadmapSystemPrompt` (`internal/analysis/schema.go`) that
+decomposes a whole project idea into a dependency-ordered backlog of
+session-sized tasks for a **single developer** (parallel `execution_order`
+groups are for independent scaffolding only, never concurrent developers —
+multi-developer, P2..PN partitioning is intentionally out of scope). Reuses
+`TaskPlan`/`PlannedSubtask`/`NewPlanFromAnalysis` unchanged; the plan is
+tagged `Kind: "roadmap"` (`analysis.PlanKind`) so it can never be handed to
+the ad-hoc `ExecutePlan` (which would immediately fire off each backlog entry
+as a live session instead of writing files — `executePlan` rejects a roadmap
+plan explicitly). The idea is reviewed/edited in `PlanReview.svelte`
+(`mode="roadmap"` — same subtask editor as the ad-hoc pre-flight flow, with
+the single-task feasibility panel hidden and `shared_context` shown as a
+"Project summary" instead).
+
+**Materialization** (`ApproveRoadmap` → `analysis.WriteRoadmapFiles`): renders
+one markdown table row per task into `<project>/ROADMAP.md` (self-descriptive
+single-line rows — `resolveTaskSourceDescription` above returns exactly one
+line, so each row must stand on its own) and, after re-reading the just-written
+file to get real 1-based line numbers, `<project>/STATUS-P1.md` as bare
+`ROADMAP.md:NN` pointers in dependency order — the exact canonical format
+Task Source Check already parses, so nothing changes on the consumption side.
+Refuses to touch either file if it already exists (`ErrRoadmapFilesExist`)
+unless the caller passes `overwrite=true` — a hand-maintained roadmap is never
+silently clobbered; `PlanReview.svelte` surfaces this as an inline "already
+exists — overwrite?" banner (no `window.confirm()`).
+
+**Bootstrap**: on a successful write, `ApproveRoadmap` upserts a `"P1"`
+`SessionConfig` (Sonnet, `acceptEdits`, `use_worktree = true` — bare
+`--worktree`, fresh from HEAD every run, so "one task = one session = one
+worktree" holds without any prompt-level bookkeeping — `task_source =
+"STATUS-P1.md"`, `stop_when_no_tasks = true`, `auto_restart = true`, and
+`analysis.DefaultP1SessionPrompt`) into the project — reusing the exact
+`GetConfig`→mutate→`UpdateConfig` round-trip every other project/session edit
+already goes through, no new persistence path. If a `"P1"` session already
+exists, only the `task_source`-related fields are forced so a user's manual
+model/prompt edits survive re-generating the roadmap. `DefaultP1SessionPrompt`
+is deliberately language/tool-agnostic (no build system or linter named) and
+spells out a full session-start → work → session-end protocol: sync with the
+remote and confirm worktree isolation before reading `STATUS-P1.md`; at the
+end, run the project's strictest lint/test gates once, update docs if the
+project keeps any, merge with `--no-ff`, delete the branch/worktree, and push
+`main` immediately. This prompt is only ever written for a project whose
+roadmap went through this generate→approve flow — a project added via
+Settings' plain Projects tab (no roadmap) never has anything written to it
+by this mechanism.
+
 ### Crash Recovery
 Mirrors `orchestrator.py` session state files (`.session-PN.json`).
 
@@ -374,6 +444,8 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `ApprovePlan(plan)` | Persist an (edited) plan as approved; returns plan with store ID |
 | `ExecutePlan(planID)` | Execute persisted plan (one-shot CLI per subtask, context handoff) |
 | `GetPlan(planID)` | Load persisted plan with subtasks (poll during execution) |
+| `GenerateRoadmap(project, idea, model)` | Decompose a project idea into a draft roadmap plan (Opus by default) |
+| `ApproveRoadmap(planID, overwrite)` | Write ROADMAP.md/STATUS-P1.md into the project + bootstrap the "P1" session |
 | `RegisterMixedBrief(id, task, systemPrompt)` | Register a mixed-programming brief; returns id |
 | `DispatchMixedTask(project, briefID, workerName)` | Run the round loop; blocks until done/needs_human |
 | `GetMixedRounds(project)` | Persisted mixed tasks (rounds, patches, gates) for a project |

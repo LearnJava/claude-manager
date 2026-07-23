@@ -76,6 +76,83 @@ Rules:
 - Always prefer fewer, larger sessions over many tiny ones
 - Each subtask prompt must be self-contained and actionable`
 
+// RoadmapJSONSchema is the structured-output JSON Schema for whole-project
+// roadmap generation (decomposing a project idea into a durable backlog,
+// as opposed to AnalysisJSONSchema's single-task feasibility triage). It
+// reuses the exact subtasks/execution_order shape — the analyst just never
+// fills a feasibility verdict, which doesn't apply to an entire project.
+const RoadmapJSONSchema = `{
+  "type": "object",
+  "properties": {
+    "subtasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "prompt": {
+            "type": "string",
+            "description": "Self-contained task description for a future session that has not seen this conversation: goal, acceptance criteria, likely area of the code. No 'continue from previous task' language."
+          },
+          "depends_on": { "type": "array", "items": { "type": "string" } },
+          "model": { "type": "string" },
+          "effort": { "type": "string" },
+          "use_worktree": { "type": "boolean" },
+          "estimated_tokens": { "type": "integer" },
+          "files_to_touch": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["id", "name", "prompt"]
+      }
+    },
+    "execution_order": {
+      "type": "array",
+      "description": "Groups of task IDs, in priority order. Within a group — parallel (independent scaffolding only, single developer). Groups run sequentially, in dependency order.",
+      "items": { "type": "array", "items": { "type": "string" } }
+    },
+    "shared_context": {
+      "type": "string",
+      "description": "2-5 sentences a brand-new session needs to know before reading task 1: stack choices already made, directory layout, naming conventions. Not a summary of the tasks themselves."
+    }
+  },
+  "required": ["subtasks", "execution_order"]
+}`
+
+// RoadmapSystemPrompt is appended to a roadmap-generation CLI invocation via
+// `--append-system-prompt`. It decomposes a whole project idea into a durable
+// backlog of session-sized tasks for a single developer working through them
+// one Claude Code session at a time (mirrors the task_source/STATUS-PN.md
+// convention documented in CLAUDE.md's "Task Source Check" section).
+const RoadmapSystemPrompt = `You are a project planner for a single developer working through Claude Code
+sessions one at a time (no team, no parallel developers — assume everything is
+sequential unless a task explicitly can run independently in its own worktree).
+
+Decompose the project idea into a backlog of tasks, each sized to fit
+comfortably in one Claude Code session (~150-250k context): one task should be
+completable, tested, and committed without running out of context or needing
+another session to finish it. Prefer more, smaller tasks over fewer, huge ones
+— unlike single-task triage, here bigger is not cheaper, it is a session that
+runs out of context halfway through and leaves broken intermediate state.
+
+Rules:
+- Order subtasks by dependency, not by category: task 1 must be buildable
+  before task 2 needs it. Put project scaffolding / core setup first.
+- Each subtask's "prompt" must be self-contained and actionable by a Claude
+  Code session that has NOT seen this conversation: state the goal, the
+  acceptance criteria (what "done" means), and which files/areas it likely
+  touches. Never use "continue from the previous task" language.
+- depends_on must reference other subtasks' ids; execution_order groups tasks
+  that can run in parallel (same group) vs. sequentially (different groups).
+  For a single developer, prefer sequential groups of size 1 unless a task is
+  genuinely independent scaffolding (e.g. "write CI config" alongside
+  "write README") — do not parallelize for its own sake.
+- estimated_tokens is the rough context a session doing this task will use;
+  files_to_touch is your best guess, not a guarantee.
+- shared_context is NOT a summary of the tasks — it is what a brand-new
+  session needs to know before reading task 1 (stack choices already made,
+  directory layout, naming conventions), so every later session starts
+  oriented without re-deriving decisions.`
+
 // BriefJSONSchema is the structured-output JSON Schema passed to a
 // brief-generation session via `--json-schema` (MIXED-TASKS.md MP-06). It
 // produces the input to worker.Brief: everything an external, less capable

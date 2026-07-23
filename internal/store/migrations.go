@@ -1,6 +1,10 @@
 package store
 
-import "database/sql"
+import (
+	"database/sql"
+	"fmt"
+	"strings"
+)
 
 const (
 	sqlCreateSessionRuns = `
@@ -43,6 +47,7 @@ CREATE TABLE IF NOT EXISTS task_plans (
     original_task  TEXT NOT NULL,
     analysis_json  TEXT NOT NULL,
     status         TEXT NOT NULL,
+    kind           TEXT NOT NULL DEFAULT 'adhoc',
     created_at     DATETIME NOT NULL,
     completed_at   DATETIME,
     total_cost_usd REAL,
@@ -106,6 +111,20 @@ func migrate(db *sql.DB) error {
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
 			return err
+		}
+	}
+
+	// task_plans predates the roadmap-vs-adhoc discriminator (kind column).
+	// sqlCreateTaskPlans above already includes it for fresh databases; this
+	// ALTER TABLE backfills it on existing ones. There is no migration
+	// version table in this codebase, so this statement re-runs on every
+	// startup — tolerate the "duplicate column" error instead of guarding
+	// with a version check. This is the template for any future additive
+	// column: add it to the CREATE TABLE for new DBs, then ALTER + tolerate
+	// here for existing ones.
+	if _, err := db.Exec(`ALTER TABLE task_plans ADD COLUMN kind TEXT NOT NULL DEFAULT 'adhoc'`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column") {
+			return fmt.Errorf("migrate: add task_plans.kind: %w", err)
 		}
 	}
 	return nil

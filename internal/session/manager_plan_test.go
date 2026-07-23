@@ -3,6 +3,8 @@ package session
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -175,6 +177,118 @@ func TestExecutePlanFailureMarksPlanFailed(t *testing.T) {
 func TestExecutePlanMissingPlan(t *testing.T) {
 	m, _ := newTestManagerWithStore(t)
 	if err := m.executePlan(context.Background(), 9999, &recordingExecutor{}); err == nil {
+		t.Fatal("expected error for missing plan")
+	}
+}
+
+// ---- Roadmap generation / approval ----
+
+func TestGenerateRoadmapSavesRoadmapKindPlan(t *testing.T) {
+	m, _ := newTestManagerWithStore(t)
+	analyze, tasks := stubAnalyzer(twoStepAnalysis())
+
+	plan, err := m.generateRoadmap(context.Background(), "lumen", "build a chat app", "", analyze)
+	if err != nil {
+		t.Fatalf("generateRoadmap: %v", err)
+	}
+	if plan.ID == 0 {
+		t.Error("plan must receive a store ID on save")
+	}
+	if plan.Kind != analysis.PlanKindRoadmap {
+		t.Errorf("Kind = %q, want roadmap", plan.Kind)
+	}
+	if len(*tasks) != 1 || (*tasks)[0] != "build a chat app" {
+		t.Errorf("analyzer received tasks %v", *tasks)
+	}
+
+	loaded, err := m.GetPlan(plan.ID)
+	if err != nil {
+		t.Fatalf("GetPlan: %v", err)
+	}
+	if loaded == nil || loaded.Kind != analysis.PlanKindRoadmap {
+		t.Fatalf("reloaded plan lost its Kind: %+v", loaded)
+	}
+}
+
+func TestGenerateRoadmapUnknownProject(t *testing.T) {
+	m, _ := newTestManagerWithStore(t)
+	analyze, _ := stubAnalyzer(twoStepAnalysis())
+	if _, err := m.generateRoadmap(context.Background(), "no-such", "idea", "", analyze); err == nil {
+		t.Fatal("expected error for unknown project")
+	}
+}
+
+func TestExecutePlanRejectsRoadmapKind(t *testing.T) {
+	m, _ := newTestManagerWithStore(t)
+	analyze, _ := stubAnalyzer(twoStepAnalysis())
+	plan, err := m.generateRoadmap(context.Background(), "lumen", "idea", "", analyze)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = m.executePlan(context.Background(), plan.ID, &recordingExecutor{})
+	if err == nil {
+		t.Fatal("expected executePlan to reject a roadmap-kind plan")
+	}
+	if !strings.Contains(err.Error(), "roadmap") {
+		t.Errorf("error should mention it is a roadmap plan, got: %v", err)
+	}
+}
+
+func TestApproveRoadmapFilesWritesAndCompletesPlan(t *testing.T) {
+	m, _ := newTestManagerWithStore(t)
+	analyze, _ := stubAnalyzer(twoStepAnalysis())
+	plan, err := m.generateRoadmap(context.Background(), "lumen", "idea", "", analyze)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	projectPath, err := m.projectPath("lumen")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	approved, roadmapPath, statusPath, err := m.ApproveRoadmapFiles(plan.ID, false)
+	if err != nil {
+		t.Fatalf("ApproveRoadmapFiles: %v", err)
+	}
+	if approved.Status != analysis.PlanStatusCompleted {
+		t.Errorf("Status = %q, want completed", approved.Status)
+	}
+	if roadmapPath != filepath.Join(projectPath, "ROADMAP.md") {
+		t.Errorf("unexpected roadmap path: %s", roadmapPath)
+	}
+	if _, err := os.Stat(roadmapPath); err != nil {
+		t.Errorf("ROADMAP.md was not written: %v", err)
+	}
+	if _, err := os.Stat(statusPath); err != nil {
+		t.Errorf("STATUS-P1.md was not written: %v", err)
+	}
+
+	loaded, err := m.GetPlan(plan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Status != analysis.PlanStatusCompleted {
+		t.Errorf("persisted status = %q, want completed", loaded.Status)
+	}
+}
+
+func TestApproveRoadmapFilesRejectsAdhocKind(t *testing.T) {
+	m, _ := newTestManagerWithStore(t)
+	plan := analysis.NewPlanFromAnalysis("lumen", "task", twoStepAnalysis())
+	if _, err := m.ApprovePlan(plan); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, _, err := m.ApproveRoadmapFiles(plan.ID, false); err == nil {
+		t.Fatal("expected error approving an ad-hoc-kind plan as a roadmap")
+	}
+}
+
+func TestApproveRoadmapFilesMissingPlan(t *testing.T) {
+	m, _ := newTestManagerWithStore(t)
+	if _, _, _, err := m.ApproveRoadmapFiles(9999, false); err == nil {
 		t.Fatal("expected error for missing plan")
 	}
 }

@@ -35,6 +35,16 @@ const (
 	SubtaskStatusFailed    SubtaskStatus = "failed"
 )
 
+// PlanKind distinguishes an ad-hoc, immediately-executed TaskPlan from one
+// meant to be materialized into a project's ROADMAP.md/STATUS-P1.md instead
+// (see WriteRoadmapFiles). ExecutePlan refuses to run a PlanKindRoadmap plan.
+type PlanKind string
+
+const (
+	PlanKindAdhoc   PlanKind = "adhoc"
+	PlanKindRoadmap PlanKind = "roadmap"
+)
+
 // ---- Data model (PLAN.md section 17.9) ----
 
 // PlannedSubtask is a single executable unit produced by the analyst and
@@ -69,6 +79,7 @@ type TaskPlan struct {
 	Subtasks       []PlannedSubtask `json:"subtasks"`
 	ExecutionOrder [][]string       `json:"execution_order"`
 	Status         PlanStatus       `json:"status"`
+	Kind           PlanKind         `json:"kind,omitempty"`
 	SharedContext  string           `json:"shared_context"`
 	CreatedAt      time.Time        `json:"created_at"`
 	CompletedAt    *time.Time       `json:"completed_at,omitempty"`
@@ -92,6 +103,7 @@ func NewPlanFromAnalysis(project, originalTask string, ar *AnalysisResult) *Task
 		Subtasks:       subtasks,
 		ExecutionOrder: ar.ExecutionOrder,
 		Status:         PlanStatusDraft,
+		Kind:           PlanKindAdhoc,
 		SharedContext:  ar.SharedContext,
 		CreatedAt:      time.Now(),
 		TotalCostUSD:   ar.CostUSD,
@@ -300,12 +312,17 @@ func SavePlan(st *store.Store, plan *TaskPlan) error {
 		return fmt.Errorf("plan: marshal analysis: %w", err)
 	}
 
+	kind := plan.Kind
+	if kind == "" {
+		kind = PlanKindAdhoc
+	}
 	row := &store.TaskPlan{
 		ID:           plan.ID,
 		Project:      plan.Project,
 		OriginalTask: plan.OriginalTask,
 		AnalysisJSON: string(analysisJSON),
 		Status:       string(plan.Status),
+		Kind:         string(kind),
 		CreatedAt:    plan.CreatedAt,
 		CompletedAt:  plan.CompletedAt,
 	}
@@ -431,6 +448,10 @@ func LoadPlan(st *store.Store, id int64) (*TaskPlan, error) {
 		subs = append(subs, s)
 	}
 
+	kind := PlanKind(row.Kind)
+	if kind == "" {
+		kind = PlanKindAdhoc
+	}
 	plan := &TaskPlan{
 		ID:             row.ID,
 		Project:        row.Project,
@@ -439,6 +460,7 @@ func LoadPlan(st *store.Store, id int64) (*TaskPlan, error) {
 		Subtasks:       subs,
 		ExecutionOrder: analysis.ExecutionOrder,
 		Status:         PlanStatus(row.Status),
+		Kind:           kind,
 		SharedContext:  analysis.SharedContext,
 		CreatedAt:      row.CreatedAt,
 		CompletedAt:    row.CompletedAt,

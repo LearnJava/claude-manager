@@ -37,23 +37,25 @@ const (
 	EvtUsage      = "usage"
 	EvtTaskDone   = "task_done"
 	EvtTodo       = "todo"
+	EvtTaskSource = "task_source"
 	EvtError      = "error"
 )
 
 // SessionEvent is the payload passed to the manager-provided callback.
 // Only fields relevant to the Type are populated.
 type SessionEvent struct {
-	Type       string
-	Status     config.SessionStatus
-	Entry      *config.LogEntry
-	Init       *InitInfo
-	Result     *SessionResult
-	RateLimit  *RateLimitInfo
-	Permission *PermissionRequest
-	Usage      *TokenUsage
-	TasksDone  int
-	Todos      []TodoItem
-	Err        error
+	Type           string
+	Status         config.SessionStatus
+	Entry          *config.LogEntry
+	Init           *InitInfo
+	Result         *SessionResult
+	RateLimit      *RateLimitInfo
+	Permission     *PermissionRequest
+	Usage          *TokenUsage
+	TasksDone      int
+	Todos          []TodoItem
+	TaskSourceDesc string
+	Err            error
 }
 
 // EventCallback is invoked by the session for every event. The manager is
@@ -126,6 +128,7 @@ type Session struct {
 	mu             sync.Mutex
 	status         config.SessionStatus
 	currentTask    string
+	taskSourceDesc string
 	todos          []TodoItem
 	branch         string
 	tasksDone      int
@@ -237,6 +240,7 @@ type Snapshot struct {
 	LastActivity   time.Time
 	RateLimitUntil time.Time
 	CurrentTask    string
+	TaskSourceDesc string
 	Todos          []TodoItem
 	Branch         string
 	TasksDone      int
@@ -254,6 +258,7 @@ func (s *Session) Snapshot() Snapshot {
 		LastActivity:   s.lastActivity,
 		RateLimitUntil: s.rateLimitUntil,
 		CurrentTask:    s.currentTask,
+		TaskSourceDesc: s.taskSourceDesc,
 		Todos:          append([]TodoItem(nil), s.todos...),
 		Branch:         s.branch,
 		TasksDone:      s.tasksDone,
@@ -422,6 +427,10 @@ func (s *Session) Run(ctx context.Context) {
 				s.setStatus(config.StatusIdle)
 				return
 			}
+			// Resolve the top task pointer into a human-readable description
+			// (mirrors orchestrator.py resolve_pointer_desc()) so the UI has
+			// something to show before Claude's own TodoWrite catches up.
+			s.setTaskSourceDesc(resolveTaskSourceDescription(s.ProjectPath, taskPath))
 		}
 
 		s.setStatus(config.StatusStarting)
@@ -542,6 +551,106 @@ func hasTasks(path string) bool {
 		return true
 	}
 	return strings.Contains(content, "Next:") && strings.Contains(content, "- [")
+}
+
+// taskPointerCapture captures the <source> and NN parts of a bare pointer line.
+var taskPointerCapture = regexp.MustCompile(`^(\S+):(\d+)$`)
+
+// maxTaskDescLen caps the resolved description length, matching
+// orchestrator.py resolve_pointer_desc()'s 200-char truncation.
+const maxTaskDescLen = 200
+
+// truncateRunes trims s to at most n runes (safe for UTF-8/Cyrillic text).
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}
+
+// firstTaskPointer returns the first bare pointer line `<source>:NN` in a
+// task_source file's content, in the same priority order as hasTasks (top to
+// bottom; headings/quotes/list markers ignored). Returns "" if none is present.
+func firstTaskPointer(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		s := strings.TrimSpace(line)
+		if s == "" || strings.HasPrefix(s, "#") || strings.HasPrefix(s, ">") ||
+			strings.HasPrefix(s, "-") || strings.HasPrefix(s, "_") || strings.HasPrefix(s, "*") {
+			continue
+		}
+		if taskPointerPattern.MatchString(s) {
+			return s
+		}
+	}
+	return ""
+}
+
+// legacyTaskDescription extracts a description from the old STATUS-PN.md
+// format ("In progress:" / "Next:" markers) when the file has no bare
+// pointer line. Returns "" if neither marker yields usable text.
+func legacyTaskDescription(content string) string {
+	if idx := strings.Index(content, "In progress:"); idx != -1 {
+		for _, line := range strings.Split(content[idx+len("In progress:"):], "\n") {
+			if t := strings.TrimSpace(line); t != "" {
+				return truncateRunes(t, maxTaskDescLen)
+			}
+		}
+	}
+	if idx := strings.Index(content, "Next:"); idx != -1 {
+		for _, line := range strings.Split(content[idx+len("Next:"):], "\n") {
+			if t := strings.TrimSpace(line); strings.HasPrefix(t, "- [") {
+				return truncateRunes(t, maxTaskDescLen)
+			}
+		}
+	}
+	return ""
+}
+
+// resolveTaskSourceDescription reads the top task_source pointer and resolves
+// it into a human-readable description, mirroring orchestrator.py's
+// resolve_pointer_desc(): for a bare pointer line `<source>:NN`, <source> is
+// read relative to projectPath and the text of its line NN becomes the
+// description (e.g. a ROADMAP.md table row or a task-file heading). Falls
+// back to the legacy "In progress"/"Next" markers, then to the bare pointer
+// itself, then "" if the file can't be read at all.
+func resolveTaskSourceDescription(projectPath, taskPath string) string {
+	data, err := os.ReadFile(taskPath)
+	if err != nil {
+		return ""
+	}
+	content := string(data)
+
+	pointer := firstTaskPointer(content)
+	if pointer == "" {
+		return legacyTaskDescription(content)
+	}
+
+	m := taskPointerCapture.FindStringSubmatch(pointer)
+	if m == nil {
+		return pointer
+	}
+	lineNo, err := strconv.Atoi(m[2])
+	if err != nil || lineNo < 1 {
+		return pointer
+	}
+	srcPath := m[1]
+	if !filepath.IsAbs(srcPath) {
+		srcPath = filepath.Join(projectPath, srcPath)
+	}
+	srcData, err := os.ReadFile(srcPath)
+	if err != nil {
+		return pointer
+	}
+	lines := strings.Split(string(srcData), "\n")
+	if lineNo > len(lines) {
+		return pointer
+	}
+	desc := strings.TrimSpace(lines[lineNo-1])
+	if desc == "" {
+		return pointer
+	}
+	return truncateRunes(desc, maxTaskDescLen)
 }
 
 // isAuthError reports whether a stderr line indicates a 403/authentication failure.
@@ -898,6 +1007,19 @@ func (s *Session) setStatus(st config.SessionStatus) {
 	s.mu.Unlock()
 	logger.L.Info("session.status", "id", s.ID, "from", old.String(), "to", st.String())
 	s.emit(SessionEvent{Type: EvtStatus, Status: st})
+}
+
+// setTaskSourceDesc updates the resolved task_source description and emits an
+// event only when it actually changes (same pattern as setStatus).
+func (s *Session) setTaskSourceDesc(desc string) {
+	s.mu.Lock()
+	if s.taskSourceDesc == desc {
+		s.mu.Unlock()
+		return
+	}
+	s.taskSourceDesc = desc
+	s.mu.Unlock()
+	s.emit(SessionEvent{Type: EvtTaskSource, TaskSourceDesc: desc})
 }
 
 func (s *Session) emit(ev SessionEvent) {

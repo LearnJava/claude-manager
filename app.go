@@ -258,6 +258,72 @@ func (a *App) GetPlan(planID int64) (*analysis.TaskPlan, error) {
 	return a.manager.GetPlan(planID)
 }
 
+// GenerateRoadmap decomposes a whole project idea into a durable backlog
+// (a draft plan with Kind="roadmap") for review in PlanReview.svelte
+// (mode="roadmap"). model may be empty to use the default (Opus).
+func (a *App) GenerateRoadmap(project, idea, model string) (*analysis.TaskPlan, error) {
+	return a.manager.GenerateRoadmap(project, idea, model)
+}
+
+// ApproveRoadmap materializes an approved roadmap plan into
+// <project>/ROADMAP.md + <project>/STATUS-P1.md and bootstraps (or updates)
+// a "P1" session pointed at the result, reusing the same GetConfig-mutate-
+// UpdateConfig round-trip every other project/session edit already goes
+// through. Returns the same "already exists" error as ApproveRoadmapFiles
+// when overwrite is false and the files are already present.
+func (a *App) ApproveRoadmap(planID int64, overwrite bool) (*analysis.TaskPlan, error) {
+	plan, _, _, err := a.manager.ApproveRoadmapFiles(planID, overwrite)
+	if err != nil {
+		return nil, err
+	}
+	if a.cfg == nil {
+		return plan, nil
+	}
+	cfg := *a.cfg
+	cfg.Projects = append([]config.ProjectConfig(nil), a.cfg.Projects...)
+	upsertP1Session(&cfg, plan.Project)
+	if err := a.UpdateConfig(cfg); err != nil {
+		return nil, err
+	}
+	return plan, nil
+}
+
+// upsertP1Session points project's "P1" session at the freshly written
+// STATUS-P1.md, creating it (with Sonnet defaults) if absent. If P1 already
+// exists, only the task_source-related fields are forced so a user's manual
+// model/prompt edits survive re-generating the roadmap. Operates on cloned
+// slices so it never mutates the caller's existing config in place.
+func upsertP1Session(cfg *config.AppConfig, project string) {
+	for pi := range cfg.Projects {
+		if cfg.Projects[pi].Name != project {
+			continue
+		}
+		sessions := append([]config.SessionConfig(nil), cfg.Projects[pi].Sessions...)
+		for si := range sessions {
+			if sessions[si].Name == "P1" {
+				sessions[si].TaskSource = "STATUS-P1.md"
+				sessions[si].StopWhenNoTasks = true
+				sessions[si].AutoRestart = true
+				cfg.Projects[pi].Sessions = sessions
+				return
+			}
+		}
+		sessions = append(sessions, config.SessionConfig{
+			Name:            "P1",
+			Model:           "sonnet",
+			Effort:          "high",
+			PermissionMode:  "acceptEdits",
+			TaskSource:      "STATUS-P1.md",
+			StopWhenNoTasks: true,
+			AutoRestart:     true,
+			UseWorktree:     true, // one task = one session = one worktree (bare --worktree: fresh from HEAD every run)
+			Prompt:          analysis.DefaultP1SessionPrompt,
+		})
+		cfg.Projects[pi].Sessions = sessions
+		return
+	}
+}
+
 // ---- Mixed programming bindings (MIXED-TASKS.md MP-05) ----
 
 // RegisterMixedBrief registers a self-contained brief under id so it can be

@@ -63,6 +63,7 @@ type TaskPlan struct {
 	OriginalTask string
 	AnalysisJSON string
 	Status       string // "draft" | "approved" | "executing" | "completed"
+	Kind         string // "adhoc" | "roadmap"
 	CreatedAt    time.Time
 	CompletedAt  *time.Time
 	TotalCostUSD *float64
@@ -381,7 +382,7 @@ func scanPlan(row rowScanner) (*TaskPlan, error) {
 	var totalCostUSD sql.NullFloat64
 	var totalTokens sql.NullInt64
 	err := row.Scan(
-		&p.ID, &p.Project, &p.OriginalTask, &p.AnalysisJSON, &p.Status,
+		&p.ID, &p.Project, &p.OriginalTask, &p.AnalysisJSON, &p.Status, &p.Kind,
 		&p.CreatedAt, &completedAt, &totalCostUSD, &totalTokens,
 	)
 	if err != nil {
@@ -402,11 +403,15 @@ func scanPlan(row rowScanner) (*TaskPlan, error) {
 
 // InsertPlan inserts a TaskPlan and sets plan.ID to the generated row ID.
 func (s *Store) InsertPlan(plan *TaskPlan) error {
+	kind := plan.Kind
+	if kind == "" {
+		kind = "adhoc"
+	}
 	const q = `INSERT INTO task_plans
-    (project, original_task, analysis_json, status, created_at, completed_at, total_cost_usd, total_tokens)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    (project, original_task, analysis_json, status, kind, created_at, completed_at, total_cost_usd, total_tokens)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	res, err := s.db.Exec(q,
-		plan.Project, plan.OriginalTask, plan.AnalysisJSON, plan.Status,
+		plan.Project, plan.OriginalTask, plan.AnalysisJSON, plan.Status, kind,
 		plan.CreatedAt, nullTime(plan.CompletedAt),
 		nullFloat64(plan.TotalCostUSD), nullInt64(plan.TotalTokens),
 	)
@@ -432,7 +437,7 @@ WHERE id=?`
 
 // GetPlan returns a TaskPlan by ID, or nil if not found.
 func (s *Store) GetPlan(id int64) (*TaskPlan, error) {
-	const q = `SELECT id, project, original_task, analysis_json, status, created_at, completed_at, total_cost_usd, total_tokens
+	const q = `SELECT id, project, original_task, analysis_json, status, kind, created_at, completed_at, total_cost_usd, total_tokens
     FROM task_plans WHERE id=?`
 	p, err := scanPlan(s.db.QueryRow(q, id))
 	if err == sql.ErrNoRows {
@@ -443,7 +448,7 @@ func (s *Store) GetPlan(id int64) (*TaskPlan, error) {
 
 // ListPlans returns up to limit plans for a project, newest first.
 func (s *Store) ListPlans(project string, limit int) ([]*TaskPlan, error) {
-	q := `SELECT id, project, original_task, analysis_json, status, created_at, completed_at, total_cost_usd, total_tokens
+	q := `SELECT id, project, original_task, analysis_json, status, kind, created_at, completed_at, total_cost_usd, total_tokens
     FROM task_plans WHERE project=? ORDER BY created_at DESC`
 	args := []any{project}
 	if limit > 0 {

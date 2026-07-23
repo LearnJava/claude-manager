@@ -54,6 +54,7 @@ export interface SessionState {
     rate_limit_until: string;
     tasks_done: number;
     current_task: string;
+    task_source_description: string;
     prompt: string;
     todos: TodoItem[];
     branch: string;
@@ -150,7 +151,7 @@ function makeBlankSession(id: string): SessionState {
         id, project, name,
         status: 'idle', model: '', effort: '', permission_mode: '',
         started_at: '', last_activity: '', rate_limit_until: '',
-        tasks_done: 0, current_task: '', prompt: '', todos: [], branch: '', cli_session_id: '',
+        tasks_done: 0, current_task: '', task_source_description: '', prompt: '', todos: [], branch: '', cli_session_id: '',
         pending_permission: null,
         input_tokens: 0, output_tokens: 0, cache_read: 0, cache_creation: 0,
         num_turns: 0, total_cost_usd: 0, context_window: 0, context_util: 0,
@@ -316,6 +317,14 @@ export async function initSessions(): Promise<void> {
             ...s,
             todos: evt.todos ?? [],
             current_task: evt.current_task ?? '',
+        }));
+    });
+
+    EventsOn('session:task_source', (evt: { id: string; task_source_description: string }) => {
+        if (!evt || !evt.id) return;
+        setSession(evt.id, (s) => ({
+            ...s,
+            task_source_description: evt.task_source_description ?? '',
         }));
     });
 
