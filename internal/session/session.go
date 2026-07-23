@@ -416,13 +416,15 @@ func (s *Session) Run(ctx context.Context) {
 		}
 
 		// Task source check: stop the loop when the configured task file no longer
-		// has pending tasks (mirrors orchestrator.py has_tasks()).
-		if s.Config.StopWhenNoTasks && s.Config.TaskSource != "" {
+		// has pending tasks (mirrors orchestrator.py has_tasks()). The resolved
+		// description is shown in the UI whenever task_source is set, even if
+		// stop_when_no_tasks is off — display and auto-stop are separate concerns.
+		if s.Config.TaskSource != "" {
 			taskPath := s.Config.TaskSource
 			if !filepath.IsAbs(taskPath) {
 				taskPath = filepath.Join(s.ProjectPath, taskPath)
 			}
-			if !hasTasks(taskPath) {
+			if s.Config.StopWhenNoTasks && !hasTasks(taskPath) {
 				logger.L.Info("session.run.no_tasks", "id", s.ID, "source", taskPath)
 				s.setStatus(config.StatusIdle)
 				return
