@@ -1,5 +1,10 @@
-# Build output
-build/
+# Build output (compiled binaries, generated scaffold) — the app icon
+# assets are source, not output, so they stay tracked.
+build/*
+!build/appicon.png
+!build/windows/
+build/windows/*
+!build/windows/icon.ico
 
 # IDE
 .idea/

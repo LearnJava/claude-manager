@@ -21,6 +21,7 @@ import (
 	"claude-manager/internal/worker"
 
 	toast "git.sr.ht/~jackmordaunt/go-toast/v2"
+	"github.com/getlantern/systray"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -145,6 +146,7 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.store != nil {
 		_ = a.store.Close()
 	}
+	systray.Quit()
 	logger.L.Info("shutdown.complete")
 	runtime.LogInfo(ctx, "Claude Session Manager shutting down")
 	if a.closeLog != nil {
@@ -518,14 +520,41 @@ func (a *App) ShowMainWindow() {
 	runtime.WindowUnminimise(a.ctx)
 }
 
-// MinimizeToTray hides the main window so that only the (future) tray icon
-// remains. With HideWindowOnClose enabled in main.go, closing the window has
-// the same effect.
+// MinimizeToTray hides the main window so that only the tray icon remains.
+// With HideWindowOnClose enabled in main.go, closing the window has the same
+// effect.
 func (a *App) MinimizeToTray() {
 	if a.ctx == nil {
 		return
 	}
 	runtime.WindowHide(a.ctx)
+}
+
+// onTrayReady builds the system tray icon and menu (Show / Quit). Runs once
+// on the dedicated systray goroutine started in main(), for the process
+// lifetime — this is what lets the window disappear on close (X) without
+// losing all access to a running session.
+func (a *App) onTrayReady() {
+	systray.SetIcon(trayIconICO)
+	systray.SetTooltip("Claude Session Manager")
+
+	mShow := systray.AddMenuItem("Show", "Show the main window")
+	systray.AddSeparator()
+	mQuit := systray.AddMenuItem("Quit", "Stop all sessions and quit")
+
+	go func() {
+		for {
+			select {
+			case <-mShow.ClickedCh:
+				a.ShowMainWindow()
+			case <-mQuit.ClickedCh:
+				if a.ctx != nil {
+					runtime.Quit(a.ctx)
+				}
+				return
+			}
+		}
+	}()
 }
 
 // Notify pushes a native OS notification (Windows toast). Title and body are
