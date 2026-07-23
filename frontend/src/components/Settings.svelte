@@ -9,6 +9,7 @@
 
     type Tab = 'global' | 'projects' | 'sessions' | 'workers';
     export let initialTab: Tab = 'global';
+    export let initialAction: 'add' | undefined = undefined;
     let activeTab: Tab = initialTab;
 
     const tabs: { id: Tab; label: string }[] = [
@@ -284,6 +285,9 @@
             const t = cfg.Settings.Theme === 'light' ? 'light' : 'dark';
             setTheme(t as Theme);
             clampSelections();
+            if (initialAction === 'add') {
+                addProject();
+            }
         } catch (e: any) {
             error = `Load failed: ${e?.message ?? String(e)}`;
         } finally {
@@ -387,7 +391,7 @@
         error = '';
         info = '';
         try {
-            roadmapPlan = await GenerateRoadmap(cfg.Projects[idx].Name, idea, roadmapModel[idx] ?? 'opus');
+            roadmapPlan = await GenerateRoadmap(cfg.Projects[idx].Name, idea, roadmapModel[idx] ?? 'claude-opus-4-8');
         } catch (e: any) {
             error = `Roadmap generation failed: ${e?.message ?? String(e)}`;
         } finally {
@@ -494,7 +498,7 @@
     aria-modal="true"
     tabindex="-1">
     <div
-        class="bg-bg-panel border border-bg-border rounded-md shadow-xl w-[820px] max-w-[95vw] h-[640px] max-h-[92vh] flex flex-col"
+        class="bg-bg-panel border border-bg-border rounded-md shadow-xl w-[1640px] max-w-[95vw] h-[1280px] max-h-[92vh] flex flex-col"
         role="document"
         on:click|stopPropagation
         on:keydown|stopPropagation>
@@ -869,9 +873,10 @@
                                                 bind:value={roadmapModel[i]}
                                                 disabled={!p.Path}
                                                 class="bg-bg border border-bg-border rounded px-2 py-1 text-xs text-text disabled:opacity-50">
-                                                <option value="opus">opus (recommended)</option>
-                                                <option value="sonnet">sonnet</option>
-                                                <option value="haiku">haiku</option>
+                                                <option value="claude-opus-4-8">Opus 4.8 (recommended)</option>
+                                                <option value="claude-fable-5">Fable 5</option>
+                                                <option value="claude-sonnet-5">Sonnet 5</option>
+                                                <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
                                             </select>
                                             <button
                                                 type="button"

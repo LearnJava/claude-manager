@@ -18,6 +18,7 @@
     let showPermissionQueue = false;
     let showSettings = false;
     let settingsInitialTab: 'global' | 'projects' | 'sessions' = 'global';
+    let settingsInitialAction: 'add' | undefined = undefined;
     let showHistory = false;
     let showDashboard = false;
     let showMixedRun = false;
@@ -83,10 +84,12 @@
 
     function openSettings() {
         settingsInitialTab = 'global';
+        settingsInitialAction = undefined;
         showSettings = true;
     }
     function openAddProject() {
         settingsInitialTab = 'projects';
+        settingsInitialAction = 'add';
         showSettings = true;
     }
     function closeSettings() {
@@ -180,7 +183,7 @@
     {/if}
 
     {#if showSettings}
-        <Settings initialTab={settingsInitialTab} on:close={closeSettings} />
+        <Settings initialTab={settingsInitialTab} initialAction={settingsInitialAction} on:close={closeSettings} />
     {/if}
 
     {#if showHistory}
