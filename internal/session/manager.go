@@ -639,21 +639,47 @@ func (m *SessionManager) GetPendingPermissions() []permission.PermissionRequest 
 
 // ---- State / history / metrics ----
 
-// GetAllSessions returns a snapshot for every known session.
+// GetAllSessions returns a snapshot for every known session, including
+// configured sessions that have never been started (and so have no
+// managedSession entry yet) — otherwise selecting one in the UI before its
+// first run shows nothing at all.
 func (m *SessionManager) GetAllSessions() []SessionState {
 	m.mu.Lock()
 	ids := make([]string, 0, len(m.sessions))
 	for id := range m.sessions {
 		ids = append(ids, id)
 	}
+	var configured []SessionState
+	if m.cfg != nil {
+		for _, p := range m.cfg.Projects {
+			for _, s := range p.Sessions {
+				id := sessionID(p.Name, s.Name)
+				if _, ok := m.sessions[id]; ok {
+					continue
+				}
+				configured = append(configured, SessionState{
+					ID:             id,
+					Project:        p.Name,
+					Name:           s.Name,
+					Status:         "idle",
+					Model:          s.Model,
+					Effort:         s.Effort,
+					PermissionMode: s.PermissionMode,
+					Prompt:         s.Prompt,
+					Todos:          []TodoItem{},
+				})
+			}
+		}
+	}
 	m.mu.Unlock()
 
-	out := make([]SessionState, 0, len(ids))
+	out := make([]SessionState, 0, len(ids)+len(configured))
 	for _, id := range ids {
 		if st, ok := m.GetSession(id); ok {
 			out = append(out, st)
 		}
 	}
+	out = append(out, configured...)
 	return out
 }
 

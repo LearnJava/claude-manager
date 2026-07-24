@@ -2,6 +2,7 @@
     import { createEventDispatcher, onMount } from 'svelte';
     import { GetConfig, UpdateConfig, PickDirectory, GenerateRoadmap } from '../../wailsjs/go/main/App';
     import { initProjects } from '../stores/projects';
+    import { refreshSessions } from '../stores/sessions';
     import { setTheme, type Theme } from '../stores/theme';
     import PlanReview from './PlanReview.svelte';
 
@@ -464,6 +465,7 @@
             const payload: AppConfig = JSON.parse(JSON.stringify(cfg));
             await UpdateConfig(payload as any);
             await initProjects();
+            await refreshSessions();
             info = 'Saved.';
             // Re-pull so we see canonicalised values.
             await load();

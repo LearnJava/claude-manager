@@ -158,7 +158,12 @@ function makeBlankSession(id: string): SessionState {
     };
 }
 
-async function refreshSessions(): Promise<void> {
+// Re-fetches the full session snapshot from the backend, including idle
+// stubs for configured-but-never-started sessions. Exported so callers that
+// change project/session config (e.g. Settings) can refresh the sidebar's
+// selection target right after saving, instead of waiting for the next
+// unknown-session event or app restart.
+export async function refreshSessions(): Promise<void> {
     try {
         const list = (await GetAllSessions()) as SessionState[];
         sessions.update((map) => {

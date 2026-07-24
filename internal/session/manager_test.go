@@ -141,10 +141,32 @@ func TestRespondPermissionMissing(t *testing.T) {
 	}
 }
 
-func TestGetAllSessionsEmpty(t *testing.T) {
+// TestGetAllSessionsIncludesNeverStartedConfigured verifies that a session
+// present in config but never launched (no managedSession entry yet) still
+// shows up as an idle stub — otherwise selecting it in the UI before its
+// first run renders nothing at all.
+func TestGetAllSessionsIncludesNeverStartedConfigured(t *testing.T) {
 	m := newTestManager(t)
-	if got := m.GetAllSessions(); len(got) != 0 {
-		t.Errorf("expected empty slice, got %d entries", len(got))
+	all := m.GetAllSessions()
+	if len(all) != 2 {
+		t.Fatalf("expected 2 configured-but-idle sessions, got %d", len(all))
+	}
+	byID := map[string]SessionState{}
+	for _, s := range all {
+		byID[s.ID] = s
+	}
+	p1, ok := byID["lumen/P1"]
+	if !ok {
+		t.Fatal("expected lumen/P1 in GetAllSessions")
+	}
+	if p1.Status != "idle" {
+		t.Errorf("Status = %q, want idle", p1.Status)
+	}
+	if p1.Model != "sonnet" {
+		t.Errorf("Model = %q, want sonnet", p1.Model)
+	}
+	if p1.PermissionMode != "acceptEdits" {
+		t.Errorf("PermissionMode = %q, want acceptEdits", p1.PermissionMode)
 	}
 }
 
