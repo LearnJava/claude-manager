@@ -13,6 +13,7 @@ import (
 	"claude-manager/internal/analysis"
 	"claude-manager/internal/config"
 	"claude-manager/internal/control"
+	"claude-manager/internal/gitutil"
 	"claude-manager/internal/logger"
 	"claude-manager/internal/optimization"
 	"claude-manager/internal/permission"
@@ -400,6 +401,15 @@ func (a *App) GetSessionState(project, name string) *session.PersistedState {
 		return nil
 	}
 	return a.manager.GetSessionState(project, name)
+}
+
+// InitGitRepo makes projectPath usable by a `use_worktree = true` session:
+// it runs `git init` if the folder isn't a repo yet, and creates an initial
+// commit if HEAD can't be resolved yet (a bare `git init` alone leaves an
+// unborn branch that `--worktree` cannot branch from). Call StartSession or
+// RestartSession again afterwards to retry.
+func (a *App) InitGitRepo(projectPath string) error {
+	return gitutil.EnsureRepoWithCommit(context.Background(), projectPath)
 }
 
 func (a *App) StartProject(project string) error {

@@ -9,11 +9,13 @@
         sessionLogs,
         type SessionState,
     } from '../stores/sessions';
+    import { projects } from '../stores/projects';
     import { formatTime } from '../lib/formatters';
     import {
         StopSession,
         RestartSession,
         ExportLog,
+        InitGitRepo,
     } from '../../wailsjs/go/main/App';
 
     export let session: SessionState;
@@ -78,6 +80,41 @@
         clearSessionLog(session.id);
     }
 
+    // `--worktree` needs the project folder to be a git repo with at least
+    // one commit — a bare `git init` leaves an unborn HEAD it can't branch
+    // from. Detect the CLI's own error text in the log and offer a one-click
+    // fix instead of a dead-end red line.
+    const GIT_WORKTREE_ERROR_MARKERS = [
+        'is not a git repository',
+        'Failed to resolve base branch',
+    ];
+    let gitInitBusy = false;
+    let gitInitError = '';
+
+    $: projectPath = $projects.find((p) => p.name === session.project)?.path ?? '';
+    $: needsGitInit = ($sessionLogs[session.id] ?? [])
+        .slice(-30)
+        .some(
+            (e) =>
+                e.level === 'error' &&
+                GIT_WORKTREE_ERROR_MARKERS.some((m) => (e.message ?? '').includes(m)),
+        );
+
+    async function onInitGitRepo() {
+        if (gitInitBusy || !projectPath) return;
+        gitInitBusy = true;
+        gitInitError = '';
+        try {
+            await InitGitRepo(projectPath);
+            clearSessionLog(session.id);
+            await RestartSession(session.id);
+        } catch (e: any) {
+            gitInitError = `Init git repo failed: ${e?.message ?? String(e)}`;
+        } finally {
+            gitInitBusy = false;
+        }
+    }
+
     async function onExportLog() {
         const entries = $sessionLogs[session.id] ?? [];
         // Map the in-memory LogEntry shape to the Go store.LogEntry payload
@@ -121,6 +158,29 @@
         <div class="flex-1 min-w-0 flex flex-col">
             {#if session.pending_permission}
                 <PermissionBanner {session} />
+            {/if}
+            {#if needsGitInit}
+                <div class="px-3 py-2 bg-status-error/10 border-b border-status-error/30
+                            flex items-center justify-between gap-3 text-xs">
+                    <span class="text-text">
+                        This session needs <code class="font-mono">--worktree</code>, but
+                        <code class="font-mono">{projectPath || session.project}</code>
+                        isn't a usable git repository yet (not initialized, or has no
+                        commits — a bare <code class="font-mono">git init</code> alone
+                        isn't enough).
+                    </span>
+                    <button
+                        type="button"
+                        on:click={onInitGitRepo}
+                        disabled={gitInitBusy || !projectPath}
+                        class="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white
+                               disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
+                        {gitInitBusy ? 'Initializing…' : 'Initialize git repo & retry'}
+                    </button>
+                </div>
+                {#if gitInitError}
+                    <div class="px-3 py-1 text-xs text-status-error">{gitInitError}</div>
+                {/if}
             {/if}
             <LogStream sessionId={session.id} />
         </div>
