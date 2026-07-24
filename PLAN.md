@@ -215,8 +215,8 @@ path = 'D:\RustProjects\lumen-browser'
 
   # Разрешения (см. секцию 16)
   permission_mode = "acceptEdits"         # default | acceptEdits | auto | plan | dontAsk | bypassPermissions
-  allowed_tools = ["Bash(cargo *)", "Bash(npm *)"]  # Белый список (опц.)
-  disallowed_tools = ["Bash(rm *)"]       # Чёрный список (опц.)
+  allowed_tools = ["Bash(cargo:*)", "Bash(npm:*)"]  # Белый список (опц.) — "ToolName(prefix:*)"
+  disallowed_tools = ["Bash(rm:*)"]       # Чёрный список (опц.)
 
   # Бюджет
   max_budget_usd = 0                      # 0 = без лимита. >0 = лимит в USD
@@ -1051,8 +1051,8 @@ wails build
 |---|---|---|
 | `--permission-mode <mode>` | ✅ v1 | `default`, `acceptEdits`, `auto`, `plan`, `dontAsk`, `bypassPermissions` |
 | `--dangerously-skip-permissions` | ✅ Базовый | Полный bypass (legacy, заменяется `--permission-mode`) |
-| `--allowedTools <tools>` | ✅ v1 | Белый список: `"Bash(npm test) Edit Read"` |
-| `--disallowedTools <tools>` | ✅ v1 | Чёрный список: `"Bash(rm *) Bash(git push *)"` |
+| `--allowedTools <tools>` | ✅ v1 | Белый список: `"Bash(npm test) Edit Read"` (точное совпадение) или `"Bash(cargo:*)"` (по префиксу — проверено вживую 2026-07-24) |
+| `--disallowedTools <tools>` | ✅ v1 | Чёрный список: `"Bash(rm:*) Bash(git push:*)"` |
 | `--tools <tools>` | ⬚ v2 | Ограничить набор доступных инструментов |
 
 ### 14.5 Контекст и промпты

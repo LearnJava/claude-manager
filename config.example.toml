@@ -71,6 +71,11 @@ path = 'D:\RustProjects\lumen-browser'
 # gates = ["cargo check", "cargo clippy --all-targets -- -D warnings", "cargo test"]
 # mixed_max_rounds = 3                   # feedback rounds before needs-human
 
+# Seeds permission_mode for sessions newly added to this project from now on
+# (empty = built-in default, bypassPermissions). Never touches an existing
+# session's already-saved permission_mode.
+# default_permission_mode = "bypassPermissions"
+
   [[project.session]]
   name = "P1"
   prompt = """
@@ -95,7 +100,21 @@ path = 'D:\RustProjects\lumen-browser'
 
   # Permissions
   permission_mode = "acceptEdits"      # default | acceptEdits | auto | plan | dontAsk | bypassPermissions
-  allowed_tools = ["Bash(cargo *)", "Bash(npm *)"]
+  # allowed_tools patterns are "ToolName(prefix:*)" — a trailing ":*" matches
+  # any command starting with that prefix. Verified live 2026-07-24: under
+  # acceptEdits, unlisted Bash commands (even harmless ones like `go version`
+  # or `git add`) are silently auto-denied with no prompt ever reaching this
+  # app in unattended/auto_restart sessions — nobody is there to approve them,
+  # so the run just wastes tokens and stalls. With permission_mode =
+  # bypassPermissions (the default for new sessions — see
+  # default_permission_mode below) allowed_tools is unnecessary; only use it
+  # when you deliberately picked a stricter mode for a specific project.
+  # Common per-toolchain examples (adjust to what the project actually runs):
+  #   Go:      ["Bash(go:*)", "Bash(gofmt:*)"]
+  #   Node:    ["Bash(npm:*)", "Bash(node:*)"]
+  #   Rust:    ["Bash(cargo:*)"]
+  #   Python:  ["Bash(python:*)", "Bash(pip:*)", "Bash(pytest:*)"]
+  allowed_tools = ["Bash(cargo:*)", "Bash(npm:*)"]
   disallowed_tools = ["Bash(rm -rf *)"]
 
   # Budget (0 = no limit)

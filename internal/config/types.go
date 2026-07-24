@@ -106,17 +106,23 @@ type GlobalSettings struct {
 // MixedProgramming is a pointer so an absent overlay field leaves the global
 // value untouched (a plain bool cannot distinguish "unset" from "false").
 type ProjectOverlay struct {
-	Sessions         []SessionConfig `toml:"session"`
-	Gates            []string        `toml:"gates"`
-	MixedProgramming *bool           `toml:"mixed_programming"`
-	MixedMaxRounds   int             `toml:"mixed_max_rounds"`
-	Workers          []WorkerConfig  `toml:"worker"`
+	Sessions              []SessionConfig `toml:"session"`
+	Gates                 []string        `toml:"gates"`
+	DefaultPermissionMode string          `toml:"default_permission_mode"`
+	MixedProgramming      *bool           `toml:"mixed_programming"`
+	MixedMaxRounds        int             `toml:"mixed_max_rounds"`
+	Workers               []WorkerConfig  `toml:"worker"`
 }
 
 type ProjectConfig struct {
 	Name     string          `toml:"name"`
 	Path     string          `toml:"path"`
 	Sessions []SessionConfig `toml:"session"`
+
+	// DefaultPermissionMode seeds PermissionMode for sessions newly added to
+	// this project going forward; it never touches existing sessions' saved
+	// values. Empty means "use the built-in default" (bypassPermissions).
+	DefaultPermissionMode string `toml:"default_permission_mode"`
 
 	// Mixed programming (MIXED-TASKS.md). Explicit privacy opt-in: briefs and
 	// verbatim code excerpts are sent to external free endpoints that log

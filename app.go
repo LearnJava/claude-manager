@@ -310,11 +310,15 @@ func upsertP1Session(cfg *config.AppConfig, project string) {
 				return
 			}
 		}
+		permissionMode := cfg.Projects[pi].DefaultPermissionMode
+		if permissionMode == "" {
+			permissionMode = "bypassPermissions"
+		}
 		sessions = append(sessions, config.SessionConfig{
 			Name:            "P1",
 			Model:           "sonnet",
 			Effort:          "high",
-			PermissionMode:  "acceptEdits",
+			PermissionMode:  permissionMode,
 			TaskSource:      "STATUS-P1.md",
 			StopWhenNoTasks: true,
 			AutoRestart:     true,

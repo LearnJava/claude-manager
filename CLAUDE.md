@@ -129,7 +129,7 @@ context travels with its repo instead of living only in a global file:
 | Layer | File | Holds | Committed? |
 |---|---|---|---|
 | Global | `~/.claude-manager/config.toml` | `[settings]`, `[optimization]`, project registry (`name`+`path`), shared `[[worker]]` presets | n/a (home dir) |
-| Project (shared) | `<project>/.claude-manager/config.toml` | `[[session]]`, `gates` | **yes** — share project setup |
+| Project (shared) | `<project>/.claude-manager/config.toml` | `[[session]]`, `gates`, `default_permission_mode` | **yes** — share project setup |
 | Project (private) | `<project>/.claude-manager/config.local.toml` | `mixed_programming` opt-in, `mixed_max_rounds`, private `[[worker]]` | **no** — auto-added to `.claude-manager/.gitignore` |
 
 **Load** (`config.go`): after decoding the global file, `applyProjectOverlays`
@@ -274,7 +274,11 @@ silently clobbered; `PlanReview.svelte` surfaces this as an inline "already
 exists — overwrite?" banner (no `window.confirm()`).
 
 **Bootstrap**: on a successful write, `ApproveRoadmap` upserts a `"P1"`
-`SessionConfig` (Sonnet, `acceptEdits`, `use_worktree = true` — bare
+`SessionConfig` (Sonnet, `permission_mode` = the project's
+`default_permission_mode` or `bypassPermissions` if unset — an autonomous
+`auto_restart` loop with nobody watching to answer a permission prompt needs
+full permissions, not `acceptEdits`, or it silently stalls on the first
+disallowed `Bash` call — `use_worktree = true` — bare
 `--worktree`, fresh from HEAD every run, so "one task = one session = one
 worktree" holds without any prompt-level bookkeeping — `task_source =
 "STATUS-P1.md"`, `stop_when_no_tasks = true`, `auto_restart = true`, and

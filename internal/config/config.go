@@ -86,6 +86,9 @@ func applyProjectOverlays(cfg *AppConfig) error {
 		if len(ov.Gates) > 0 {
 			p.Gates = ov.Gates
 		}
+		if ov.DefaultPermissionMode != "" {
+			p.DefaultPermissionMode = ov.DefaultPermissionMode
+		}
 		if ov.MixedProgramming != nil {
 			p.MixedProgramming = *ov.MixedProgramming
 		}
@@ -137,6 +140,9 @@ func mergeOverlay(dst *ProjectOverlay, src ProjectOverlay) {
 	}
 	if len(src.Gates) > 0 {
 		dst.Gates = src.Gates
+	}
+	if src.DefaultPermissionMode != "" {
+		dst.DefaultPermissionMode = src.DefaultPermissionMode
 	}
 	if src.MixedProgramming != nil {
 		dst.MixedProgramming = src.MixedProgramming
@@ -198,9 +204,10 @@ func SaveProjectOverlay(projectPath string, p ProjectConfig, localWorkers []Work
 
 	// Committed layer: safe to share, no external endpoints.
 	shared := struct {
-		Sessions []SessionConfig `toml:"session"`
-		Gates    []string        `toml:"gates"`
-	}{Sessions: p.Sessions, Gates: p.Gates}
+		Sessions              []SessionConfig `toml:"session"`
+		Gates                 []string        `toml:"gates"`
+		DefaultPermissionMode string          `toml:"default_permission_mode"`
+	}{Sessions: p.Sessions, Gates: p.Gates, DefaultPermissionMode: p.DefaultPermissionMode}
 	if err := encodeAtomic(ProjectConfigPath(projectPath), shared); err != nil {
 		return err
 	}
@@ -352,7 +359,7 @@ func applyDefaults(cfg *AppConfig) {
 			cfg.Projects[i].MixedMaxRounds = 3
 		}
 		for j := range cfg.Projects[i].Sessions {
-			applySessionDefaults(&cfg.Projects[i].Sessions[j])
+			applySessionDefaults(&cfg.Projects[i].Sessions[j], cfg.Projects[i].DefaultPermissionMode)
 		}
 	}
 
@@ -391,7 +398,11 @@ func applyOptimizationDefaults(o *OptimizationSettings) {
 	}
 }
 
-func applySessionDefaults(s *SessionConfig) {
+// applySessionDefaults fills in zero-value fields on s. projectDefaultPermissionMode
+// is the owning project's DefaultPermissionMode (may be empty); it only seeds a
+// still-unset PermissionMode, so it never overrides a value the user already
+// saved for this session.
+func applySessionDefaults(s *SessionConfig, projectDefaultPermissionMode string) {
 	if s.Model == "" {
 		s.Model = "sonnet"
 	}
@@ -399,7 +410,11 @@ func applySessionDefaults(s *SessionConfig) {
 		s.Effort = "high"
 	}
 	if s.PermissionMode == "" {
-		s.PermissionMode = "acceptEdits"
+		if projectDefaultPermissionMode != "" {
+			s.PermissionMode = projectDefaultPermissionMode
+		} else {
+			s.PermissionMode = "bypassPermissions"
+		}
 	}
 	if s.Preflight == "" {
 		s.Preflight = "auto"

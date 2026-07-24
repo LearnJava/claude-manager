@@ -57,6 +57,10 @@
         Name: string;
         Path: string;
         Sessions: SessionConfig[];
+        // Seeds PermissionMode for sessions newly added to this project; empty
+        // means "use the built-in default" (bypassPermissions). Never touches
+        // an existing session's saved value.
+        DefaultPermissionMode: string;
         // Mixed programming (MIXED-TASKS.md). Privacy opt-in: code is sent to
         // external worker endpoints. Enabling requires non-empty Gates.
         MixedProgramming: boolean;
@@ -120,7 +124,7 @@
     let selectedProjectIdx = 0;
     let selectedSessionIdx = 0;
 
-    function emptySession(name = 'new-session'): SessionConfig {
+    function emptySession(name = 'new-session', defaultPermissionMode = ''): SessionConfig {
         return {
             Name: name,
             Prompt: '',
@@ -132,7 +136,7 @@
             FallbackModel: '',
             FallbackModelOnRateLimit: false,
             Effort: 'high',
-            PermissionMode: 'acceptEdits',
+            PermissionMode: defaultPermissionMode || 'bypassPermissions',
             AllowedTools: [],
             DisallowedTools: [],
             PermissionRules: [],
@@ -152,6 +156,7 @@
             Name: name,
             Path: '',
             Sessions: [],
+            DefaultPermissionMode: '',
             MixedProgramming: false,
             Gates: [],
             MixedMaxRounds: 3,
@@ -248,11 +253,12 @@
         const projects: ProjectConfig[] = (raw?.Projects ?? []).map((p: any) => ({
             Name: p?.Name ?? '',
             Path: p?.Path ?? '',
+            DefaultPermissionMode: p?.DefaultPermissionMode ?? '',
             MixedProgramming: p?.MixedProgramming ?? false,
             Gates: p?.Gates ?? [],
             MixedMaxRounds: p?.MixedMaxRounds ?? 3,
             Sessions: (p?.Sessions ?? []).map((s: any) => ({
-                ...emptySession(s?.Name ?? ''),
+                ...emptySession(s?.Name ?? '', p?.DefaultPermissionMode ?? ''),
                 ...s,
                 AllowedTools: s?.AllowedTools ?? [],
                 DisallowedTools: s?.DisallowedTools ?? [],
@@ -415,7 +421,10 @@
     function addSession() {
         if (!cfg || cfg.Projects.length === 0) return;
         const proj = cfg.Projects[selectedProjectIdx];
-        proj.Sessions = [...proj.Sessions, emptySession(`S${proj.Sessions.length + 1}`)];
+        proj.Sessions = [
+            ...proj.Sessions,
+            emptySession(`S${proj.Sessions.length + 1}`, proj.DefaultPermissionMode),
+        ];
         selectedSessionIdx = proj.Sessions.length - 1;
         cfg = cfg;
     }
@@ -799,6 +808,26 @@
                                         {/if}
                                     </label>
 
+                                    <label class="flex flex-col text-xs text-text-muted gap-1">
+                                        Default permission mode for new sessions
+                                        <select
+                                            bind:value={p.DefaultPermissionMode}
+                                            class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
+                                            <option value="">(inherit → bypassPermissions)</option>
+                                            <option value="bypassPermissions">bypassPermissions</option>
+                                            <option value="acceptEdits">acceptEdits</option>
+                                            <option value="default">default</option>
+                                            <option value="auto">auto</option>
+                                            <option value="plan">plan</option>
+                                            <option value="dontAsk">dontAsk</option>
+                                        </select>
+                                        <span class="text-[11px] text-text-muted/70 leading-snug">
+                                            Only seeds new sessions added to this project from now on —
+                                            existing sessions keep their own saved value (editable in the
+                                            Sessions tab).
+                                        </span>
+                                    </label>
+
                                     <div class="flex items-center justify-between">
                                         <span class="text-xs text-text-muted">
                                             {p.Sessions.length} session{p.Sessions.length === 1 ? '' : 's'}
@@ -1059,7 +1088,7 @@
                                                     rows="3"
                                                     value={joinList(sess.AllowedTools)}
                                                     on:input={onAllowedToolsInput}
-                                                    placeholder="Bash(cargo *)&#10;Bash(npm *)"
+                                                    placeholder="Bash(cargo:*)&#10;Bash(npm:*)"
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono resize-y"
                                                 ></textarea>
                                             </label>
@@ -1069,7 +1098,7 @@
                                                     rows="3"
                                                     value={joinList(sess.DisallowedTools)}
                                                     on:input={onDisallowedToolsInput}
-                                                    placeholder="Bash(rm *)"
+                                                    placeholder="Bash(rm:*)"
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono resize-y"
                                                 ></textarea>
                                             </label>
