@@ -151,7 +151,10 @@ Rules:
 - shared_context is NOT a summary of the tasks — it is what a brand-new
   session needs to know before reading task 1 (stack choices already made,
   directory layout, naming conventions), so every later session starts
-  oriented without re-deriving decisions.`
+  oriented without re-deriving decisions.
+- Write subtask names, prompts, and shared_context in the same language the
+  project idea was written in (e.g. reply in Russian for a Russian idea).
+  Only field names/JSON structure stay in English.`
 
 // BriefJSONSchema is the structured-output JSON Schema passed to a
 // brief-generation session via `--json-schema` (MIXED-TASKS.md MP-06). It
