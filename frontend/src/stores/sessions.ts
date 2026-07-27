@@ -15,6 +15,7 @@ export type SessionStatus =
     | 'analyzing'
     | 'working'
     | 'waiting_permission'
+    | 'waiting_for_user'
     | 'rate_limited'
     | 'retrying'
     | 'stopping'
@@ -33,6 +34,18 @@ export interface PermissionRequest {
     risk_level?: string;
     RiskLevel?: string;
     [k: string]: any;
+}
+
+// PendingQuestion mirrors Go's session.PendingQuestion — a genuine decision
+// (default Kind) Claude surfaced via the ask-user marker in an autonomous
+// (task_source/auto_restart) run. A KindContinueSession marker never reaches
+// the frontend — it's auto-resolved instantly on the backend. See CLAUDE.md
+// "Ask-User Questions".
+export interface PendingQuestion {
+    id: string;
+    question: string;
+    options?: string[];
+    asked_at?: string;
 }
 
 export interface TodoItem {
@@ -59,7 +72,9 @@ export interface SessionState {
     todos: TodoItem[];
     branch: string;
     cli_session_id: string;
+    stop_requested: boolean;
     pending_permission?: PermissionRequest | null;
+    pending_question?: PendingQuestion | null;
     input_tokens: number;
     output_tokens: number;
     cache_read: number;
@@ -130,7 +145,7 @@ export const activeSessions = derived(sessionList, ($list) =>
 );
 
 export const waitingSessions = derived(sessionList, ($list) =>
-    $list.filter((s) => s.status === 'waiting_permission'),
+    $list.filter((s) => s.status === 'waiting_permission' || s.status === 'waiting_for_user'),
 );
 
 export const rateLimitedSessions = derived(sessionList, ($list) =>
@@ -152,7 +167,9 @@ function makeBlankSession(id: string): SessionState {
         status: 'idle', model: '', effort: '', permission_mode: '',
         started_at: '', last_activity: '', rate_limit_until: '',
         tasks_done: 0, current_task: '', task_source_description: '', prompt: '', todos: [], branch: '', cli_session_id: '',
+        stop_requested: false,
         pending_permission: null,
+        pending_question: null,
         input_tokens: 0, output_tokens: 0, cache_read: 0, cache_creation: 0,
         num_turns: 0, total_cost_usd: 0, context_window: 0, context_util: 0,
     };
@@ -264,11 +281,22 @@ export async function initSessions(): Promise<void> {
     EventsOn('session:status', (evt: { id: string; status: SessionStatus }) => {
         if (!evt || !evt.id) return;
         const clearPerm = (['idle', 'error', 'stopping'] as SessionStatus[]).includes(evt.status);
+        // A fresh run (starting) never carries over a previous run's soft-stop
+        // request; session:stop_requested(false) also fires for this case, but
+        // clearing it here too covers event-ordering races.
+        const clearStopReq = clearPerm || evt.status === 'starting';
         setSession(evt.id, (s) => ({
             ...s,
             status: evt.status,
             pending_permission: clearPerm ? null : s.pending_permission,
+            pending_question: clearPerm ? null : s.pending_question,
+            stop_requested: clearStopReq ? false : s.stop_requested,
         }));
+    });
+
+    EventsOn('session:stop_requested', (evt: { id: string; stop_requested: boolean }) => {
+        if (!evt || !evt.id) return;
+        setSession(evt.id, (s) => ({ ...s, stop_requested: evt.stop_requested }));
     });
 
     EventsOn('session:log', (evt: { id: string; entry: LogEntry }) => {
@@ -299,6 +327,12 @@ export async function initSessions(): Promise<void> {
         setSession(evt.id, (s) => ({ ...s, pending_permission: evt.request }));
         const tool = evt.request?.tool ?? evt.request?.Tool ?? 'tool';
         notify('Permission needed', `${evt.id}: ${tool}`);
+    });
+
+    EventsOn('session:question', (evt: { id: string; question: PendingQuestion }) => {
+        if (!evt || !evt.id) return;
+        setSession(evt.id, (s) => ({ ...s, pending_question: evt.question }));
+        notify('Question needs an answer', `${evt.id}: ${evt.question?.question ?? ''}`);
     });
 
     EventsOn('session:context', (evt: {

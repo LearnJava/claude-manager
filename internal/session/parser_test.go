@@ -703,3 +703,40 @@ func TestParseTodoInput(t *testing.T) {
 		t.Error("expected ok=false for invalid json")
 	}
 }
+
+func TestParseAskUserQuestion_Present(t *testing.T) {
+	text := "Some analysis text.\n\n" +
+		"```ask-user\n" +
+		`{"question": "Which budget?", "options": ["Keep 2ms", "Relax to 16ms"]}` + "\n" +
+		"```"
+	q := ParseAskUserQuestion(text)
+	if q == nil {
+		t.Fatal("expected a question, got nil")
+	}
+	if q.Question != "Which budget?" {
+		t.Errorf("Question = %q", q.Question)
+	}
+	if len(q.Options) != 2 || q.Options[0] != "Keep 2ms" || q.Options[1] != "Relax to 16ms" {
+		t.Errorf("Options = %+v", q.Options)
+	}
+}
+
+func TestParseAskUserQuestion_Absent(t *testing.T) {
+	if q := ParseAskUserQuestion("All done, no decision needed."); q != nil {
+		t.Errorf("expected nil, got %+v", q)
+	}
+}
+
+func TestParseAskUserQuestion_MalformedJSONFallsBackToNil(t *testing.T) {
+	text := "```ask-user\nnot valid json\n```"
+	if q := ParseAskUserQuestion(text); q != nil {
+		t.Errorf("expected nil for malformed marker, got %+v", q)
+	}
+}
+
+func TestParseAskUserQuestion_EmptyQuestionRejected(t *testing.T) {
+	text := "```ask-user\n" + `{"question": "  ", "options": []}` + "\n```"
+	if q := ParseAskUserQuestion(text); q != nil {
+		t.Errorf("expected nil for blank question, got %+v", q)
+	}
+}

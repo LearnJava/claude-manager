@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 	"time"
 
@@ -85,6 +86,51 @@ type PermissionRequest struct {
 	Command     string `json:"command"`
 	FilePath    string `json:"file_path"`
 	RiskLevel   string `json:"risk_level"`
+}
+
+// AskUserQuestion is a decision Claude surfaced via the ask-user marker
+// convention: a fenced ```ask-user block at the end of a turn's result text,
+// containing a JSON object with a question and its option labels. Only
+// recognized in autonomous (task_source/auto_restart) runs.
+//
+// Kind distinguishes two situations (see askUserProtocolPrompt):
+//   - "continue_session": Claude is checking whether to keep working in this
+//     same session (e.g. after finishing its assigned task). Per the
+//     one-session-per-task rule the answer is always "no" — this is resolved
+//     instantly without waiting for anyone, the same as if no marker had been
+//     emitted at all.
+//   - "" (default): a genuine external decision Claude cannot resolve on its
+//     own. This pauses the run and keeps stdin open for a human answer, with
+//     a timeout fallback (see PendingQuestion) so an unattended run is never
+//     stuck forever.
+type AskUserQuestion struct {
+	Question string   `json:"question"`
+	Options  []string `json:"options"`
+	Kind     string   `json:"kind,omitempty"`
+}
+
+// KindContinueSession is the AskUserQuestion.Kind value for a
+// session-boundary check (see AskUserQuestion doc comment).
+const KindContinueSession = "continue_session"
+
+var askUserPattern = regexp.MustCompile("(?s)```ask-user\\s*\\n(.*?)\\n?```")
+
+// ParseAskUserQuestion extracts an ask-user marker from a result turn's text.
+// Returns nil when absent or malformed — a malformed marker must not hang the
+// session forever, so it silently falls back to normal turn completion.
+func ParseAskUserQuestion(resultText string) *AskUserQuestion {
+	m := askUserPattern.FindStringSubmatch(resultText)
+	if m == nil {
+		return nil
+	}
+	var q AskUserQuestion
+	if err := json.Unmarshal([]byte(m[1]), &q); err != nil {
+		return nil
+	}
+	if strings.TrimSpace(q.Question) == "" {
+		return nil
+	}
+	return &q
 }
 
 // ---- ParsedEvent ----

@@ -41,7 +41,8 @@
     function statusDot(status: SessionStatus): string {
         switch (status) {
             case 'working': return 'bg-status-working';
-            case 'waiting_permission': return 'bg-status-waiting';
+            case 'waiting_permission':
+            case 'waiting_for_user': return 'bg-status-waiting';
             case 'rate_limited':
             case 'retrying': return 'bg-status-ratelimit';
             case 'error': return 'bg-status-error';
@@ -57,6 +58,7 @@
         switch (status) {
             case 'working': return 'Working';
             case 'waiting_permission': return 'Waiting permission';
+            case 'waiting_for_user': return 'Waiting for answer';
             case 'rate_limited': return 'Rate limited';
             case 'retrying': return 'Retrying';
             case 'error': return 'Error';
@@ -72,7 +74,7 @@
     $: hit = cacheHitRatio(session.cache_read, session.cache_creation);
     $: util = Number(session.context_util) || 0;
     $: utilPct = Math.min(100, Math.max(0, Math.round(util * 100)));
-    $: blink = session.status === 'waiting_permission';
+    $: blink = session.status === 'waiting_permission' || session.status === 'waiting_for_user';
 </script>
 
 <div class="bg-bg-panel border border-bg-border rounded px-3 py-2 text-sm">
@@ -88,6 +90,11 @@
         </div>
         <span class="text-text-muted text-xs ml-auto whitespace-nowrap">
             {statusLabel(session.status)}
+            {#if session.stop_requested}
+                <span class="text-amber-400" title="Will stop once the current task finishes">
+                    · stopping after task
+                </span>
+            {/if}
         </span>
         <span class="text-text-muted text-xs whitespace-nowrap" title="Runtime">
             {runtime}

@@ -3,6 +3,8 @@ package main
 import (
 	"embed"
 
+	"claude-manager/internal/logger"
+
 	"github.com/getlantern/systray"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -22,7 +24,10 @@ func main() {
 	// systray.Run blocks its own goroutine for the process lifetime; it must
 	// start before wails.Run (which blocks main) and is torn down from
 	// app.shutdown via systray.Quit().
-	go systray.Run(app.onTrayReady, func() {})
+	go func() {
+		defer logger.Recover("systray.run")
+		systray.Run(app.onTrayReady, func() {})
+	}()
 
 	// Create application with options
 	err := wails.Run(&options.App{

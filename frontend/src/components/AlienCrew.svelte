@@ -35,7 +35,7 @@
     const scene = derived([sessionList, sessionLogs], ([sessions, logs]) => {
         if (sessions.some(s => s.status === 'error'))
             return { activity: 'error' as Activity, label: 'All hands on deck!' };
-        if (sessions.some(s => s.status === 'waiting_permission'))
+        if (sessions.some(s => s.status === 'waiting_permission' || s.status === 'waiting_for_user'))
             return { activity: 'waiting' as Activity, label: 'Awaiting orders...' };
         if (sessions.some(s => s.status === 'rate_limited' || s.status === 'retrying'))
             return { activity: 'sleeping' as Activity, label: 'Off watch...' };

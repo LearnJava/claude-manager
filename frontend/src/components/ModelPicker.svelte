@@ -9,7 +9,7 @@
         cancel: void;
     }>();
 
-    const MODELS  = ['haiku', 'sonnet', 'opus'];
+    const MODELS  = ['haiku', 'sonnet', 'opus', 'claude-fable-5'];
     const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
     // Recommendation loaded from backend (null = not yet loaded)

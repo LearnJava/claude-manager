@@ -198,6 +198,7 @@ const (
 	StatusAnalyzing
 	StatusWorking
 	StatusWaitingPermission
+	StatusWaitingForUser
 	StatusRateLimited
 	StatusRetrying
 	StatusStopping
@@ -216,6 +217,8 @@ func (s SessionStatus) String() string {
 		return "working"
 	case StatusWaitingPermission:
 		return "waiting_permission"
+	case StatusWaitingForUser:
+		return "waiting_for_user"
 	case StatusRateLimited:
 		return "rate_limited"
 	case StatusRetrying:

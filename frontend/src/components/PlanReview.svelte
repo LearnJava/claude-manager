@@ -609,6 +609,7 @@
                                                                         <option value="opus">opus</option>
                                                                         <option value="sonnet">sonnet</option>
                                                                         <option value="haiku">haiku</option>
+                                                                        <option value="claude-fable-5">fable</option>
                                                                     </select>
                                                                 </label>
                                                                 <label class="flex flex-col text-xs text-text-muted gap-1">

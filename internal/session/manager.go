@@ -30,12 +30,14 @@ const (
 	EventNameTaskDone   = "session:task_done"
 	EventNameRateLimit  = "session:rate_limit"
 	EventNamePermission = "session:permission"
+	EventNameQuestion   = "session:question"
 	EventNameContext    = "session:context"
 	EventNameTodo       = "session:todo"
 	EventNameTaskSource = "session:task_source"
 	EventNameInit       = "session:init"
 	EventNameResult     = "session:result"
 	EventNameError      = "session:error"
+	EventNameStopReq    = "session:stop_requested"
 )
 
 // ---- Event payloads ----
@@ -43,6 +45,15 @@ const (
 type StatusEvent struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
+}
+
+// StopRequestedEvent lets the UI show a persistent "will stop after the
+// current task" indicator the instant the soft-stop is registered, instead
+// of only finding out once the session actually reaches Idle (which can be
+// a long wait — see CLAUDE.md's session lifecycle notes).
+type StopRequestedEvent struct {
+	ID            string `json:"id"`
+	StopRequested bool   `json:"stop_requested"`
 }
 
 type LogEvent struct {
@@ -64,6 +75,13 @@ type RateLimitEvent struct {
 type PermissionEvent struct {
 	ID      string                       `json:"id"`
 	Request permission.PermissionRequest `json:"request"`
+}
+
+// QuestionEvent carries a blocking ask-user question (see PendingQuestion) to
+// the frontend, mirroring PermissionEvent's shape.
+type QuestionEvent struct {
+	ID       string          `json:"id"`
+	Question PendingQuestion `json:"question"`
 }
 
 type ContextEvent struct {
@@ -129,8 +147,10 @@ type SessionState struct {
 	Todos          []TodoItem `json:"todos"`
 	Branch         string     `json:"branch"`
 	CLISessionID   string     `json:"cli_session_id"`
+	StopRequested  bool       `json:"stop_requested"`
 
 	PendingPermission *permission.PermissionRequest `json:"pending_permission,omitempty"`
+	PendingQuestion   *PendingQuestion              `json:"pending_question,omitempty"`
 
 	InputTokens   int64   `json:"input_tokens"`
 	OutputTokens  int64   `json:"output_tokens"`
@@ -276,6 +296,14 @@ func sessionID(project, name string) string {
 	return project + "/" + name
 }
 
+// firstNonEmpty returns a if non-empty, else b.
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
 func (m *SessionManager) findConfig(project, name string) (*config.ProjectConfig, *config.SessionConfig, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -397,6 +425,7 @@ func (m *SessionManager) StartSession(project, name string) error {
 	wait := m.reserveStartSlot()
 
 	go func() {
+		defer logger.Recover("manager.start_session", "id", id)
 		if wait > 0 {
 			time.Sleep(wait)
 		}
@@ -460,6 +489,7 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 
 	wait := m.reserveStartSlot()
 	go func() {
+		defer logger.Recover("manager.start_session", "id", id)
 		if wait > 0 {
 			time.Sleep(wait)
 		}
@@ -481,6 +511,9 @@ func (m *SessionManager) StopSession(id string, soft bool) error {
 	}
 	logger.L.Info("manager.stop_session", "id", id, "soft", soft)
 	ms.session.Stop(soft)
+	if soft {
+		m.emit(EventNameStopReq, StopRequestedEvent{ID: id, StopRequested: true})
+	}
 	m.queue.RemoveBySession(id)
 	if !soft {
 		ms.mu.Lock()
@@ -536,6 +569,137 @@ func (m *SessionManager) ResumeSession(id string) error {
 		return fmt.Errorf("session %q not found", id)
 	}
 	return m.StartSession(ms.project, ms.name)
+}
+
+// SetSessionModel changes a session's model on the fly.
+//
+// Autonomous sessions (task_source/auto_restart) already restart between
+// tasks — one CLI process equals one task there — so this just updates the
+// live override and the next task's launch picks it up on its own, without
+// interrupting whatever is in flight right now.
+//
+// An interactive session has no such boundary: it is one long-lived CLI
+// process for the whole conversation. To actually take effect there, this
+// soft-restarts the session immediately, resuming the same CLI conversation
+// via --resume so the switch doesn't lose context — the tradeoff is that
+// whatever tool call is in flight gets interrupted.
+//
+// A session that has never been started in this app process has no
+// managedSession yet (the sidebar still shows it — see GetAllSessions'
+// "configured" stub) — there is nothing running to switch, so this instead
+// updates the in-memory config default directly, picked up whenever the
+// session is first started. Not persisted to disk, same as the activeModel
+// override above: a live runtime choice, not a change to the session's
+// saved default.
+func (m *SessionManager) SetSessionModel(id, model string) error {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return fmt.Errorf("model must not be empty")
+	}
+	ms := m.get(id)
+	if ms == nil {
+		parts := strings.SplitN(id, "/", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("session %q not found", id)
+		}
+		_, sc, err := m.findConfig(parts[0], parts[1])
+		if err != nil {
+			return err
+		}
+		m.mu.Lock()
+		sc.Model = model
+		m.mu.Unlock()
+		logger.L.Info("manager.set_session_model", "id", id, "model", model, "started", false)
+		return nil
+	}
+	sess := ms.session
+	sess.SetModel(model)
+	logger.L.Info("manager.set_session_model", "id", id, "model", model)
+
+	if sess.Autonomous() {
+		return nil
+	}
+
+	st := sess.Status()
+	if st == config.StatusIdle || st == config.StatusError {
+		return nil // nothing running to restart
+	}
+
+	resumeID := sess.CLISessionID
+	project, name := ms.project, ms.name
+	if err := m.StopSession(id, false); err != nil {
+		return err
+	}
+	// Give the Run goroutine a moment to exit before restarting (mirrors
+	// RestartSession above).
+	for i := 0; i < 50; i++ {
+		if ms.session.Status() == config.StatusIdle {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return m.startSessionResuming(project, name, resumeID, model)
+}
+
+// startSessionResuming is StartSessionWithOverride plus a pre-seeded
+// resumeSessionID, used only by SetSessionModel: the freshly recreated
+// Session must resume the exact conversation that was just interrupted
+// rather than starting a blank one, regardless of whether crash_recovery is
+// enabled for this session.
+func (m *SessionManager) startSessionResuming(project, name, resumeID, model string) error {
+	proj, sc, err := m.findConfig(project, name)
+	if err != nil {
+		return err
+	}
+	id := sessionID(project, name)
+
+	m.mu.Lock()
+	if existing, ok := m.sessions[id]; ok {
+		st := existing.session.Status()
+		if st != config.StatusIdle && st != config.StatusError {
+			m.mu.Unlock()
+			return fmt.Errorf("session %q already running (status=%s)", id, st)
+		}
+		delete(m.sessions, id)
+	}
+	m.mu.Unlock()
+
+	sessionCfg := *sc
+	sessionCfg.Model = model
+
+	ms := &managedSession{project: project, name: name}
+	sess := New(Params{
+		ID:                id,
+		ProjectName:       project,
+		ProjectPath:       proj.Path,
+		Config:            sessionCfg,
+		ClaudePath:        m.cfg.Settings.ClaudePath,
+		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
+		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
+		StateStore:        m.stateStore,
+		CrashRecovery:     m.cfg.Settings.CrashRecovery,
+		ResumeSessionID:   resumeID,
+		OnEvent:           func(sid string, ev SessionEvent) { m.onSessionEvent(sid, ev) },
+	})
+	ms.session = sess
+
+	m.mu.Lock()
+	m.sessions[id] = ms
+	m.mu.Unlock()
+
+	wait := m.reserveStartSlot()
+	go func() {
+		defer logger.Recover("manager.start_session", "id", id)
+		if wait > 0 {
+			time.Sleep(wait)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		ms.mu.Lock()
+		ms.cancel = cancel
+		ms.mu.Unlock()
+		sess.Run(ctx)
+	}()
+	return nil
 }
 
 // StartProject launches every configured session in the project.
@@ -637,6 +801,48 @@ func (m *SessionManager) GetPendingPermissions() []permission.PermissionRequest 
 	return m.queue.GetAll()
 }
 
+// AnswerQuestion resolves a pending ask-user question (see PendingQuestion):
+// the session writes the answer to stdin as the next turn of the same
+// conversation and returns to Working.
+func (m *SessionManager) AnswerQuestion(id, questionID, answer string) error {
+	ms := m.get(id)
+	if ms == nil {
+		return fmt.Errorf("session %q not found", id)
+	}
+	return ms.session.AnswerQuestion(questionID, answer)
+}
+
+// QuestionInfo pairs a session ID with its currently pending ask-user question.
+type QuestionInfo struct {
+	SessionID string          `json:"session_id"`
+	Question  PendingQuestion `json:"question"`
+}
+
+// GetPendingQuestions returns every session currently blocked on an ask-user
+// question (see PendingQuestion). Unlike permissions, there is no separate
+// queue: a session holds at most one pending question at a time, so this
+// just scans the live sessions.
+func (m *SessionManager) GetPendingQuestions() []QuestionInfo {
+	m.mu.Lock()
+	ids := make([]string, 0, len(m.sessions))
+	for id := range m.sessions {
+		ids = append(ids, id)
+	}
+	m.mu.Unlock()
+
+	var out []QuestionInfo
+	for _, id := range ids {
+		ms := m.get(id)
+		if ms == nil {
+			continue
+		}
+		if q := ms.session.PendingQuestion(); q != nil {
+			out = append(out, QuestionInfo{SessionID: id, Question: *q})
+		}
+	}
+	return out
+}
+
 // ---- State / history / metrics ----
 
 // GetAllSessions returns a snapshot for every known session, including
@@ -699,7 +905,7 @@ func (m *SessionManager) GetSession(id string) (SessionState, bool) {
 		Project:        ms.project,
 		Name:           ms.name,
 		Status:         snap.Status.String(),
-		Model:          ms.session.Config.Model,
+		Model:          firstNonEmpty(snap.ActiveModel, ms.session.Config.Model),
 		Effort:         ms.session.Config.Effort,
 		PermissionMode: ms.session.Config.PermissionMode,
 		StartedAt:      snap.StartedAt,
@@ -712,6 +918,7 @@ func (m *SessionManager) GetSession(id string) (SessionState, bool) {
 		Todos:          snap.Todos,
 		Branch:         snap.Branch,
 		CLISessionID:   snap.CLISessionID,
+		StopRequested:  snap.StopRequested,
 		InputTokens:    ms.inputTokens,
 		OutputTokens:   ms.outputTokens,
 		CacheRead:      ms.cacheReadTokens,
@@ -732,6 +939,10 @@ func (m *SessionManager) GetSession(id string) (SessionState, bool) {
 			RiskLevel:   snap.PendingPerm.RiskLevel,
 		}
 		st.PendingPermission = &req
+	}
+	if snap.PendingQuestion != nil && snap.Status == config.StatusWaitingForUser {
+		q := *snap.PendingQuestion
+		st.PendingQuestion = &q
 	}
 	return st, true
 }
@@ -973,6 +1184,12 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 			m.handlePermission(ms, ev.Permission)
 		}
 
+	case EvtQuestion:
+		if ev.Question != nil {
+			logger.L.Info("session.question", "id", id, "question", ev.Question.Question)
+			m.emit(EventNameQuestion, QuestionEvent{ID: id, Question: *ev.Question})
+		}
+
 	case EvtError:
 		msg := ""
 		if ev.Err != nil {
@@ -995,6 +1212,10 @@ func (m *SessionManager) handleStatus(ms *managedSession, st config.SessionStatu
 
 	switch st {
 	case config.StatusStarting:
+		// A fresh run never carries over a previous run's soft-stop request
+		// (Session.New starts with softStop=false) — tell the UI so a stale
+		// "stop requested" badge doesn't survive a restart.
+		m.emit(EventNameStopReq, StopRequestedEvent{ID: ms.session.ID, StopRequested: false})
 		// Begin a new run record.
 		m.beginRun(ms)
 	case config.StatusIdle:

@@ -398,7 +398,7 @@
         error = '';
         info = '';
         try {
-            roadmapPlan = await GenerateRoadmap(cfg.Projects[idx].Name, idea, roadmapModel[idx] ?? 'claude-opus-4-8');
+            roadmapPlan = await GenerateRoadmap(cfg.Projects[idx].Name, idea, roadmapModel[idx] ?? 'opus');
         } catch (e: any) {
             error = `Roadmap generation failed: ${e?.message ?? String(e)}`;
         } finally {
@@ -904,7 +904,7 @@
                                                 bind:value={roadmapModel[i]}
                                                 disabled={!p.Path}
                                                 class="bg-bg border border-bg-border rounded px-2 py-1 text-xs text-text disabled:opacity-50">
-                                                <option value="claude-opus-4-8">Opus 4.8 (recommended)</option>
+                                                <option value="opus">Opus (latest, recommended)</option>
                                                 <option value="claude-fable-5">Fable 5</option>
                                                 <option value="claude-sonnet-5">Sonnet 5</option>
                                                 <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
@@ -1034,6 +1034,7 @@
                                                     <option value="opus">opus</option>
                                                     <option value="sonnet">sonnet</option>
                                                     <option value="haiku">haiku</option>
+                                                    <option value="claude-fable-5">fable</option>
                                                 </select>
                                             </label>
                                             <label class="flex flex-col text-xs text-text-muted gap-1">

@@ -5,7 +5,7 @@
     import AlienCrew from './AlienCrew.svelte';
 
     const dispatch = createEventDispatcher();
-    import { selectedSessionId, type SessionState, type SessionStatus } from '../stores/sessions';
+    import { selectedSessionId, sessions, type SessionState, type SessionStatus } from '../stores/sessions';
     import {
         StartSession,
         StopSession,
@@ -15,12 +15,113 @@
         UpdateConfig,
         GetAutoModelRouting,
         StartSessionWithModel,
+        SetSessionModel,
+        HasClaudeMd,
+        GenerateClaudeMdSession,
+        StartAdHocChatSession,
     } from '../../wailsjs/go/main/App';
+
+    // Live model switch (small dropdown under each running session's name).
+    // Autonomous sessions pick the new model up at the next task boundary;
+    // interactive ones are soft-restarted immediately (see SetSessionModel /
+    // CLAUDE.md "Live Model Switching").
+    const LIVE_MODELS = ['haiku', 'sonnet', 'opus', 'claude-fable-5'];
+    let modelBusy: Record<string, boolean> = {};
+    let modelError: Record<string, string> = {};
+
+    async function onModelChange(e: Event, s: SessionState) {
+        e.stopPropagation();
+        const model = (e.target as HTMLSelectElement).value;
+        if (!model || model === s.model) return;
+        modelBusy = { ...modelBusy, [s.id]: true };
+        modelError = { ...modelError, [s.id]: '' };
+        try {
+            await SetSessionModel(s.id, model);
+            // Optimistic: no dedicated event confirms this, only the next
+            // session:init (autonomous: next task; interactive: after the
+            // soft-restart) actually reports the resolved model.
+            sessions.update((map) => {
+                const cur = map[s.id];
+                if (!cur) return map;
+                return { ...map, [s.id]: { ...cur, model } };
+            });
+        } catch (err: any) {
+            modelError = { ...modelError, [s.id]: err?.message ?? String(err) };
+        } finally {
+            modelBusy = { ...modelBusy, [s.id]: false };
+        }
+    }
 
     let autoModelRouting = false;
     onMount(async () => {
         try { autoModelRouting = await GetAutoModelRouting(); } catch {}
     });
+
+    // CLAUDE.md presence, checked lazily per project on first click (not a
+    // bulk scan of every configured project at startup). undefined = not
+    // checked yet, false = missing → banner shown until generated/dismissed.
+    let claudeMdStatus: Record<string, boolean> = {};
+    let dismissedClaudeMd = new Set<string>();
+    let claudeMdBusy: Record<string, boolean> = {};
+
+    async function checkClaudeMd(path: string, name: string) {
+        if (!path || name in claudeMdStatus) return;
+        try {
+            claudeMdStatus = { ...claudeMdStatus, [name]: await HasClaudeMd(path) };
+        } catch (err) {
+            console.warn('HasClaudeMd failed:', err);
+        }
+    }
+
+    function onToggleProjectHeader(group: { name: string; path: string }) {
+        toggleProject(group.name);
+        checkClaudeMd(group.path, group.name);
+    }
+
+    // "just chat" button on the project header: bootstraps (or reuses) a
+    // plain interactive "Chat" session with no task_source/auto_restart, so
+    // the user can hand Claude ad-hoc instructions without configuring a
+    // session or a ROADMAP/task file first (see StartAdHocChatSession).
+    let chatBusy: Record<string, boolean> = {};
+
+    async function onStartChat(e: Event, name: string) {
+        e.stopPropagation();
+        chatBusy = { ...chatBusy, [name]: true };
+        try {
+            await StartAdHocChatSession(name);
+        } catch (err: any) {
+            // Already running isn't an error from the user's point of view —
+            // the session is right there; just select it below either way.
+            const msg = String(err?.message ?? err ?? '');
+            if (!msg.includes('already running')) {
+                console.warn('start chat session failed:', err);
+            }
+        } finally {
+            chatBusy = { ...chatBusy, [name]: false };
+            selectedSessionId.set(`${name}/Chat`);
+        }
+    }
+
+    async function onGenerateClaudeMd(e: Event, name: string) {
+        e.stopPropagation();
+        claudeMdBusy = { ...claudeMdBusy, [name]: true };
+        try {
+            await GenerateClaudeMdSession(name);
+            // The "Init" session row now carries progress; no need for the banner.
+            dismissedClaudeMd.add(name);
+            dismissedClaudeMd = dismissedClaudeMd;
+        } catch (err) {
+            console.warn('generate CLAUDE.md failed:', err);
+        } finally {
+            claudeMdBusy = { ...claudeMdBusy, [name]: false };
+        }
+    }
+
+    function onDismissClaudeMd(e: Event, name: string) {
+        e.stopPropagation();
+        dismissedClaudeMd.add(name);
+        dismissedClaudeMd = dismissedClaudeMd;
+    }
 
     // Session for which the ModelPicker is currently open: "project/name" or null
     let pickerFor: { project: string; name: string } | null = null;
@@ -28,7 +129,8 @@
     function statusColor(status: SessionStatus): string {
         switch (status) {
             case 'working': return 'bg-status-working';
-            case 'waiting_permission': return 'bg-status-waiting';
+            case 'waiting_permission':
+            case 'waiting_for_user': return 'bg-status-waiting';
             case 'rate_limited':
             case 'retrying': return 'bg-status-ratelimit';
             case 'error': return 'bg-status-error';
@@ -41,14 +143,16 @@
     }
 
     function statusLabel(s: SessionState): string {
+        const suffix = s.stop_requested ? ' · stopping after task' : '';
         switch (s.status) {
-            case 'working': return s.current_task ? `Working — ${s.current_task}` : 'Working';
-            case 'waiting_permission': return 'Waiting permission';
-            case 'rate_limited': return 'Rate limited';
-            case 'retrying': return 'Retrying';
+            case 'working': return (s.current_task ? `Working — ${s.current_task}` : 'Working') + suffix;
+            case 'waiting_permission': return 'Waiting permission' + suffix;
+            case 'waiting_for_user': return 'Waiting for answer' + suffix;
+            case 'rate_limited': return 'Rate limited' + suffix;
+            case 'retrying': return 'Retrying' + suffix;
             case 'error': return 'Error';
             case 'starting': return 'Starting';
-            case 'analyzing': return 'Analyzing';
+            case 'analyzing': return 'Analyzing' + suffix;
             case 'stopping': return 'Stopping';
             case 'idle':
             default: return 'Idle';
@@ -109,7 +213,7 @@
     }
 
     function isBlinking(s: SessionStatus): boolean {
-        return s === 'waiting_permission';
+        return s === 'waiting_permission' || s === 'waiting_for_user';
     }
 
     let pendingDelete: string | null = null;
@@ -154,12 +258,18 @@
             <div class="mb-1">
                 <div
                     class="group flex items-center px-2 py-1 hover:bg-bg-elevated cursor-pointer select-none"
-                    on:click={() => toggleProject(group.name)}
-                    on:keydown={(e) => e.key === 'Enter' && toggleProject(group.name)}
+                    on:click={() => onToggleProjectHeader(group)}
+                    on:keydown={(e) => e.key === 'Enter' && onToggleProjectHeader(group)}
                     role="button"
                     tabindex="0">
                     <span class="text-text-muted w-3 text-center">{collapsed ? '▶' : '▼'}</span>
                     <span class="text-text font-medium ml-1 flex-1 truncate" style="font-size: 17px" title={group.path}>{group.name}</span>
+                    <button
+                        class="opacity-0 group-hover:opacity-100 text-text-muted hover:text-status-working px-1 text-xs"
+                        title="Just chat: start a plain session with no tasks, give Claude ad-hoc instructions"
+                        disabled={chatBusy[group.name]}
+                        on:click={(e) => onStartChat(e, group.name)}
+                        type="button">{chatBusy[group.name] ? '…' : '💬'}</button>
                     <button
                         class="opacity-0 group-hover:opacity-100 text-text-muted hover:text-status-working px-1 text-xs"
                         title="Start all"
@@ -180,30 +290,75 @@
                         type="button">{pendingDelete === group.name ? '?' : '✕'}</button>
                 </div>
 
+                {#if claudeMdStatus[group.name] === false && !dismissedClaudeMd.has(group.name)}
+                    <div class="mx-2 mb-1 px-2 py-1.5 rounded bg-bg-elevated border border-bg-border flex items-center gap-2">
+                        <span class="text-text-muted text-xs flex-1">No CLAUDE.md in this project — sessions start with zero context.</span>
+                        <button
+                            class="text-status-working hover:underline text-xs whitespace-nowrap"
+                            on:click={(e) => onGenerateClaudeMd(e, group.name)}
+                            disabled={claudeMdBusy[group.name]}
+                            type="button">{claudeMdBusy[group.name] ? 'Starting…' : 'Generate'}</button>
+                        <button
+                            class="text-text-dim hover:text-text text-xs"
+                            title="Dismiss"
+                            on:click={(e) => onDismissClaudeMd(e, group.name)}
+                            type="button">✕</button>
+                    </div>
+                {/if}
+
                 {#if !collapsed}
                     {#each group.sessions as s (s.id)}
                         {@const selected = $selectedSessionId === s.id}
                         <div
-                            class="group flex items-center pl-6 pr-2 py-1 cursor-pointer
+                            class="group pl-6 pr-2 py-1 cursor-pointer
                                 {selected ? 'bg-bg-elevated' : 'hover:bg-bg-elevated/60'}"
                             on:click={() => select(s.id)}
                             on:keydown={(e) => e.key === 'Enter' && select(s.id)}
                             role="button"
                             tabindex="0">
-                            <span
-                                class="w-2.5 h-2.5 rounded-full mr-2 {statusColor(s.status)} {isBlinking(s.status) ? 'dot-blink' : ''}"
-                                title={statusLabel(s)}></span>
-                            <span class="text-text truncate flex-1" style="font-size: 13px">{s.name}</span>
-                            {#if uptime(s)}
-                                <span class="text-text-dim text-xs ml-2 hidden group-hover:hidden">{uptime(s)}</span>
+                            <div class="flex items-center">
+                                <span
+                                    class="w-2.5 h-2.5 rounded-full mr-2 shrink-0 {statusColor(s.status)} {isBlinking(s.status) ? 'dot-blink' : ''}
+                                           {s.stop_requested ? 'ring-2 ring-amber-400' : ''}"
+                                    title={statusLabel(s)}></span>
+                                <span class="text-text truncate flex-1" style="font-size: 13px">{s.name}</span>
+                                <select
+                                    value={s.model}
+                                    disabled={!!modelBusy[s.id]}
+                                    on:change={(e) => onModelChange(e, s)}
+                                    title="Switch model — autonomous sessions apply it on the next task, interactive sessions restart now (same conversation)"
+                                    class="ml-1.5 shrink-0 bg-bg border border-bg-border rounded px-1 text-text-muted
+                                           disabled:opacity-50"
+                                    style="font-size: 10px; line-height: 1.4;">
+                                    {#each LIVE_MODELS as m}
+                                        <option value={m}>{m}</option>
+                                    {/each}
+                                    {#if s.model && !LIVE_MODELS.includes(s.model)}
+                                        <option value={s.model}>{s.model}</option>
+                                    {/if}
+                                </select>
+                                {#if modelBusy[s.id]}
+                                    <span class="text-text-dim ml-1" style="font-size: 10px">…</span>
+                                {/if}
+                                {#if uptime(s)}
+                                    <span class="text-text-dim text-xs ml-2 hidden group-hover:hidden">{uptime(s)}</span>
+                                {/if}
+                                <button
+                                    class="px-1 text-xs shrink-0
+                                           {s.stop_requested
+                                               ? 'opacity-100 text-amber-400'
+                                               : 'opacity-0 group-hover:opacity-100 text-text-muted hover:text-text'}"
+                                    title={s.stop_requested
+                                        ? 'Stop requested — will stop once the current task finishes'
+                                        : isRunning(s) ? 'Stop (finishes current task first)' : 'Start'}
+                                    on:click={(e) => onToggleSession(e, s)}
+                                    type="button">
+                                    {s.stop_requested ? '⏳' : isRunning(s) ? '■' : '▶'}
+                                </button>
+                            </div>
+                            {#if modelError[s.id]}
+                                <div class="text-status-error pl-4" style="font-size: 10px">{modelError[s.id]}</div>
                             {/if}
-                            <button
-                                class="opacity-0 group-hover:opacity-100 text-text-muted hover:text-text px-1 text-xs"
-                                title={isRunning(s) ? 'Stop' : 'Start'}
-                                on:click={(e) => onToggleSession(e, s)}
-                                type="button">
-                                {isRunning(s) ? '■' : '▶'}
-                            </button>
                         </div>
                     {/each}
                 {/if}

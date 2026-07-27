@@ -98,6 +98,7 @@ function placeholder(project: string, name: string): SessionState {
         todos: [],
         branch: '',
         cli_session_id: '',
+        stop_requested: false,
         pending_permission: null,
         input_tokens: 0,
         output_tokens: 0,

@@ -45,7 +45,7 @@ func TestBuildCLIArgs_WorktreeNameExplicit(t *testing.T) {
 			WorktreeName: "p4-feature",
 		},
 	})
-	if v := findFlag(s.buildCLIArgs(), "--worktree"); v != "p4-feature" {
+	if v := findFlag(s.buildCLIArgs(false), "--worktree"); v != "p4-feature" {
 		t.Errorf("--worktree = %q, want \"p4-feature\"", v)
 	}
 }
@@ -61,7 +61,7 @@ func TestBuildCLIArgs_WorktreeBareWhenNameUnset(t *testing.T) {
 			UseWorktree: true,
 		},
 	})
-	args := s.buildCLIArgs()
+	args := s.buildCLIArgs(false)
 	if !hasFlag(args, "--worktree") {
 		t.Fatal("missing --worktree")
 	}
@@ -76,7 +76,7 @@ func TestBuildCLIArgs_WorktreeBareWhenNoName(t *testing.T) {
 	s := New(Params{
 		Config: config.SessionConfig{UseWorktree: true},
 	})
-	args := s.buildCLIArgs()
+	args := s.buildCLIArgs(false)
 	if !hasFlag(args, "--worktree") {
 		t.Fatal("missing --worktree")
 	}
@@ -158,10 +158,10 @@ func TestOnRateLimit_RejectedAborts(t *testing.T) {
 func TestHandleLine_ResultReportsTurnComplete(t *testing.T) {
 	s := New(Params{Config: config.SessionConfig{Name: "P1"}})
 
-	if s.handleLine(`{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}`) {
+	if s.handleLine(`{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}`, false) {
 		t.Error("assistant line reported turn complete")
 	}
-	if !s.handleLine(`{"type":"result","subtype":"success","total_cost_usd":0.01}`) {
+	if !s.handleLine(`{"type":"result","subtype":"success","total_cost_usd":0.01}`, false) {
 		t.Error("result line did not report turn complete")
 	}
 }

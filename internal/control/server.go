@@ -105,6 +105,7 @@ func (s *Server) Start(ctx context.Context, port string) error {
 	}
 	logger.L.Info("control.server.listening", "addr", addr)
 	go func() {
+		defer logger.Recover("control.server.shutdown_watcher")
 		<-ctx.Done()
 		_ = s.srv.Shutdown(context.Background())
 	}()
@@ -172,6 +173,7 @@ func StartFromEnv(ctx context.Context, manager ManagerAPI, app AppAPI, emitter *
 	}
 	srv := NewServer(manager, app, emitter, token)
 	go func() {
+		defer logger.Recover("control.server.start")
 		if err := srv.Start(ctx, port); err != nil {
 			logger.L.Error("control.server.error", "error", err)
 		}

@@ -134,3 +134,17 @@ cover the cache-cost accounting path.
 
 Validates that `SessionResult.TotalCostUSD` is parsed correctly and is
 strictly greater than `max_budget_usd`.
+
+---
+
+### no-tasks-interactive.json
+**State/Feature:** `stop_when_no_tasks` with an empty task source — interactive fallback
+**Match:** `ad-hoc instruction`
+
+Exercises the "no queued work" branch of `Session.Run()`: when `task_source` has
+no pending tasks, the session no longer refuses to start — it launches a plain
+interactive turn instead (see `forceInteractive` in `internal/session/session.go`).
+The manager substitutes a dedicated prompt containing "ad-hoc instruction",
+which this scenario matches instead of the session's configured `prompt`. A
+single init/assistant/result turn confirms the CLI actually launched (cost and
+turns are non-zero) and that the run ends in `idle` without looping.

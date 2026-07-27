@@ -63,7 +63,7 @@ func TestRealClaude_RunOnceCompletes(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	err := s.runOnce(ctx)
+	err := s.runOnce(ctx, false)
 	elapsed := time.Since(start)
 
 	if err != nil {

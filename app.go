@@ -331,6 +331,121 @@ func upsertP1Session(cfg *config.AppConfig, project string) {
 	}
 }
 
+// HasClaudeMd reports whether projectPath already contains a CLAUDE.md.
+// Path-based rather than project-name-based: the sidebar already has each
+// project's path from GetProjects and can check without a config round-trip.
+func (a *App) HasClaudeMd(projectPath string) bool {
+	if strings.TrimSpace(projectPath) == "" {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(projectPath, "CLAUDE.md"))
+	return err == nil
+}
+
+// GenerateClaudeMdSession bootstraps (or re-points) an "Init" session on
+// project with analysis.ClaudeMdInitPrompt and starts it immediately, mirror-
+// ing the ApproveRoadmap/upsertP1Session pattern above: a canned prompt in a
+// named, reusable session rather than a one-off CLI call, since `/init` itself
+// only runs inside an interactive session. Re-running this later (e.g. via the
+// "Init" session's own ▶) asks Claude to refine the existing CLAUDE.md instead
+// of writing a fresh one - the prompt handles both cases.
+func (a *App) GenerateClaudeMdSession(project string) error {
+	if a.cfg == nil {
+		return fmt.Errorf("no config loaded")
+	}
+	cfg := *a.cfg
+	cfg.Projects = append([]config.ProjectConfig(nil), a.cfg.Projects...)
+	if !upsertInitSession(&cfg, project) {
+		return fmt.Errorf("project %q not found", project)
+	}
+	if err := a.UpdateConfig(cfg); err != nil {
+		return err
+	}
+	return a.manager.StartSession(project, "Init")
+}
+
+// upsertInitSession points project's "Init" session at
+// analysis.ClaudeMdInitPrompt, creating it (with Sonnet defaults) if absent.
+// Reports whether project was found. Operates on cloned slices so it never
+// mutates the caller's existing config in place.
+func upsertInitSession(cfg *config.AppConfig, project string) bool {
+	for pi := range cfg.Projects {
+		if cfg.Projects[pi].Name != project {
+			continue
+		}
+		sessions := append([]config.SessionConfig(nil), cfg.Projects[pi].Sessions...)
+		for si := range sessions {
+			if sessions[si].Name == "Init" {
+				sessions[si].Prompt = analysis.ClaudeMdInitPrompt
+				cfg.Projects[pi].Sessions = sessions
+				return true
+			}
+		}
+		permissionMode := cfg.Projects[pi].DefaultPermissionMode
+		if permissionMode == "" {
+			permissionMode = "bypassPermissions"
+		}
+		sessions = append(sessions, config.SessionConfig{
+			Name:           "Init",
+			Model:          "sonnet",
+			Effort:         "high",
+			PermissionMode: permissionMode,
+			Prompt:         analysis.ClaudeMdInitPrompt,
+		})
+		cfg.Projects[pi].Sessions = sessions
+		return true
+	}
+	return false
+}
+
+// StartAdHocChatSession bootstraps (or reuses) a plain interactive "Chat"
+// session on project and starts it — for when the user just wants to talk to
+// Claude and hand it instructions directly, without pre-configuring a session
+// or writing a task_source file first. Mirrors the GenerateClaudeMdSession/
+// upsertInitSession pattern, but with no canned prompt and no task_source: an
+// empty Prompt means runOnce sends nothing on launch (see initialPromptText),
+// so the CLI process comes up and just waits on stdin for the user's first
+// message via SendMessage.
+func (a *App) StartAdHocChatSession(project string) error {
+	if a.cfg == nil {
+		return fmt.Errorf("no config loaded")
+	}
+	cfg := *a.cfg
+	cfg.Projects = append([]config.ProjectConfig(nil), a.cfg.Projects...)
+	if !upsertChatSession(&cfg, project) {
+		return fmt.Errorf("project %q not found", project)
+	}
+	if err := a.UpdateConfig(cfg); err != nil {
+		return err
+	}
+	return a.manager.StartSession(project, "Chat")
+}
+
+// upsertChatSession ensures project has a "Chat" SessionConfig, creating a
+// bare one (no prompt, no task_source, no auto_restart — Model/Effort/
+// PermissionMode fall back to the usual applySessionDefaults) if absent.
+// An existing "Chat" session is left untouched, so a user's manual edits
+// (model, effort, a prompt they added later) survive repeated clicks.
+// Reports whether project was found. Operates on cloned slices so it never
+// mutates the caller's existing config in place.
+func upsertChatSession(cfg *config.AppConfig, project string) bool {
+	for pi := range cfg.Projects {
+		if cfg.Projects[pi].Name != project {
+			continue
+		}
+		for _, sc := range cfg.Projects[pi].Sessions {
+			if sc.Name == "Chat" {
+				return true
+			}
+		}
+		sessions := append([]config.SessionConfig(nil), cfg.Projects[pi].Sessions...)
+		sessions = append(sessions, config.SessionConfig{Name: "Chat"})
+		cfg.Projects[pi].Sessions = sessions
+		return true
+	}
+	return false
+}
+
 // ---- Mixed programming bindings (MIXED-TASKS.md MP-05) ----
 
 // RegisterMixedBrief registers a self-contained brief under id so it can be
@@ -432,6 +547,18 @@ func (a *App) RespondPermission(id, requestID, decision string) error {
 
 func (a *App) GetPendingPermissions() []permission.PermissionRequest {
 	return a.manager.GetPendingPermissions()
+}
+
+func (a *App) AnswerQuestion(id, questionID, answer string) error {
+	return a.manager.AnswerQuestion(id, questionID, answer)
+}
+
+func (a *App) GetPendingQuestions() []session.QuestionInfo {
+	return a.manager.GetPendingQuestions()
+}
+
+func (a *App) SetSessionModel(id, model string) error {
+	return a.manager.SetSessionModel(id, model)
 }
 
 // ---- State / history / metrics ----
@@ -557,6 +684,7 @@ func (a *App) onTrayReady() {
 	mQuit := systray.AddMenuItem("Quit", "Stop all sessions and quit")
 
 	go func() {
+		defer logger.Recover("app.tray_menu_loop")
 		for {
 			select {
 			case <-mShow.ClickedCh:

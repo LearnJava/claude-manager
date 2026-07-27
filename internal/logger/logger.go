@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 )
 
 // L is the application-wide structured logger.
@@ -30,4 +31,26 @@ func Init(logDir string) (func(), error) {
 	L = slog.New(h)
 	L.Info("logger.init", "path", logPath)
 	return func() { _ = f.Close() }, nil
+}
+
+// Recover stops a panic from propagating past the calling goroutine and logs
+// it with a full stack trace under component. Call it deferred at the top of
+// every goroutine entry point:
+//
+//	go func() {
+//	    defer logger.Recover("session.input_writer", "id", s.ID)
+//	    ...
+//	}()
+//
+// Go's default behaviour for an unrecovered panic in any goroutine is to
+// terminate the whole process, regardless of which goroutine it occurred in.
+// On Windows that is especially costly here: this process owns a Job Object
+// per active CLI session with KILL_ON_JOB_CLOSE, so the OS closing its
+// handles on exit cascades into killing every live claude CLI subprocess too.
+// extra is logged alongside as additional slog key/value pairs.
+func Recover(component string, extra ...any) {
+	if r := recover(); r != nil {
+		args := append([]any{"component", component, "panic", r, "stack", string(debug.Stack())}, extra...)
+		L.Error("panic.recovered", args...)
+	}
 }

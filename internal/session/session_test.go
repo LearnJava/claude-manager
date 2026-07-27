@@ -42,7 +42,7 @@ func TestBuildCLIArgs_DefaultsAndCore(t *testing.T) {
 			PermissionMode: "acceptEdits",
 		},
 	})
-	args := s.buildCLIArgs()
+	args := s.buildCLIArgs(false)
 
 	if !hasFlag(args, "-p") {
 		t.Error("missing -p")
@@ -89,7 +89,7 @@ func TestBuildCLIArgs_OptionalFlags(t *testing.T) {
 			AddDirs:            []string{"/extra/one", "/extra/two"},
 		},
 	})
-	args := s.buildCLIArgs()
+	args := s.buildCLIArgs(false)
 
 	if v := findFlag(args, "--fallback-model"); v != "haiku" {
 		t.Errorf("--fallback-model=%q", v)
@@ -131,7 +131,7 @@ func TestBuildCLIArgs_OmitsEmptyOptionals(t *testing.T) {
 			// MaxBudgetUSD=0, UseWorktree=false, empty slices and strings
 		},
 	})
-	args := s.buildCLIArgs()
+	args := s.buildCLIArgs(false)
 	joined := strings.Join(args, " ")
 
 	for _, omitted := range []string{
@@ -146,6 +146,44 @@ func TestBuildCLIArgs_OmitsEmptyOptionals(t *testing.T) {
 		if strings.Contains(joined, omitted) {
 			t.Errorf("expected %s to be omitted, but it is present: %s", omitted, joined)
 		}
+	}
+}
+
+// TestBuildCLIArgs_AutonomousInjectsAskUserProtocol verifies an autonomous
+// (task_source/auto_restart) run's system prompt teaches Claude the ask-user
+// marker convention, and that a configured SystemPromptAppend is preserved
+// alongside it rather than overwritten.
+func TestBuildCLIArgs_AutonomousInjectsAskUserProtocol(t *testing.T) {
+	s := New(Params{
+		Config: config.SessionConfig{
+			Model:              "sonnet",
+			SystemPromptAppend: "Be terse.",
+		},
+	})
+	args := s.buildCLIArgs(true)
+	v := findFlag(args, "--append-system-prompt")
+	if !strings.Contains(v, "Be terse.") {
+		t.Errorf("expected configured SystemPromptAppend to be preserved, got %q", v)
+	}
+	if !strings.Contains(v, "ask-user") {
+		t.Errorf("expected ask-user protocol instruction to be injected, got %q", v)
+	}
+}
+
+// TestBuildCLIArgs_NonAutonomousOmitsAskUserProtocol verifies an interactive
+// (no auto-restart, no task loop) run's prompt is left untouched — the user
+// is already reading every reply directly, so the marker convention would
+// just be unused instruction noise.
+func TestBuildCLIArgs_NonAutonomousOmitsAskUserProtocol(t *testing.T) {
+	s := New(Params{
+		Config: config.SessionConfig{
+			Model:              "sonnet",
+			SystemPromptAppend: "Be terse.",
+		},
+	})
+	args := s.buildCLIArgs(false)
+	if v := findFlag(args, "--append-system-prompt"); v != "Be terse." {
+		t.Errorf("--append-system-prompt = %q, want exactly the configured value", v)
 	}
 }
 
@@ -570,7 +608,7 @@ func TestBuildCLIArgs_ResumeReplaceSessionID(t *testing.T) {
 	s.resumeSessionID = "saved-cli-id-xyz"
 	s.mu.Unlock()
 
-	args := s.buildCLIArgs()
+	args := s.buildCLIArgs(false)
 	if !hasFlag(args, "--resume") {
 		t.Error("expected --resume flag")
 	}
@@ -586,7 +624,7 @@ func TestBuildCLIArgs_SessionIDWhenNoResume(t *testing.T) {
 	s := New(Params{
 		Config: config.SessionConfig{Model: "sonnet"},
 	})
-	args := s.buildCLIArgs()
+	args := s.buildCLIArgs(false)
 	if hasFlag(args, "--resume") {
 		t.Error("--resume must be absent on normal start")
 	}
@@ -607,7 +645,7 @@ func TestBuildCLIArgs_FallbackModelOmittedWhenUsingFallback(t *testing.T) {
 	s.usingFallback = true
 	s.activeModel = "haiku"
 
-	args := s.buildCLIArgs()
+	args := s.buildCLIArgs(false)
 	if v := findFlag(args, "--model"); v != "haiku" {
 		t.Errorf("--model should be haiku (active fallback), got %q", v)
 	}
@@ -622,7 +660,7 @@ func TestBuildCLIArgs_ActiveModelOverridesConfig(t *testing.T) {
 	})
 	s.activeModel = "opus"
 
-	args := s.buildCLIArgs()
+	args := s.buildCLIArgs(false)
 	if v := findFlag(args, "--model"); v != "opus" {
 		t.Errorf("--model = %q, want opus", v)
 	}
@@ -634,8 +672,34 @@ func TestInitialPromptText_Normal(t *testing.T) {
 	s := New(Params{
 		Config: config.SessionConfig{Prompt: "  do the thing  "},
 	})
-	if got := s.initialPromptText(); got != "do the thing" {
+	if got := s.initialPromptText(false); got != "do the thing" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestInitialPromptText_ForceInteractive(t *testing.T) {
+	s := New(Params{
+		Config: config.SessionConfig{Prompt: "normal prompt", TaskSource: "STATUS-P1.md"},
+	})
+	got := s.initialPromptText(true)
+	if got == "normal prompt" {
+		t.Error("should not use the normal task prompt when forced interactive")
+	}
+	if got == "" {
+		t.Error("force-interactive should return a non-empty prompt")
+	}
+}
+
+func TestInitialPromptText_RecoveryTakesPriorityOverForceInteractive(t *testing.T) {
+	s := New(Params{
+		Config: config.SessionConfig{CrashRecoveryPrompt: "resume please"},
+	})
+	s.mu.Lock()
+	s.resumeSessionID = "abc-123"
+	s.mu.Unlock()
+
+	if got := s.initialPromptText(true); got != "resume please" {
+		t.Errorf("got %q, want crash recovery prompt to take priority", got)
 	}
 }
 
@@ -647,7 +711,7 @@ func TestInitialPromptText_Recovery_DefaultPrompt(t *testing.T) {
 	s.resumeSessionID = "abc-123"
 	s.mu.Unlock()
 
-	got := s.initialPromptText()
+	got := s.initialPromptText(false)
 	if got == "normal prompt" {
 		t.Error("should not use normal prompt during recovery")
 	}
@@ -668,7 +732,7 @@ func TestInitialPromptText_Recovery_CustomPrompt(t *testing.T) {
 	s.resumeSessionID = "abc-123"
 	s.mu.Unlock()
 
-	if got := s.initialPromptText(); got != custom {
+	if got := s.initialPromptText(false); got != custom {
 		t.Errorf("got %q, want %q", got, custom)
 	}
 }
@@ -755,7 +819,7 @@ func TestSession_HandleLineTodoWrite(t *testing.T) {
 	})
 
 	line := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"TodoWrite","input":{"todos":[{"content":"Step A","status":"completed"},{"content":"Step B","status":"in_progress","activeForm":"Doing step B"}]}}]}}`
-	if done := s.handleLine(line); done {
+	if done := s.handleLine(line, false); done {
 		t.Error("TodoWrite line must not end the turn")
 	}
 

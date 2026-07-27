@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
+	"claude-manager/internal/logger"
 	"claude-manager/internal/store"
 )
 
@@ -193,6 +195,13 @@ func ExecutePlan(ctx context.Context, plan *TaskPlan, projectPath string, execut
 			wg.Add(1)
 			go func(idx int, target indexedSubtask) {
 				defer wg.Done()
+				defer func() {
+					if r := recover(); r != nil {
+						logger.L.Error("analysis.plan.subtask.panic",
+							"subtask_id", target.task.ID, "panic", r, "stack", string(debug.Stack()))
+						results[idx] = groupOutcome{id: target.task.ID, idx: target.idx, err: fmt.Errorf("subtask panic: %v", r)}
+					}
+				}()
 				res, err := executor.Execute(ctx, projectPath, target.task, contextAppend)
 				results[idx] = groupOutcome{id: target.task.ID, idx: target.idx, res: res, err: err}
 			}(i, sub)

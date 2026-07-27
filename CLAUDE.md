@@ -183,7 +183,7 @@ stdin otherwise.
 Key event types to parse:
 - `{"type":"system","subtype":"init",...}` — session info, model, tools, version
 - `{"type":"assistant","message":{"content":[...],"usage":{...}}}` — text/tool_use with per-turn token usage
-- `{"type":"result","total_cost_usd":...,"usage":{...},"modelUsage":{...}}` — final metrics
+- `{"type":"result","total_cost_usd":...,"usage":{...},"modelUsage":{...}}` — final metrics. In autonomous runs, its `result` text is also scanned for the ```` ```ask-user ```` marker (see "Ask-User Questions" below) before being treated as a finished turn.
 - `{"type":"stream_event",...}` — partial-message deltas (from `--include-partial-messages`); dropped silently, the full `assistant` message follows
 - `{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"|"allowed_warning"|"rejected",...}}` — rate limit status. Real Claude emits an informational `status:"allowed"` event on **every** session; only a rejecting status (`rejected`/`exceeded`/…) pauses/restarts the run. `allowed_warning` (with utilization) is surfaced to the UI but does not abort.
 
@@ -220,8 +220,25 @@ When `stop_when_no_tasks = true` and `task_source` is set, `Run()` checks the fi
 1. **Pointer format (canonical, primary).** The file contains bare pointer lines `<source>:NN` — one open task per line, priority top-down (e.g. `ROADMAP.md:92`, `MIXED-TASKS.md:102`, `crates/x/src/lib.rs:76`). Any bare pointer line (`^\S+:\d+$` after trim; headings `#`, quotes `>`, list markers `-`/`_`/`*` are ignored) → `true`. Completing a task = deleting its line; an empty file stops the loop. No In progress/Next sections, no checkboxes — "in progress" is tracked in the master list the pointers point to.
 2. **Legacy format.** Returns `true` if the file contains `"In progress:"` (a task is started) or both `"Next:"` and `"- ["` (queued tasks).
 
-Returns `false` (and stops the loop) otherwise or if the file is missing.
+Returns `false` otherwise or if the file is missing.
 The `task_source` path is resolved relative to `ProjectPath` when not absolute.
+
+**No pending tasks → interactive fallback, not a silent no-op.** When
+`hasTasks()` is `false`, `Run()` no longer just logs and flips the session back
+to Idle — from the UI that looked indistinguishable from clicking ▶ and
+nothing happening. Instead it emits a `system`-level log entry naming the empty
+`task_source` file, then launches one CLI turn with `runOnce(ctx, true)`
+(`forceInteractive`), so the user can hand it an ad-hoc task outside the plan.
+`forceInteractive` does two things inside `runOnce`: it forces `autonomous =
+false` regardless of `AutoRestart`/`StopWhenNoTasks` (stdin stays open after
+the turn's `result`, exactly like a manually-started interactive session), and
+`initialPromptText()` sends a dedicated "no pending tasks, wait for
+instructions" message instead of the session's configured task-source prompt
+(crash-recovery still takes priority over both). After that one `runOnce` call
+returns, `Run()` unconditionally goes Idle and exits — it does **not** rejoin
+the auto-restart loop, so the user must stop it manually (the Stop button) or
+it exits when the CLI process does. Covered by the `no-tasks-interactive` e2e
+scenario (`testdata/e2e/`, `testdata/scenarios/`, `testdata/configs/`).
 
 **Task description resolution (TaskPanel).** Once `hasTasks()` confirms work
 remains, `resolveTaskSourceDescription()` (`internal/session/session.go`)
@@ -297,6 +314,67 @@ roadmap went through this generate→approve flow — a project added via
 Settings' plain Projects tab (no roadmap) never has anything written to it
 by this mechanism.
 
+### CLAUDE.md Generation
+
+Detects a project with no `CLAUDE.md` and offers to generate one, instead of
+letting sessions there start with zero project context silently. The built-in
+`/init` slash command can't be driven programmatically — it only runs inside
+an interactive Claude Code session, there is no `claude -p "/init"` — so this
+replicates its intent as a plain prompt (`analysis.ClaudeMdInitPrompt`) instead
+of invoking `/init` itself.
+
+**Detection** (`Sidebar.svelte`): checked lazily per project, on the sidebar's
+project-header click (not a bulk scan of every configured project at startup).
+`HasClaudeMd(projectPath)` is a pure `os.Stat` — no config lookup, since the
+sidebar already has each project's path from `GetProjects`. A result of
+`false` shows a dismissible inline banner ("No CLAUDE.md in this project… ")
+above that project's session list; dismissal is client-side only (a `Set` in
+the component), not persisted.
+
+**Generation** (`GenerateClaudeMdSession`): mirrors the
+`ApproveRoadmap`/`upsertP1Session` pattern above — a canned prompt bootstrapped
+into a named, reusable session (`"Init"`) rather than a one-off CLI call, via
+the same `GetConfig`→mutate→`UpdateConfig` round-trip. `upsertInitSession`
+creates the session (Sonnet, the project's `default_permission_mode` or
+`bypassPermissions` if unset) if absent, or refreshes just its `Prompt` if
+present — a user's manual `Model`/`PermissionMode` override on "Init" survives
+being re-run. `ClaudeMdInitPrompt` (`internal/analysis/claudemd.go`) follows
+Anthropic's own CLAUDE.md guidance: under ~200 lines, specific/concise/
+verifiable, covers tech stack + build/test/lint commands + architecture, folds
+in any existing `.cursorrules`/`.clinerules`/`.github/copilot-instructions.md`/
+`AGENTS.md`, and explicitly avoids inventing gotchas or business context it
+can't verify — those are left for the maintainer to add by hand later. The
+prompt also tells Claude to read and refine an existing `CLAUDE.md` rather than
+overwrite it, so re-running "Init" later (e.g. after a roadmap-driven project
+has grown) is safe.
+
+The "Init" session runs as an ordinary interactive session (no `task_source`,
+no `auto_restart`) — one turn, then it stays open on stdin exactly like any
+manually-started session, so the user can ask for refinements in the same
+conversation. Not covered by an e2e scenario: `GenerateClaudeMdSession` isn't
+on `control.AppAPI` (same reasoning as `ApproveRoadmap`/`GenerateRoadmap`
+above — Wails-only, not control-plane-dispatched); its config-mutation logic
+(`upsertInitSession`) is unit-tested directly in `app_test.go` instead.
+
+### Ad-Hoc Chat Session
+
+The sidebar's per-project header has a 💬 button (`StartAdHocChatSession` →
+`onStartChat` in `Sidebar.svelte`) for when the user just wants to talk to
+Claude in a project and hand it instructions directly — no `task_source` file,
+no pre-configured session, no canned prompt. Same bootstrap-a-named-session
+pattern as `GenerateClaudeMdSession`/`upsertInitSession` above, but simpler:
+`upsertChatSession` creates a bare `"Chat"` `SessionConfig` (no `Prompt`, no
+`TaskSource`, no `AutoRestart` — `Model`/`Effort`/`PermissionMode` fall back to
+the usual `applySessionDefaults`) only if one doesn't already exist; re-clicking
+never overwrites a `"Chat"` session the user has since customized. An empty
+`Prompt` means `initialPromptText` sends nothing on launch, so the CLI process
+comes up and just waits on stdin for the user's first message — unlike the
+`forceInteractive` "no pending tasks" fallback (see "Task Source Check" above),
+which does send a synthetic "wait for instructions" turn because it's
+reacting to an *emptied* task queue rather than a session that never had one.
+Also not on `control.AppAPI` (same Wails-only reasoning as `GenerateClaudeMdSession`);
+`upsertChatSession` is unit-tested directly in `app_test.go`.
+
 ### Crash Recovery
 Mirrors `orchestrator.py` session state files (`.session-PN.json`).
 
@@ -318,6 +396,40 @@ When `fallback_model_on_rate_limit = true` and `fallback_model` is set:
 - If the fallback model is also rate-limited, the standard `waitRateLimit` pause applies.
 
 **Config:** `fallback_model_on_rate_limit = true` per session (default: false). Set `fallback_model = "haiku"`.
+
+### Live Model Switching
+
+Lets the user change a **running** session's model from a small dropdown in
+the sidebar (under each session's name, next to the start/stop button) instead
+of only choosing it before start. Real Claude CLI has no hot model swap
+mid-process — `--model` is fixed at launch — so this reuses the same
+`activeModel` override the rate-limit fallback above already relies on, and
+picks one of two paths depending on the session's lifecycle:
+
+- **Autonomous** (`task_source`/`auto_restart`, `Session.Autonomous()`):
+  `SessionManager.SetSessionModel` just calls `Session.SetModel` (updates
+  `activeModel`, leaves `Config.Model` — the persisted default — untouched)
+  and returns. One CLI process already equals one task there, so the next
+  task's `buildCLIArgs()` picks up the new model on its own; the task
+  currently in flight is not interrupted.
+- **Interactive** (one long-lived CLI process, no task boundary):
+  `SetSessionModel` soft-restarts it immediately — `StopSession` (hard),
+  then a private `startSessionResuming` (a `StartSessionWithOverride` twin)
+  relaunches with `Params.ResumeSessionID` pre-seeded to the stopped
+  session's `CLISessionID`, so `buildCLIArgs()` uses `--resume` and the
+  conversation continues instead of starting over. Whatever tool call was
+  in flight at that moment is interrupted — an accepted tradeoff for
+  actually taking effect immediately, since there's no natural task boundary
+  to wait for otherwise. `ResumeSessionID` is independent of the
+  `crash_recovery` setting: it seeds `Session.resumeSessionID` directly, so
+  the switch resumes the conversation even when `crash_recovery = false`;
+  a crash-recovery state file, if also present, still wins if it loads
+  first (same `resumeSessionID` in practice — both reflect the same
+  confirmed `system/init` session id).
+
+`SessionState.Model` (`GetSession`) reports `ActiveModel` (falling back to
+`Config.Model`) so the sidebar/status bar reflect a switch immediately,
+before the next `system/init` event confirms it from the CLI itself.
 
 ### Auth Error Handling (403)
 `drainStderr()` detects lines containing `"403"` + `"forbidden"` / `"authenticate"` / `"unauthorized"`.
@@ -362,13 +474,101 @@ The sidebar width is controlled from `App.svelte` via a draggable 4px divider. W
 ### Session Status Flow
 ```
 Idle → Starting → Working ⇄ WaitingPermission
-                    ↓
+                    ↓ ⇄ WaitingForUser
               RateLimited → Retrying → Working (loop)
                     ↓
               Stopping → Idle
                     ↓
                  Error
 ```
+
+### Ask-User Questions (Autonomous Sessions)
+
+A task_source/auto_restart loop resets its CLI conversation every task, so a
+question Claude asks in prose and never gets answered used to be silently
+lost — the next run starts fresh with no memory of it. The marker convention
+below fixes that, but an autonomous session is never watched live, so a run
+that just blocks on any question sits there forever with nobody to answer it
+(observed live: `Lumen browser/S1` asked "S8 merged — start S9 in this same
+session?" and idled in `waiting_for_user` all night). Two different fixes
+apply depending on *what* is being asked:
+
+- **Session/task boundary questions** ("should I keep working in this same
+  session?") have a deterministic answer per the one-session-per-task rule —
+  always no — so they are resolved instantly, without waiting for anyone.
+- **Genuine external decisions** (an ambiguous requirement, a stuck
+  investigation) still pause the run for a human, but with a 5-minute timeout
+  that auto-picks the first listed option so the run is never stuck forever.
+
+**Marker convention.** Every autonomous run's system prompt gets
+`askUserProtocolPrompt` (`internal/session/session.go`) appended via
+`--append-system-prompt`, alongside any configured `SystemPromptAppend` —
+never replacing it. It teaches Claude both forms of the fenced block:
+````
+```ask-user
+{"question": "<one sentence>", "options": ["Continue in this session", "Stop — a new session will pick up the next task"], "kind": "continue_session"}
+```
+````
+for the session-boundary case (end the turn immediately after emitting it —
+never keep working in the same reply), and the same block without `"kind"`
+for a genuine decision, with the instruction that unanswered options are
+tried in listed order — so list them by actual preference.
+
+**Detection** (`ParseAskUserQuestion`, `internal/session/parser.go`): a plain
+regex extracts the fenced block from the `result` event's text and decodes
+the JSON into `AskUserQuestion{Question, Options, Kind}`. A missing marker or
+malformed JSON returns `nil` — silently falling back to normal turn
+completion, since a false positive must never hang the session forever. Only
+checked when the run is autonomous (`(AutoRestart || StopWhenNoTasks) &&
+!forceInteractive`, the same flag that gates closing stdin) — an interactive
+session's user is already reading every reply directly.
+
+**`Kind == KindContinueSession` (`"continue_session"`)** (`handleLine`,
+`internal/session/session.go`): logs a `system`-level entry naming the
+question and returns `true` (finished turn) exactly as it would without the
+marker — `runOnce`'s autonomous branch still calls `closeInput()`, the CLI
+process exits normally, and `Run()`'s loop proceeds to its next iteration
+(fresh session, fresh `CLISessionID`). There is no pause and nothing to
+answer.
+
+**`Kind == ""` (a genuine decision)**: the session stores a
+`PendingQuestion{ID, Question, Options, AskedAt}` (`ID` is generated locally,
+not CLI-issued), sets status `WaitingForUser`, emits `session:question`, and
+— critically — returns `false` instead of the usual `true` for a result
+event. `runOnce`'s autonomous branch does **not** call `closeInput()`: stdin
+stays open, so the real Claude CLI process (which already keeps a process
+alive on open stdin between turns, see "Bidirectional Streaming" above)
+simply waits for the next turn instead of exiting. `Run()`'s outer loop is
+still blocked inside that one `runOnce` call, so no new task starts and no
+`EvtTaskDone` fires prematurely. `startQuestionTimeout` arms a
+`time.AfterFunc` (`Session.questionTimeout`, default 5 minutes, overridable
+via `Params.QuestionTimeoutSec` — tests use a 1s override) that calls
+`autoAnswerQuestion` if nobody responds in time; it re-checks the pending
+question still matches by ID (a real answer may have raced it), picks
+`Options[0]` (or a generic fallback if none were given), logs the auto-choice,
+and answers through the same path as a human.
+
+**Answering** (`AnswerQuestion` on `Session` and `SessionManager`, human or
+timeout): clears the pending question, cancels the timeout timer, writes the
+answer as a normal user turn on the same stdin, and returns status to
+`Working` — this continues the *same* CLI conversation (same `CLISessionID`,
+full context intact) rather than restarting a fresh run, so the answer
+actually reaches the decision that prompted it. The process-exit cleanup path
+in `runOnce` also stops any live timer and drops a stale `pendingQuestion` if
+the process ends some other way (killed, crashed) while a question was
+pending, so a later stray timer fire is a harmless no-op.
+
+**Frontend**: `SessionState.pending_question` (`session:question` event)
+drives `QuestionBanner.svelte` (rendered in `SessionView.svelte` next to
+`PermissionBanner`) — one button per parsed option plus a free-text field for
+anything else, both calling `AnswerQuestion(id, questionID, answer)`.
+`waitingSessions` (`stores/sessions.ts`) and the sidebar/status-bar "waiting"
+indicators treat `waiting_for_user` the same as `waiting_permission`. A
+`continue_session` marker never reaches the frontend at all — it's fully
+resolved on the backend before any event is emitted.
+
+Not wired into the control-plane/MCP tools yet (see "cm-mcp tools" below) —
+only the Wails binding exists so far.
 
 ### Mixed Programming (MIXED-TASKS.md, MP-01..08)
 
@@ -450,6 +650,9 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetPlan(planID)` | Load persisted plan with subtasks (poll during execution) |
 | `GenerateRoadmap(project, idea, model)` | Decompose a project idea into a draft roadmap plan (Opus by default) |
 | `ApproveRoadmap(planID, overwrite)` | Write ROADMAP.md/STATUS-P1.md into the project + bootstrap the "P1" session |
+| `HasClaudeMd(projectPath)` | Whether `<projectPath>/CLAUDE.md` exists (sidebar banner check) |
+| `GenerateClaudeMdSession(project)` | Bootstrap (or re-point) the "Init" session with `analysis.ClaudeMdInitPrompt` and start it |
+| `StartAdHocChatSession(project)` | Bootstrap (or reuse) a plain interactive "Chat" session (no prompt/task_source) and start it |
 | `RegisterMixedBrief(id, task, systemPrompt)` | Register a mixed-programming brief; returns id |
 | `DispatchMixedTask(project, briefID, workerName)` | Run the round loop; blocks until done/needs_human |
 | `GetMixedRounds(project)` | Persisted mixed tasks (rounds, patches, gates) for a project |
@@ -457,6 +660,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `CancelMixedTask(id)` | Cancel a running mixed task by ID |
 | `StartSession(project, name)` | Launch session with config model/effort |
 | `StartSessionWithModel(project, name, model, effort)` | Launch with model/effort override |
+| `SetSessionModel(id, model)` | Switch a running session's model live (see "Live Model Switching") |
 | `StopSession(id, soft)` | Stop (soft=true finishes current task first) |
 | `RestartSession(id)` | Hard stop + restart |
 | `ResumeSession(id)` | Resume from saved CLI session ID |
@@ -466,6 +670,8 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `SendMessage(id, message)` | Write user_message to stdin |
 | `RespondPermission(id, requestID, decision)` | Write permission response to stdin |
 | `GetPendingPermissions()` | All sessions with pending permission requests |
+| `AnswerQuestion(id, questionID, answer)` | Resolve a pending ask-user question (genuine decision), continuing the same conversation |
+| `GetPendingQuestions()` | All sessions currently blocked on a genuine-decision ask-user question |
 | `GetAllSessions()` | Snapshot of all session states |
 | `GetSessionLog(id, offset, limit)` | Paginated log entries |
 | `GetSessionMetrics(id)` | Token/cost metrics for one session |
@@ -667,6 +873,49 @@ time=2025-05-24T10:23:50Z level=ERROR msg=session.error id=lumen-browser/S2 erro
 - Config: TOML with sensible defaults. Zero values mean "disabled" or "unlimited" (e.g., `max_budget_usd = 0` means no limit)
 - IDs: sessions identified as `"{project}/{session}"` (e.g., `"lumen/P1"`)
 - No `window.confirm()` — disabled in Wails WebView2. Use two-click or custom modal patterns instead
+
+## Communication
+
+- **Reply language: Russian.** The user writes in Russian; match it even though code, comments, and this file stay in English.
+- **Tone: direct and technical.** State what changed and why; skip preamble and trailing summaries unless asked.
+
+## Git workflow
+
+- Current branch is `master`; there is no enforced feature-branch policy — direct commits to `master` are the norm for this solo project. Only branch off when the user asks for isolation (e.g. a risky exploratory change).
+- Commit messages: Conventional Commits style (`fix:`, `feat:`, `refactor:` — see `git log` for examples), English, imperative subject line, body explains *why* when non-obvious.
+- Never `--no-verify`, `--force`, `git config`, or `git push` without the user explicitly asking — same rule this repo's own session manager enforces on the projects *it* drives (see permission handling above), applied to itself.
+
+## Known gotchas
+
+- **`window.confirm()` is disabled in Wails WebView2** and always returns `false` — see Conventions above; every confirmation flow in this codebase uses a two-click button or an inline banner instead.
+- **`HideWindowOnClose: true`** (`main.go`) means closing the main window (✕) only hides it to the system tray — it does **not** quit the app or stop sessions. Only the tray "Quit" menu item (`runtime.Quit` → `app.shutdown` → `manager.Shutdown()` → `StopAll()`) stops every running CLI process.
+- **systray must start before `wails.Run`** and is torn down via `systray.Quit()` from `app.shutdown` — see the ordering comment in `main.go`. Getting this backwards leaves an orphaned tray icon after quit.
+- **Pure-Go SQLite (`modernc.org/sqlite`), not `mattn/go-sqlite3`.** Deliberate: avoids requiring a CGO/C toolchain on a machine that only has Go installed. Don't swap it for a CGO driver without a strong reason.
+- **No `.gitattributes`** — line endings are whatever Git's `core.autocrlf` does locally. A `git diff`/`git add` on Windows may print `LF will be replaced by CRLF` warnings; this is expected noise, not a bug.
+- **fakeclaude/testkit scenarios match by prompt keyword regex** (`internal/testkit/scenario.go:MatchScenario`), not by session name — a new e2e scenario needs a prompt substring distinct enough not to collide with an existing scenario's `match` regex (see `testdata/scenarios/scenarios_doc.md`).
+
+## Doc-sync update matrix
+
+Update docs **in the same change** as the code, not as a follow-up:
+
+| Change | Update |
+|---|---|
+| New/changed Wails-bound method on `App` | Row in the "Wails Bindings (app.go)" table above |
+| New `SessionConfig`/`ProjectConfig`/`GlobalSettings` field | `config.example.toml` + relevant PLAN.md section + this file |
+| New stream-json event type or field the parser handles | "Stream-JSON Events (stdout)" section above |
+| New `cm-mcp` tool | "cm-mcp tools available to Claude" table above |
+| New fakeclaude/fakeworker scenario | `testdata/scenarios/scenarios_doc.md` entry describing state/feature covered and its `match` pattern |
+| New app-level task breakdown item done | Corresponding checkbox/row in `TASKS.md` / `HARNESS-TASKS.md` / `MIXED-TASKS.md` |
+
+## When in doubt
+
+- **Wails binding signatures / IPC shape** — the "Wails Bindings (app.go)" table above, then `app.go` itself.
+- **Session lifecycle / CLI flags** — "Bidirectional Streaming" and "CLI Launch Command" above, then `internal/session/session.go`.
+- **Why a design decision was made** — "Key Design Decisions" above; if still unclear, `git log -p` on the relevant file.
+- **What's left to build** — `TASKS.md` / `HARNESS-TASKS.md` / `MIXED-TASKS.md`.
+- **How to test without spending API tokens** — "Testing & Control Harness" section above.
+
+If none of these answer it — ask the user, don't assume.
 
 ## Reference
 

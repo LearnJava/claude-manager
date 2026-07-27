@@ -2,6 +2,7 @@ package session
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -138,6 +139,79 @@ func TestRespondPermissionMissing(t *testing.T) {
 	m := newTestManager(t)
 	if err := m.RespondPermission("nope/x", "r1", "allow"); err == nil {
 		t.Error("expected error responding for unknown session")
+	}
+}
+
+func TestSetSessionModelMissing(t *testing.T) {
+	m := newTestManager(t)
+	if err := m.SetSessionModel("nope/x", "opus"); err == nil {
+		t.Error("expected error setting model for unknown session")
+	}
+}
+
+// TestSetSessionModel_NeverStartedUpdatesConfig verifies a session that is
+// configured but was never started in this app process (no managedSession
+// yet — the sidebar shows it via GetAllSessions' "configured" stub) still
+// lets the model be switched: there's nothing running, so it just updates
+// the in-memory config default for the next start.
+func TestSetSessionModel_NeverStartedUpdatesConfig(t *testing.T) {
+	m := newTestManager(t)
+	if err := m.SetSessionModel("lumen/P1", "opus"); err != nil {
+		t.Fatalf("SetSessionModel: %v", err)
+	}
+	_, sc, err := m.findConfig("lumen", "P1")
+	if err != nil {
+		t.Fatalf("findConfig: %v", err)
+	}
+	if sc.Model != "opus" {
+		t.Errorf("Model = %q, want opus", sc.Model)
+	}
+}
+
+func TestSetSessionModelEmptyRejected(t *testing.T) {
+	m := newTestManager(t)
+	addStubSession(m, "lumen", "P1")
+	if err := m.SetSessionModel("lumen/P1", "  "); err == nil {
+		t.Error("expected error for a blank model")
+	}
+}
+
+// TestSetSessionModel_Autonomous verifies an autonomous session's model
+// switch never restarts it: the running task keeps going, only the next
+// task's launch (via Session.ActiveModel) sees the new value.
+func TestSetSessionModel_Autonomous(t *testing.T) {
+	m := newTestManager(t)
+	ms := addStubSession(m, "lumen", "P1")
+	ms.session.Config.AutoRestart = true
+	ms.session.setStatus(config.StatusWorking)
+
+	if err := m.SetSessionModel("lumen/P1", "opus"); err != nil {
+		t.Fatalf("SetSessionModel: %v", err)
+	}
+	if got := ms.session.ActiveModel(); got != "opus" {
+		t.Errorf("ActiveModel = %q, want opus", got)
+	}
+	// No restart attempted: status is untouched by SetSessionModel itself.
+	if got := ms.session.Status(); got != config.StatusWorking {
+		t.Errorf("status = %s, want it to stay working (no restart for an autonomous session)", got)
+	}
+}
+
+// TestSetSessionModel_InteractiveIdle verifies an interactive session with
+// nothing currently running just updates the model — there is no live
+// process to restart.
+func TestSetSessionModel_InteractiveIdle(t *testing.T) {
+	m := newTestManager(t)
+	ms := addStubSession(m, "lumen", "P1")
+
+	if err := m.SetSessionModel("lumen/P1", "opus"); err != nil {
+		t.Fatalf("SetSessionModel: %v", err)
+	}
+	if got := ms.session.ActiveModel(); got != "opus" {
+		t.Errorf("ActiveModel = %q, want opus", got)
+	}
+	if got := ms.session.Status(); got != config.StatusIdle {
+		t.Errorf("status = %s, want idle", got)
 	}
 }
 
@@ -539,5 +613,103 @@ func TestManager_ForwardsTodoEvent(t *testing.T) {
 	}
 	if len(st.Todos) != 2 || st.CurrentTask != "Doing step B" {
 		t.Errorf("unexpected session state: todos=%+v current=%q", st.Todos, st.CurrentTask)
+	}
+}
+
+// TestManager_ContinueSessionQuestion_LoggedNotBlocked verifies a
+// KindContinueSession marker is surfaced as a plain log entry instead of
+// pausing the session — per the one-session-per-task rule the answer to
+// "continue in this session?" is always no, so nobody waits around to
+// answer it: the run ends exactly like any other completed turn.
+func TestManager_ContinueSessionQuestion_LoggedNotBlocked(t *testing.T) {
+	m := newTestManager(t)
+	em := &captureEmitter{}
+	m.emitter = em
+	ms := addStubSession(m, "lumen", "P1")
+
+	line := resultLineWithAskUserKind("Start S9 now?", KindContinueSession)
+	done := ms.session.handleLine(line, true)
+	if !done {
+		t.Error("a continue_session marker must still report the turn as finished — nobody waits for it")
+	}
+
+	st, ok := m.GetSession("lumen/P1")
+	if !ok {
+		t.Fatal("GetSession failed")
+	}
+	if st.Status == "waiting_for_user" {
+		t.Errorf("status = %q, must not be waiting_for_user", st.Status)
+	}
+
+	var sawQuestionLog bool
+	for _, e := range em.events {
+		if e.Name != EventNameLog {
+			continue
+		}
+		if le, ok := e.Data.(LogEvent); ok && strings.Contains(le.Entry.Message, "Start S9 now?") {
+			sawQuestionLog = true
+		}
+	}
+	if !sawQuestionLog {
+		t.Error("expected the question to be recorded as a log entry")
+	}
+}
+
+// TestAnswerQuestionMissing verifies AnswerQuestion rejects an unknown
+// session instead of panicking.
+func TestAnswerQuestionMissing(t *testing.T) {
+	m := newTestManager(t)
+	if err := m.AnswerQuestion("nope/x", "q1", "answer"); err == nil {
+		t.Error("expected error answering for unknown session")
+	}
+}
+
+// TestManager_QuestionFlow verifies a default-kind (genuine decision)
+// ask-user question surfaces through GetPendingQuestions/GetSession and
+// clears once answered — the flow the UI banner relies on (see CLAUDE.md
+// "Ask-User Questions (Autonomous Sessions)").
+func TestManager_QuestionFlow(t *testing.T) {
+	m := newTestManager(t)
+	em := &captureEmitter{}
+	m.emitter = em
+	ms := addStubSession(m, "lumen", "P1")
+
+	line := resultLineWithAskUser("Which budget?")
+	ms.session.handleLine(line, true)
+
+	pending := m.GetPendingQuestions()
+	if len(pending) != 1 || pending[0].SessionID != "lumen/P1" {
+		t.Fatalf("unexpected pending questions: %+v", pending)
+	}
+	if pending[0].Question.Question != "Which budget?" {
+		t.Errorf("unexpected question text: %+v", pending[0].Question)
+	}
+
+	st, ok := m.GetSession("lumen/P1")
+	if !ok {
+		t.Fatal("GetSession failed")
+	}
+	if st.Status != "waiting_for_user" {
+		t.Errorf("status = %q, want waiting_for_user", st.Status)
+	}
+	if st.PendingQuestion == nil || st.PendingQuestion.Question != "Which budget?" {
+		t.Errorf("SessionState.PendingQuestion = %+v", st.PendingQuestion)
+	}
+
+	var sawQuestionEvent bool
+	for _, e := range em.events {
+		if e.Name == EventNameQuestion {
+			sawQuestionEvent = true
+		}
+	}
+	if !sawQuestionEvent {
+		t.Error("expected a session:question event to be emitted")
+	}
+
+	// Answering clears the pending question even though there is no live CLI
+	// process in this test to actually accept the stdin write.
+	_ = m.AnswerQuestion("lumen/P1", pending[0].Question.ID, "Keep the 2ms budget")
+	if got := m.GetPendingQuestions(); len(got) != 0 {
+		t.Errorf("expected no pending questions after answering, got %+v", got)
 	}
 }

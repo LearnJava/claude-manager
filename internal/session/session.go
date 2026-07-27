@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,6 +35,7 @@ const (
 	EvtResult     = "result"
 	EvtRateLimit  = "rate_limit"
 	EvtPermission = "permission"
+	EvtQuestion   = "question"
 	EvtUsage      = "usage"
 	EvtTaskDone   = "task_done"
 	EvtTodo       = "todo"
@@ -51,6 +53,7 @@ type SessionEvent struct {
 	Result         *SessionResult
 	RateLimit      *RateLimitInfo
 	Permission     *PermissionRequest
+	Question       *PendingQuestion
 	Usage          *TokenUsage
 	TasksDone      int
 	Todos          []TodoItem
@@ -85,6 +88,18 @@ func userMessage(text string) InputMessage {
 	return InputMessage{Type: "user", Message: InputPayload{Role: "user", Content: text}}
 }
 
+// PendingQuestion is a session's currently open ask-user question (Kind ==
+// "", see AskUserQuestion), awaiting the user's answer or the timeout
+// fallback (see askUserTimeout). The CLI process is kept alive on open stdin
+// specifically so AnswerQuestion (or the timeout's auto-answer) can continue
+// the same conversation instead of the run loop restarting from scratch.
+type PendingQuestion struct {
+	ID       string    `json:"id"`
+	Question string    `json:"question"`
+	Options  []string  `json:"options"`
+	AskedAt  time.Time `json:"asked_at"`
+}
+
 // PermissionResponseMessage is the stream-json reply to a permission_request.
 type PermissionResponseMessage struct {
 	Type      string `json:"type"`
@@ -105,10 +120,25 @@ type Params struct {
 	RateLimitPauseSec int // seconds, fallback when no resetsAt is provided
 	OnEvent           EventCallback
 
+	// QuestionTimeoutSec bounds how long a pending ask-user question (see
+	// PendingQuestion) waits for a human answer before the session
+	// auto-answers with the question's first listed option. 0 uses the
+	// 5-minute default; tests override it to keep runtime short.
+	QuestionTimeoutSec int
+
 	// Crash recovery: if non-nil, the session persists its CLI session ID to
 	// disk so it can be resumed after an unexpected app restart.
 	StateStore    *StateStore
 	CrashRecovery bool
+
+	// ResumeSessionID pre-seeds resumeSessionID for one immediate --resume on
+	// the first launch (see SessionManager.SetSessionModel: an interactive
+	// session has no task boundary to pick up a model change at, so it is
+	// soft-restarted into a fresh Session that resumes the same conversation).
+	// A crash-recovery state file, if present, still takes precedence — it
+	// reflects a more recent confirmed session_id than this constructor-time
+	// value.
+	ResumeSessionID string
 }
 
 // Session is a single Claude CLI process managed by a goroutine.
@@ -123,19 +153,22 @@ type Session struct {
 	claudePath        string
 	retryDelay        int
 	rateLimitPauseSec int
+	questionTimeout   time.Duration
 	onEvent           EventCallback
 
-	mu             sync.Mutex
-	status         config.SessionStatus
-	currentTask    string
-	taskSourceDesc string
-	todos          []TodoItem
-	branch         string
-	tasksDone      int
-	startedAt      time.Time
-	lastActivity   time.Time
-	rateLimitUntil time.Time
-	pendingPerm    *PermissionRequest
+	mu              sync.Mutex
+	status          config.SessionStatus
+	currentTask     string
+	taskSourceDesc  string
+	todos           []TodoItem
+	branch          string
+	tasksDone       int
+	startedAt       time.Time
+	lastActivity    time.Time
+	rateLimitUntil  time.Time
+	pendingPerm     *PermissionRequest
+	pendingQuestion *PendingQuestion
+	questionTimer   *time.Timer
 
 	// Per-run state.
 	cmd          *exec.Cmd
@@ -189,6 +222,9 @@ func New(p Params) *Session {
 	if p.RateLimitPauseSec <= 0 {
 		p.RateLimitPauseSec = 300
 	}
+	if p.QuestionTimeoutSec <= 0 {
+		p.QuestionTimeoutSec = 300
+	}
 	return &Session{
 		ID:                p.ID,
 		ProjectName:       p.ProjectName,
@@ -198,11 +234,13 @@ func New(p Params) *Session {
 		claudePath:        p.ClaudePath,
 		retryDelay:        p.RetryDelay,
 		rateLimitPauseSec: p.RateLimitPauseSec,
+		questionTimeout:   time.Duration(p.QuestionTimeoutSec) * time.Second,
 		onEvent:           p.OnEvent,
 		status:            config.StatusIdle,
 		stateStore:        p.StateStore,
 		crashRecovery:     p.CrashRecovery,
 		activeModel:       p.Config.Model,
+		resumeSessionID:   p.ResumeSessionID,
 	}
 }
 
@@ -220,6 +258,35 @@ func (s *Session) TasksDone() int {
 	return s.tasksDone
 }
 
+// Autonomous reports whether this session's Run loop restarts automatically
+// between tasks (task_source or auto_restart) — one CLI process already
+// equals one task there, so SetModel needs no restart to take effect: the
+// next task's launch picks up the new activeModel on its own. An interactive
+// session has no such boundary (it's one long-lived CLI process), which is
+// why SetModel's caller (SessionManager.SetSessionModel) soft-restarts it.
+func (s *Session) Autonomous() bool {
+	return s.Config.AutoRestart || s.Config.StopWhenNoTasks
+}
+
+// ActiveModel returns the model actually used for the next (or current)
+// launch, which can differ from Config.Model after SetModel or an automatic
+// rate-limit fallback switch.
+func (s *Session) ActiveModel() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.activeModel
+}
+
+// SetModel changes the model used for this session's CLI process going
+// forward. It only updates the live activeModel override, not the persisted
+// Config.Model — this is a one-off runtime choice, not a change to the
+// session's configured default.
+func (s *Session) SetModel(model string) {
+	s.mu.Lock()
+	s.activeModel = model
+	s.mu.Unlock()
+}
+
 // PendingPermission returns a snapshot of the pending request (or nil).
 func (s *Session) PendingPermission() *PermissionRequest {
 	s.mu.Lock()
@@ -231,21 +298,35 @@ func (s *Session) PendingPermission() *PermissionRequest {
 	return &cp
 }
 
+// PendingQuestion returns a snapshot of the pending ask-user question (or nil).
+func (s *Session) PendingQuestion() *PendingQuestion {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pendingQuestion == nil {
+		return nil
+	}
+	cp := *s.pendingQuestion
+	return &cp
+}
+
 // Snapshot is a point-in-time copy of the session's mutable state, taken
 // under the session mutex so the manager can build SessionState views for
 // the frontend without racing with the run loop.
 type Snapshot struct {
-	Status         config.SessionStatus
-	StartedAt      time.Time
-	LastActivity   time.Time
-	RateLimitUntil time.Time
-	CurrentTask    string
-	TaskSourceDesc string
-	Todos          []TodoItem
-	Branch         string
-	TasksDone      int
-	CLISessionID   string
-	PendingPerm    *PermissionRequest
+	Status          config.SessionStatus
+	StartedAt       time.Time
+	LastActivity    time.Time
+	RateLimitUntil  time.Time
+	CurrentTask     string
+	TaskSourceDesc  string
+	Todos           []TodoItem
+	Branch          string
+	TasksDone       int
+	CLISessionID    string
+	ActiveModel     string
+	StopRequested   bool
+	PendingPerm     *PermissionRequest
+	PendingQuestion *PendingQuestion
 }
 
 // Snapshot returns a thread-safe copy of the session's mutable fields.
@@ -263,10 +344,16 @@ func (s *Session) Snapshot() Snapshot {
 		Branch:         s.branch,
 		TasksDone:      s.tasksDone,
 		CLISessionID:   s.CLISessionID,
+		ActiveModel:    s.activeModel,
+		StopRequested:  s.softStop.Load(),
 	}
 	if s.pendingPerm != nil {
 		cp := *s.pendingPerm
 		snap.PendingPerm = &cp
+	}
+	if s.pendingQuestion != nil {
+		cp := *s.pendingQuestion
+		snap.PendingQuestion = &cp
 	}
 	return snap
 }
@@ -337,6 +424,83 @@ func (s *Session) RespondPermission(requestID, decision string) error {
 	return nil
 }
 
+// AnswerQuestion resolves a pending ask-user question (see PendingQuestion):
+// clears it, cancels the timeout fallback, writes the chosen/typed answer to
+// stdin as a normal user turn, and returns the session to Working. The CLI
+// process stayed alive on open stdin specifically so this continues the same
+// conversation instead of a fresh run starting from scratch with no memory
+// of the question. Also called internally by the timeout fallback (see
+// autoAnswerQuestion) when nobody answers in time.
+func (s *Session) AnswerQuestion(questionID, answer string) error {
+	s.mu.Lock()
+	if s.pendingQuestion == nil || s.pendingQuestion.ID != questionID {
+		s.mu.Unlock()
+		return fmt.Errorf("session %s: no pending question with id %q", s.ID, questionID)
+	}
+	s.pendingQuestion = nil
+	if s.questionTimer != nil {
+		s.questionTimer.Stop()
+		s.questionTimer = nil
+	}
+	s.mu.Unlock()
+
+	data, err := json.Marshal(userMessage(answer))
+	if err != nil {
+		return err
+	}
+	if err := s.queueInput(append(data, '\n')); err != nil {
+		return err
+	}
+	s.setStatus(config.StatusWorking)
+	return nil
+}
+
+// startQuestionTimeout arms the timeout fallback for a newly pending
+// question: if nobody calls AnswerQuestion within s.questionTimeout, the
+// session auto-answers with the question's first listed option so an
+// unattended run is never stuck forever waiting for a human who isn't
+// watching.
+func (s *Session) startQuestionTimeout(pq *PendingQuestion) {
+	id := pq.ID
+	s.mu.Lock()
+	if s.questionTimer != nil {
+		s.questionTimer.Stop()
+	}
+	s.questionTimer = time.AfterFunc(s.questionTimeout, func() {
+		s.autoAnswerQuestion(id)
+	})
+	s.mu.Unlock()
+}
+
+// autoAnswerQuestion is the timeout fallback body. It re-checks the pending
+// question still matches id (a real answer may have raced it) before acting,
+// picks the first listed option (or a generic fallback if none were given),
+// logs the auto-decision for visibility, and answers through the normal path.
+func (s *Session) autoAnswerQuestion(id string) {
+	s.mu.Lock()
+	pq := s.pendingQuestion
+	s.mu.Unlock()
+	if pq == nil || pq.ID != id {
+		return // already answered, or superseded
+	}
+
+	answer := "Proceed with the first listed option."
+	if len(pq.Options) > 0 {
+		answer = pq.Options[0]
+	}
+	logger.L.Info("session.question_timeout", "id", s.ID, "question", pq.Question, "answer", answer)
+	s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+		Time:   time.Now(),
+		Level:  "system",
+		Source: "manager",
+		Message: fmt.Sprintf(
+			"No answer within %s — auto-selecting the first option: %s",
+			s.questionTimeout, answer,
+		),
+	}})
+	_ = s.AnswerQuestion(id, answer)
+}
+
 // queueInput sends a pre-marshalled JSON line to the input channel.
 // Blocks briefly if the writer is slow; returns an error if the channel
 // is closed (session not running).
@@ -363,6 +527,20 @@ func (s *Session) queueInput(line []byte) error {
 // session is soft-stopped, or auto-restart is disabled and the current
 // process exits.
 func (s *Session) Run(ctx context.Context) {
+	// A panic anywhere in the run loop (or anything it calls synchronously —
+	// parsing, hooks, DB writes) would otherwise crash the whole
+	// claude-manager process, which on Windows cascades into killing every
+	// other active session's CLI process too (see logger.Recover doc).
+	// Recovering here keeps the blast radius to this one session: it is
+	// surfaced as an error status instead of silently vanishing.
+	defer func() {
+		if r := recover(); r != nil {
+			logger.L.Error("session.run.panic", "id", s.ID, "panic", r, "stack", string(debug.Stack()))
+			s.setStatus(config.StatusError)
+			s.emitErr(fmt.Errorf("session panic: %v", r))
+		}
+	}()
+
 	s.mu.Lock()
 	s.startedAt = time.Now()
 	s.mu.Unlock()
@@ -425,7 +603,33 @@ func (s *Session) Run(ctx context.Context) {
 				taskPath = filepath.Join(s.ProjectPath, taskPath)
 			}
 			if s.Config.StopWhenNoTasks && !hasTasks(taskPath) {
-				logger.L.Info("session.run.no_tasks", "id", s.ID, "source", taskPath)
+				// No queued work: rather than silently refusing to start (which looks
+				// like a no-op from the UI), launch a plain interactive session so the
+				// user can hand it an ad-hoc task outside the plan. It intentionally
+				// does not join the autonomous auto-restart loop — nothing here
+				// re-checks the task source, so the user must stop it manually.
+				logger.L.Info("session.run.no_tasks_interactive", "id", s.ID, "source", taskPath)
+				s.setTaskSourceDesc("")
+				s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+					Time:   time.Now(),
+					Level:  "system",
+					Source: "manager",
+					Message: fmt.Sprintf(
+						"No pending tasks in %s — starting a plain interactive session (no queued work, no auto-restart). Stop it manually when you're done.",
+						s.Config.TaskSource,
+					),
+				}})
+				s.setStatus(config.StatusStarting)
+				err := s.runOnce(ctx, true)
+				s.mu.Lock()
+				s.resumeSessionID = ""
+				s.mu.Unlock()
+				if err != nil && !errors.Is(err, errRateLimited) && !errors.Is(err, errAuthError) {
+					s.emitErr(err)
+				}
+				if s.crashRecovery && s.stateStore != nil {
+					s.stateStore.Clear(s.ProjectName, s.Config.Name)
+				}
 				s.setStatus(config.StatusIdle)
 				return
 			}
@@ -436,7 +640,7 @@ func (s *Session) Run(ctx context.Context) {
 		}
 
 		s.setStatus(config.StatusStarting)
-		err := s.runOnce(ctx)
+		err := s.runOnce(ctx, false)
 
 		// Clear resumeSessionID after the first runOnce attempt regardless of
 		// outcome — subsequent runs in the same process start fresh.
@@ -673,7 +877,11 @@ func isAuthError(line string) bool {
 }
 
 // runOnce launches one Claude CLI process and pumps its I/O until exit.
-func (s *Session) runOnce(ctx context.Context) error {
+// forceInteractive overrides the autonomous (auto-restart / task-loop) mode
+// for this run: stdin stays open after the turn's result and a task-source
+// prompt is not sent, so it behaves like a plain chat session that only ends
+// when the user stops it or the process exits.
+func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	// Each run is a fresh CLI conversation (one task per process), so the
 	// previous task's todo list no longer describes what this run is doing.
 	s.updateTodos(nil)
@@ -691,7 +899,16 @@ func (s *Session) runOnce(ctx context.Context) error {
 		}
 	}
 
-	args := s.buildCLIArgs()
+	// In autonomous mode the manager owns the session lifecycle: one CLI process
+	// handles one task/turn, then restarts with a fresh context (see PLAN.md
+	// token optimization). Real Claude CLI keeps its process alive waiting on
+	// stdin after each result, so we must close stdin when the turn's `result`
+	// event arrives — otherwise the process idles forever and the Run loop never
+	// iterates to re-check the task source. Interactive sessions (no auto-restart
+	// and no task loop) keep stdin open so the user can continue the conversation.
+	autonomous := (s.Config.AutoRestart || s.Config.StopWhenNoTasks) && !forceInteractive
+
+	args := s.buildCLIArgs(autonomous)
 
 	logger.L.Debug("session.launch",
 		"id", s.ID,
@@ -754,16 +971,18 @@ func (s *Session) runOnce(ctx context.Context) error {
 	writerDone := make(chan struct{})
 	go func() {
 		defer close(writerDone)
+		defer logger.Recover("session.input_writer", "id", s.ID)
 		inputWriter(stdin, inputCh)
 	}()
 
 	stderrDone := make(chan struct{})
 	go func() {
 		defer close(stderrDone)
+		defer logger.Recover("session.drain_stderr", "id", s.ID)
 		s.drainStderr(stderr)
 	}()
 
-	if p := s.initialPromptText(); p != "" {
+	if p := s.initialPromptText(forceInteractive); p != "" {
 		preview := p
 		if len(preview) > 200 {
 			preview = preview[:200] + "…"
@@ -779,19 +998,10 @@ func (s *Session) runOnce(ctx context.Context) error {
 	var closeInputOnce sync.Once
 	closeInput := func() { closeInputOnce.Do(func() { close(inputCh) }) }
 
-	// In autonomous mode the manager owns the session lifecycle: one CLI process
-	// handles one task/turn, then restarts with a fresh context (see PLAN.md
-	// token optimization). Real Claude CLI keeps its process alive waiting on
-	// stdin after each result, so we must close stdin when the turn's `result`
-	// event arrives — otherwise the process idles forever and the Run loop never
-	// iterates to re-check the task source. Interactive sessions (no auto-restart
-	// and no task loop) keep stdin open so the user can continue the conversation.
-	autonomous := s.Config.AutoRestart || s.Config.StopWhenNoTasks
-
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
-		if s.handleLine(scanner.Text()) && autonomous {
+		if s.handleLine(scanner.Text(), autonomous) && autonomous {
 			closeInput()
 		}
 	}
@@ -808,6 +1018,14 @@ func (s *Session) runOnce(ctx context.Context) error {
 	s.stdinPipe = nil
 	s.cancelRun = nil
 	s.inputCh = nil
+	// A process that exited (killed, crashed, or errored) while a question
+	// was still pending leaves no live stdin for the timeout fallback to
+	// answer into — drop it so a later stray timer fire is a harmless no-op.
+	if s.questionTimer != nil {
+		s.questionTimer.Stop()
+		s.questionTimer = nil
+	}
+	s.pendingQuestion = nil
 	s.mu.Unlock()
 
 	if s.authErrorHit.Load() {
@@ -831,7 +1049,9 @@ func (s *Session) runOnce(ctx context.Context) error {
 
 // initialPromptText returns the prompt to send at session start.
 // When recovering from a crash, returns the CrashRecoveryPrompt (or a default).
-func (s *Session) initialPromptText() string {
+// forceInteractive (no queued tasks, see Run()) takes over only when there is
+// nothing to recover — an interrupted task still takes priority.
+func (s *Session) initialPromptText(forceInteractive bool) string {
 	s.mu.Lock()
 	recovering := s.resumeSessionID != ""
 	s.mu.Unlock()
@@ -841,6 +1061,13 @@ func (s *Session) initialPromptText() string {
 			return p
 		}
 		return "The session was interrupted unexpectedly. Please check git status, review your task file, and continue from where you left off."
+	}
+	if forceInteractive {
+		return fmt.Sprintf(
+			"There are currently no pending tasks queued in %s. Skip the usual session-start task protocol — just "+
+				"confirm briefly that you're ready, then wait for the user to give you an ad-hoc instruction directly.",
+			s.Config.TaskSource,
+		)
 	}
 	return strings.TrimSpace(s.Config.Prompt)
 }
@@ -860,8 +1087,16 @@ func (s *Session) sendInitialPrompt(ch chan<- []byte, prompt string) error {
 }
 
 // handleLine parses one stream-json line and dispatches the event. It returns
-// true when the line was a result event, i.e. the current turn/task finished.
-func (s *Session) handleLine(line string) bool {
+// true when the line was a result event that finished the current turn/task.
+// autonomous gates ask-user marker detection (see ParseAskUserQuestion): an
+// interactive session's user is already reading every reply directly, so the
+// marker convention only matters in an unattended task-source/auto_restart
+// loop. A Kind == KindContinueSession marker is auto-resolved instantly (per
+// the one-session-per-task rule the answer is always to stop, so nobody
+// waits for it — same as if no marker had been emitted). Any other marker
+// pauses the run for a genuine human decision, with a timeout fallback (see
+// startQuestionTimeout) so an unattended run is never stuck forever.
+func (s *Session) handleLine(line string, autonomous bool) bool {
 	ev := ParseLine(line)
 
 	s.mu.Lock()
@@ -912,6 +1147,45 @@ func (s *Session) handleLine(line string) bool {
 			if isAuthError(ev.Result.ResultText) {
 				s.authErrorHit.Store(true)
 				logger.L.Error("session.auth_error_detected", "id", s.ID, "line", ev.Result.ResultText)
+			}
+			if autonomous {
+				if q := ParseAskUserQuestion(ev.Result.ResultText); q != nil {
+					if q.Kind == KindContinueSession {
+						logger.L.Info("session.question_auto", "id", s.ID, "question", q.Question)
+						s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+							Time:   time.Now(),
+							Level:  "system",
+							Source: "manager",
+							Message: fmt.Sprintf(
+								"Session asked whether to continue in this session — always no: stopping now, a fresh session will pick up the next task: %s",
+								q.Question,
+							),
+						}})
+						s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
+						return true
+					}
+
+					pq := &PendingQuestion{
+						ID:       uuid.NewString(),
+						Question: q.Question,
+						Options:  q.Options,
+						AskedAt:  time.Now(),
+					}
+					s.mu.Lock()
+					s.pendingQuestion = pq
+					s.mu.Unlock()
+					s.setStatus(config.StatusWaitingForUser)
+					logger.L.Info("session.question", "id", s.ID, "question", pq.Question)
+					cp := *pq
+					s.emit(SessionEvent{Type: EvtQuestion, Question: &cp})
+					s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
+					s.startQuestionTimeout(pq)
+					// Do not report this as a finished turn: stdin stays open so
+					// the CLI process (and its conversation) survives until
+					// AnswerQuestion (human or timeout fallback) writes the reply
+					// as the next turn.
+					return false
+				}
 			}
 			s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
 		}
@@ -1067,9 +1341,37 @@ func (s *Session) sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
+// askUserProtocolPrompt is appended to the system prompt of every autonomous
+// (task_source/auto_restart) run. This session runs one-session-per-task and
+// mostly unattended, so it distinguishes two situations: whether to keep
+// working in this same session (always auto-answered "no", instantly — see
+// KindContinueSession) versus a genuine external decision (paused for a
+// human, with a timeout fallback so the run is never stuck forever).
+const askUserProtocolPrompt = "This session follows a strict one-task-per-session rule, and there are two " +
+	"situations where you should end your reply with a fenced block instead of deciding silently:\n\n" +
+	"1. Whether to keep working on more in THIS session (e.g. you just finished your assigned task and a " +
+	"natural next step is available). The answer is always no — a fresh session always handles the next " +
+	"task — so this is resolved automatically and instantly, nobody is waiting for it. Use:\n" +
+	"```ask-user\n" +
+	`{"question": "<one sentence>", "options": ["Continue in this session", "Stop — a new session will pick up the next task"], "kind": "continue_session"}` + "\n" +
+	"```\n" +
+	"End your turn immediately after emitting this — never keep working in the same reply.\n\n" +
+	"2. A genuine external decision you cannot resolve yourself (an ambiguous requirement, a trade-off with " +
+	"no clearly-better option, a blocked/stuck state after investigating). Use the same fenced block without " +
+	"a \"kind\" field:\n" +
+	"```ask-user\n" +
+	`{"question": "<the decision, one sentence>", "options": ["<short option 1>", "<short option 2>"]}` + "\n" +
+	"```\n" +
+	"This pauses the run for up to 5 minutes so a human can answer via the UI; if nobody answers in time, " +
+	"the manager automatically proceeds with the FIRST listed option, so list your options in the order you'd " +
+	"actually want them tried. Use this ONLY when genuinely blocked, not for routine status updates, and not " +
+	"when you can reasonably pick a sensible default and keep working."
+
 // buildCLIArgs constructs the argv for the Claude CLI based on SessionConfig
-// and global settings (see PLAN.md section 14).
-func (s *Session) buildCLIArgs() []string {
+// and global settings (see PLAN.md section 14). autonomous must be the same
+// value runOnce computes for handleLine — it gates whether the ask-user
+// protocol instruction is injected (see askUserProtocolPrompt).
+func (s *Session) buildCLIArgs(autonomous bool) []string {
 	s.mu.Lock()
 	resumeID := s.resumeSessionID
 	activeModel := s.activeModel
@@ -1132,8 +1434,15 @@ func (s *Session) buildCLIArgs() []string {
 	if len(s.Config.DisallowedTools) > 0 {
 		args = append(args, "--disallowedTools", strings.Join(s.Config.DisallowedTools, " "))
 	}
-	if s.Config.SystemPromptAppend != "" {
-		args = append(args, "--append-system-prompt", s.Config.SystemPromptAppend)
+	if s.Config.SystemPromptAppend != "" || autonomous {
+		combined := strings.TrimSpace(s.Config.SystemPromptAppend)
+		if autonomous {
+			if combined != "" {
+				combined += "\n\n"
+			}
+			combined += askUserProtocolPrompt
+		}
+		args = append(args, "--append-system-prompt", combined)
 	}
 	for _, d := range s.Config.AddDirs {
 		if d != "" {

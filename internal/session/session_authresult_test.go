@@ -25,7 +25,7 @@ func TestHandleLine_ResultAuthErrorSetsFlag(t *testing.T) {
 	})
 
 	line := `{"type":"result","subtype":"success","result":"Failed to authenticate. API Error: 403 Request not allowed","total_cost_usd":0,"num_turns":1}`
-	if done := s.handleLine(line); !done {
+	if done := s.handleLine(line, false); !done {
 		t.Fatal("result line should report turn finished")
 	}
 	if !s.authErrorHit.Load() {
@@ -41,7 +41,7 @@ func TestHandleLine_ResultOKDoesNotSetFlag(t *testing.T) {
 	})
 
 	line := `{"type":"result","subtype":"success","result":"Task completed successfully","total_cost_usd":0.5,"num_turns":3}`
-	s.handleLine(line)
+	s.handleLine(line, false)
 	if s.authErrorHit.Load() {
 		t.Error("authErrorHit set on a successful result")
 	}

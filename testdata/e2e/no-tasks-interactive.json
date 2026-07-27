@@ -1,0 +1,21 @@
+{
+  "name": "no-tasks-interactive",
+  "fakeclaude_dir": "testdata/scenarios",
+  "config": "testdata/configs/no-tasks-interactive.toml",
+  "steps": [
+    {
+      "do": "StartSession",
+      "with": {"project": "lumen", "session": "P1"}
+    },
+    {
+      "wait": "session:status",
+      "match": {"id": "lumen/P1", "status": "idle"},
+      "timeout_ms": 8000
+    },
+    {
+      "assert": "GetSessionMetrics",
+      "with": {"id": "lumen/P1"},
+      "expect": {"total_cost_usd": 0.001, "num_turns": 1}
+    }
+  ]
+}

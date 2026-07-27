@@ -4,6 +4,7 @@
     import TaskPanel from './TaskPanel.svelte';
     import SessionInput from './SessionInput.svelte';
     import PermissionBanner from './PermissionBanner.svelte';
+    import QuestionBanner from './QuestionBanner.svelte';
     import {
         clearSessionLog,
         sessionLogs,
@@ -159,6 +160,9 @@
             {#if session.pending_permission}
                 <PermissionBanner {session} />
             {/if}
+            {#if session.pending_question}
+                <QuestionBanner {session} />
+            {/if}
             {#if needsGitInit}
                 <div class="px-3 py-2 bg-status-error/10 border-b border-status-error/30
                             flex items-center justify-between gap-3 text-xs">
@@ -191,12 +195,16 @@
     <div class="px-3 py-2 flex flex-wrap items-center gap-2">
         <button
             type="button"
-            class="px-2.5 py-1 text-xs rounded bg-bg-elevated border border-bg-border
-                   text-text hover:bg-bg-panel disabled:opacity-40 disabled:cursor-not-allowed"
-            disabled={!isRunning || !!busy}
+            class="px-2.5 py-1 text-xs rounded border disabled:cursor-not-allowed
+                   {session.stop_requested
+                       ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 disabled:opacity-100'
+                       : 'bg-bg-elevated border-bg-border text-text hover:bg-bg-panel disabled:opacity-40'}"
+            disabled={!isRunning || !!busy || session.stop_requested}
             on:click={onPause}
-            title="Pause: finish current task, don't start the next">
-            {busyMatches('Pause') ? '…' : '⏸'} Pause
+            title={session.stop_requested
+                ? 'Already requested: will stop once the current task finishes'
+                : "Pause: finish current task, don't start the next"}>
+            {#if busyMatches('Pause')}…{:else if session.stop_requested}⏸ Stopping after task…{:else}⏸ Pause{/if}
         </button>
         <button
             type="button"
@@ -209,12 +217,16 @@
         </button>
         <button
             type="button"
-            class="px-2.5 py-1 text-xs rounded bg-bg-elevated border border-bg-border
-                   text-text hover:bg-bg-panel disabled:opacity-40 disabled:cursor-not-allowed"
-            disabled={!isRunning || !!busy}
+            class="px-2.5 py-1 text-xs rounded border disabled:cursor-not-allowed
+                   {session.stop_requested
+                       ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 disabled:opacity-100'
+                       : 'bg-bg-elevated border-bg-border text-text hover:bg-bg-panel disabled:opacity-40'}"
+            disabled={!isRunning || !!busy || session.stop_requested}
             on:click={onStopAfterTask}
-            title="Soft stop: let the current task finish, then stop">
-            {busyMatches('Stop after task') ? '…' : '⏹'} Stop after task
+            title={session.stop_requested
+                ? 'Already requested: will stop once the current task finishes'
+                : 'Soft stop: let the current task finish, then stop'}>
+            {#if busyMatches('Stop after task')}…{:else if session.stop_requested}⏹ Stopping after task…{:else}⏹ Stop after task{/if}
         </button>
         <button
             type="button"

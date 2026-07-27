@@ -1,0 +1,14 @@
+[[project]]
+name = "lumen"
+path = "."
+
+[[project.session]]
+name = "P1"
+prompt = "Read STATUS-P1.md and work the top task."
+task_source = "STATUS-P1-E2E-MISSING.md"
+stop_when_no_tasks = true
+auto_restart = true
+model = "claude-sonnet-4-6"
+# bypassPermissions (the default for an unset permission_mode) keeps this
+# scenario deterministic — no permission_request to respond to.
+permission_mode = "bypassPermissions"
