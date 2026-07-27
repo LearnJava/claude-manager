@@ -52,8 +52,8 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 |----|-------|-------|--------|--------|
 | SV-01 | Stop button terminates session | Start session, click Stop | `session:status` idle; button disabled after | ○ |
 | SV-02 | Restart button restarts session | Start session, click Restart | Session reaches working again within 10s | ○ |
-| SV-03 | Pause (stop after task) triggers soft stop | Start session, click Pause | Session completes current task then goes idle | ○ |
-| SV-04 | Control buttons disabled when idle | Select idle session | Stop, Pause, Restart buttons all disabled | ○ |
+| SV-03 | Stop after task triggers soft stop | Start session, click Stop after task | Session completes current task then goes idle | ○ |
+| SV-04 | Control buttons disabled when idle | Select idle session | Stop, Stop after task, Restart buttons all disabled | ○ |
 | SV-05 | Copy log copies to clipboard | Session with logs, click Copy | Clipboard contains log text; button shows "✓ Copied" for 1.5s | ○ |
 | SV-06 | Clear log empties log view | Session with logs, click Clear log | Log container shows empty state; backend history preserved | ○ |
 | SV-07 | Export markdown creates file | Select md format, click Export | Success path shown; file exists on disk | ○ |

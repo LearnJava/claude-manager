@@ -44,13 +44,6 @@
         }
     }
 
-    // The Go layer currently exposes one soft-stop. "Pause" and
-    // "Stop after task" both ask the session to finish the current task and
-    // not start a new one; a dedicated Pause binding can refine this later.
-    function onPause() {
-        call('Pause', () => StopSession(session.id, true));
-    }
-
     function onStop() {
         call('Stop', () => StopSession(session.id, false));
     }
@@ -140,7 +133,7 @@
         });
     }
 
-    // Button enabled states — Stop/Pause require an active process,
+    // Button enabled states — Stop/Stop after task require an active process,
     // Restart works whenever we know the session id.
     $: isRunning =
         session.status !== 'idle' &&
@@ -193,19 +186,6 @@
 
     <!-- Control bar -->
     <div class="px-3 py-2 flex flex-wrap items-center gap-2">
-        <button
-            type="button"
-            class="px-2.5 py-1 text-xs rounded border disabled:cursor-not-allowed
-                   {session.stop_requested
-                       ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 disabled:opacity-100'
-                       : 'bg-bg-elevated border-bg-border text-text hover:bg-bg-panel disabled:opacity-40'}"
-            disabled={!isRunning || !!busy || session.stop_requested}
-            on:click={onPause}
-            title={session.stop_requested
-                ? 'Already requested: will stop once the current task finishes'
-                : "Pause: finish current task, don't start the next"}>
-            {#if busyMatches('Pause')}…{:else if session.stop_requested}⏸ Stopping after task…{:else}⏸ Pause{/if}
-        </button>
         <button
             type="button"
             class="px-2.5 py-1 text-xs rounded bg-bg-elevated border border-bg-border
