@@ -1367,6 +1367,29 @@ const askUserProtocolPrompt = "This session follows a strict one-task-per-sessio
 	"actually want them tried. Use this ONLY when genuinely blocked, not for routine status updates, and not " +
 	"when you can reasonably pick a sensible default and keep working."
 
+// backgroundTaskWarningPrompt is appended alongside askUserProtocolPrompt for
+// every autonomous run. This session's process is killed the moment your
+// reply ends (the manager closes stdin as soon as it sees your result event,
+// so the next task in the loop can start) — there is no notification
+// mechanism that can reach you after that point, and any `run_in_background`
+// Bash command is a child of this same process, so it is killed with it too.
+// Never launch a long-running command in the background and end your turn
+// waiting for its completion to be reported to you later — it never will be.
+// Instead, either run it in the foreground within this turn (pick a timeout
+// that comfortably fits, and poll its output file yourself with short waits
+// if you must), or, if it truly cannot finish within one turn, write its
+// progress to a file your NEXT session (a fresh process) can read and resume
+// from — do not end this turn assuming anything you started in the
+// background will still be running, or that you'll be told when it's done.
+const backgroundTaskWarningPrompt = "This session's process is killed the moment your reply ends (the manager " +
+	"closes stdin as soon as it sees your result event, so the next task in the loop can start). There is no " +
+	"notification mechanism that can reach you after that point, and any `run_in_background` Bash command is a " +
+	"child of this same process, so it is killed along with it. Never launch a long-running command in the " +
+	"background and end your turn expecting to be notified of its completion later — you never will be. " +
+	"Instead, either run it in the foreground within this turn (choose a timeout that comfortably fits, and " +
+	"poll its output file yourself with short waits if needed), or, if it genuinely cannot finish within one " +
+	"turn, write its progress to a file your next session (a fresh process) can read and resume from."
+
 // buildCLIArgs constructs the argv for the Claude CLI based on SessionConfig
 // and global settings (see PLAN.md section 14). autonomous must be the same
 // value runOnce computes for handleLine — it gates whether the ask-user
@@ -1440,7 +1463,7 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 			if combined != "" {
 				combined += "\n\n"
 			}
-			combined += askUserProtocolPrompt
+			combined += askUserProtocolPrompt + "\n\n" + backgroundTaskWarningPrompt
 		}
 		args = append(args, "--append-system-prompt", combined)
 	}

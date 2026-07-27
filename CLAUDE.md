@@ -616,6 +616,28 @@ resolved on the backend before any event is emitted.
 Not wired into the control-plane/MCP tools yet (see "cm-mcp tools" below) —
 only the Wails binding exists so far.
 
+### Background-Task Warning (Autonomous Sessions)
+
+`backgroundTaskWarningPrompt` (`internal/session/session.go`) is appended
+alongside `askUserProtocolPrompt` for every autonomous run — same
+`--append-system-prompt` call, same `autonomous` gate. It exists because a
+CLI process's own `run_in_background` Bash tool (spawn a long command, keep
+working, get told later when it finishes) silently cannot work in this
+session model: the manager closes stdin as soon as it sees the turn's
+`result` event (see "Bidirectional Streaming"), which kills the CLI process
+— and any `run_in_background` child with it — before the notification the
+model is waiting for can ever be delivered. Observed live: a task-source
+session launched an 842-case test run with `run_in_background`, said it
+would "wait for the automatic notification", ended its turn, got killed,
+and the next auto-restart iteration inherited a crash-recovery prompt and
+repeated the same dead-end pattern — no test run ever completed. The prompt
+tells the model to either run the command in the foreground within the
+current turn (picking a timeout that fits, polling its output file itself
+with short waits if needed) or, if it genuinely can't finish in one turn,
+persist progress to a file the *next* session can pick up — never end a
+turn assuming background work will still be running or will be reported
+back later.
+
 ### Mixed Programming (MIXED-TASKS.md, MP-01..08)
 
 Claude prepares self-contained briefs; external free models write the code as

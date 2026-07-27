@@ -168,6 +168,9 @@ func TestBuildCLIArgs_AutonomousInjectsAskUserProtocol(t *testing.T) {
 	if !strings.Contains(v, "ask-user") {
 		t.Errorf("expected ask-user protocol instruction to be injected, got %q", v)
 	}
+	if !strings.Contains(v, "run_in_background") {
+		t.Errorf("expected background-task warning to be injected, got %q", v)
+	}
 }
 
 // TestBuildCLIArgs_NonAutonomousOmitsAskUserProtocol verifies an interactive
