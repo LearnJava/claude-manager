@@ -1,9 +1,17 @@
 <script lang="ts">
     import { createEventDispatcher, onMount } from 'svelte';
-    import { GetConfig, UpdateConfig, PickDirectory, GenerateRoadmap } from '../../wailsjs/go/main/App';
+    import {
+        GetConfig,
+        UpdateConfig,
+        PickDirectory,
+        GenerateRoadmap,
+        GetProjectLogFiles,
+        ClearProjectLogs,
+    } from '../../wailsjs/go/main/App';
     import { initProjects } from '../stores/projects';
     import { refreshSessions } from '../stores/sessions';
     import { setTheme, type Theme } from '../stores/theme';
+    import { formatBytes } from '../lib/formatters';
     import PlanReview from './PlanReview.svelte';
 
     const dispatch = createEventDispatcher();
@@ -295,6 +303,7 @@
             if (initialAction === 'add') {
                 addProject();
             }
+            loadAllProjectLogInfo();
         } catch (e: any) {
             error = `Load failed: ${e?.message ?? String(e)}`;
         } finally {
@@ -414,6 +423,71 @@
         roadmapPlan = null;
         info = 'ROADMAP.md and STATUS-P1.md written — the "P1" session is configured.';
         await load();
+    }
+
+    // ---- Project log files (auto-saved on task/run completion — see
+    // CLAUDE.md "Automatic Log Saving") ----
+    let projectLogInfo: Record<number, { count: number; size: number } | null> = {};
+    let logsBusy: number | null = null;
+    let logsPendingClear: number | null = null;
+    let logsPendingClearTimer: ReturnType<typeof setTimeout> | null = null;
+
+    async function loadProjectLogInfo(idx: number) {
+        if (!cfg) return;
+        const p = cfg.Projects[idx];
+        if (!p?.Path) {
+            projectLogInfo[idx] = null;
+            return;
+        }
+        try {
+            const files = await GetProjectLogFiles(p.Name);
+            const size = (files ?? []).reduce((sum, f) => sum + (f.size ?? 0), 0);
+            projectLogInfo[idx] = { count: (files ?? []).length, size };
+        } catch (e: any) {
+            projectLogInfo[idx] = null;
+        }
+        projectLogInfo = projectLogInfo;
+    }
+
+    function loadAllProjectLogInfo() {
+        if (!cfg) return;
+        cfg.Projects.forEach((p, i) => {
+            if (p.Path) loadProjectLogInfo(i);
+        });
+    }
+
+    function requestClearProjectLogs(idx: number) {
+        if (logsPendingClear === idx) {
+            // Second click — confirmed.
+            if (logsPendingClearTimer) clearTimeout(logsPendingClearTimer);
+            logsPendingClearTimer = null;
+            logsPendingClear = null;
+            clearProjectLogs(idx);
+            return;
+        }
+        // First click — arm the button, auto-cancel after 3 seconds.
+        logsPendingClear = idx;
+        if (logsPendingClearTimer) clearTimeout(logsPendingClearTimer);
+        logsPendingClearTimer = setTimeout(() => {
+            logsPendingClear = null;
+            logsPendingClearTimer = null;
+        }, 3000);
+    }
+
+    async function clearProjectLogs(idx: number) {
+        if (!cfg) return;
+        const p = cfg.Projects[idx];
+        logsBusy = idx;
+        error = '';
+        try {
+            await ClearProjectLogs(p.Name);
+            await loadProjectLogInfo(idx);
+            info = `Cleared saved logs for ${p.Name}.`;
+        } catch (e: any) {
+            error = `Clear logs failed: ${e?.message ?? String(e)}`;
+        } finally {
+            logsBusy = null;
+        }
     }
 
     // ---- Sessions tab actions ----
@@ -923,6 +997,52 @@
                                                 Set a project folder above first.
                                             </span>
                                         {/if}
+                                    </div>
+
+                                    <!-- Saved session logs (auto-saved on task/run completion into
+                                         <project>/.claude-manager/logs/) -->
+                                    <div class="border-t border-bg-border pt-2 mt-1 space-y-2">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <span class="text-xs text-text-muted">
+                                                {#if !p.Path}
+                                                    Saved logs: set a project folder above first.
+                                                {:else if projectLogInfo[i]}
+                                                    Saved logs: {projectLogInfo[i]?.count ?? 0} file{(projectLogInfo[i]?.count ?? 0) === 1 ? '' : 's'},
+                                                    {formatBytes(projectLogInfo[i]?.size)}
+                                                {:else}
+                                                    Saved logs: —
+                                                {/if}
+                                            </span>
+                                            <div class="flex items-center gap-1">
+                                                <button
+                                                    type="button"
+                                                    on:click={() => loadProjectLogInfo(i)}
+                                                    disabled={!p.Path}
+                                                    title="Refresh saved-log count/size"
+                                                    class="px-1.5 py-0.5 text-xs rounded bg-bg border border-bg-border
+                                                           text-text-muted hover:text-text disabled:opacity-40 disabled:cursor-not-allowed">
+                                                    🔄
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    on:click={() => requestClearProjectLogs(i)}
+                                                    disabled={!p.Path || !projectLogInfo[i]?.count || logsBusy !== null}
+                                                    title={logsPendingClear === i
+                                                        ? 'Click again to confirm deletion'
+                                                        : 'Delete every saved log file for this project'}
+                                                    class="px-2 py-0.5 text-xs rounded border disabled:opacity-40 disabled:cursor-not-allowed
+                                                           {logsPendingClear === i
+                                                               ? 'bg-status-error/20 border-status-error/50 text-status-error font-semibold'
+                                                               : 'bg-bg border-bg-border text-text-muted hover:text-status-error'}">
+                                                    {#if logsBusy === i}…{:else if logsPendingClear === i}Confirm clear?{:else}🗑 Clear project logs{/if}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <p class="text-[11px] text-text-muted/70 leading-snug">
+                                            Every finished task/run auto-saves its log as markdown here.
+                                            Clearing removes those files and their SQLite log entries —
+                                            History/Dashboard run records are kept.
+                                        </p>
                                     </div>
                                 </li>
                             {/each}

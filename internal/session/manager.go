@@ -1397,6 +1397,25 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg string) {
 		_ = m.store.InsertLogs(runID, logs)
 	}
 
+	// Auto-save this run's log to <project>/.claude-manager/logs/ as markdown
+	// so it survives independently of the SQLite history (and of "Clear log"
+	// in the UI, which only empties the on-screen buffer). Fire-and-forget:
+	// a failure here must never affect the run's own completed/error/stopped
+	// status, just get logged.
+	if len(logs) > 0 {
+		projectPath := ms.session.ProjectPath
+		sessID := ms.session.ID
+		go func() {
+			defer logger.Recover("manager.autosave_log", "id", sessID)
+			path, err := store.SaveSessionLogFile(projectPath, sessID, logs)
+			if err != nil {
+				logger.L.Error("session.log_autosave_failed", "id", sessID, "error", err)
+			} else if path != "" {
+				logger.L.Info("session.log_autosaved", "id", sessID, "path", path)
+			}
+		}()
+	}
+
 	if status == "completed" {
 		_ = m.store.AddDailyMetrics(&store.DailyMetrics{
 			Date:              now.Format("2006-01-02"),

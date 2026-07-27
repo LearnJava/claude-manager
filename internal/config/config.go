@@ -222,7 +222,7 @@ func SaveProjectOverlay(projectPath string, p ProjectConfig, localWorkers []Work
 		return err
 	}
 
-	return ensureGitignore(dir, projectLocalConfigFile)
+	return EnsureGitignore(dir, projectLocalConfigFile)
 }
 
 // encodeAtomic TOML-encodes v to path via a temp file + rename.
@@ -245,8 +245,11 @@ func encodeAtomic(path string, v any) error {
 	return nil
 }
 
-// ensureGitignore appends entry to dir/.gitignore unless already present.
-func ensureGitignore(dir, entry string) error {
+// EnsureGitignore appends entry to dir/.gitignore unless already present.
+// Exported so other packages that write into a project's .claude-manager
+// folder (e.g. internal/store's auto-saved session log files) can gitignore
+// their own subdirectory the same way config.local.toml is.
+func EnsureGitignore(dir, entry string) error {
 	p := filepath.Join(dir, ".gitignore")
 	existing, err := os.ReadFile(p)
 	if err != nil && !os.IsNotExist(err) {

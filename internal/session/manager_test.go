@@ -57,9 +57,17 @@ func newTestManagerWithStore(t *testing.T) (*SessionManager, *store.Store) {
 // in isolation.
 func addStubSession(m *SessionManager, project, name string) *managedSession {
 	sc := config.SessionConfig{Name: name, Model: "sonnet", PermissionMode: "acceptEdits"}
+	var projectPath string
+	for i := range m.cfg.Projects {
+		if m.cfg.Projects[i].Name == project {
+			projectPath = m.cfg.Projects[i].Path
+			break
+		}
+	}
 	sess := New(Params{
 		ID:          sessionID(project, name),
 		ProjectName: project,
+		ProjectPath: projectPath,
 		Config:      sc,
 		OnEvent: func(id string, ev SessionEvent) {
 			m.onSessionEvent(id, ev)
@@ -502,6 +510,51 @@ func TestGetProjectCost(t *testing.T) {
 	}
 	if got != 2.5 {
 		t.Errorf("GetProjectCost = %v, want 2.5", got)
+	}
+}
+
+func TestFinishRun_AutoSavesLogFile(t *testing.T) {
+	m, _ := newTestManagerWithStore(t)
+	ms := addStubSession(m, "lumen", "P1")
+
+	m.beginRun(ms)
+	ms.mu.Lock()
+	ms.pendingLogs = append(ms.pendingLogs, store.LogEntry{Timestamp: time.Now(), Level: "text", Message: "hi"})
+	ms.mu.Unlock()
+
+	m.finishRun(ms, "completed", "")
+
+	deadline := time.Now().Add(2 * time.Second)
+	var files []store.LogFileInfo
+	for time.Now().Before(deadline) {
+		var err error
+		files, err = store.ListProjectLogFiles(ms.session.ProjectPath)
+		if err != nil {
+			t.Fatalf("ListProjectLogFiles: %v", err)
+		}
+		if len(files) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 auto-saved log file, got %d", len(files))
+	}
+}
+
+func TestFinishRun_NoLogsNoFile(t *testing.T) {
+	m, _ := newTestManagerWithStore(t)
+	ms := addStubSession(m, "lumen", "P1")
+
+	m.beginRun(ms)
+	m.finishRun(ms, "completed", "")
+
+	files, err := store.ListProjectLogFiles(ms.session.ProjectPath)
+	if err != nil {
+		t.Fatalf("ListProjectLogFiles: %v", err)
+	}
+	if len(files) != 0 {
+		t.Errorf("expected no auto-saved file when there were no logs, got %d", len(files))
 	}
 }
 

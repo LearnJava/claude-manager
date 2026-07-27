@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -743,7 +742,7 @@ func (a *App) ExportLog(sessionID string, entries []store.LogEntry, format strin
 		return "", nil
 	}
 
-	data, err := renderExport(sessionID, entries, format)
+	data, err := store.RenderExport(sessionID, entries, format)
 	if err != nil {
 		return "", err
 	}
@@ -766,6 +765,54 @@ func (a *App) CleanOldLogs(retentionDays int) error {
 	return a.store.DeleteOldLogs(retentionDays)
 }
 
+// projectPath resolves a project name to its configured folder path, or an
+// error if the project isn't found (or has no folder set — projects added
+// without a path can't have per-project log files).
+func (a *App) projectPath(project string) (string, error) {
+	if a.cfg == nil {
+		return "", fmt.Errorf("no config loaded")
+	}
+	for i := range a.cfg.Projects {
+		if a.cfg.Projects[i].Name == project {
+			if a.cfg.Projects[i].Path == "" {
+				return "", fmt.Errorf("project %q has no folder configured", project)
+			}
+			return a.cfg.Projects[i].Path, nil
+		}
+	}
+	return "", fmt.Errorf("project %q not found", project)
+}
+
+// GetProjectLogFiles lists the auto-saved session-log files in
+// <project>/.claude-manager/logs (see "Automatic Log Saving" in CLAUDE.md),
+// newest first — the Settings project-logs panel uses this to show file
+// count and total size.
+func (a *App) GetProjectLogFiles(project string) ([]store.LogFileInfo, error) {
+	path, err := a.projectPath(project)
+	if err != nil {
+		return nil, err
+	}
+	return store.ListProjectLogFiles(path)
+}
+
+// ClearProjectLogs deletes every saved log file in
+// <project>/.claude-manager/logs and the corresponding session_logs rows in
+// SQLite. session_runs rows (History/Dashboard) are left untouched — this
+// clears log bodies, not run history.
+func (a *App) ClearProjectLogs(project string) error {
+	path, err := a.projectPath(project)
+	if err != nil {
+		return err
+	}
+	if _, _, err := store.ClearProjectLogFiles(path); err != nil {
+		return err
+	}
+	if a.store == nil {
+		return nil
+	}
+	return a.store.DeleteLogsForProject(project)
+}
+
 func defaultExportFilename(sessionID, format string) string {
 	safe := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(sessionID)
 	if safe == "" {
@@ -786,49 +833,5 @@ func exportFiltersFor(format string) []runtime.FileFilter {
 	}
 }
 
-func renderExport(sessionID string, entries []store.LogEntry, format string) ([]byte, error) {
-	switch format {
-	case "json":
-		return json.MarshalIndent(struct {
-			Session string           `json:"session"`
-			Entries []store.LogEntry `json:"entries"`
-		}{Session: sessionID, Entries: entries}, "", "  ")
-
-	case "md":
-		var b strings.Builder
-		fmt.Fprintf(&b, "# Session log — %s\n\n", sessionID)
-		fmt.Fprintf(&b, "_Exported %s, %d entries._\n\n", time.Now().Format(time.RFC3339), len(entries))
-		for _, e := range entries {
-			fmt.Fprintf(&b, "- `%s` **%s** %s\n",
-				e.Timestamp.Format("15:04:05"),
-				e.Level,
-				escapeMarkdown(e.Message),
-			)
-			if e.ToolName != "" {
-				fmt.Fprintf(&b, "  - tool: `%s` %s\n", e.ToolName, escapeMarkdown(e.ToolInput))
-			}
-		}
-		return []byte(b.String()), nil
-
-	default: // txt
-		var b strings.Builder
-		fmt.Fprintf(&b, "Session log — %s\n", sessionID)
-		fmt.Fprintf(&b, "Exported %s\n\n", time.Now().Format(time.RFC3339))
-		for _, e := range entries {
-			fmt.Fprintf(&b, "[%s] %-7s %s\n",
-				e.Timestamp.Format("15:04:05"),
-				e.Level,
-				e.Message,
-			)
-			if e.ToolName != "" {
-				fmt.Fprintf(&b, "        tool=%s %s\n", e.ToolName, e.ToolInput)
-			}
-		}
-		return []byte(b.String()), nil
-	}
-}
-
-func escapeMarkdown(s string) string {
-	// Single-line: collapse newlines so list items render correctly.
-	return strings.NewReplacer("\r", " ", "\n", "  ").Replace(s)
-}
+// Rendering itself lives in store.RenderExport, shared with the automatic
+// per-run log save (see internal/session/manager.go:finishRun).

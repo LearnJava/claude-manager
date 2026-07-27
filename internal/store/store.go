@@ -308,6 +308,18 @@ func (s *Store) DeleteOldLogs(retentionDays int) error {
 	return err
 }
 
+// DeleteLogsForProject removes all session_logs rows belonging to a project's
+// runs. Used by the "clear project logs" button alongside
+// ClearProjectLogFiles — it only clears log bodies, not the session_runs
+// history rows themselves (History/Dashboard keep showing past runs).
+func (s *Store) DeleteLogsForProject(project string) error {
+	const q = `DELETE FROM session_logs WHERE run_id IN (
+        SELECT id FROM session_runs WHERE project=?
+    )`
+	_, err := s.db.Exec(q, project)
+	return err
+}
+
 // --- daily_metrics ---
 
 // AddDailyMetrics upserts daily aggregate metrics, adding the delta to any existing row.

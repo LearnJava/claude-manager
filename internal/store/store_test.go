@@ -280,6 +280,45 @@ func TestDeleteOldLogsRetainsRecent(t *testing.T) {
 	}
 }
 
+func TestDeleteLogsForProject(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC()
+
+	runA := &SessionRun{Project: "proj-a", Session: "S1", Model: "m", StartedAt: now, Status: "completed"}
+	if err := s.InsertRun(runA); err != nil {
+		t.Fatalf("InsertRun A: %v", err)
+	}
+	if err := s.InsertLogs(runA.ID, []LogEntry{{Timestamp: now, Level: "text", Message: "a"}}); err != nil {
+		t.Fatalf("InsertLogs A: %v", err)
+	}
+
+	runB := &SessionRun{Project: "proj-b", Session: "S1", Model: "m", StartedAt: now, Status: "completed"}
+	if err := s.InsertRun(runB); err != nil {
+		t.Fatalf("InsertRun B: %v", err)
+	}
+	if err := s.InsertLogs(runB.ID, []LogEntry{{Timestamp: now, Level: "text", Message: "b"}}); err != nil {
+		t.Fatalf("InsertLogs B: %v", err)
+	}
+
+	if err := s.DeleteLogsForProject("proj-a"); err != nil {
+		t.Fatalf("DeleteLogsForProject: %v", err)
+	}
+
+	logsA, _ := s.GetLogs(runA.ID, 0, 100)
+	if len(logsA) != 0 {
+		t.Errorf("expected proj-a logs deleted, got %d", len(logsA))
+	}
+	logsB, _ := s.GetLogs(runB.ID, 0, 100)
+	if len(logsB) != 1 {
+		t.Errorf("expected proj-b logs retained, got %d", len(logsB))
+	}
+
+	runAfter, err := s.GetRun(runA.ID)
+	if err != nil || runAfter == nil {
+		t.Fatalf("expected proj-a run row to survive (only logs cleared): %v", err)
+	}
+}
+
 // --- DailyMetrics ---
 
 func TestAddGetDailyMetrics(t *testing.T) {

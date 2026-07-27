@@ -41,6 +41,14 @@ export function formatDuration(ms: number | undefined | null): string {
     return `${s}s`;
 }
 
+export function formatBytes(n: number | undefined | null): string {
+    if (n === undefined || n === null || isNaN(n as number) || n <= 0) return '0 B';
+    const v = Number(n);
+    if (v >= 1024 * 1024) return `${(v / (1024 * 1024)).toFixed(1)} MB`;
+    if (v >= 1024) return `${(v / 1024).toFixed(1)} KB`;
+    return `${v} B`;
+}
+
 export function formatPercent(v: number | undefined | null): string {
     if (v === undefined || v === null || isNaN(v as number)) return '0%';
     return `${Math.round(Number(v) * 100)}%`;

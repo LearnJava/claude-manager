@@ -235,6 +235,8 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | ST-16 | Error state on config load failure | Backend returns error | "No config loaded" error visible | ○ |
 | ST-17 | Workers tab: add preset persists | Open Workers, add Step 3.7 preset, save | GetConfig returns worker step37 with the preset model | **✓** |
 | ST-18 | Project mixed-programming opt-in | Projects tab, enable mixed on a project | Privacy warning + Gates textarea appear | ○ |
+| ST-19 | Project logs panel shows count/size | Projects tab, project with saved logs | "Saved logs: N files, X KB/MB" shown | ○ |
+| ST-20 | Clear project logs (two-click confirm) | Click "Clear project logs" twice | Files removed from disk; count resets to 0 files | ○ |
 
 ---
 

@@ -66,7 +66,9 @@ claude-manager/
 │   │   └── quality.go               # BuildQualityReport: per-worker ModelQuality aggregate
 │   ├── store/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs
-│   │   └── migrations.go            # CREATE TABLE statements, indexes
+│   │   ├── migrations.go            # CREATE TABLE statements, indexes
+│   │   └── logfiles.go              # Auto-saved per-run log files in <project>/.claude-manager/logs/,
+│   │                                #   shared RenderExport (md/json/txt) for auto-save + manual export
 │   └── hooks/
 │       └── hooks.go                 # Pre/post task hooks (shell commands)
 ├── frontend/src/
@@ -397,6 +399,50 @@ When `fallback_model_on_rate_limit = true` and `fallback_model` is set:
 
 **Config:** `fallback_model_on_rate_limit = true` per session (default: false). Set `fallback_model = "haiku"`.
 
+### Automatic Log Saving
+
+Every finished run auto-saves its log as markdown into
+`<project>/.claude-manager/logs/`, independent of the SQLite `session_logs`
+history and of the on-screen buffer ("Clear log" in `SessionView` only empties
+that buffer, never touches disk or SQLite). This is what makes a completed
+autonomous task's log durable without the user remembering to click
+"Export log" — in an `auto_restart` loop each `runOnce` is one task, so this
+produces one file per completed task; for an interactive session it produces
+one file when the whole process stops.
+
+**Hook point** (`internal/session/manager.go:finishRun`): this is the single
+choke point that already finalizes every run regardless of how it ended —
+`"completed"` (autonomous `EvtTaskDone`), `"error"` (`EvtError`), or
+`"stopped"` (the run loop exiting to `StatusIdle`) — and already flushes
+`ms.pendingLogs` to SQLite via `InsertLogs`. Right after that flush, if there
+were any log entries, a `store.SaveSessionLogFile(ms.session.ProjectPath,
+ms.session.ID, logs)` call runs in its own goroutine (fire-and-forget,
+`logger.Recover`-guarded) so a filesystem failure can never affect the run's
+own completed/error/stopped status — only a log line either way.
+
+**Rendering** (`internal/store/logfiles.go:RenderExport`): the exact same
+function backs both this automatic save (always `"md"`) and the manual
+"Export log" button (`app.go:ExportLog`, any of md/json/txt) — moved out of
+`app.go` so both call sites render identically; there is no separate
+auto-save-only formatter to keep in sync.
+
+**File layout**: `SaveSessionLogFile` writes atomically (temp file + rename)
+to `<project>/.claude-manager/logs/<session>-<timestamp>.md`, creating the
+`logs/` directory on first use and gitignoring it via
+`config.EnsureGitignore` — these are local run artifacts, not something to
+commit next to the shared `config.toml` in the same folder. A no-op (empty
+path, nil error) when there were no log entries, or when the session has no
+`ProjectPath` (e.g. a config that never got a real project folder).
+
+**Managing saved files** (Settings → Projects, per-project panel): `GetProjectLogFiles`
+lists `store.LogFileInfo` (name/path/size/mod_time) so the UI can show a
+count and total size; `ClearProjectLogs` deletes every file under that
+project's `logs/` dir (`store.ClearProjectLogFiles`) *and* the project's
+`session_logs` rows in SQLite (`store.DeleteLogsForProject`) — but leaves
+`session_runs` rows alone, so History/Dashboard still show past runs, just
+without their log bodies. Two-click confirm button (`window.confirm()` is
+disabled in Wails WebView2 — see Conventions).
+
 ### Live Model Switching
 
 Lets the user change a **running** session's model from a small dropdown in
@@ -681,6 +727,8 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetRateLimitStatus()` | Current rate limit info |
 | `ExportLog(id, entries, format)` | Save log as MD/JSON/TXT via native dialog |
 | `CleanOldLogs(days)` | Delete logs older than N days from SQLite |
+| `GetProjectLogFiles(project)` | List auto-saved log files under `<project>/.claude-manager/logs/` (name/size/mod_time) |
+| `ClearProjectLogs(project)` | Delete a project's saved log files + their `session_logs` SQLite rows (keeps `session_runs`) |
 | `ClearSessionState(project, name)` | Delete crash-recovery state file (equivalent to --new) |
 | `GetSessionState(project, name)` | Return persisted state (session_id + started_at) or nil |
 | `PickDirectory(title)` | Native folder picker dialog |

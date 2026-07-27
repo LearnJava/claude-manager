@@ -7,6 +7,7 @@ import (
 
 	"claude-manager/internal/analysis"
 	"claude-manager/internal/config"
+	"claude-manager/internal/store"
 )
 
 func TestHasClaudeMd(t *testing.T) {
@@ -169,5 +170,121 @@ func TestUpsertChatSession_DoesNotMutateCallerSlices(t *testing.T) {
 	upsertChatSession(cfg, "lumen")
 	if len(original) != 1 {
 		t.Errorf("upsertChatSession must not mutate the caller's slice in place, got len=%d", len(original))
+	}
+}
+
+func TestProjectPath_Found(t *testing.T) {
+	a := &App{cfg: &config.AppConfig{
+		Projects: []config.ProjectConfig{{Name: "lumen", Path: "/repo/lumen"}},
+	}}
+	path, err := a.projectPath("lumen")
+	if err != nil {
+		t.Fatalf("projectPath: %v", err)
+	}
+	if path != "/repo/lumen" {
+		t.Errorf("projectPath: got %q want %q", path, "/repo/lumen")
+	}
+}
+
+func TestProjectPath_NotFound(t *testing.T) {
+	a := &App{cfg: &config.AppConfig{Projects: []config.ProjectConfig{{Name: "other"}}}}
+	if _, err := a.projectPath("lumen"); err == nil {
+		t.Error("expected error for unknown project")
+	}
+}
+
+func TestProjectPath_NoFolderConfigured(t *testing.T) {
+	a := &App{cfg: &config.AppConfig{Projects: []config.ProjectConfig{{Name: "lumen"}}}}
+	if _, err := a.projectPath("lumen"); err == nil {
+		t.Error("expected error when project has no Path set")
+	}
+}
+
+func TestProjectPath_NoConfigLoaded(t *testing.T) {
+	a := &App{}
+	if _, err := a.projectPath("lumen"); err == nil {
+		t.Error("expected error when no config is loaded")
+	}
+}
+
+func TestGetProjectLogFiles(t *testing.T) {
+	dir := t.TempDir()
+	a := &App{cfg: &config.AppConfig{
+		Projects: []config.ProjectConfig{{Name: "lumen", Path: dir}},
+	}}
+
+	if _, err := store.SaveSessionLogFile(dir, "lumen/S1", []store.LogEntry{
+		{Message: "hi", Level: "text"},
+	}); err != nil {
+		t.Fatalf("SaveSessionLogFile: %v", err)
+	}
+
+	files, err := a.GetProjectLogFiles("lumen")
+	if err != nil {
+		t.Fatalf("GetProjectLogFiles: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 log file, got %d", len(files))
+	}
+}
+
+func TestGetProjectLogFiles_UnknownProject(t *testing.T) {
+	a := &App{cfg: &config.AppConfig{}}
+	if _, err := a.GetProjectLogFiles("lumen"); err == nil {
+		t.Error("expected error for unknown project")
+	}
+}
+
+func TestClearProjectLogs_RemovesFilesAndDBRows(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	a := &App{
+		cfg: &config.AppConfig{
+			Projects: []config.ProjectConfig{{Name: "lumen", Path: dir}},
+		},
+		store: st,
+	}
+
+	if _, err := store.SaveSessionLogFile(dir, "lumen/S1", []store.LogEntry{
+		{Message: "hi", Level: "text"},
+	}); err != nil {
+		t.Fatalf("SaveSessionLogFile: %v", err)
+	}
+
+	run := &store.SessionRun{Project: "lumen", Session: "S1", Model: "sonnet", Status: "completed"}
+	if err := st.InsertRun(run); err != nil {
+		t.Fatalf("InsertRun: %v", err)
+	}
+	if err := st.InsertLogs(run.ID, []store.LogEntry{{Level: "text", Message: "db row"}}); err != nil {
+		t.Fatalf("InsertLogs: %v", err)
+	}
+
+	if err := a.ClearProjectLogs("lumen"); err != nil {
+		t.Fatalf("ClearProjectLogs: %v", err)
+	}
+
+	files, err := a.GetProjectLogFiles("lumen")
+	if err != nil {
+		t.Fatalf("GetProjectLogFiles after clear: %v", err)
+	}
+	if len(files) != 0 {
+		t.Errorf("expected 0 files after clear, got %d", len(files))
+	}
+
+	logs, err := st.GetLogs(run.ID, 0, 100)
+	if err != nil {
+		t.Fatalf("GetLogs after clear: %v", err)
+	}
+	if len(logs) != 0 {
+		t.Errorf("expected 0 db log rows after clear, got %d", len(logs))
+	}
+
+	if runAfter, err := st.GetRun(run.ID); err != nil || runAfter == nil {
+		t.Errorf("expected session_runs row to survive ClearProjectLogs, err=%v", err)
 	}
 }
