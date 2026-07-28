@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -781,6 +782,56 @@ func (a *App) projectPath(project string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("project %q not found", project)
+}
+
+// GetSessionRoadmap returns the project's roadmap as the TaskPanel "Roadmap"
+// tab renders it: every task with done/current/pending status, derived from
+// which pointer lines are still in the session's task_source file. Returns
+// (nil, nil) when the session has no task source or the project has no
+// readable roadmap — the UI shows a placeholder rather than an error, since
+// most sessions (Chat, Init, ad-hoc) legitimately have neither.
+func (a *App) GetSessionRoadmap(project, sessionName string) (*analysis.RoadmapView, error) {
+	path, err := a.projectPath(project)
+	if err != nil {
+		return nil, err
+	}
+	taskSource := a.sessionTaskSource(project, sessionName)
+	view, err := analysis.ReadRoadmap(path, taskSource)
+	if errors.Is(err, analysis.ErrNoRoadmap) {
+		return nil, nil
+	}
+	return view, err
+}
+
+// GetRoadmapTaskDetail returns the body of one tasks/NN-*.md file. relPath is
+// the link from the roadmap row; ReadRoadmapTaskDetail confines it to the
+// project folder.
+func (a *App) GetRoadmapTaskDetail(project, relPath string) (string, error) {
+	path, err := a.projectPath(project)
+	if err != nil {
+		return "", err
+	}
+	return analysis.ReadRoadmapTaskDetail(path, relPath)
+}
+
+// sessionTaskSource looks up a session's configured task_source, or "" when
+// the project/session isn't in the config (a session started before a config
+// edit, say).
+func (a *App) sessionTaskSource(project, sessionName string) string {
+	if a.cfg == nil {
+		return ""
+	}
+	for i := range a.cfg.Projects {
+		if a.cfg.Projects[i].Name != project {
+			continue
+		}
+		for _, s := range a.cfg.Projects[i].Sessions {
+			if s.Name == sessionName {
+				return s.TaskSource
+			}
+		}
+	}
+	return ""
 }
 
 // GetProjectLogFiles lists the auto-saved session-log files in

@@ -1,9 +1,28 @@
 <script lang="ts">
     import type { SessionState, TodoItem } from '../stores/sessions';
+    import RoadmapTree from './RoadmapTree.svelte';
 
     export let session: SessionState;
 
     let showPrompt = false;
+
+    // Two tabs: "Task" is Claude's live TodoWrite breakdown for the step it is
+    // on right now; "Roadmap" is the project's whole backlog. A task_source
+    // session spends most of its life inside one roadmap task, so that is the
+    // more useful default there; an ad-hoc/chat session has no roadmap at all.
+    type Tab = 'task' | 'roadmap';
+    const tabs: { id: Tab; label: string }[] = [
+        { id: 'task', label: 'Task' },
+        { id: 'roadmap', label: 'Roadmap' },
+    ];
+    let tab: Tab = 'task';
+    // Re-pick the default when switching between sessions, but never override
+    // a tab the user chose for the session they are looking at.
+    let tabForSession = '';
+    $: if (session.id !== tabForSession) {
+        tabForSession = session.id;
+        tab = session.task_source_description ? 'roadmap' : 'task';
+    }
 
     $: todos = (session.todos ?? []) as TodoItem[];
     $: total = todos.length;
@@ -35,13 +54,30 @@
 </script>
 
 <div class="w-72 shrink-0 border-l border-bg-border bg-bg-panel flex flex-col min-h-0">
-    <div class="px-3 py-2 border-b border-bg-border flex items-center justify-between">
-        <span class="text-xs font-semibold text-text uppercase tracking-wide">Task</span>
-        {#if total > 0}
+    <div class="px-3 py-2 border-b border-bg-border flex items-center justify-between gap-2">
+        <div class="flex items-center gap-1">
+            {#each tabs as t}
+                <button
+                    type="button"
+                    on:click={() => (tab = t.id)}
+                    class="px-1.5 py-0.5 text-xs uppercase tracking-wide rounded
+                           {tab === t.id
+                        ? 'text-text font-semibold bg-bg-elevated'
+                        : 'text-text-muted hover:text-text'}">
+                    {t.label}
+                </button>
+            {/each}
+        </div>
+        {#if tab === 'task' && total > 0}
             <span class="text-xs text-text-muted">{completed}/{total} · {percent}%</span>
         {/if}
     </div>
 
+    {#if tab === 'roadmap'}
+        <div class="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+            <RoadmapTree {session} />
+        </div>
+    {:else}
     <div class="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-3">
         {#if total > 0}
             <!-- Progress bar -->
@@ -100,4 +136,5 @@
             </div>
         {/if}
     </div>
+    {/if}
 </div>

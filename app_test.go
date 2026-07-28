@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"claude-manager/internal/analysis"
@@ -286,5 +287,98 @@ func TestClearProjectLogs_RemovesFilesAndDBRows(t *testing.T) {
 
 	if runAfter, err := st.GetRun(run.ID); err != nil || runAfter == nil {
 		t.Errorf("expected session_runs row to survive ClearProjectLogs, err=%v", err)
+	}
+}
+
+// ---- Roadmap panel bindings ----
+
+func newRoadmapApp(t *testing.T, taskSource string) (*App, string) {
+	t.Helper()
+	dir := t.TempDir()
+	plan := &analysis.TaskPlan{
+		Project: "lumen",
+		Subtasks: []analysis.PlannedSubtask{
+			{ID: "setup", Name: "scaffolding", Summary: "bootstrap the module", Prompt: "Create go.mod."},
+			{ID: "store", Name: "storage", Summary: "sqlite layer", Prompt: "Port the store.", DependsOn: []string{"setup"}},
+		},
+		ExecutionOrder: [][]string{{"setup"}, {"store"}},
+	}
+	if _, _, err := analysis.WriteRoadmapFiles(dir, plan, false); err != nil {
+		t.Fatalf("WriteRoadmapFiles: %v", err)
+	}
+	a := &App{cfg: &config.AppConfig{
+		Projects: []config.ProjectConfig{{
+			Name:     "lumen",
+			Path:     dir,
+			Sessions: []config.SessionConfig{{Name: "P1", TaskSource: taskSource}},
+		}},
+	}}
+	return a, dir
+}
+
+func TestGetSessionRoadmap(t *testing.T) {
+	a, _ := newRoadmapApp(t, "STATUS-P1.md")
+	view, err := a.GetSessionRoadmap("lumen", "P1")
+	if err != nil {
+		t.Fatalf("GetSessionRoadmap: %v", err)
+	}
+	if view == nil {
+		t.Fatal("expected a roadmap view")
+	}
+	if view.Total != 2 || view.Done != 0 {
+		t.Errorf("counts: %d done of %d", view.Done, view.Total)
+	}
+	if view.Tasks[0].Status != analysis.RoadmapTaskCurrent {
+		t.Errorf("first task status: %q", view.Tasks[0].Status)
+	}
+}
+
+func TestGetSessionRoadmap_NoTaskSourceIsNotAnError(t *testing.T) {
+	// A Chat/Init session has no task source; the panel shows a placeholder
+	// rather than an error banner.
+	a, _ := newRoadmapApp(t, "")
+	view, err := a.GetSessionRoadmap("lumen", "P1")
+	if err != nil {
+		t.Fatalf("GetSessionRoadmap: %v", err)
+	}
+	if view != nil {
+		t.Errorf("expected nil view, got %+v", view)
+	}
+}
+
+func TestGetSessionRoadmap_UnknownProject(t *testing.T) {
+	a, _ := newRoadmapApp(t, "STATUS-P1.md")
+	if _, err := a.GetSessionRoadmap("nope", "P1"); err == nil {
+		t.Error("expected an error for an unknown project")
+	}
+}
+
+func TestGetRoadmapTaskDetail(t *testing.T) {
+	a, _ := newRoadmapApp(t, "STATUS-P1.md")
+	body, err := a.GetRoadmapTaskDetail("lumen", "tasks/01-setup.md")
+	if err != nil {
+		t.Fatalf("GetRoadmapTaskDetail: %v", err)
+	}
+	if !strings.Contains(body, "Create go.mod.") {
+		t.Errorf("unexpected detail body:\n%s", body)
+	}
+	if _, err := a.GetRoadmapTaskDetail("lumen", "../outside.md"); err == nil {
+		t.Error("path escaping the project must be rejected")
+	}
+}
+
+func TestSessionTaskSource(t *testing.T) {
+	a, _ := newRoadmapApp(t, "STATUS-P1.md")
+	if got := a.sessionTaskSource("lumen", "P1"); got != "STATUS-P1.md" {
+		t.Errorf("got %q", got)
+	}
+	if got := a.sessionTaskSource("lumen", "Chat"); got != "" {
+		t.Errorf("unknown session should return empty, got %q", got)
+	}
+	if got := a.sessionTaskSource("nope", "P1"); got != "" {
+		t.Errorf("unknown project should return empty, got %q", got)
+	}
+	if got := (&App{}).sessionTaskSource("lumen", "P1"); got != "" {
+		t.Errorf("no config should return empty, got %q", got)
 	}
 }

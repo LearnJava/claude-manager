@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -345,6 +346,76 @@ func TestRoadmapFiles_ConsumedByTaskSourceCheck(t *testing.T) {
 	desc := resolveTaskSourceDescription(dir, statusPath)
 	if !strings.Contains(desc, "project-setup") {
 		t.Errorf("resolveTaskSourceDescription should resolve to the first (setup) task's row, got: %q", desc)
+	}
+}
+
+// TestRoadmapView_AgreesWithPointerParsing keeps analysis.ReadRoadmap (which
+// re-implements pointer-line parsing for the UI, since importing this package
+// would be a cycle) in step with firstTaskPointer here: given the same noisy
+// status file, the task ReadRoadmap marks "current" must be the one this
+// package would pick up next.
+func TestRoadmapView_AgreesWithPointerParsing(t *testing.T) {
+	dir := t.TempDir()
+	plan := &analysis.TaskPlan{
+		Project: "demo",
+		Subtasks: []analysis.PlannedSubtask{
+			{ID: "a", Name: "first", Prompt: "Do A."},
+			{ID: "b", Name: "second", Prompt: "Do B."},
+			{ID: "c", Name: "third", Prompt: "Do C."},
+		},
+		ExecutionOrder: [][]string{{"a"}, {"b"}, {"c"}},
+	}
+	roadmapPath, statusPath, err := analysis.WriteRoadmapFiles(dir, plan, false)
+	if err != nil {
+		t.Fatalf("WriteRoadmapFiles: %v", err)
+	}
+
+	// Rewrite the status file with the first task done and plenty of noise
+	// around the remaining pointers.
+	view, err := analysis.ReadRoadmap(dir, "STATUS-P1.md")
+	if err != nil {
+		t.Fatalf("ReadRoadmap: %v", err)
+	}
+	noisy := "# STATUS-P1\n\n> a quote\n- a list item\n* another\n_underscored\n\n" +
+		fmt.Sprintf("%s:%d\n%s:%d\n", "ROADMAP.md", view.Tasks[1].Line, "ROADMAP.md", view.Tasks[2].Line)
+	if err := os.WriteFile(statusPath, []byte(noisy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pointer := firstTaskPointer(noisy)
+	if pointer == "" {
+		t.Fatal("firstTaskPointer found nothing in the noisy status file")
+	}
+
+	view, err = analysis.ReadRoadmap(dir, "STATUS-P1.md")
+	if err != nil {
+		t.Fatalf("ReadRoadmap after rewrite: %v", err)
+	}
+	var current *analysis.RoadmapTask
+	for i := range view.Tasks {
+		if view.Tasks[i].Status == analysis.RoadmapTaskCurrent {
+			current = &view.Tasks[i]
+		}
+	}
+	if current == nil {
+		t.Fatal("no current task in the roadmap view")
+	}
+	if want := fmt.Sprintf("ROADMAP.md:%d", current.Line); want != pointer {
+		t.Errorf("current task is %s but this package would pick %s", want, pointer)
+	}
+	if view.Done != 1 {
+		t.Errorf("Done: want 1, got %d", view.Done)
+	}
+
+	// And the row the pointer resolves to is the same one either way.
+	desc := resolveTaskSourceDescription(dir, statusPath)
+	data, err := os.ReadFile(roadmapPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rowText := strings.Split(string(data), "\n")[current.Line-1]
+	if !strings.Contains(rowText, current.Name) || !strings.Contains(desc, current.Name) {
+		t.Errorf("resolved description %q does not match row %q", desc, rowText)
 	}
 }
 
