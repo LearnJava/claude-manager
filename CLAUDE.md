@@ -110,7 +110,9 @@ claude-manager/
 │   │   │                            #   timelines w/ gate output, model-quality table (MP-08)
 │   │   └── RateLimitBanner.svelte   # Rate limit countdown banner
 │   └── lib/
-│       └── formatters.ts            # Log formatting, time, cost, tokens, percent
+│       ├── formatters.ts            # Log formatting, time, cost, tokens, percent
+│       └── models.ts                # Model catalog: MODELS/EFFORTS + normalizeModel/modelLabel
+│                                    #   (one spelling per model in every dropdown)
 ├── cmd/                             # Test/control harness binaries (see PLAN.md §21)
 │   ├── fakeclaude/                  # Scripted Claude CLI double (deterministic stream-json)
 │   ├── fakeworker/                  # Scripted OpenAI-compatible worker double (SSE, MP-07)
@@ -557,11 +559,10 @@ mid-process — `--model` is fixed at launch — so this reuses the same
 picks one of two paths depending on the session's lifecycle:
 
 - **Autonomous** (`task_source`/`auto_restart`, `Session.Autonomous()`):
-  `SessionManager.SetSessionModel` just calls `Session.SetModel` (updates
-  `activeModel`, leaves `Config.Model` — the persisted default — untouched)
-  and returns. One CLI process already equals one task there, so the next
-  task's `buildCLIArgs()` picks up the new model on its own; the task
-  currently in flight is not interrupted.
+  `SessionManager.SetSessionModel` just calls `Session.SetModel` (updates the
+  live `activeModel` override) and returns. One CLI process already equals one
+  task there, so the next task's `buildCLIArgs()` picks up the new model on
+  its own; the task currently in flight is not interrupted.
 - **Interactive** (one long-lived CLI process, no task boundary):
   `SetSessionModel` soft-restarts it immediately — `StopSession` (hard),
   then a private `startSessionResuming` (a `StartSessionWithOverride` twin)
@@ -580,6 +581,39 @@ picks one of two paths depending on the session's lifecycle:
 `SessionState.Model` (`GetSession`) reports `ActiveModel` (falling back to
 `Config.Model`) so the sidebar/status bar reflect a switch immediately,
 before the next `system/init` event confirms it from the CLI itself.
+
+**The choice is remembered, not just applied.** `activeModel` alone dies with
+the `Session` object, so a switch used to silently revert to the config value
+the next time the session was started (and always after an app restart) —
+the sidebar then showed a model the user never chose. `app.go` therefore wraps
+both entry points, `SetSessionModel` and `StartSessionWithModel` (the
+`ModelPicker` override), with `rememberSessionModel`: it folds the chosen
+model — and the effort, when the caller supplied one — into that session's
+`SessionConfig` through the same `GetConfig`→mutate→`UpdateConfig` round-trip
+every other config edit uses, so it lands in the project overlay next to the
+session's other settings. Persisting runs *before* `manager.SetSessionModel`,
+because `findConfig` hands out a pointer straight into the live config — the
+manager's own "session never started" branch would otherwise have already
+written the new model into the struct `setSessionModelInConfig` compares
+against, and the write to disk would be skipped as a no-op. A failed save is
+logged (`app.remember_session_model`) rather than returned: the switch itself
+already happened, and surfacing an error for it would report the opposite of
+what the user just watched.
+
+**One spelling per model** (`frontend/src/lib/models.ts`). Two vocabularies
+meet in the UI: the aliases passed to `--model` (`haiku`/`sonnet`/`opus`; Fable
+has no alias, so `claude-fable-5` is its canonical value) and the resolved ids
+the CLI reports back in `system/init` (`claude-sonnet-5`,
+`claude-haiku-4-5-20251001`, a pinned id someone typed into `config.toml`).
+The sidebar appended the latter as an extra `<option>`, so one dropdown listed
+both `sonnet` and `claude-sonnet-5`. `normalizeModel` folds any spelling onto
+the canonical value (substring match on the family name; an unrecognised model
+is passed through untouched so a custom id still round-trips) and `modelLabel`
+renders it — every model `<select>` in the app (sidebar, `ModelPicker`,
+`Settings`, `PlanReview`) is now generated from the shared `MODELS`/`EFFORTS`
+lists rather than hand-written `<option>` tags. Exact resolved ids are still
+shown where the *version* is the point: the sidebar select's tooltip and
+`SessionCard`'s "Model:" line.
 
 ### Auth Error Handling (403)
 `drainStderr()` detects lines containing `"403"` + `"forbidden"` / `"authenticate"` / `"unauthorized"`.
@@ -834,8 +868,8 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetMixedQuality(project)` | Per-worker comparative quality report (ModelQuality) |
 | `CancelMixedTask(id)` | Cancel a running mixed task by ID |
 | `StartSession(project, name)` | Launch session with config model/effort |
-| `StartSessionWithModel(project, name, model, effort)` | Launch with model/effort override |
-| `SetSessionModel(id, model)` | Switch a running session's model live (see "Live Model Switching") |
+| `StartSessionWithModel(project, name, model, effort)` | Launch with model/effort override; the override is remembered as the session's default |
+| `SetSessionModel(id, model)` | Switch a running session's model live and remember it (see "Live Model Switching") |
 | `StopSession(id, soft)` | Stop (soft=true finishes current task first) |
 | `RestartSession(id)` | Hard stop + restart |
 | `ResumeSession(id)` | Resume from saved CLI session ID |

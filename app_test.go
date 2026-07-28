@@ -174,6 +174,112 @@ func TestUpsertChatSession_DoesNotMutateCallerSlices(t *testing.T) {
 	}
 }
 
+func TestSetSessionModelInConfig_SetsModelAndEffort(t *testing.T) {
+	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{
+		Name:     "lumen",
+		Sessions: []config.SessionConfig{{Name: "P1", Model: "sonnet", Effort: "medium"}},
+	}}}
+	if !setSessionModelInConfig(cfg, "lumen", "P1", "opus", "high") {
+		t.Fatal("expected a change to be reported")
+	}
+	got := cfg.Projects[0].Sessions[0]
+	if got.Model != "opus" || got.Effort != "high" {
+		t.Errorf("got %+v, want model=opus effort=high", got)
+	}
+}
+
+func TestSetSessionModelInConfig_EmptyEffortKeepsConfigured(t *testing.T) {
+	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{
+		Name:     "lumen",
+		Sessions: []config.SessionConfig{{Name: "P1", Model: "sonnet", Effort: "high"}},
+	}}}
+	setSessionModelInConfig(cfg, "lumen", "P1", "haiku", "")
+	got := cfg.Projects[0].Sessions[0]
+	if got.Model != "haiku" || got.Effort != "high" {
+		t.Errorf("got %+v: a live model switch must not reset effort", got)
+	}
+}
+
+// Nothing to write means nothing gets written: rememberSessionModel skips the
+// whole config round-trip (and the overlay files it rewrites) in that case.
+func TestSetSessionModelInConfig_NoChange(t *testing.T) {
+	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{
+		Name:     "lumen",
+		Sessions: []config.SessionConfig{{Name: "P1", Model: "sonnet", Effort: "high"}},
+	}}}
+	if setSessionModelInConfig(cfg, "lumen", "P1", "sonnet", "high") {
+		t.Error("identical model/effort should report no change")
+	}
+	if setSessionModelInConfig(cfg, "lumen", "P1", "sonnet", "") {
+		t.Error("identical model with no effort override should report no change")
+	}
+}
+
+func TestSetSessionModelInConfig_UnknownProjectOrSession(t *testing.T) {
+	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{
+		Name:     "lumen",
+		Sessions: []config.SessionConfig{{Name: "P1", Model: "sonnet"}},
+	}}}
+	if setSessionModelInConfig(cfg, "other", "P1", "opus", "") {
+		t.Error("unknown project should report no change")
+	}
+	if setSessionModelInConfig(cfg, "lumen", "P9", "opus", "") {
+		t.Error("unknown session should report no change")
+	}
+	if cfg.Projects[0].Sessions[0].Model != "sonnet" {
+		t.Error("existing session must be untouched")
+	}
+}
+
+func TestSetSessionModelInConfig_DoesNotMutateCallerSlices(t *testing.T) {
+	original := []config.SessionConfig{{Name: "P1", Model: "sonnet"}}
+	cfg := &config.AppConfig{
+		Projects: []config.ProjectConfig{{Name: "lumen", Sessions: original}},
+	}
+	setSessionModelInConfig(cfg, "lumen", "P1", "opus", "")
+	if original[0].Model != "sonnet" {
+		t.Errorf("caller's slice mutated in place: %+v", original[0])
+	}
+}
+
+func TestSplitSessionID(t *testing.T) {
+	cases := []struct {
+		id            string
+		project, name string
+		ok            bool
+	}{
+		{"lumen/P1", "lumen", "P1", true},
+		{"lumen/sub/P1", "lumen", "sub/P1", true}, // session names may contain slashes
+		{"lumen", "", "", false},
+		{"/P1", "", "", false},
+		{"lumen/", "", "", false},
+		{"", "", "", false},
+	}
+	for _, c := range cases {
+		project, name, ok := splitSessionID(c.id)
+		if ok != c.ok || project != c.project || name != c.name {
+			t.Errorf("splitSessionID(%q) = (%q, %q, %v), want (%q, %q, %v)",
+				c.id, project, name, ok, c.project, c.name, c.ok)
+		}
+	}
+}
+
+// rememberSessionModel is a no-op without a loaded config or with an empty
+// model — it must never write a session's model away to "".
+func TestRememberSessionModel_NoConfigOrEmptyModel(t *testing.T) {
+	(&App{}).rememberSessionModel("lumen", "P1", "opus", "")
+
+	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{
+		Name:     "lumen",
+		Sessions: []config.SessionConfig{{Name: "P1", Model: "sonnet"}},
+	}}}
+	a := &App{cfg: cfg}
+	a.rememberSessionModel("lumen", "P1", "  ", "")
+	if cfg.Projects[0].Sessions[0].Model != "sonnet" {
+		t.Error("an empty model must not overwrite the configured one")
+	}
+}
+
 func TestProjectPath_Found(t *testing.T) {
 	a := &App{cfg: &config.AppConfig{
 		Projects: []config.ProjectConfig{{Name: "lumen", Path: "/repo/lumen"}},

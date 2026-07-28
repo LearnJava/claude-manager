@@ -232,8 +232,17 @@ func (a *App) GetModelRecommendation(project, name string) (*optimization.ModelR
 
 // StartSessionWithModel starts a session overriding the configured model and effort.
 // Empty strings fall back to the values in config.
+//
+// The override is also remembered as the session's stored default (see
+// rememberSessionModel) — "start it with what I started it with last time" is
+// what the sidebar and the next app launch should show, instead of silently
+// snapping back to whatever the config said before the override.
 func (a *App) StartSessionWithModel(project, name, model, effort string) error {
-	return a.manager.StartSessionWithOverride(project, name, model, effort)
+	if err := a.manager.StartSessionWithOverride(project, name, model, effort); err != nil {
+		return err
+	}
+	a.rememberSessionModel(project, name, model, effort)
+	return nil
 }
 
 // ---- Pre-flight plan bindings (PLAN.md section 17) ----
@@ -557,8 +566,88 @@ func (a *App) GetPendingQuestions() []session.QuestionInfo {
 	return a.manager.GetPendingQuestions()
 }
 
+// SetSessionModel switches a session's model (see CLAUDE.md "Live Model
+// Switching") and remembers it as that session's stored default, so the choice
+// survives the session stopping and the app restarting.
+//
+// Persisting happens first: SessionManager.SetSessionModel mutates the very
+// SessionConfig this reads (findConfig hands out a pointer into the live
+// config) for a session that was never started, which would make the
+// "already the stored value" check below pass for a value that is not on disk
+// yet.
 func (a *App) SetSessionModel(id, model string) error {
+	if project, name, ok := splitSessionID(id); ok {
+		a.rememberSessionModel(project, name, model, "")
+	}
 	return a.manager.SetSessionModel(id, model)
+}
+
+// splitSessionID splits the "project/session" id used everywhere in this app.
+func splitSessionID(id string) (project, name string, ok bool) {
+	parts := strings.SplitN(id, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+// rememberSessionModel writes model (and effort, when non-empty) into the
+// session's persisted config through the same GetConfig-mutate-UpdateConfig
+// round-trip every other config edit uses, so the model a session was last
+// run with becomes what the sidebar shows and what the next start uses.
+//
+// A failure to persist is logged, not returned: the model switch / session
+// start it follows has already happened, and reporting an error for it would
+// tell the user the thing they just watched happen did not.
+func (a *App) rememberSessionModel(project, name, model, effort string) {
+	model = strings.TrimSpace(model)
+	effort = strings.TrimSpace(effort)
+	if a.cfg == nil || model == "" {
+		return
+	}
+
+	cfg := *a.cfg
+	cfg.Projects = append([]config.ProjectConfig(nil), a.cfg.Projects...)
+	if !setSessionModelInConfig(&cfg, project, name, model, effort) {
+		return
+	}
+	if err := a.UpdateConfig(cfg); err != nil {
+		logger.L.Warn("app.remember_session_model",
+			"project", project, "session", name, "model", model, "error", err)
+		return
+	}
+	logger.L.Info("app.remember_session_model",
+		"project", project, "session", name, "model", model, "effort", effort)
+}
+
+// setSessionModelInConfig sets the model/effort of project/session in cfg,
+// operating on cloned slices so the caller's config is never mutated in place
+// (same rule as upsertChatSession above). Reports whether anything changed —
+// false when the session is unknown or already carries these values, so an
+// unchanged config is never rewritten to disk.
+func setSessionModelInConfig(cfg *config.AppConfig, project, name, model, effort string) bool {
+	for pi := range cfg.Projects {
+		if cfg.Projects[pi].Name != project {
+			continue
+		}
+		for si, sc := range cfg.Projects[pi].Sessions {
+			if sc.Name != name {
+				continue
+			}
+			if sc.Model == model && (effort == "" || sc.Effort == effort) {
+				return false
+			}
+			sessions := append([]config.SessionConfig(nil), cfg.Projects[pi].Sessions...)
+			sessions[si].Model = model
+			if effort != "" {
+				sessions[si].Effort = effort
+			}
+			cfg.Projects[pi].Sessions = sessions
+			return true
+		}
+		return false
+	}
+	return false
 }
 
 // ---- State / history / metrics ----

@@ -43,6 +43,7 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | SB-12 | Delete project — cancel times out | Click ✕ once, wait 3s | Button reverts to ✕ without deleting | ○ |
 | SB-13 | Uptime badge hidden on hover | Hover session row | Uptime element not visible while hovered | ○ |
 | SB-14 | ModelPicker shown when auto-routing on | Enable `auto_model_routing`, click ▶ | ModelPicker modal appears before session starts | ○ |
+| SB-15 | Model dropdown has one entry per model | Load app (S1 configured as pinned id `claude-sonnet-4-6`) | Options are exactly Haiku/Sonnet/Opus/Fable, value `sonnet` — no duplicate spelling appended | **✓** |
 
 ---
 

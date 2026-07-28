@@ -12,6 +12,7 @@
     import { refreshSessions } from '../stores/sessions';
     import { setTheme, type Theme } from '../stores/theme';
     import { formatBytes } from '../lib/formatters';
+    import { MODELS, EFFORTS, isKnownModel } from '../lib/models';
     import PlanReview from './PlanReview.svelte';
 
     const dispatch = createEventDispatcher();
@@ -975,13 +976,15 @@
                                         </label>
                                         <div class="flex items-center gap-2">
                                             <select
-                                                bind:value={roadmapModel[i]}
+                                                value={roadmapModel[i] ?? 'opus'}
+                                                on:change={(e) => (roadmapModel[i] = e.currentTarget.value)}
                                                 disabled={!p.Path}
                                                 class="bg-bg border border-bg-border rounded px-2 py-1 text-xs text-text disabled:opacity-50">
-                                                <option value="opus">Opus (latest, recommended)</option>
-                                                <option value="claude-fable-5">Fable 5</option>
-                                                <option value="claude-sonnet-5">Sonnet 5</option>
-                                                <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+                                                {#each MODELS as m}
+                                                    <option value={m.value}>
+                                                        {m.label}{m.value === 'opus' ? ' (recommended)' : ''}
+                                                    </option>
+                                                {/each}
                                             </select>
                                             <button
                                                 type="button"
@@ -1151,10 +1154,13 @@
                                                 <select
                                                     bind:value={sess.Model}
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
-                                                    <option value="opus">opus</option>
-                                                    <option value="sonnet">sonnet</option>
-                                                    <option value="haiku">haiku</option>
-                                                    <option value="claude-fable-5">fable</option>
+                                                    {#each MODELS as m}
+                                                        <option value={m.value}>{m.label}</option>
+                                                    {/each}
+                                                    {#if sess.Model && !isKnownModel(sess.Model)}
+                                                        <!-- A pinned id someone put in config.toml by hand -->
+                                                        <option value={sess.Model}>{sess.Model}</option>
+                                                    {/if}
                                                 </select>
                                             </label>
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
@@ -1162,11 +1168,9 @@
                                                 <select
                                                     bind:value={sess.Effort}
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
-                                                    <option value="low">low</option>
-                                                    <option value="medium">medium</option>
-                                                    <option value="high">high</option>
-                                                    <option value="xhigh">xhigh</option>
-                                                    <option value="max">max</option>
+                                                    {#each EFFORTS as e}
+                                                        <option value={e}>{e}</option>
+                                                    {/each}
                                                 </select>
                                             </label>
                                             <label class="flex flex-col text-xs text-text-muted gap-1">

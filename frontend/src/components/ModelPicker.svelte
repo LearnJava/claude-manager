@@ -9,8 +9,7 @@
         cancel: void;
     }>();
 
-    const MODELS  = ['haiku', 'sonnet', 'opus', 'claude-fable-5'];
-    const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+    import { MODELS, EFFORTS, modelLabel, normalizeModel } from '../lib/models';
 
     // Recommendation loaded from backend (null = not yet loaded)
     type Rec = { model: string; effort: string; complexity: string; reason: string } | null;
@@ -31,7 +30,9 @@
         try {
             rec = await GetModelRecommendation(project, sessionName) as Rec;
             if (rec) {
-                chosenModel  = rec.model;
+                // Normalized so it matches an <option> if the router ever
+                // returns a resolved id instead of an alias.
+                chosenModel  = normalizeModel(rec.model);
                 chosenEffort = rec.effort;
             }
         } catch (e: any) {
@@ -108,7 +109,7 @@
                 <div style="font-size:13px" class="text-text-muted">{rec.reason}</div>
                 <div class="flex items-center gap-3 mt-1">
                     <span class="text-text-muted" style="font-size:13px">Recommended:</span>
-                    <span class="font-mono font-semibold text-blue-400">{rec.model}</span>
+                    <span class="font-mono font-semibold text-blue-400" title={rec.model}>{modelLabel(rec.model)}</span>
                     <span class="text-text-muted" style="font-size:13px">effort:</span>
                     <span class="font-mono font-semibold text-blue-400">{rec.effort}</span>
                 </div>
@@ -136,7 +137,7 @@
                             bind:value={chosenModel}
                             class="bg-bg border border-bg-border rounded px-2 py-1 text-text">
                             {#each MODELS as m}
-                                <option value={m}>{m}</option>
+                                <option value={m.value}>{m.label}</option>
                             {/each}
                         </select>
                     </label>
@@ -171,9 +172,9 @@
                        disabled:opacity-50 disabled:cursor-not-allowed"
                 style="font-size:13px">
                 {#if overriding}
-                    Start with {chosenModel}/{chosenEffort}
+                    Start with {modelLabel(chosenModel)}/{chosenEffort}
                 {:else if rec}
-                    Start with {rec.model}/{rec.effort}
+                    Start with {modelLabel(rec.model)}/{rec.effort}
                 {:else}
                     Start
                 {/if}

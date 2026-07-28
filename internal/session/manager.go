@@ -588,9 +588,11 @@ func (m *SessionManager) ResumeSession(id string) error {
 // managedSession yet (the sidebar still shows it — see GetAllSessions'
 // "configured" stub) — there is nothing running to switch, so this instead
 // updates the in-memory config default directly, picked up whenever the
-// session is first started. Not persisted to disk, same as the activeModel
-// override above: a live runtime choice, not a change to the session's
-// saved default.
+// session is first started.
+//
+// Nothing here touches disk: persisting the choice as the session's stored
+// default is App.SetSessionModel's job (see CLAUDE.md "Live Model Switching"),
+// since config files are owned by the app layer, not the manager.
 func (m *SessionManager) SetSessionModel(id, model string) error {
 	model = strings.TrimSpace(model)
 	if model == "" {

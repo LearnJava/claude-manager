@@ -3,6 +3,7 @@
     import { ApprovePlan, ExecutePlan, ApproveRoadmap } from '../../wailsjs/go/main/App';
     import { analysis } from '../../wailsjs/go/models';
     import { formatCost, formatTokens, formatDuration } from '../lib/formatters';
+    import { MODELS, EFFORTS, modelLabel, isKnownModel } from '../lib/models';
 
     // ---- Local types (mirror internal/analysis/plan.go JSON tags) ----
 
@@ -526,7 +527,7 @@
                         <div class="flex items-baseline justify-between">
                             <div class="text-text font-semibold text-sm">{only.name}</div>
                             <div class="text-text-muted text-xs font-mono">
-                                {only.model || '—'} · {only.effort || '—'}
+                                {modelLabel(only.model) || '—'} · {only.effort || '—'}
                             </div>
                         </div>
                         {#if only.prompt}
@@ -606,10 +607,12 @@
                                                                     <select
                                                                         bind:value={working.subtasks[sIdx].model}
                                                                         class="bg-bg-elevated border border-bg-border rounded px-2 py-1 text-sm text-text">
-                                                                        <option value="opus">opus</option>
-                                                                        <option value="sonnet">sonnet</option>
-                                                                        <option value="haiku">haiku</option>
-                                                                        <option value="claude-fable-5">fable</option>
+                                                                        {#each MODELS as m}
+                                                                            <option value={m.value}>{m.label}</option>
+                                                                        {/each}
+                                                                        {#if working.subtasks[sIdx].model && !isKnownModel(working.subtasks[sIdx].model)}
+                                                                            <option value={working.subtasks[sIdx].model}>{working.subtasks[sIdx].model}</option>
+                                                                        {/if}
                                                                     </select>
                                                                 </label>
                                                                 <label class="flex flex-col text-xs text-text-muted gap-1">
@@ -617,11 +620,9 @@
                                                                     <select
                                                                         bind:value={working.subtasks[sIdx].effort}
                                                                         class="bg-bg-elevated border border-bg-border rounded px-2 py-1 text-sm text-text">
-                                                                        <option value="low">low</option>
-                                                                        <option value="medium">medium</option>
-                                                                        <option value="high">high</option>
-                                                                        <option value="xhigh">xhigh</option>
-                                                                        <option value="max">max</option>
+                                                                        {#each EFFORTS as e}
+                                                                            <option value={e}>{e}</option>
+                                                                        {/each}
                                                                     </select>
                                                                 </label>
                                                             </div>
@@ -663,7 +664,7 @@
                                                                 </span>
                                                             </div>
                                                             <div class="text-text-muted text-xs font-mono whitespace-nowrap">
-                                                                {s.model || '—'} · {s.effort || '—'}
+                                                                {modelLabel(s.model) || '—'} · {s.effort || '—'}
                                                             </div>
                                                         </div>
                                                         {#if s.prompt}

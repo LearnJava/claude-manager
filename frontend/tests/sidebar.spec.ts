@@ -68,6 +68,22 @@ test.describe('Sidebar', () => {
     await ctrl.rpc('StopSession', { id: SESSION_ID, soft: false }).catch(() => {/* ignore */});
   });
 
+  // The model dropdown used to mix two vocabularies: our CLI aliases
+  // (haiku/sonnet/opus) plus whatever spelling the session's model happened to
+  // have — S1 is configured as the pinned id "claude-sonnet-4-6", which was
+  // appended as a fifth option next to "sonnet". Both must now collapse onto
+  // one entry (see frontend/src/lib/models.ts).
+  test('model dropdown offers one entry per model, no duplicate spellings', async ({ page }) => {
+    await page.goto('/');
+
+    const sessionRow = page.locator('[role="button"]', { hasText: SESSION }).first();
+    await expect(sessionRow).toBeVisible({ timeout: 5_000 });
+
+    const modelSelect = sessionRow.locator('select');
+    await expect(modelSelect).toHaveValue('sonnet', { timeout: 3_000 });
+    await expect(modelSelect.locator('option')).toHaveText(['Haiku', 'Sonnet', 'Opus', 'Fable']);
+  });
+
   test('status dot is idle (bg-status-idle) before session starts', async ({ page }) => {
     await page.goto('/');
 

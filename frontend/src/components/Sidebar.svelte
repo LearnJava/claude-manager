@@ -4,6 +4,7 @@
     import ModelPicker from './ModelPicker.svelte';
     import ResumePrompt from './ResumePrompt.svelte';
     import AlienCrew from './AlienCrew.svelte';
+    import { MODELS, normalizeModel, isKnownModel } from '../lib/models';
 
     const dispatch = createEventDispatcher();
     import { selectedSessionId, sessions, type SessionState, type SessionStatus } from '../stores/sessions';
@@ -28,14 +29,18 @@
     // Autonomous sessions pick the new model up at the next task boundary;
     // interactive ones are soft-restarted immediately (see SetSessionModel /
     // CLAUDE.md "Live Model Switching").
-    const LIVE_MODELS = ['haiku', 'sonnet', 'opus', 'claude-fable-5'];
+    //
+    // The session's model is normalized for display: once the CLI reports back
+    // its resolved id (`claude-sonnet-5`) the raw value no longer matches the
+    // alias we sent (`sonnet`), and the select used to grow a second entry for
+    // the same model. The raw id stays in the tooltip.
     let modelBusy: Record<string, boolean> = {};
     let modelError: Record<string, string> = {};
 
     async function onModelChange(e: Event, s: SessionState) {
         e.stopPropagation();
         const model = (e.target as HTMLSelectElement).value;
-        if (!model || model === s.model) return;
+        if (!model || model === normalizeModel(s.model)) return;
         modelBusy = { ...modelBusy, [s.id]: true };
         modelError = { ...modelError, [s.id]: '' };
         try {
@@ -413,18 +418,19 @@
                                         title={`Previous run unfinished (interrupted or stopped)${unfinished[s.id].task ? ' — ' + unfinished[s.id].task : ''}. Click ▶ to continue it or begin from scratch.`}>⏸</span>
                                 {/if}
                                 <select
-                                    value={s.model}
+                                    value={normalizeModel(s.model)}
                                     disabled={!!modelBusy[s.id]}
                                     on:change={(e) => onModelChange(e, s)}
-                                    title="Switch model — autonomous sessions apply it on the next task, interactive sessions restart now (same conversation)"
+                                    title={`Model: ${s.model || '—'}. Switching applies on the next task for autonomous sessions; interactive ones restart now (same conversation). The choice is remembered as this session's default.`}
                                     class="ml-1.5 shrink-0 bg-bg border border-bg-border rounded px-1 text-text-muted
                                            disabled:opacity-50"
                                     style="font-size: 10px; line-height: 1.4;">
-                                    {#each LIVE_MODELS as m}
-                                        <option value={m}>{m}</option>
+                                    {#each MODELS as m}
+                                        <option value={m.value}>{m.label}</option>
                                     {/each}
-                                    {#if s.model && !LIVE_MODELS.includes(s.model)}
-                                        <option value={s.model}>{s.model}</option>
+                                    {#if s.model && !isKnownModel(s.model)}
+                                        <!-- A custom/pinned id from config that isn't one of ours -->
+                                        <option value={normalizeModel(s.model)}>{s.model}</option>
                                     {/if}
                                 </select>
                                 {#if modelBusy[s.id]}
