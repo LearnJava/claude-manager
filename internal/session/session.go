@@ -893,7 +893,10 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	// Persist state before launch so a crash between here and the first init
 	// event is still recoverable (session_id will be filled in by handleLine).
 	if s.crashRecovery && s.stateStore != nil {
-		st := &PersistedState{StartedAt: time.Now()}
+		s.mu.Lock()
+		task := s.taskSourceDesc
+		s.mu.Unlock()
+		st := &PersistedState{StartedAt: time.Now(), Task: task}
 		if err := s.stateStore.Save(s.ProjectName, s.Config.Name, st); err != nil {
 			logger.L.Warn("session.state_save_failed", "id", s.ID, "error", err)
 		}
@@ -1054,13 +1057,29 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 func (s *Session) initialPromptText(forceInteractive bool) string {
 	s.mu.Lock()
 	recovering := s.resumeSessionID != ""
+	interruptedTask := s.taskSourceDesc
 	s.mu.Unlock()
 
 	if recovering {
 		if p := strings.TrimSpace(s.Config.CrashRecoveryPrompt); p != "" {
 			return p
 		}
-		return "The session was interrupted unexpectedly. Please check git status, review your task file, and continue from where you left off."
+		// Mirrors orchestrator.py's recovery prompt: the session is resumed with
+		// its full conversation history, so the reliable way to work out what is
+		// already done is git state + the task file, not the model's assumption
+		// that its last message reflects committed work.
+		var b strings.Builder
+		b.WriteString("The previous session was interrupted (crash, stop, or closed terminal) and never reported this task as finished. ")
+		b.WriteString("Run git status")
+		if s.Config.TaskSource != "" {
+			fmt.Fprintf(&b, ", read %s", s.Config.TaskSource)
+		}
+		b.WriteString(", and use the conversation history above together with the current repository state to determine what is already done. ")
+		b.WriteString("Then continue the task from where it stopped.")
+		if interruptedTask != "" {
+			fmt.Fprintf(&b, " The interrupted task was: %s", interruptedTask)
+		}
+		return b.String()
 	}
 	if forceInteractive {
 		return fmt.Sprintf(

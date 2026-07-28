@@ -47,7 +47,7 @@ test.describe('Sidebar', () => {
 
     // Hover to reveal the toggle button, then click it.
     await sessionRow.hover();
-    const startBtn = sessionRow.getByTitle('Start');
+    const startBtn = sessionRow.getByTitle('Start', { exact: true });
     await expect(startBtn).toBeVisible({ timeout: 2_000 });
 
     // Kick off both assertions concurrently — the backend event and the DOM

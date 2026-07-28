@@ -84,6 +84,7 @@ claude-manager/
 │   │   ├── Sidebar.svelte           # Project tree, session indicators, start/stop/delete,
 │   │   │                            #   auto-routing trigger, resizable via drag handle
 │   │   ├── ModelPicker.svelte       # Pre-start model selector: recommendation + override dropdowns
+│   │   ├── ResumePrompt.svelte      # Unfinished previous run: continue (--resume) / start fresh
 │   │   ├── LogStream.svelte         # Real-time log with color coding, autoscroll, search filter
 │   │   ├── TaskPanel.svelte         # Right of the log, two tabs — "Task": current task
 │   │   │                            #   (TodoWrite), checklist, progress %, session prompt;
@@ -462,14 +463,36 @@ Also not on `control.AppAPI` (same Wails-only reasoning as `GenerateClaudeMdSess
 Mirrors `orchestrator.py` session state files (`.session-PN.json`).
 
 **How it works:**
-1. Before each `runOnce()`, `StateStore.Save()` writes `~/.claude-manager/state/<project>-<session>.json` with `{started_at}` (atomic: tmp → rename).
-2. When the `system/init` event arrives, `StateStore.UpdateSessionID()` patches the file with `session_id`.
+1. Before each `runOnce()`, `StateStore.Save()` writes `~/.claude-manager/state/<project>-<session>.json` with `{started_at, task}` (atomic: tmp → rename). `task` is the resolved task-source description of the run, so the resume prompt below can name what was left unfinished.
+2. When the `system/init` event arrives, `StateStore.UpdateSessionID()` patches the file with `session_id` (loads → patches → saves, so `task` survives).
 3. On successful task completion, `StateStore.Clear()` deletes the file.
 4. On app restart, `Run()` loads the state file. If `session_id` is present, it sets `resumeSessionID` and `buildCLIArgs()` uses `--resume <id>` instead of `--session-id <uuid>`.
-5. The recovery prompt is `CrashRecoveryPrompt` from config (or a built-in English default).
+5. The recovery prompt is `CrashRecoveryPrompt` from config, or a built-in default that mirrors `orchestrator.py`'s: run `git status`, read the session's `task_source` file, reconcile that with the resumed conversation history to work out what is already done, then continue — and it names the interrupted task when one is known. The model's own last message is not treated as evidence of committed work.
 6. `ClearSessionState(project, name)` / the UI button is the equivalent of `--new`: deletes the state file so the next start is fresh.
 
-**Config:** `crash_recovery = true` in `[settings]` (default: true). Per-session: `crash_recovery_prompt`.
+**"Was the previous session finished?" is decided exactly as in `orchestrator.py`:** a
+state file that still carries a `session_id` means *no*. The orchestrator clears
+its `.session-PN.json` only on `exit_code == 0`; this app clears it only in
+`Run()`'s `default:` branch — the one taken when `runOnce` returns without error.
+Every other exit (stop, ctx cancel, app shutdown, crash, error retry path) leaves
+the file behind, and a file whose `session_id` was never filled in (crash before
+the first `init` event) is discarded as unresumable, again as the orchestrator does.
+
+**The choice is the user's, not the manager's** (Sidebar → `ResumePrompt.svelte`).
+Silently resuming was wrong in both directions: it dragged a possibly-derailed
+conversation into a new run, and it gave no way to say "drop it, start over"
+without hunting for the state file. So clicking ▶ on an idle session first calls
+`GetSessionState`; if it reports an unfinished run the `ResumePrompt` modal shows
+the interrupted task, when it started and the CLI session id, and offers
+**Continue** (start as-is → `--resume`), **Start fresh** (`ClearSessionState`,
+then start) or **Cancel**. Idle sessions with such a state file also carry a ⏸
+marker in the sidebar, refreshed on every status change (the state file appears
+when a run is interrupted and is deleted when a task completes cleanly, so no
+polling is needed). Bulk paths — the project-level "Start all", the control-plane
+and MCP `start_session` — are unchanged and still auto-resume: there is nobody
+there to ask.
+
+**Config:** `crash_recovery = true` in `[settings]` (default: true). Per-session: `crash_recovery_prompt`. With `crash_recovery = false` no state files are written at all, so no prompt ever appears.
 
 ### Rate-Limit Fallback Model
 When `fallback_model_on_rate_limit = true` and `fallback_model` is set:

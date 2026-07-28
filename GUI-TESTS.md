@@ -290,6 +290,9 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | CC-03 | Session auto-restarts on context >75% | Push context to 75% with fakeclaude | Session restarts automatically | ○ |
 | CC-04 | Crash recovery on restart | Kill app mid-session, restart | Session resumes with `--resume` flag | ○ |
 | CC-05 | Clear session state works | Click ClearSessionState, restart | Session starts fresh (no `--resume`) | ○ |
+| CC-09 | Unfinished run asks before resuming | Click ▶ on a session whose state file has a `session_id` | ResumePrompt shows the interrupted task; nothing starts until a choice is made | ✓ `resume.spec.ts` |
+| CC-10 | Continue vs Start fresh | Pick each button in ResumePrompt | Continue → StartSession only; Start fresh → ClearSessionState then StartSession | ✓ `resume.spec.ts` |
+| CC-11 | Unfinished marker in sidebar | Session idle with a saved state file | ⏸ marker on the session row, gone once it runs / completes | ✓ `resume.spec.ts` |
 | CC-06 | Keyboard shortcuts inactive in modal | Open Settings, press Ctrl+1 | Session does not change | ○ |
 | CC-07 | Multiple concurrent permissions | 3 sessions all waiting | Queue shows 3 entries; each can be approved independently | ○ |
 | CC-08 | Session with all statuses via fakeclaude | Load `all_statuses` scenario | Status dot cycles through all 6 colors | ○ |

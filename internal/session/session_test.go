@@ -666,6 +666,35 @@ func TestStateStore_SaveLoadClear(t *testing.T) {
 	}
 }
 
+// The resume prompt shows which task was interrupted, so Task must survive both
+// the save/load roundtrip and the later UpdateSessionID patch (which rewrites
+// the whole file from a loaded copy).
+func TestStateStore_TaskSurvivesUpdateSessionID(t *testing.T) {
+	dir := t.TempDir()
+	ss := NewStateStore(dir)
+
+	if err := ss.Save("proj", "sess", &PersistedState{
+		StartedAt: time.Now(),
+		Task:      "ROADMAP.md:92 | 92 | fix layout reflow",
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, _ := ss.Load("proj", "sess")
+	if loaded == nil || loaded.Task != "ROADMAP.md:92 | 92 | fix layout reflow" {
+		t.Fatalf("Task lost on load: %+v", loaded)
+	}
+
+	ss.UpdateSessionID("proj", "sess", "abc-123")
+	after, _ := ss.Load("proj", "sess")
+	if after == nil || after.SessionID != "abc-123" {
+		t.Fatalf("UpdateSessionID: got %+v", after)
+	}
+	if after.Task != loaded.Task {
+		t.Errorf("Task = %q after UpdateSessionID, want %q", after.Task, loaded.Task)
+	}
+}
+
 func TestStateStore_UpdateSessionID_NoFile(t *testing.T) {
 	dir := t.TempDir()
 	ss := NewStateStore(dir)
@@ -818,6 +847,38 @@ func TestInitialPromptText_Recovery_DefaultPrompt(t *testing.T) {
 	}
 	if got == "" {
 		t.Error("recovery should return a non-empty default prompt")
+	}
+}
+
+func TestInitialPromptText_Recovery_DefaultMentionsTaskSourceAndTask(t *testing.T) {
+	s := New(Params{
+		Config: config.SessionConfig{TaskSource: "STATUS-P1.md"},
+	})
+	s.mu.Lock()
+	s.resumeSessionID = "abc-123"
+	s.taskSourceDesc = "ROADMAP.md:92 | fix layout reflow"
+	s.mu.Unlock()
+
+	got := s.initialPromptText(false)
+	for _, want := range []string{"git status", "STATUS-P1.md", "fix layout reflow"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("recovery prompt %q does not mention %q", got, want)
+		}
+	}
+}
+
+func TestInitialPromptText_Recovery_DefaultWithoutTaskSource(t *testing.T) {
+	s := New(Params{Config: config.SessionConfig{Prompt: "normal"}})
+	s.mu.Lock()
+	s.resumeSessionID = "abc-123"
+	s.mu.Unlock()
+
+	got := s.initialPromptText(false)
+	if !strings.Contains(got, "git status") {
+		t.Errorf("recovery prompt %q should still ask for git status", got)
+	}
+	if strings.Contains(got, "read ,") || strings.Contains(got, "interrupted task was:") {
+		t.Errorf("recovery prompt %q should not contain empty placeholders", got)
 	}
 }
 

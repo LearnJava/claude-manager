@@ -2,6 +2,7 @@
     import { createEventDispatcher, onMount } from 'svelte';
     import { projectGroups, collapsedProjects, toggleProject, initProjects } from '../stores/projects';
     import ModelPicker from './ModelPicker.svelte';
+    import ResumePrompt from './ResumePrompt.svelte';
     import AlienCrew from './AlienCrew.svelte';
 
     const dispatch = createEventDispatcher();
@@ -19,6 +20,8 @@
         HasClaudeMd,
         GenerateClaudeMdSession,
         StartAdHocChatSession,
+        GetSessionState,
+        ClearSessionState,
     } from '../../wailsjs/go/main/App';
 
     // Live model switch (small dropdown under each running session's name).
@@ -126,6 +129,53 @@
     // Session for which the ModelPicker is currently open: "project/name" or null
     let pickerFor: { project: string; name: string } | null = null;
 
+    // Crash-recovery state per session id. A state file that still carries a CLI
+    // session id means the previous run never reported a finished task — it was
+    // stopped, crashed, or the app was killed mid-task. Such a row gets a ⏸
+    // marker, and ▶ asks whether to resume that conversation or start over
+    // instead of silently resuming (see ResumePrompt, CLAUDE.md "Crash Recovery").
+    type UnfinishedState = { session_id: string; started_at?: any; task?: string };
+    let unfinished: Record<string, UnfinishedState> = {};
+    let resumeFor: { project: string; name: string; state: UnfinishedState } | null = null;
+
+    async function loadState(project: string, name: string): Promise<UnfinishedState | null> {
+        try {
+            const st = (await GetSessionState(project, name)) as UnfinishedState | null;
+            return st && st.session_id ? st : null;
+        } catch (err) {
+            // A failed check must never block starting a session.
+            console.warn('GetSessionState failed:', err);
+            return null;
+        }
+    }
+
+    function forgetState(id: string) {
+        if (!unfinished[id]) return;
+        const { [id]: _dropped, ...rest } = unfinished;
+        unfinished = rest;
+    }
+
+    async function refreshState(s: { project: string; name: string; id: string }) {
+        const st = await loadState(s.project, s.name);
+        if (st) unfinished = { ...unfinished, [s.id]: st };
+        else forgetState(s.id);
+    }
+
+    // Re-check the state file on every status change: it appears when a run is
+    // interrupted and is deleted when a task completes cleanly, so the marker
+    // stays honest without polling.
+    let seenStatus: Record<string, SessionStatus> = {};
+    $: {
+        for (const g of $projectGroups) {
+            for (const s of g.sessions) {
+                if (seenStatus[s.id] === s.status) continue;
+                seenStatus[s.id] = s.status;
+                if (isRunning(s)) forgetState(s.id);
+                else refreshState(s);
+            }
+        }
+    }
+
     function statusColor(status: SessionStatus): string {
         switch (status) {
             case 'working': return 'bg-status-working';
@@ -179,18 +229,51 @@
         selectedSessionId.set(id);
     }
 
+    // Start path shared by the plain ▶ click and by the resume prompt's
+    // Continue / Start fresh buttons.
+    async function beginStart(project: string, name: string) {
+        if (autoModelRouting) {
+            pickerFor = { project, name };
+            return;
+        }
+        await StartSession(project, name);
+    }
+
     async function onToggleSession(e: Event, s: SessionState) {
         e.stopPropagation();
         try {
             if (isRunning(s)) {
                 await StopSession(s.id, true);
-            } else if (autoModelRouting) {
-                pickerFor = { project: s.project, name: s.name };
-            } else {
-                await StartSession(s.project, s.name);
+                return;
             }
+            // Before starting: was the previous run of this session finished?
+            // A leftover state file with a CLI session id says no, so ask
+            // instead of silently resuming it (or silently discarding it).
+            const st = await loadState(s.project, s.name);
+            if (st) {
+                resumeFor = { project: s.project, name: s.name, state: st };
+                return;
+            }
+            await beginStart(s.project, s.name);
         } catch (err) {
             console.warn('toggle session failed:', err);
+        }
+    }
+
+    async function onResumeChoice(fresh: boolean) {
+        const r = resumeFor;
+        resumeFor = null;
+        if (!r) return;
+        try {
+            if (fresh) {
+                // Equivalent of the orchestrator's --new: drop the saved
+                // conversation so the next launch uses --session-id, not --resume.
+                await ClearSessionState(r.project, r.name);
+                forgetState(`${r.project}/${r.name}`);
+            }
+            await beginStart(r.project, r.name);
+        } catch (err) {
+            console.warn('start after resume choice failed:', err);
         }
     }
 
@@ -322,6 +405,13 @@
                                            {s.stop_requested ? 'ring-2 ring-amber-400' : ''}"
                                     title={statusLabel(s)}></span>
                                 <span class="text-text truncate flex-1" style="font-size: 13px">{s.name}</span>
+                                {#if unfinished[s.id]}
+                                    <span
+                                        class="text-amber-400 mr-1 shrink-0"
+                                        style="font-size: 11px"
+                                        data-testid="unfinished-{s.id}"
+                                        title={`Previous run unfinished (interrupted or stopped)${unfinished[s.id].task ? ' — ' + unfinished[s.id].task : ''}. Click ▶ to continue it or begin from scratch.`}>⏸</span>
+                                {/if}
                                 <select
                                     value={s.model}
                                     disabled={!!modelBusy[s.id]}
@@ -388,5 +478,16 @@
             catch (err) { console.warn('start with model failed:', err); }
         }}
         on:cancel={() => { pickerFor = null; }}
+    />
+{/if}
+
+{#if resumeFor}
+    <ResumePrompt
+        project={resumeFor.project}
+        sessionName={resumeFor.name}
+        state={resumeFor.state}
+        on:continue={() => onResumeChoice(false)}
+        on:fresh={() => onResumeChoice(true)}
+        on:cancel={() => { resumeFor = null; }}
     />
 {/if}

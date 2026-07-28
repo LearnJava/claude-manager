@@ -13,6 +13,12 @@ import (
 type PersistedState struct {
 	SessionID string    `json:"session_id"` // populated once the init event arrives
 	StartedAt time.Time `json:"started_at"`
+	// Task is the resolved task-source description the interrupted run was
+	// working on (empty for sessions without a task_source). It exists so the
+	// resume prompt can say *what* was left unfinished instead of only that
+	// something was — "session_id + started_at" alone is not enough for the
+	// user to decide between continuing and starting over.
+	Task string `json:"task,omitempty"`
 }
 
 // StateStore reads and writes PersistedState files to a directory.
