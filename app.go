@@ -814,6 +814,19 @@ func (a *App) GetRoadmapTaskDetail(project, relPath string) (string, error) {
 	return analysis.ReadRoadmapTaskDetail(path, relPath)
 }
 
+// GetRoadmapRowDetail returns the long-form text of one roadmap row (its
+// `note` column, else the raw row) for roadmaps that keep task descriptions
+// inline instead of in per-task files. Fetched per row on expand: a curated
+// roadmap can carry kilobytes of notes per task, far too much to ship with
+// every tree refresh.
+func (a *App) GetRoadmapRowDetail(project, roadmapFile string, line int) (string, error) {
+	path, err := a.projectPath(project)
+	if err != nil {
+		return "", err
+	}
+	return analysis.ReadRoadmapRowDetail(path, roadmapFile, line)
+}
+
 // sessionTaskSource looks up a session's configured task_source, or "" when
 // the project/session isn't in the config (a session started before a config
 // edit, say).

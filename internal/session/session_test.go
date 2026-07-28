@@ -377,7 +377,7 @@ func TestRoadmapView_AgreesWithPointerParsing(t *testing.T) {
 		t.Fatalf("ReadRoadmap: %v", err)
 	}
 	noisy := "# STATUS-P1\n\n> a quote\n- a list item\n* another\n_underscored\n\n" +
-		fmt.Sprintf("%s:%d\n%s:%d\n", "ROADMAP.md", view.Tasks[1].Line, "ROADMAP.md", view.Tasks[2].Line)
+		fmt.Sprintf("%s:%d\n%s:%d\n", "ROADMAP.md", view.Nodes[1].Line, "ROADMAP.md", view.Nodes[2].Line)
 	if err := os.WriteFile(statusPath, []byte(noisy), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -391,10 +391,10 @@ func TestRoadmapView_AgreesWithPointerParsing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadRoadmap after rewrite: %v", err)
 	}
-	var current *analysis.RoadmapTask
-	for i := range view.Tasks {
-		if view.Tasks[i].Status == analysis.RoadmapTaskCurrent {
-			current = &view.Tasks[i]
+	var current *analysis.RoadmapNode
+	for _, n := range view.Nodes {
+		if n.Current {
+			current = n
 		}
 	}
 	if current == nil {

@@ -88,8 +88,12 @@ claude-manager/
 │   │   ├── TaskPanel.svelte         # Right of the log, two tabs — "Task": current task
 │   │   │                            #   (TodoWrite), checklist, progress %, session prompt;
 │   │   │                            #   "Roadmap": RoadmapTree (default for task_source sessions)
-│   │   ├── RoadmapTree.svelte       # ROADMAP.md as a tree: done/current/pending leaves,
-│   │   │                            #   "+" expands that task's tasks/NN-*.md detail file
+│   │   ├── RoadmapTree.svelte       # ROADMAP.md as a tree: header (progress, curated/pointer
+│   │   │                            #   model, hide-done), project context, phase roots
+│   │   ├── RoadmapNode.svelte       # One tree node, recursive via <svelte:self>: collapse,
+│   │   │                            #   status icon, "← now"/queued marks, "+" loads detail
+│   │   ├── roadmap.ts               # RoadmapView/RoadmapNode types (hand-written: the Go
+│   │   │                            #   type is recursive, generated models flatten it)
 │   │   ├── SessionView.svelte       # Session header: metrics, context bar, cost, export
 │   │   ├── SessionCard.svelte       # Session status badge, model, effort, task count, branch
 │   │   ├── SessionInput.svelte      # Message input for bidirectional streaming
@@ -316,21 +320,51 @@ layout: `DefaultP1SessionPrompt` tells the session to follow the Details link
 when the row has one and to treat the row itself as the whole task when it
 doesn't, so older projects keep working untouched.
 
-**Reading it back** (`analysis.ReadRoadmap` / `ReadRoadmapTaskDetail`,
-`internal/analysis/roadmapview.go`) turns that trio into the `RoadmapView` the
-UI renders as a tree in TaskPanel's "Roadmap" tab. Per-task status is
-*derived, never stored*: a task is `done` exactly when its pointer line is gone
-from the status file, `current` when it is the first remaining pointer, else
-`pending` — the same signal `hasTasks()` uses, so the tree can never disagree
-with what the session will actually pick up next. The parser is deliberately
-tolerant (no Details column, extra columns, unbolded names, hand-written
-roadmaps) and treats an *emptied* status file as "everything done" rather than
-"no roadmap", so a finished project still renders. Pointer-line parsing is
-duplicated here rather than imported from `internal/session` (that would be an
-import cycle); `TestRoadmapView_AgreesWithPointerParsing` in `internal/session`
-is the bridge test that keeps the two in step. `ReadRoadmapTaskDetail` confines
-the row's link to the project folder — a roadmap is repo-editable, and a
-crafted `../../.ssh/id_rsa` link must not turn the panel into a file reader.
+**Reading it back** (`internal/analysis/roadmapview.go`) turns a roadmap into
+the `RoadmapView` tree the UI renders in TaskPanel's "Roadmap" tab. Columns are
+located **by header name, not by position**, because two very different roadmap
+families exist in the wild and both must work:
+
+| | Generated (`WriteRoadmapFiles`) | Curated (hand-maintained, e.g. lumen-browser) |
+|---|---|---|
+| Columns | `# / Task / Details / Depends on` | `id / phase / parent / status / size / bugs / note / title` |
+| Shape | flat | a real tree: phases → tasks → subtasks via `parent` |
+| Status source | `StatusModelPointer` — done ⇔ its pointer line is gone | `StatusModelCurated` — the roadmap's own `status` column |
+| Task text | `tasks/NN-*.md` | the `note` column, inline |
+
+The status-model split is the load-bearing part. Under the pointer model a
+missing pointer means done, which is right for a roadmap this app generated and
+owns. For a curated roadmap it would be catastrophically wrong: lumen-browser
+has 572 tasks and its `STATUS-P1.md` holds two pointers, because that file is
+*one session's queue*, not the backlog — inferring "done" would mark 570 tasks
+finished. So when a `status` column exists it wins, and pointers only set
+`Current` (the first pointer, what the session takes next) and `InQueue`.
+Curated status vocabulary is normalized onto `done|active|blocked|pending`
+(`done/fixed/closed`, `active/inprogress/wip`, `blocker/blocked/wait`, and
+`planned/queued/ready/opt` → pending), with a pointed-at `planned` task shown as
+active — the session is on it regardless of what the column says.
+
+Other invariants: an *emptied* status file means "everything done", not "no
+roadmap", so a finished project still renders; a status file with no pointers
+at all (the legacy `In progress:`/`Next:` format `STATUS-P4.md` still uses)
+falls back to `ROADMAP.md` and renders the tree without a current marker; a
+table with no header row falls back to the historical positional layout; and a
+phase table whose ids nothing references is treated as a flat task list rather
+than sprouting empty phase headers. `Done`/`Total` roll up through the tree, so
+a parent with three finished subtasks reads 3/4.
+
+Long-form text is **never** in the tree payload — a curated roadmap carries
+kilobytes of closing notes per row, and 572 of them per refresh is a
+multi-megabyte payload. The UI fetches one node on expand via
+`ReadRoadmapTaskDetail` (a `tasks/NN-*.md` file) or `ReadRoadmapRowDetail` (the
+row's `note`). Both go through `confinedPath`, which rejects anything escaping
+the project folder — a roadmap is repo-editable, and a crafted
+`../../.ssh/id_rsa` link must not turn the panel into a file reader.
+
+Pointer-line parsing is duplicated here rather than imported from
+`internal/session` (that would be an import cycle);
+`TestRoadmapView_AgreesWithPointerParsing` in `internal/session` is the bridge
+test that keeps the two in step.
 
 `PlannedSubtask.Summary` is the only new analyst field. Since `plan_subtasks`
 has no column for it (nor for `estimated_tokens`/`files_to_touch`/`effort`/
@@ -767,6 +801,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `ApproveRoadmap(planID, overwrite)` | Write ROADMAP.md/STATUS-P1.md into the project + bootstrap the "P1" session |
 | `GetSessionRoadmap(project, session)` | Roadmap tree for the TaskPanel "Roadmap" tab (tasks + done/current/pending); nil when the session has no task source or the project has no roadmap |
 | `GetRoadmapTaskDetail(project, relPath)` | Body of one `tasks/NN-*.md` file (path confined to the project folder) |
+| `GetRoadmapRowDetail(project, roadmapFile, line)` | Long-form text of one roadmap row (its `note` column, else the raw row) for roadmaps that keep descriptions inline |
 | `HasClaudeMd(projectPath)` | Whether `<projectPath>/CLAUDE.md` exists (sidebar banner check) |
 | `GenerateClaudeMdSession(project)` | Bootstrap (or re-point) the "Init" session with `analysis.ClaudeMdInitPrompt` and start it |
 | `StartAdHocChatSession(project)` | Bootstrap (or reuse) a plain interactive "Chat" session (no prompt/task_source) and start it |

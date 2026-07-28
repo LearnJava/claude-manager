@@ -328,8 +328,8 @@ func TestGetSessionRoadmap(t *testing.T) {
 	if view.Total != 2 || view.Done != 0 {
 		t.Errorf("counts: %d done of %d", view.Done, view.Total)
 	}
-	if view.Tasks[0].Status != analysis.RoadmapTaskCurrent {
-		t.Errorf("first task status: %q", view.Tasks[0].Status)
+	if view.Nodes[0].Status != analysis.RoadmapTaskActive || !view.Nodes[0].Current {
+		t.Errorf("first task: status %q current=%v", view.Nodes[0].Status, view.Nodes[0].Current)
 	}
 }
 
@@ -380,5 +380,23 @@ func TestSessionTaskSource(t *testing.T) {
 	}
 	if got := (&App{}).sessionTaskSource("lumen", "P1"); got != "" {
 		t.Errorf("no config should return empty, got %q", got)
+	}
+}
+
+func TestGetRoadmapRowDetail(t *testing.T) {
+	a, _ := newRoadmapApp(t, "STATUS-P1.md")
+	view, err := a.GetSessionRoadmap("lumen", "P1")
+	if err != nil || view == nil {
+		t.Fatalf("GetSessionRoadmap: %v", err)
+	}
+	body, err := a.GetRoadmapRowDetail("lumen", view.RoadmapFile, view.Nodes[0].Line)
+	if err != nil {
+		t.Fatalf("GetRoadmapRowDetail: %v", err)
+	}
+	if !strings.Contains(body, "scaffolding") {
+		t.Errorf("unexpected row detail: %q", body)
+	}
+	if _, err := a.GetRoadmapRowDetail("lumen", "../outside.md", 1); err == nil {
+		t.Error("path escaping the project must be rejected")
 	}
 }
