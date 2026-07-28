@@ -17,6 +17,19 @@
     let searchInput: HTMLInputElement | undefined;
     let stuckToBottom = true;
     let prevLogLen = 0;
+    // Programmatic scrollTop writes (pin-to-bottom) still emit a 'scroll'
+    // event, sometimes before the browser has finished laying out a burst of
+    // newly-appended entries — onScroll can then read a stale scrollHeight
+    // and mistake our own auto-scroll for the user scrolling away, freezing
+    // autoscroll with no way back short of clicking "Jump to latest". Ignore
+    // exactly the one 'scroll' event that follows our own write.
+    let ignoreNextScroll = false;
+
+    function pinToBottom() {
+        if (!container) return;
+        ignoreNextScroll = true;
+        container.scrollTop = container.scrollHeight;
+    }
 
     // Entries longer than this (or multi-line) are collapsed to their first line
     // behind a ＋/− toggle so verbose tool output / prompts don't flood the view.
@@ -74,6 +87,10 @@
 
     function onScroll() {
         if (!container) return;
+        if (ignoreNextScroll) {
+            ignoreNextScroll = false;
+            return;
+        }
         const distance =
             container.scrollHeight - container.scrollTop - container.clientHeight;
         stuckToBottom = distance < FREEZE_THRESHOLD_PX;
@@ -82,13 +99,13 @@
     async function jumpToBottom() {
         if (!container) return;
         await tick();
-        container.scrollTop = container.scrollHeight;
+        pinToBottom();
         stuckToBottom = true;
     }
 
     onMount(() => {
         // Start pinned to bottom on first mount.
-        if (container) container.scrollTop = container.scrollHeight;
+        pinToBottom();
     });
 
     afterUpdate(() => {
@@ -96,7 +113,7 @@
         const grew = entries.length > prevLogLen;
         prevLogLen = entries.length;
         if (grew && stuckToBottom) {
-            container.scrollTop = container.scrollHeight;
+            pinToBottom();
         }
     });
 
@@ -114,9 +131,7 @@
         stuckToBottom = true;
         prevLogLen = 0;
         // Wait until the new entries are rendered, then pin to bottom.
-        tick().then(() => {
-            if (container) container.scrollTop = container.scrollHeight;
-        });
+        tick().then(() => pinToBottom());
     }
 
     // Focus the search box when Ctrl+F is triggered in App.svelte.
