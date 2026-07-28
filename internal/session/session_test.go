@@ -348,6 +348,33 @@ func TestRoadmapFiles_ConsumedByTaskSourceCheck(t *testing.T) {
 	}
 }
 
+// TestRoadmapRow_KeepsDetailsLinkAfterTruncation guards the seam between the
+// generator's row budget and this package's 200-rune cut: the Details link is
+// the only part of a row a session cannot reconstruct, so it must survive
+// truncation even when the analyst writes a wall of text and no summary.
+func TestRoadmapRow_KeepsDetailsLinkAfterTruncation(t *testing.T) {
+	dir := t.TempDir()
+	plan := &analysis.TaskPlan{
+		Project: "demo",
+		Subtasks: []analysis.PlannedSubtask{
+			{ID: "storage", Name: "storage layer", Prompt: strings.Repeat("Port the storage layer carefully ", 40)},
+		},
+		ExecutionOrder: [][]string{{"storage"}},
+	}
+	_, statusPath, err := analysis.WriteRoadmapFiles(dir, plan, false)
+	if err != nil {
+		t.Fatalf("WriteRoadmapFiles: %v", err)
+	}
+
+	desc := resolveTaskSourceDescription(dir, statusPath)
+	if len([]rune(desc)) > maxTaskDescLen {
+		t.Fatalf("description is %d runes, over maxTaskDescLen %d", len([]rune(desc)), maxTaskDescLen)
+	}
+	if !strings.Contains(desc, "tasks/01-storage.md") {
+		t.Errorf("truncation ate the Details link: %q", desc)
+	}
+}
+
 // ---- firstTaskPointer ----
 
 func TestFirstTaskPointer(t *testing.T) {

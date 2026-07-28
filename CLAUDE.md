@@ -280,17 +280,45 @@ plan explicitly). The idea is reviewed/edited in `PlanReview.svelte`
 the single-task feasibility panel hidden and `shared_context` shown as a
 "Project summary" instead).
 
-**Materialization** (`ApproveRoadmap` → `analysis.WriteRoadmapFiles`): renders
-one markdown table row per task into `<project>/ROADMAP.md` (self-descriptive
-single-line rows — `resolveTaskSourceDescription` above returns exactly one
-line, so each row must stand on its own) and, after re-reading the just-written
-file to get real 1-based line numbers, `<project>/STATUS-P1.md` as bare
-`ROADMAP.md:NN` pointers in dependency order — the exact canonical format
-Task Source Check already parses, so nothing changes on the consumption side.
-Refuses to touch either file if it already exists (`ErrRoadmapFilesExist`)
-unless the caller passes `overwrite=true` — a hand-maintained roadmap is never
-silently clobbered; `PlanReview.svelte` surfaces this as an inline "already
-exists — overwrite?" banner (no `window.confirm()`).
+**Materialization** (`ApproveRoadmap` → `analysis.WriteRoadmapFiles`) writes
+three things:
+
+- `<project>/tasks/NN-<id>.md` — one detail file per task, holding the
+  analyst's full `prompt` plus the metadata that used to be dropped on the
+  floor (`estimated_tokens`, `files_to_touch`, `model`, dependencies). File
+  name = zero-padded position + `slugify(subtask.ID)`, falling back to bare
+  `NN.md` for a non-ASCII id.
+- `<project>/ROADMAP.md` — a **navigation table only**: `| # | Task | Details |
+  Depends on |`, where Task is the name plus the analyst's one-line `summary`
+  (or, absent that, `firstSentence(prompt)`) and Details is a relative link to
+  the task file. The full prompt deliberately does *not* go here: at 40+ tasks
+  a table with 2000-character cells is unreadable, and a session would be
+  paging through everyone else's tasks to find its own. Each row is budgeted
+  to stay under `maxRowRunes` (200) because `resolveTaskSourceDescription`
+  truncates the pointed-at line to 200 runes before the UI sees it — an
+  overlong row would lose its Details link, the one part a session cannot
+  reconstruct.
+- `<project>/STATUS-P1.md` — bare `ROADMAP.md:NN` pointers in dependency
+  order, computed by re-reading the just-written ROADMAP.md, in the exact
+  canonical format Task Source Check already parses. Pointers keep pointing at
+  *table rows*, not at task files, so nothing changes on the consumption side.
+
+Refuses to touch anything (`ErrRoadmapFilesExist`) if `ROADMAP.md`,
+`STATUS-P1.md`, or any `tasks/*.md` already exists, unless the caller passes
+`overwrite=true` — a hand-maintained or in-flight roadmap is never silently
+clobbered, and a fresh numbered set must not interleave with an older one;
+`PlanReview.svelte` surfaces this as an inline "already exists — overwrite?"
+banner (no `window.confirm()`). Existing roadmaps are never migrated to this
+layout: `DefaultP1SessionPrompt` tells the session to follow the Details link
+when the row has one and to treat the row itself as the whole task when it
+doesn't, so older projects keep working untouched.
+
+`PlannedSubtask.Summary` is the only new analyst field. Since `plan_subtasks`
+has no column for it (nor for `estimated_tokens`/`files_to_touch`/`effort`/
+`use_worktree`), `LoadPlan` restores those from the plan's analysis blob via
+`restorePlanningFields` — `ApproveRoadmap` renders task files from a freshly
+loaded plan, so without that they'd silently come out empty. Existing values
+win, so an operator edit in the Plan Review UI is never overwritten.
 
 **Bootstrap**: on a successful write, `ApproveRoadmap` upserts a `"P1"`
 `SessionConfig` (Sonnet, `permission_mode` = the project's

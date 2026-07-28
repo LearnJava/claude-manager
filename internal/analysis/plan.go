@@ -53,8 +53,12 @@ const (
 // updated as the plan executes. Fields up to FilesToTouch come from the
 // analyst JSON; SessionID/Status/ResultSummary/FilesChanged are runtime.
 type PlannedSubtask struct {
-	ID              string   `json:"id"`
-	Name            string   `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Summary is the one-line description rendered into the ROADMAP.md table
+	// row; Prompt is the full text that goes into tasks/NN-*.md. Optional —
+	// WriteRoadmapFiles falls back to the first sentence of Prompt.
+	Summary         string   `json:"summary,omitempty"`
 	Prompt          string   `json:"prompt"`
 	DependsOn       []string `json:"depends_on,omitempty"`
 	Model           string   `json:"model,omitempty"`
@@ -413,6 +417,44 @@ func insertSubtaskRow(st *store.Store, planID int64, s *PlannedSubtask) error {
 	return nil
 }
 
+// restorePlanningFields copies the analyst-only planning fields back onto
+// subtasks rebuilt from plan_subtasks rows. Those rows carry just the
+// runtime-mutable columns (status, result, files changed, model), so summary,
+// estimate, files_to_touch, effort and use_worktree would otherwise be lost on
+// every round-trip through the store — and ApproveRoadmap, which runs on a
+// freshly loaded plan, would render task files without them. Existing values
+// win, so an operator edit made in the Plan Review UI is never overwritten.
+func restorePlanningFields(subs []PlannedSubtask, fromAnalysis []PlannedSubtask) {
+	if len(subs) == 0 || len(fromAnalysis) == 0 {
+		return
+	}
+	byID := make(map[string]PlannedSubtask, len(fromAnalysis))
+	for _, s := range fromAnalysis {
+		byID[s.ID] = s
+	}
+	for i := range subs {
+		src, ok := byID[subs[i].ID]
+		if !ok {
+			continue
+		}
+		if subs[i].Summary == "" {
+			subs[i].Summary = src.Summary
+		}
+		if subs[i].Effort == "" {
+			subs[i].Effort = src.Effort
+		}
+		if subs[i].EstimatedTokens == 0 {
+			subs[i].EstimatedTokens = src.EstimatedTokens
+		}
+		if len(subs[i].FilesToTouch) == 0 {
+			subs[i].FilesToTouch = src.FilesToTouch
+		}
+		if !subs[i].UseWorktree {
+			subs[i].UseWorktree = src.UseWorktree
+		}
+	}
+}
+
 // LoadPlan reconstructs a TaskPlan (with subtasks) from the store by ID.
 // Returns (nil, nil) if no plan with that ID exists.
 func LoadPlan(st *store.Store, id int64) (*TaskPlan, error) {
@@ -456,6 +498,7 @@ func LoadPlan(st *store.Store, id int64) (*TaskPlan, error) {
 		}
 		subs = append(subs, s)
 	}
+	restorePlanningFields(subs, analysis.Subtasks)
 
 	kind := PlanKind(row.Kind)
 	if kind == "" {

@@ -91,9 +91,13 @@ const RoadmapJSONSchema = `{
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
+          "summary": {
+            "type": "string",
+            "description": "One short sentence (<= 80 chars) describing the task. Goes into the roadmap table row for navigation only — never the whole task."
+          },
           "prompt": {
             "type": "string",
-            "description": "Self-contained task description for a future session that has not seen this conversation: goal, acceptance criteria, likely area of the code. No 'continue from previous task' language."
+            "description": "Self-contained task description for a future session that has not seen this conversation: goal, acceptance criteria, likely area of the code. No 'continue from previous task' language. Written to its own file, so length is not a problem — be specific."
           },
           "depends_on": { "type": "array", "items": { "type": "string" } },
           "model": { "type": "string" },
@@ -140,7 +144,13 @@ Rules:
 - Each subtask's "prompt" must be self-contained and actionable by a Claude
   Code session that has NOT seen this conversation: state the goal, the
   acceptance criteria (what "done" means), and which files/areas it likely
-  touches. Never use "continue from the previous task" language.
+  touches. Never use "continue from the previous task" language. It is written
+  to its own file, one per task, so there is no length pressure — spell out
+  decisions and tradeoffs instead of compressing them away.
+- "summary" is a separate one-sentence label (<= 80 characters) for the
+  roadmap's navigation table. It is NOT a shortened task: a session always
+  works from "prompt". Keep it concrete ("SQLite storage layer + migrations"),
+  not a category ("backend work").
 - depends_on must reference other subtasks' ids; execution_order groups tasks
   that can run in parallel (same group) vs. sequentially (different groups).
   For a single developer, prefer sequential groups of size 1 unless a task is

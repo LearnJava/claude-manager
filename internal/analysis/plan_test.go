@@ -335,6 +335,67 @@ func TestSavePlanInsertThenUpdate(t *testing.T) {
 	}
 }
 
+func TestLoadPlanRestoresPlanningFieldsFromAnalysis(t *testing.T) {
+	// plan_subtasks has no columns for summary/estimate/files_to_touch — they
+	// only survive in the analysis blob. ApproveRoadmap renders task files from
+	// a freshly loaded plan, so losing them here would silently strip the
+	// metadata out of every tasks/NN-*.md file.
+	plan := samplePlan()
+	plan.Subtasks[0].Summary = "Short label"
+	plan.Subtasks[0].EstimatedTokens = 80000
+	plan.Subtasks[0].FilesToTouch = []string{"a.go"}
+	plan.Subtasks[0].Effort = "high"
+	plan.Subtasks[0].UseWorktree = true
+	plan.Analysis.Subtasks = plan.Subtasks
+
+	st := newTestStore(t)
+	if err := SavePlan(st, plan); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	loaded, err := LoadPlan(st, plan.ID)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	got := loaded.Subtasks[0]
+	if got.Summary != "Short label" {
+		t.Errorf("summary: want %q, got %q", "Short label", got.Summary)
+	}
+	if got.EstimatedTokens != 80000 {
+		t.Errorf("estimated_tokens: want 80000, got %d", got.EstimatedTokens)
+	}
+	if len(got.FilesToTouch) != 1 || got.FilesToTouch[0] != "a.go" {
+		t.Errorf("files_to_touch: want [a.go], got %v", got.FilesToTouch)
+	}
+	if got.Effort != "high" {
+		t.Errorf("effort: want high, got %q", got.Effort)
+	}
+	if !got.UseWorktree {
+		t.Error("use_worktree: want true")
+	}
+}
+
+func TestRestorePlanningFields_KeepsOperatorEdits(t *testing.T) {
+	subs := []PlannedSubtask{{ID: "a", Summary: "edited in the UI", EstimatedTokens: 10}}
+	fromAnalysis := []PlannedSubtask{{ID: "a", Summary: "from the analyst", EstimatedTokens: 999}}
+	restorePlanningFields(subs, fromAnalysis)
+	if subs[0].Summary != "edited in the UI" {
+		t.Errorf("existing summary was overwritten: %q", subs[0].Summary)
+	}
+	if subs[0].EstimatedTokens != 10 {
+		t.Errorf("existing estimate was overwritten: %d", subs[0].EstimatedTokens)
+	}
+}
+
+func TestRestorePlanningFields_IgnoresUnknownAndEmpty(t *testing.T) {
+	subs := []PlannedSubtask{{ID: "a"}}
+	restorePlanningFields(subs, nil)
+	restorePlanningFields(nil, []PlannedSubtask{{ID: "a", Summary: "x"}})
+	restorePlanningFields(subs, []PlannedSubtask{{ID: "other", Summary: "x"}})
+	if subs[0].Summary != "" {
+		t.Errorf("unrelated subtask leaked in: %q", subs[0].Summary)
+	}
+}
+
 func TestSavePlanNilStore(t *testing.T) {
 	if err := SavePlan(nil, samplePlan()); err != nil {
 		t.Errorf("nil store should be no-op, got %v", err)
