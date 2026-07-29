@@ -325,15 +325,34 @@ doesn't, so older projects keep working untouched.
 
 **Reading it back** (`internal/analysis/roadmapview.go`) turns a roadmap into
 the `RoadmapView` tree the UI renders in TaskPanel's "Roadmap" tab. Columns are
-located **by header name, not by position**, because two very different roadmap
-families exist in the wild and both must work:
+located **by header name, not by position**, because very different roadmap
+families exist in the wild and all of them must work:
 
-| | Generated (`WriteRoadmapFiles`) | Curated (hand-maintained, e.g. lumen-browser) |
-|---|---|---|
-| Columns | `# / Task / Details / Depends on` | `id / phase / parent / status / size / bugs / note / title` |
-| Shape | flat | a real tree: phases → tasks → subtasks via `parent` |
-| Status source | `StatusModelPointer` — done ⇔ its pointer line is gone | `StatusModelCurated` — the roadmap's own `status` column |
-| Task text | `tasks/NN-*.md` | the `note` column, inline |
+| | Generated (`WriteRoadmapFiles`) | Curated (hand-maintained, e.g. lumen-browser `ROADMAP.md`) | Tracker (e.g. lumen-browser `BUGS.md`) |
+|---|---|---|---|
+| Columns | `# / Task / Details / Depends on` | `id / phase / parent / status / size / bugs / note / title` | `ID / Статус / Компонент / Описание` |
+| Shape | flat | a real tree: phases → tasks → subtasks via `parent` | flat |
+| Status source | `StatusModelPointer` — done ⇔ its pointer line is gone | `StatusModelCurated` — the roadmap's own `status` column | `StatusModelCurated` |
+| Task text | `tasks/NN-*.md` | the `note` column, inline | `bugs/BUG-NNN-*.md`, linked from the id cell |
+
+The tracker column shows why header matching has to be forgiving. Its headers
+are Russian (`Статус`, `Описание` — `normalizeHeader` carries the Russian
+synonyms alongside the English ones), its id cell *is* a markdown link
+(`[BUG-349](bugs/BUG-349-OPEN.md)` — `plainCell` keeps the label for the name,
+`linkTarget` takes the target as the detail path when no `Details` column
+exists), and its statuses carry a date or a scope (`FIXED 2026-05-15`,
+`WONTFIX (Phase 2+)` — `statusWord` matches the leading keyword). Miss any of
+those and the panel degrades *silently* and badly: an unrecognised status
+column drops the file back to the pointer model, i.e. 411 of 430 open bugs
+rendered as done. A row with only an id gets its inline `Summary` from the
+description column, truncated to `maxSummaryRunes` (120) — `BUG-349` alone
+names nothing, but 430 full descriptions are not going into the tree payload.
+
+A **blank line does not end a table**: hand-maintained trackers break long
+tables into visual chunks, and treating that as the end of the table dropped
+every row below it (BUGS.md rows 366..435 were invisible). `parseTables` keeps
+the header across a blank line but still clears `inTable`, so a genuinely new
+table one blank line down is re-detected from its own separator row.
 
 The status-model split is the load-bearing part. Under the pointer model a
 missing pointer means done, which is right for a roadmap this app generated and
@@ -343,9 +362,25 @@ has 572 tasks and its `STATUS-P1.md` holds two pointers, because that file is
 finished. So when a `status` column exists it wins, and pointers only set
 `Current` (the first pointer, what the session takes next) and `InQueue`.
 Curated status vocabulary is normalized onto `done|active|blocked|pending`
-(`done/fixed/closed`, `active/inprogress/wip`, `blocker/blocked/wait`, and
-`planned/queued/ready/opt` → pending), with a pointed-at `planned` task shown as
-active — the session is on it regardless of what the column says.
+(`done/fixed/closed`, `active/inprogress/wip`, `blocker/blocked/wait/wontfix`,
+and `open/planned/queued/ready/opt` → pending), with a pointed-at `planned` task
+shown as active — the session is on it regardless of what the column says.
+`wontfix` counts as blocked, not done: those rows are deferred (`WONTFIX (Phase
+N+)`) and marking them finished would inflate the progress bar.
+
+**One status file, several roadmaps.** A queue is not required to live in one
+file — lumen-browser's `STATUS-P1.md` holds nineteen `BUGS.md` pointers and one
+`ROADMAP.md:620`. `parsePointers` therefore groups the pointer lines by the
+file they address (in order of first appearance) and `ReadRoadmap` parses each
+one; a pointer into something that isn't a table (`crates/x/src/lib.rs:76`) or
+into an unreadable file contributes nothing. With more than one source,
+`mergeViews` wraps each file's roots in a collapsible group node named after
+the file, and `RoadmapNode.RoadmapFile` — set on *every* node — tells the panel
+which file to ask for a row's text, since a line number only means something
+within its own file. Only the very first pointer overall is `Current`; the rest
+are `InQueue`. `view.status_model` is `"mixed"` when the sources disagree.
+Taking only the first pointer's file (what it used to do) hid the queued
+`ROADMAP.md` task completely.
 
 Other invariants: an *emptied* status file means "everything done", not "no
 roadmap", so a finished project still renders; a status file with no pointers
@@ -856,7 +891,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetPlan(planID)` | Load persisted plan with subtasks (poll during execution) |
 | `GenerateRoadmap(project, idea, model)` | Decompose a project idea into a draft roadmap plan (Opus by default) |
 | `ApproveRoadmap(planID, overwrite)` | Write ROADMAP.md/STATUS-P1.md into the project + bootstrap the "P1" session |
-| `GetSessionRoadmap(project, session)` | Roadmap tree for the TaskPanel "Roadmap" tab (tasks + done/current/pending); nil when the session has no task source or the project has no roadmap |
+| `GetSessionRoadmap(project, session)` | Roadmap tree for the TaskPanel "Roadmap" tab (tasks + done/current/pending, one group node per pointed-at roadmap file); nil when the session has no task source or the project has no roadmap |
 | `GetRoadmapTaskDetail(project, relPath)` | Body of one `tasks/NN-*.md` file (path confined to the project folder) |
 | `GetRoadmapRowDetail(project, roadmapFile, line)` | Long-form text of one roadmap row (its `note` column, else the raw row) for roadmaps that keep descriptions inline |
 | `HasClaudeMd(projectPath)` | Whether `<projectPath>/CLAUDE.md` exists (sidebar banner check) |

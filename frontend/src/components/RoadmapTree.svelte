@@ -76,9 +76,9 @@
             <div class="mt-1 flex items-center justify-between gap-2">
                 <span class="text-[10px] text-text-muted">
                     {view.done}/{view.total} done · {percent}%
-                    {#if view.status_model === 'curated'}
+                    {#if view.status_model !== 'pointer'}
                         <span title="Status comes from the roadmap's own status column; pointers mark this session's queue">
-                            · curated
+                            · {view.status_model}
                         </span>
                     {/if}
                 </span>
@@ -123,7 +123,8 @@
                         roadmapFile={view.roadmap_file}
                         {hideDone}
                         depth={0}
-                        autoExpand={containsCurrent(node) || view.nodes.length <= 3} />
+                        autoExpand={containsCurrent(node) ||
+                            (view.nodes.length <= 3 && node.total <= 50)} />
                 {/each}
             </ul>
         {/if}

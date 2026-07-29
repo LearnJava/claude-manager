@@ -289,6 +289,165 @@ func TestReadRoadmap_CuratedWithoutPointersStillRenders(t *testing.T) {
 	}
 }
 
+// ---- bug-tracker roadmaps (lumen-browser's BUGS.md) ----
+
+// bugTracker mirrors lumen-browser's BUGS.md, which STATUS-P1.md's pointers
+// actually address: Russian headers, the id cell carrying the markdown link to
+// the bug file, statuses written with their date/scope attached, and a blank
+// line splitting the table part-way down.
+const bugTracker = `# BUGS.md — bug tracker
+
+Living list of known engine bugs.
+
+## Bugs
+
+| ID | Статус | Компонент | Описание |
+|---|---|---|---|
+| [BUG-001](bugs/BUG-001-FIXED.md) | FIXED 2026-05-15 | layout | display:none on inline elements not working |
+| [BUG-002](bugs/BUG-002-OPEN.md) | OPEN | paint | broken <img> src shows no alt text |
+
+| [BUG-003](bugs/BUG-003-OPEN.md) | OPEN | js | window.location assignment ignored |
+| [BUG-004](bugs/BUG-004-WONTFIX.md) | WONTFIX (Phase 2+) | layout | CSS Masonry |
+`
+
+func TestReadRoadmap_BugTrackerWithLocalizedHeaders(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "BUGS.md"), []byte(bugTracker), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Line 12 is BUG-003 — below the blank line that used to truncate the table.
+	if err := os.WriteFile(filepath.Join(dir, "STATUS-P1.md"), []byte("BUGS.md:12\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	view, err := ReadRoadmap(dir, "STATUS-P1.md")
+	if err != nil {
+		t.Fatalf("ReadRoadmap: %v", err)
+	}
+	if view.StatusModel != StatusModelCurated {
+		t.Fatalf("status model %q: a recognised «Статус» column must beat the pointer model", view.StatusModel)
+	}
+	if view.Total != 4 || view.Done != 1 {
+		t.Fatalf("counts: %d/%d, want 1/4", view.Done, view.Total)
+	}
+
+	cases := map[string]struct {
+		status  string
+		current bool
+		detail  string
+		summary string
+	}{
+		"BUG-001": {RoadmapTaskDone, false, "bugs/BUG-001-FIXED.md", "display:none on inline elements not working"},
+		"BUG-002": {RoadmapTaskPending, false, "bugs/BUG-002-OPEN.md", "broken <img> src shows no alt text"},
+		"BUG-003": {RoadmapTaskActive, true, "bugs/BUG-003-OPEN.md", "window.location assignment ignored"},
+		"BUG-004": {RoadmapTaskBlocked, false, "bugs/BUG-004-WONTFIX.md", "CSS Masonry"},
+	}
+	for id, want := range cases {
+		node := nodeByName(t, view, id)
+		if node.Name != id {
+			t.Errorf("%s: name %q — the markdown link must not reach the UI", id, node.Name)
+		}
+		if node.Status != want.status {
+			t.Errorf("%s: status %q, want %q (raw %q)", id, node.Status, want.status, node.StatusRaw)
+		}
+		if node.Current != want.current {
+			t.Errorf("%s: current=%v, want %v", id, node.Current, want.current)
+		}
+		if node.DetailPath != want.detail {
+			t.Errorf("%s: detail path %q, want %q", id, node.DetailPath, want.detail)
+		}
+		if node.Summary != want.summary {
+			t.Errorf("%s: summary %q, want %q", id, node.Summary, want.summary)
+		}
+	}
+}
+
+func TestReadRoadmap_QueueSpanningTwoFiles(t *testing.T) {
+	// lumen-browser's STATUS-P1.md queues nineteen BUGS.md rows and one
+	// ROADMAP.md task. Showing only the first pointer's file hid the other.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "BUGS.md"), []byte(bugTracker), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ROADMAP.md"), []byte(curatedRoadmap), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status := "BUGS.md:12\nROADMAP.md:19\ninternal/foo/bar.go:13\n"
+	if err := os.WriteFile(filepath.Join(dir, "STATUS-P1.md"), []byte(status), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	view, err := ReadRoadmap(dir, "STATUS-P1.md")
+	if err != nil {
+		t.Fatalf("ReadRoadmap: %v", err)
+	}
+	// One group per readable roadmap, in pointer order; the source-file pointer
+	// contributes nothing.
+	if len(view.Nodes) != 2 {
+		t.Fatalf("got %d roots, want a group per file", len(view.Nodes))
+	}
+	if view.Nodes[0].Name != "BUGS.md" || view.Nodes[1].Name != "ROADMAP.md" {
+		t.Errorf("groups: %q, %q", view.Nodes[0].Name, view.Nodes[1].Name)
+	}
+	// 4 bugs (1 fixed) + 5 curated tasks (2 done).
+	if view.Total != 9 || view.Done != 3 {
+		t.Errorf("counts: %d/%d, want 3/9", view.Done, view.Total)
+	}
+	if view.RoadmapFile != "BUGS.md" {
+		t.Errorf("primary file %q", view.RoadmapFile)
+	}
+
+	// Every node knows which file it came from — the panel fetches row text
+	// per file, and a BUGS.md line number means nothing in ROADMAP.md.
+	for _, n := range flatten(view.Nodes) {
+		want := "BUGS.md"
+		if strings.HasPrefix(n.ID, "CC") || strings.HasPrefix(n.ID, "P") || n.Name == "ROADMAP.md" {
+			want = "ROADMAP.md"
+		}
+		if n.RoadmapFile != want {
+			t.Errorf("node %q: roadmap_file %q, want %q", n.ID, n.RoadmapFile, want)
+		}
+	}
+
+	// Only the very first pointer is "current"; the ROADMAP.md row is queue.
+	current := nodeByName(t, view, "BUG-003")
+	if !current.Current {
+		t.Error("the first pointer must be the current task")
+	}
+	cc14 := nodeByName(t, view, "CC-14")
+	if cc14.Current || !cc14.InQueue {
+		t.Errorf("CC-14: current=%v in_queue=%v, want queued only", cc14.Current, cc14.InQueue)
+	}
+	if cc14.Status != RoadmapTaskActive {
+		t.Errorf("CC-14 status %q — a queued planned task reads as active", cc14.Status)
+	}
+}
+
+func TestParseTables_BlankLineDoesNotMergeTwoTables(t *testing.T) {
+	// Keeping the header across a blank line must not glue a following table
+	// onto the previous one's columns: its own separator row re-detects it.
+	content := "# R\n\n| id | status | title |\n|---|---|---|\n| A | done | first |\n\n" +
+		"| id | status | note | title |\n|---|---|---|---|\n| B | planned | n | second |\n"
+	rows, _, _ := parseTables(content)
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2: %+v", len(rows), rows)
+	}
+	if rows[1].get("title") != "second" || rows[1].get("note") != "n" {
+		t.Errorf("second table used the first table's header: %+v", rows[1].byName)
+	}
+}
+
+func TestShortSummary_Truncates(t *testing.T) {
+	long := strings.Repeat("я", maxSummaryRunes+40)
+	got := shortSummary(long)
+	if r := []rune(got); len(r) != maxSummaryRunes+1 || r[len(r)-1] != '…' {
+		t.Errorf("truncated to %d runes: %q", len([]rune(got)), got)
+	}
+	if got := shortSummary("[BUG-9](bugs/BUG-9.md) short"); got != "BUG-9 short" {
+		t.Errorf("links must be flattened: %q", got)
+	}
+}
+
 func TestReadRoadmap_UnreferencedPhaseTableBecomesTasks(t *testing.T) {
 	// A single id-keyed table with no phase column: those rows are the tasks,
 	// not phase headers.
@@ -404,8 +563,10 @@ func TestReadRoadmap_ProseOnlyFileIsNotARoadmap(t *testing.T) {
 // ---- helpers ----
 
 func TestNormalizeHeader(t *testing.T) {
-	got := normalizeHeader([]string{"#", "Task", "Details", "Depends on", "Note", "**Bugs**"})
-	want := []string{"number", "title", "details", "depends", "note", "bugs"}
+	got := normalizeHeader([]string{"#", "Task", "Details", "Depends on", "Note", "**Bugs**",
+		"Статус", "Описание", "Название", "Фаза"})
+	want := []string{"number", "title", "details", "depends", "note", "bugs",
+		"status", "note", "title", "phase"}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("column %d: got %q, want %q", i, got[i], want[i])
@@ -431,6 +592,10 @@ func TestResolveStatus_CuratedVocabulary(t *testing.T) {
 		"done": RoadmapTaskDone, "fixed": RoadmapTaskDone,
 		"active": RoadmapTaskActive, "inprogress": RoadmapTaskActive,
 		"blocker": RoadmapTaskBlocked, "wait": RoadmapTaskBlocked,
+		// Statuses as trackers actually write them: with a date or a scope.
+		"fixed 2026-05-15": RoadmapTaskDone, "closed (P1)": RoadmapTaskDone,
+		"in progress": RoadmapTaskActive, "wontfix (phase 2+)": RoadmapTaskBlocked,
+		"open":    RoadmapTaskPending,
 		"planned": RoadmapTaskPending, "queued": RoadmapTaskPending,
 		"ready": RoadmapTaskPending, "opt": RoadmapTaskPending, "": RoadmapTaskPending,
 	}

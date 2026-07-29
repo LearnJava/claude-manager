@@ -26,9 +26,16 @@ import (
 //     truth and the pointer file only says which row *this session* took —
 //     inferring "done" from missing pointers would mark 568 of 570 tasks done,
 //     since one session's queue is not the whole backlog.
+//   - A bug tracker (lumen-browser's BUGS.md, which is what STATUS-P1.md's
+//     pointers actually address): `ID | Статус | Компонент | Описание`, with
+//     the id cell carrying the markdown link to the bug's file and the status
+//     written as "FIXED <date>" / "WONTFIX (Phase N+)". Same curated model.
 //
 // Columns are located by header name, not by position, so neither layout is
-// hard-coded and a project can add columns without breaking the panel.
+// hard-coded and a project can add columns without breaking the panel; header
+// names are matched in English and Russian, because failing to recognise a
+// status column is not cosmetic — it silently reverts the file to the pointer
+// model and reports every open row as done.
 
 // Normalized task statuses reported to the UI.
 const (
@@ -46,6 +53,10 @@ const (
 	// StatusModelCurated reads the roadmap's own status column; pointers only
 	// mark what the current session picked up.
 	StatusModelCurated = "curated"
+	// StatusModelMixed is reported when a status file points into several
+	// roadmaps that don't agree on a model — the per-source nodes still each
+	// use their own, this is only what the header badge says.
+	StatusModelMixed = "mixed"
 )
 
 // Node kinds.
@@ -62,24 +73,28 @@ const (
 // and serializing all of them would mean a multi-megabyte payload per panel
 // refresh. The UI fetches one node's text on expand.
 type RoadmapNode struct {
-	Kind       string         `json:"kind"`
-	ID         string         `json:"id"`
-	Number     int            `json:"number"` // generated roadmaps only; 0 otherwise
-	Name       string         `json:"name"`
-	Summary    string         `json:"summary"`
-	Status     string         `json:"status"`     // normalized: done|active|blocked|pending
-	StatusRaw  string         `json:"status_raw"` // as written: planned, opt, ready, wait…
-	Current    bool           `json:"current"`    // the first pointer in the status file
-	InQueue    bool           `json:"in_queue"`   // any pointer in the status file
-	DetailPath string         `json:"detail_path"`
-	DependsOn  string         `json:"depends_on"`
-	Bugs       string         `json:"bugs"`
-	Size       string         `json:"size"`
-	Line       int            `json:"line"` // 1-based line in the roadmap file
-	HasDetail  bool           `json:"has_detail"`
-	Children   []*RoadmapNode `json:"children,omitempty"`
-	Done       int            `json:"done"`  // including descendants
-	Total      int            `json:"total"` // including descendants
+	Kind       string `json:"kind"`
+	ID         string `json:"id"`
+	Number     int    `json:"number"` // generated roadmaps only; 0 otherwise
+	Name       string `json:"name"`
+	Summary    string `json:"summary"`
+	Status     string `json:"status"`     // normalized: done|active|blocked|pending
+	StatusRaw  string `json:"status_raw"` // as written: planned, opt, ready, wait…
+	Current    bool   `json:"current"`    // the first pointer in the status file
+	InQueue    bool   `json:"in_queue"`   // any pointer in the status file
+	DetailPath string `json:"detail_path"`
+	DependsOn  string `json:"depends_on"`
+	Bugs       string `json:"bugs"`
+	Size       string `json:"size"`
+	Line       int    `json:"line"` // 1-based line in the roadmap file
+	// File this node was read from, relative to the project root. Set on every
+	// node because a status file may point into several roadmaps at once, and
+	// the UI needs to know which one to ask for a row's long-form text.
+	RoadmapFile string         `json:"roadmap_file"`
+	HasDetail   bool           `json:"has_detail"`
+	Children    []*RoadmapNode `json:"children,omitempty"`
+	Done        int            `json:"done"`  // including descendants
+	Total       int            `json:"total"` // including descendants
 
 	// Wiring only, not serialized: the raw phase/parent cells buildTree uses.
 	phase  string
@@ -105,7 +120,8 @@ var (
 	pointerLineRe = regexp.MustCompile(`^(\S+):(\d+)$`)
 	// "**Name** -- summary" — the Task cell WriteRoadmapFiles emits.
 	taskCellRe = regexp.MustCompile(`^\*\*(.+?)\*\*\s*(?:--\s*(.*))?$`)
-	mdLinkRe   = regexp.MustCompile(`\[[^\]]*\]\(([^)]+)\)`)
+	// [text](target) — group 1 is the label, group 2 the link target.
+	mdLinkRe = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
 	// A table separator row: only dashes, colons and pipes.
 	separatorRowRe = regexp.MustCompile(`^[\s|:-]+$`)
 )
@@ -115,9 +131,15 @@ var (
 var ErrNoRoadmap = errors.New("analysis: no roadmap for this task source")
 
 // ReadRoadmap resolves taskSource (relative to projectPath unless absolute),
-// finds the roadmap file its pointers refer to, and returns the roadmap as a
+// finds the roadmap file(s) its pointers refer to, and returns them as one
 // tree with per-node status. Returns ErrNoRoadmap when there is nothing to
 // show.
+//
+// A status file may point into several roadmaps at once — lumen-browser's
+// STATUS-P1.md queues nineteen BUGS.md rows and one ROADMAP.md task — so every
+// referenced file that parses into rows becomes a source, and each gets a
+// group node of its own when there is more than one. Showing only the first
+// pointer's file hid queued work entirely.
 //
 // An *empty* backlog is not "no roadmap": the status file keeps its heading
 // after the last pointer is deleted, so a finished project still renders —
@@ -135,37 +157,60 @@ func ReadRoadmap(projectPath, taskSource string) (*RoadmapView, error) {
 		return nil, ErrNoRoadmap
 	}
 
-	roadmapRel, openLines, firstOpen := parsePointers(string(statusData))
-	if roadmapRel == "" {
+	pointers := parsePointers(string(statusData))
+	if len(pointers) == 0 {
 		// No pointer names a roadmap file: a legacy "In progress:"/"Next:"
 		// task file, or an emptied status file. Fall back to the conventional
 		// name so those projects still get a tree (without a "current" mark).
-		roadmapRel = roadmapFileName
+		pointers = []filePointers{{file: roadmapFileName, open: map[int]bool{}}}
 	}
-	roadmapPath := roadmapRel
-	if !filepath.IsAbs(roadmapPath) {
-		roadmapPath = filepath.Join(projectPath, roadmapPath)
+
+	var views []*RoadmapView
+	for _, p := range pointers {
+		roadmapPath := p.file
+		if !filepath.IsAbs(roadmapPath) {
+			roadmapPath = filepath.Join(projectPath, roadmapPath)
+		}
+		data, err := os.ReadFile(roadmapPath)
+		if err != nil {
+			continue // a pointer into a file we can't read is not a roadmap
+		}
+		v := parseRoadmap(string(data), p.open, p.first)
+		if v.Total == 0 {
+			continue // a source file, or a document with no task table
+		}
+		v.RoadmapFile = p.file
+		for _, n := range flattenNodes(v.Nodes) {
+			n.RoadmapFile = p.file
+		}
+		views = append(views, v)
 	}
-	roadmapData, err := os.ReadFile(roadmapPath)
-	if err != nil {
+	if len(views) == 0 {
 		return nil, ErrNoRoadmap
 	}
 
-	view := parseRoadmap(string(roadmapData), openLines, firstOpen)
-	if view.Total == 0 {
-		return nil, ErrNoRoadmap
-	}
-	view.RoadmapFile = roadmapRel
+	view := mergeViews(views)
 	view.StatusFile = taskSource
 	return view, nil
 }
 
-// parsePointers extracts the roadmap file the pointers refer to, the set of
-// pointed-at line numbers, and the first one (the row this session takes
-// next). The first pointer decides the file; pointers into other files
-// (BUGS.md, a source file) are ignored rather than mixed in.
-func parsePointers(status string) (roadmapRel string, open map[int]bool, firstOpen int) {
-	open = map[int]bool{}
+// filePointers is one roadmap file referenced by the status file: the lines
+// pointed at, and the first of them when this file holds the very first
+// pointer overall (the row the session takes next).
+type filePointers struct {
+	file  string
+	open  map[int]bool
+	first int
+}
+
+// parsePointers groups the status file's pointer lines by the file they
+// address, in order of first appearance. Only the first pointer overall marks
+// a row "current" — that is the one the session picks up next; the rest are
+// queue.
+func parsePointers(status string) []filePointers {
+	var out []filePointers
+	index := map[string]int{}
+	firstSeen := false
 	for _, line := range strings.Split(status, "\n") {
 		s := strings.TrimSpace(line)
 		if s == "" || strings.HasPrefix(s, "#") || strings.HasPrefix(s, ">") ||
@@ -176,22 +221,68 @@ func parsePointers(status string) (roadmapRel string, open map[int]bool, firstOp
 		if m == nil {
 			continue
 		}
-		if roadmapRel == "" {
-			roadmapRel = m[1]
-		}
-		if m[1] != roadmapRel {
-			continue
-		}
 		n, err := strconv.Atoi(m[2])
 		if err != nil || n <= 0 {
 			continue
 		}
-		if firstOpen == 0 {
-			firstOpen = n
+		i, ok := index[m[1]]
+		if !ok {
+			i = len(out)
+			index[m[1]] = i
+			out = append(out, filePointers{file: m[1], open: map[int]bool{}})
 		}
-		open[n] = true
+		if !firstSeen {
+			out[i].first = n
+			firstSeen = true
+		}
+		out[i].open[n] = true
 	}
-	return roadmapRel, open, firstOpen
+	return out
+}
+
+// mergeViews folds per-file roadmaps into the single tree the UI renders. With
+// one source it *is* that view; with several, each becomes a collapsible group
+// node named after its file, so a queue spanning BUGS.md and ROADMAP.md shows
+// both instead of silently dropping one.
+func mergeViews(views []*RoadmapView) *RoadmapView {
+	if len(views) == 1 {
+		return views[0]
+	}
+	merged := &RoadmapView{
+		Title:       views[0].Title,
+		RoadmapFile: views[0].RoadmapFile,
+		Context:     views[0].Context,
+		StatusModel: views[0].StatusModel,
+	}
+	for _, v := range views {
+		if v.StatusModel != merged.StatusModel {
+			merged.StatusModel = StatusModelMixed
+		}
+		group := &RoadmapNode{
+			Kind:        RoadmapNodePhase,
+			ID:          v.RoadmapFile,
+			Name:        v.RoadmapFile,
+			Summary:     v.Title,
+			RoadmapFile: v.RoadmapFile,
+			Children:    v.Nodes,
+			Done:        v.Done,
+			Total:       v.Total,
+		}
+		merged.Nodes = append(merged.Nodes, group)
+		merged.Done += v.Done
+		merged.Total += v.Total
+	}
+	return merged
+}
+
+// flattenNodes returns every node of the tree, depth-first.
+func flattenNodes(nodes []*RoadmapNode) []*RoadmapNode {
+	out := make([]*RoadmapNode, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, n)
+		out = append(out, flattenNodes(n.Children)...)
+	}
+	return out
 }
 
 // ---- table parsing ----
@@ -222,7 +313,15 @@ func parseTables(content string) (rows []tableRow, title string, context []strin
 
 		if !strings.HasPrefix(trimmed, "|") {
 			inTable = false
-			header = nil
+			// A *blank* line does not end the table: hand-maintained trackers
+			// break a long table into visual chunks (lumen-browser's BUGS.md
+			// has one at row 366 of 435), and forgetting the header there
+			// silently dropped every row below it. Only real content ends a
+			// table. `inTable` is still cleared, so a genuinely new table
+			// separated by one blank line is re-detected from its own header.
+			if trimmed != "" {
+				header = nil
+			}
 			switch {
 			case strings.HasPrefix(trimmed, "# ") && title == "":
 				title = strings.TrimSpace(strings.TrimPrefix(trimmed, "# "))
@@ -268,6 +367,13 @@ func parseTables(content string) (rows []tableRow, title string, context []strin
 
 // normalizeHeader lowercases header cells and maps synonyms onto the canonical
 // column names this package understands.
+//
+// Russian column names are recognised alongside the English ones: the roadmaps
+// this app *generates* are English, but the ones it *reads* are whatever the
+// project keeps (lumen-browser's BUGS.md is `ID | Статус | Компонент |
+// Описание`), and an unrecognised status column is not a cosmetic loss — it
+// drops the roadmap back to the pointer model, where every row without a
+// pointer reads as done.
 func normalizeHeader(cells []string) []string {
 	out := make([]string, len(cells))
 	for i, c := range cells {
@@ -276,13 +382,25 @@ func normalizeHeader(cells []string) []string {
 		switch name {
 		case "#", "№", "no", "num":
 			name = "number"
-		case "depends on", "depends_on", "deps", "after":
+		case "ид":
+			name = "id"
+		case "depends on", "depends_on", "deps", "after", "зависит от", "зависимости":
 			name = "depends"
-		case "detail", "details", "link", "file":
+		case "detail", "details", "link", "file", "детали", "файл", "ссылка":
 			name = "details"
-		case "note", "notes", "description", "desc":
+		case "note", "notes", "description", "desc", "описание", "примечание", "комментарий":
 			name = "note"
-		case "name", "title", "task", "subject":
+		case "state", "статус", "состояние":
+			name = "status"
+		case "phase", "фаза":
+			name = "phase"
+		case "parent", "родитель":
+			name = "parent"
+		case "size", "размер", "оценка":
+			name = "size"
+		case "bugs", "баги":
+			name = "bugs"
+		case "name", "title", "task", "subject", "название", "задача", "заголовок":
 			// "task" is the generated format's "**Name** -- summary" cell;
 			// "title" is the curated format's plain title. Both name the task,
 			// so they share a slot — a table with both is not a thing.
@@ -374,8 +492,8 @@ func rowToNode(row tableRow) (*RoadmapNode, string) {
 		return legacyRowToNode(row)
 	}
 
-	id := row.get("id")
-	titleCell := row.get("title")
+	id := plainCell(row.get("id"))
+	titleCell := plainCell(row.get("title"))
 	numText := row.get("number")
 
 	node := &RoadmapNode{
@@ -395,8 +513,12 @@ func rowToNode(row tableRow) (*RoadmapNode, string) {
 	} else if numText != "" && numText != "#" {
 		return nil, "" // header row of a numbered table
 	}
-	if m := mdLinkRe.FindStringSubmatch(row.get("details")); m != nil {
-		node.DetailPath = strings.TrimSpace(m[1])
+	// The detail file is usually linked from a dedicated column; a bug tracker
+	// links it from the id cell itself ("[BUG-349](bugs/BUG-349-OPEN.md)").
+	for _, cell := range []string{row.get("details"), row.get("id"), row.get("title")} {
+		if node.DetailPath = linkTarget(cell); node.DetailPath != "" {
+			break
+		}
 	}
 
 	// The task cell is either "**Name** -- summary" (generated) or a plain
@@ -407,13 +529,18 @@ func rowToNode(row tableRow) (*RoadmapNode, string) {
 	} else {
 		node.Name = titleCell
 	}
+	note := strings.TrimSpace(row.get("note"))
 	if node.Name == "" && node.Summary == "" {
 		node.Name = node.ID
+		// A table keyed only by id ("BUG-349") says nothing on its own, so the
+		// description column doubles as the summary — truncated, since the
+		// full text is what the "+" expander fetches per row.
+		node.Summary = shortSummary(note)
 	}
 	if node.Name == "" && node.ID == "" {
 		return nil, "" // an empty or malformed row
 	}
-	node.HasDetail = node.DetailPath != "" || strings.TrimSpace(row.get("note")) != ""
+	node.HasDetail = node.DetailPath != "" || note != ""
 
 	phase := row.get("phase")
 	parent := row.get("parent")
@@ -449,8 +576,8 @@ func legacyRowToNode(row tableRow) (*RoadmapNode, string) {
 		node.Summary = row.cells[1]
 	}
 	for _, cell := range row.cells[2:] {
-		if m := mdLinkRe.FindStringSubmatch(cell); m != nil && node.DetailPath == "" {
-			node.DetailPath = strings.TrimSpace(m[1])
+		if target := linkTarget(cell); target != "" && node.DetailPath == "" {
+			node.DetailPath = target
 			continue
 		}
 		if node.DependsOn == "" && cell != "" {
@@ -461,15 +588,64 @@ func legacyRowToNode(row tableRow) (*RoadmapNode, string) {
 	return node, RoadmapNodeTask
 }
 
+// plainCell strips markdown link syntax from a cell, keeping the link text —
+// a bug tracker writes its id as "[BUG-349](bugs/BUG-349-OPEN.md)" and the
+// panel must show "BUG-349", not the raw markdown.
+func plainCell(cell string) string {
+	return strings.TrimSpace(mdLinkRe.ReplaceAllString(cell, "$1"))
+}
+
+// linkTarget returns the first markdown link target in a cell, if any.
+func linkTarget(cell string) string {
+	if m := mdLinkRe.FindStringSubmatch(cell); m != nil {
+		return strings.TrimSpace(m[2])
+	}
+	return ""
+}
+
+// maxSummaryRunes bounds the inline summary taken from a description column:
+// a curated tracker's descriptions run to kilobytes each and the tree payload
+// carries one node per row (435 of them in lumen-browser's BUGS.md).
+const maxSummaryRunes = 120
+
+func shortSummary(s string) string {
+	s = strings.TrimSpace(plainCell(s))
+	r := []rune(s)
+	if len(r) <= maxSummaryRunes {
+		return s
+	}
+	return strings.TrimSpace(string(r[:maxSummaryRunes])) + "…"
+}
+
+// statusWord reduces a status cell to its leading keyword. Curated trackers
+// write the status with its date or scope attached — "FIXED 2026-05-15",
+// "WONTFIX (Phase 1+)" — and matching those literally left them unrecognised,
+// i.e. silently pending.
+func statusWord(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	s = strings.Trim(s, "*_`")
+	for _, multi := range []string{"in progress", "in-progress", "in_progress", "в работе", "не начат"} {
+		if strings.HasPrefix(s, multi) {
+			return "in progress"
+		}
+	}
+	if i := strings.IndexAny(s, " \t(,;:"); i > 0 {
+		s = s[:i]
+	}
+	return s
+}
+
 // resolveStatus maps a row onto a normalized status.
 func resolveStatus(node *RoadmapNode, model string, open map[int]bool) string {
 	if model == StatusModelCurated {
-		switch node.StatusRaw {
-		case "done", "fixed", "closed", "complete", "completed":
+		switch statusWord(node.StatusRaw) {
+		case "done", "fixed", "closed", "complete", "completed", "готово", "закрыт", "исправлено":
 			return RoadmapTaskDone
-		case "active", "inprogress", "in progress", "in_progress", "wip":
+		case "active", "inprogress", "in progress", "wip", "работа":
 			return RoadmapTaskActive
-		case "blocker", "blocked", "wait", "waiting":
+		case "blocker", "blocked", "wait", "waiting", "wontfix", "заблокирован":
+			// wontfix is not done: these rows are deferred ("WONTFIX (Phase
+			// N+)"), and counting them as finished would inflate progress.
 			return RoadmapTaskBlocked
 		default:
 			// planned / queued / ready / opt / unset

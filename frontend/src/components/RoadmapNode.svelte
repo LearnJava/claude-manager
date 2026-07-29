@@ -28,6 +28,9 @@
     // Detail text exists for a leaf when the roadmap either linked a file or
     // carried a note; the row itself is the fallback.
     $: canExpandDetail = node.kind !== 'phase';
+    // A status file can queue rows from several roadmaps at once, so the row's
+    // own file wins over the view-level one.
+    $: nodeFile = node.roadmap_file || roadmapFile;
 
     async function toggleDetail() {
         showDetail = !showDetail;
@@ -37,7 +40,7 @@
         try {
             detail = node.detail_path
                 ? await GetRoadmapTaskDetail(project, node.detail_path)
-                : await GetRoadmapRowDetail(project, roadmapFile, node.line);
+                : await GetRoadmapRowDetail(project, nodeFile, node.line);
         } catch (e: any) {
             detailError = e?.message ?? String(e);
         } finally {
@@ -78,6 +81,7 @@
             <button
                 type="button"
                 on:click={() => (open = !open)}
+                title={node.summary}
                 class="text-left break-words flex-1 font-semibold text-text">
                 {node.name || node.id}
                 <span class="ml-1 font-normal text-text-muted">{node.done}/{node.total}</span>
@@ -137,7 +141,7 @@
                 <svelte:self
                     node={child}
                     {project}
-                    {roadmapFile}
+                    roadmapFile={nodeFile}
                     {hideDone}
                     depth={depth + 1}
                     autoExpand={false} />

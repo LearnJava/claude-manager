@@ -23,6 +23,8 @@ export type RoadmapNode = {
     bugs: string;
     size: string;
     line: number;
+    /** File this node was read from — a status file may span several roadmaps. */
+    roadmap_file: string;
     has_detail: boolean;
     children?: RoadmapNode[];
     done: number;
@@ -34,8 +36,11 @@ export type RoadmapView = {
     roadmap_file: string;
     status_file: string;
     context: string;
-    /** "pointer" (done = no pointer) or "curated" (the roadmap's status column). */
-    status_model: 'pointer' | 'curated';
+    /**
+     * "pointer" (done = no pointer), "curated" (the roadmap's status column),
+     * or "mixed" when the queue spans roadmaps that disagree.
+     */
+    status_model: 'pointer' | 'curated' | 'mixed';
     nodes: RoadmapNode[];
     done: number;
     total: number;
