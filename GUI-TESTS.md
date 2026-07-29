@@ -91,6 +91,12 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | LS-08 | "No entries match" shown when filter misses | Type query matching nothing | Empty state message "No entries match query" visible | ○ |
 | LS-09 | "No log entries yet" on fresh session | Select session with empty log | Empty state message "No log entries yet" visible | ○ |
 | LS-10 | Ctrl+F focuses and selects search text | Ctrl+F with text already in search | Text is selected in input (ready to replace) | ○ |
+| LS-11 | Markdown message renders formatted | Push a log entry with headings/list/table/code | `.md-body` with `<h2>/<li>/<td>/<pre>` rendered, link has `href` | ✓ |
+| LS-12 | Markdown checkbox switches to raw | Uncheck "Markdown" | `.md-body` gone, `**bold**` visible verbatim | ✓ |
+| LS-13 | Markdown entry starts expanded | Push a long markdown entry | Full body shown, not the one-line summary | ✓ |
+| LS-14 | Plain text unaffected by the toggle | Push `Working on the task...` | Text rendered as before, no `.md-body` | ✓ |
+| LS-15 | Tool output never parsed as markdown | Push a `tool_result` entry starting with `# comment` | Raw text, no `.md-body` | ✓ |
+| LS-16 | Markdown choice persists | Uncheck, reload the app | Checkbox still unchecked (localStorage) | ✓ |
 
 ---
 

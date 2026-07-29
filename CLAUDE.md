@@ -78,6 +78,7 @@ claude-manager/
 │   │   ├── projects.ts              # Projects state
 │   │   ├── theme.ts                 # Dark/light theme toggle, localStorage persistence
 │   │   ├── logSearch.ts             # Log filter store, Ctrl+F focus
+│   │   ├── logView.ts               # Log rendering mode: markdown vs raw (localStorage)
 │   │   └── workers.ts               # Mixed programming: worker:* events, per-project tasks/
 │   │                                #   quality, register+dispatch+cancel actions (MP-08)
 │   ├── components/
@@ -85,7 +86,8 @@ claude-manager/
 │   │   │                            #   auto-routing trigger, resizable via drag handle
 │   │   ├── ModelPicker.svelte       # Pre-start model selector: recommendation + override dropdowns
 │   │   ├── ResumePrompt.svelte      # Unfinished previous run: continue (--resume) / start fresh
-│   │   ├── LogStream.svelte         # Real-time log with color coding, autoscroll, search filter
+│   │   ├── LogStream.svelte         # Real-time log with color coding, autoscroll, search filter,
+│   │   │                            #   "Markdown" checkbox (formatted ⇄ raw)
 │   │   ├── TaskPanel.svelte         # Right of the log, two tabs — "Task": current task
 │   │   │                            #   (TodoWrite), checklist, progress %, session prompt;
 │   │   │                            #   "Roadmap": RoadmapTree (default for task_source sessions)
@@ -111,6 +113,8 @@ claude-manager/
 │   │   └── RateLimitBanner.svelte   # Rate limit countdown banner
 │   └── lib/
 │       ├── formatters.ts            # Log formatting, time, cost, tokens, percent
+│       ├── markdown.ts              # Dependency-free markdown → safe HTML for the log
+│       │                            #   (hasMarkdown/renderMarkdown, escapes everything)
 │       └── models.ts                # Model catalog: MODELS/EFFORTS + normalizeModel/modelLabel
 │                                    #   (one spelling per model in every dropdown)
 ├── cmd/                             # Test/control harness binaries (see PLAN.md §21)
@@ -583,6 +587,46 @@ project's `logs/` dir (`store.ClearProjectLogFiles`) *and* the project's
 `session_runs` rows alone, so History/Dashboard still show past runs, just
 without their log bodies. Two-click confirm button (`window.confirm()` is
 disabled in Wails WebView2 — see Conventions).
+
+### Markdown in the Log
+
+Claude writes markdown — tables, headings, checklists, fenced code — and the
+log used to show it as raw source in a monospace column, where a comparison
+table is a wall of pipes. `LogStream` now renders it, with a **Markdown**
+checkbox in the log's toolbar (next to the search box) to fall back to the
+verbatim text; the choice is global and persisted (`stores/logView.ts`,
+localStorage), because it is a reading preference, not per-session state.
+
+**Own renderer, no dependency** (`frontend/src/lib/markdown.ts`). The output is
+injected with `{@html}`, so every tag has to be one this file emitted:
+`renderInline` pulls code spans out first, escapes everything that is left, and
+only then re-inserts its own markup — safe by construction rather than by a
+sanitizer pass. URLs are scheme-checked (`http(s)`, `mailto`, relative only), so
+a `[click](javascript:…)` link degrades to its label. Supported: fenced code,
+ATX headings, rules, blockquotes, nested/ordered/task lists, pipe tables with
+alignment, soft line breaks, bold/italic/strike/inline-code/links/bare URLs.
+`marked`/`markdown-it` would have been a runtime dependency plus a sanitizer for
+a renderer this small, in an app that otherwise ships zero frontend deps.
+
+**Two gates before anything is reformatted.** `hasMarkdown` looks for actual
+markup (a heading, list, fence, table, emphasis…) — plain prose is left exactly
+as it was. And only levels that carry prose (`text`, `thinking`, `result`,
+`user`, plus unset) are eligible: a `tool_result` holding a shell transcript
+whose comments start with `#` must not sprout headings, and tool input/errors
+stay raw for the same reason.
+
+**Markdown entries default to expanded.** The collapse-to-first-line rule for
+long entries (see `COLLAPSE_CHARS`) is exactly wrong for a table or a code
+block, which is the part that needed formatting. The default open state is
+decided by whether the *message* is markdown, deliberately independent of the
+checkbox — flipping raw/formatted changes only the presentation and never
+collapses a row under the user. Explicit clicks are still remembered per `seq`
+(`overrides`), and rendered HTML is memoized per entry so a long log is not
+re-parsed on every keystroke in the filter box.
+
+Covered by `frontend/tests/markdown.spec.ts` (the renderer, incl. the escaping
+cases) and `frontend/tests/log-markdown.spec.ts` (the DOM: toggle, expansion,
+persistence) — GUI-TESTS.md LS-11..16.
 
 ### Live Model Switching
 

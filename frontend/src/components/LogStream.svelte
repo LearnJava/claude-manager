@@ -2,6 +2,8 @@
     import { tick, afterUpdate, onMount } from 'svelte';
     import { sessionLogs, type LogEntry } from '../stores/sessions';
     import { logSearch, logSearchText, logSearchFocus } from '../stores/logSearch';
+    import { logMarkdown } from '../stores/logView';
+    import { hasMarkdown, renderMarkdown } from '../lib/markdown';
     import {
         formatTime,
         logEntryColor,
@@ -34,10 +36,41 @@
     // Entries longer than this (or multi-line) are collapsed to their first line
     // behind a ＋/− toggle so verbose tool output / prompts don't flood the view.
     const COLLAPSE_CHARS = 200;
-    // Seq ids (LogEntry.seq) the user has explicitly expanded. Keyed by seq, not
-    // by array index: indices shift when the ring buffer trims old entries or
-    // the search filter changes, which would silently expand the wrong rows.
-    let expanded = new Set<number>();
+    // Explicit open/closed state, keyed by seq (LogEntry.seq), not by array
+    // index: indices shift when the ring buffer trims old entries or the search
+    // filter changes, which would silently expand the wrong rows. Only rows the
+    // user actually clicked are in here; everything else follows the default
+    // below (markdown bodies default to open — a collapsed heading, table or
+    // code block is exactly the part that needed formatting).
+    let overrides = new Map<number, boolean>();
+
+    // Levels whose message is prose that Claude (or the user) wrote, so markup
+    // in it is intentional. Tool input/output, errors and cost lines are left
+    // raw: a `# comment` line in a shell transcript is not a heading.
+    const MARKDOWN_LEVELS = new Set(['', 'text', 'thinking', 'result', 'user']);
+
+    // Deliberately independent of the Markdown checkbox: it decides whether an
+    // entry is *authored* as markdown, which is what drives the default
+    // expanded state. Flipping the checkbox then only changes the presentation
+    // — it never collapses or expands rows under the user.
+    function isMarkdownSource(e: LogEntry): boolean {
+        if (!MARKDOWN_LEVELS.has((e.level ?? '').toLowerCase())) return false;
+        return hasMarkdown(e.message ?? '');
+    }
+
+    // renderMarkdown re-runs for every visible row whenever any reactive
+    // dependency changes (an expand click, a filter keystroke, a new entry).
+    // Memoize per seq so a long log isn't re-parsed on every one of them.
+    const mdCache = new Map<number, { src: string; html: string }>();
+
+    function renderCached(key: number, msg: string): string {
+        const hit = mdCache.get(key);
+        if (hit && hit.src === msg) return hit.html;
+        const html = renderMarkdown(msg);
+        if (mdCache.size > 1000) mdCache.clear();
+        mdCache.set(key, { src: msg, html });
+        return html;
+    }
 
     function isCollapsible(msg: string): boolean {
         if (!msg) return false;
@@ -58,10 +91,9 @@
         return e.seq ?? -(i + 1);
     }
 
-    function toggle(key: number) {
-        if (expanded.has(key)) expanded.delete(key);
-        else expanded.add(key);
-        expanded = expanded; // trigger Svelte reactivity
+    function toggle(key: number, open: boolean) {
+        overrides.set(key, !open);
+        overrides = overrides; // trigger Svelte reactivity
     }
 
     $: allEntries = ($sessionLogs[sessionId] ?? []) as LogEntry[];
@@ -123,7 +155,7 @@
     // which makes afterUpdate perpetually detect "grew" and re-scroll, whose
     // scroll event re-invalidates stuckToBottom — an infinite render loop that
     // hard-freezes the page. The id guard makes the body run once per session.
-    // `expanded` is intentionally NOT reset here: seq keys are globally unique,
+    // `overrides` is intentionally NOT reset here: seq keys are globally unique,
     // so entries a user opened in another session stay open when switching back.
     let lastSessionId: string | undefined;
     $: if (sessionId !== lastSessionId) {
@@ -180,6 +212,16 @@
                 {entries.length}/{allEntries.length}
             </span>
         {/if}
+        <label
+            title="Render markdown (headings, lists, tables, code) instead of raw text"
+            class="flex items-center gap-1 shrink-0 text-[11px] text-text-muted
+                   select-none cursor-pointer whitespace-nowrap">
+            <input
+                type="checkbox"
+                bind:checked={$logMarkdown}
+                class="w-3 h-3 accent-blue-500 cursor-pointer" />
+            Markdown
+        </label>
     </div>
 
     <div
@@ -199,8 +241,10 @@
             {#each entries as e, i (entryKey(e, i))}
                 {@const msg = e.message ?? ''}
                 {@const key = entryKey(e, i)}
+                {@const mdSrc = isMarkdownSource(e)}
+                {@const md = $logMarkdown && mdSrc}
                 {@const collapsible = isCollapsible(msg)}
-                {@const isOpen = expanded.has(key)}
+                {@const isOpen = collapsible ? overrides.get(key) ?? mdSrc : true}
                 <div class="flex items-start gap-2 py-px {logEntryColor(e)}">
                     <span class="text-text-dim shrink-0 select-none">
                         [{formatTime(e.time)}]
@@ -211,7 +255,7 @@
                     {#if collapsible}
                         <button
                             type="button"
-                            on:click={() => toggle(key)}
+                            on:click={() => toggle(key, isOpen)}
                             title={isOpen ? 'Collapse' : 'Expand'}
                             class="shrink-0 select-none w-4 text-center text-text-dim
                                    hover:text-text font-bold leading-5">
@@ -220,9 +264,15 @@
                     {:else}
                         <span class="shrink-0 w-4 select-none"></span>
                     {/if}
-                    <span class="whitespace-pre-wrap break-words">
-                        {collapsible && !isOpen ? summarize(msg) : msg}
-                    </span>
+                    {#if md && isOpen}
+                        <div class="md-body min-w-0 flex-1 break-words">
+                            {@html renderCached(key, msg)}
+                        </div>
+                    {:else}
+                        <span class="whitespace-pre-wrap break-words">
+                            {collapsible && !isOpen ? summarize(msg) : msg}
+                        </span>
+                    {/if}
                 </div>
             {/each}
         {/if}
@@ -238,3 +288,107 @@
         </button>
     {/if}
 </div>
+
+<!--
+  Styling for {@html}-injected markdown. Svelte scopes component CSS by adding
+  a class to elements it compiled, which injected nodes never get — hence
+  :global() under the .md-body wrapper. Tailwind's preflight resets lists,
+  headings and tables to nothing, so every element needs its rule back.
+  Colors come from the theme CSS vars so light/dark both work.
+-->
+<style>
+    .md-body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+            'Helvetica Neue', sans-serif;
+        line-height: 1.5;
+    }
+    .md-body :global(p) {
+        margin: 0.15em 0;
+    }
+    .md-body :global(h1),
+    .md-body :global(h2),
+    .md-body :global(h3),
+    .md-body :global(h4),
+    .md-body :global(h5),
+    .md-body :global(h6) {
+        font-weight: 600;
+        line-height: 1.3;
+        margin: 0.5em 0 0.2em;
+        color: rgb(var(--c-text));
+    }
+    .md-body :global(h1) { font-size: 1.5em; }
+    .md-body :global(h2) { font-size: 1.3em; }
+    .md-body :global(h3) { font-size: 1.15em; }
+    .md-body :global(h4),
+    .md-body :global(h5),
+    .md-body :global(h6) { font-size: 1em; }
+    .md-body :global(strong) {
+        font-weight: 600;
+        color: rgb(var(--c-text));
+    }
+    .md-body :global(em) { font-style: italic; }
+    .md-body :global(del) { text-decoration: line-through; opacity: 0.7; }
+    .md-body :global(ul),
+    .md-body :global(ol) {
+        margin: 0.2em 0;
+        padding-left: 1.5em;
+    }
+    .md-body :global(ul) { list-style: disc; }
+    .md-body :global(ol) { list-style: decimal; }
+    .md-body :global(li) { margin: 0.1em 0; }
+    .md-body :global(li > ul),
+    .md-body :global(li > ol) { margin: 0.1em 0; }
+    .md-body :global(code) {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.92em;
+        background: rgb(var(--c-bg-elevated));
+        border-radius: 3px;
+        padding: 0 0.25em;
+    }
+    .md-body :global(pre) {
+        background: rgb(var(--c-bg-panel));
+        border: 1px solid rgb(var(--c-bg-border));
+        border-radius: 4px;
+        padding: 0.4em 0.6em;
+        margin: 0.3em 0;
+        overflow-x: auto;
+    }
+    .md-body :global(pre code) {
+        background: none;
+        padding: 0;
+        white-space: pre;
+    }
+    .md-body :global(blockquote) {
+        border-left: 3px solid rgb(var(--c-bg-border));
+        padding-left: 0.6em;
+        margin: 0.3em 0;
+        color: rgb(var(--c-text-dim));
+    }
+    .md-body :global(hr) {
+        border: 0;
+        border-top: 1px solid rgb(var(--c-bg-border));
+        margin: 0.5em 0;
+    }
+    .md-body :global(table) {
+        border-collapse: collapse;
+        margin: 0.3em 0;
+        font-size: 0.95em;
+    }
+    .md-body :global(th),
+    .md-body :global(td) {
+        border: 1px solid rgb(var(--c-bg-border));
+        padding: 0.15em 0.45em;
+        text-align: left;
+        vertical-align: top;
+    }
+    .md-body :global(th) {
+        background: rgb(var(--c-bg-elevated));
+        font-weight: 600;
+        color: rgb(var(--c-text));
+    }
+    .md-body :global(a) {
+        color: #60a5fa;
+        text-decoration: underline;
+    }
+    .md-body :global(a:hover) { color: #93c5fd; }
+</style>
