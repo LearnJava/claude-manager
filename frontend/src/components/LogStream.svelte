@@ -346,7 +346,7 @@
         padding: 0 0.25em;
     }
     .md-body :global(pre) {
-        background: rgb(var(--c-bg-panel));
+        background: rgb(var(--c-bg-elevated));
         border: 1px solid rgb(var(--c-bg-border));
         border-radius: 4px;
         padding: 0.4em 0.6em;
@@ -386,9 +386,13 @@
         font-weight: 600;
         color: rgb(var(--c-text));
     }
+    /* Link blue is set per theme: #60a5fa is a dark-theme tint and drops to
+       ~3:1 contrast on the light panel. */
     .md-body :global(a) {
-        color: #60a5fa;
+        color: #1d4ed8;
         text-decoration: underline;
     }
-    .md-body :global(a:hover) { color: #93c5fd; }
+    .md-body :global(a:hover) { color: #2563eb; }
+    :global(html.dark) .md-body :global(a) { color: #60a5fa; }
+    :global(html.dark) .md-body :global(a:hover) { color: #93c5fd; }
 </style>

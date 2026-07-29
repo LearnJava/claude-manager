@@ -89,22 +89,29 @@ export type LogEntryLike = {
 };
 
 // Tailwind text-color class for a given log entry.
+//
+// Every colour is a light/dark pair. The status-* tokens and the 300/400 tints
+// were picked against the dark palette; on the light theme's white panel they
+// wash out — amber-300 text on #fff is barely legible. The `dark:` variant
+// keeps the original dark-theme look, the base class is the darker shade used
+// on light backgrounds. The theme-derived tokens (text-muted / text-dim) need
+// no pair: they already follow the CSS vars.
 export function logEntryColor(e: LogEntryLike): string {
     const level = (e.level ?? '').toLowerCase();
-    if (level === 'error') return 'text-status-error';
+    if (level === 'error') return 'text-red-600 dark:text-status-error';
     if (level === 'result') return 'text-text-muted';
     if (level === 'system') return 'text-text-dim';
     if (level === 'thinking') return 'text-text-dim italic';
-    if (level === 'cost') return 'text-status-ratelimit';
-    if (level === 'user') return 'text-amber-300';
+    if (level === 'cost') return 'text-amber-600 dark:text-status-ratelimit';
+    if (level === 'user') return 'text-amber-700 dark:text-amber-300';
     if (level === 'tool_result') return 'text-text-dim';
     if (level === 'tool') {
         const t = e.tool_name ?? '';
-        if (READ_TOOLS.has(t)) return 'text-sky-400';
-        if (BASH_TOOLS.has(t)) return 'text-status-working';
-        if (EDIT_TOOLS.has(t)) return 'text-status-waiting';
-        if (AGENT_TOOLS.has(t)) return 'text-purple-400';
-        return 'text-sky-400';
+        if (READ_TOOLS.has(t)) return 'text-sky-700 dark:text-sky-400';
+        if (BASH_TOOLS.has(t)) return 'text-green-700 dark:text-status-working';
+        if (EDIT_TOOLS.has(t)) return 'text-orange-700 dark:text-status-waiting';
+        if (AGENT_TOOLS.has(t)) return 'text-purple-700 dark:text-purple-400';
+        return 'text-sky-700 dark:text-sky-400';
     }
     // text (Claude reasoning) and unknown
     return 'text-text-muted';

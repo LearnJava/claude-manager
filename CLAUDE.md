@@ -112,7 +112,8 @@ claude-manager/
 │   │   │                            #   timelines w/ gate output, model-quality table (MP-08)
 │   │   └── RateLimitBanner.svelte   # Rate limit countdown banner
 │   └── lib/
-│       ├── formatters.ts            # Log formatting, time, cost, tokens, percent
+│       ├── formatters.ts            # Log formatting, time, cost, tokens, percent;
+│       │                            #   log colours are light/dark class pairs
 │       ├── markdown.ts              # Dependency-free markdown → safe HTML for the log
 │       │                            #   (hasMarkdown/renderMarkdown, escapes everything)
 │       └── models.ts                # Model catalog: MODELS/EFFORTS + normalizeModel/modelLabel
@@ -623,6 +624,18 @@ checkbox — flipping raw/formatted changes only the presentation and never
 collapses a row under the user. Explicit clicks are still remembered per `seq`
 (`overrides`), and rendered HTML is memoized per entry so a long log is not
 re-parsed on every keystroke in the filter box.
+
+**Every log colour is a light/dark pair** (`logEntryColor`,
+`frontend/src/lib/formatters.ts`). The level palette was picked against the
+dark background, so `text-amber-300` (a `user` entry), `text-sky-400` (a read
+tool) or the `status-*` tokens sit at ~2:1 contrast on the light theme's white
+panel — legible in dark mode, washed out in light. Each level therefore returns
+a darker base class plus the original as a `dark:` variant; only the
+theme-derived tokens (`text-text-muted` / `-dim`) need no pair, since they
+already follow the CSS vars. The link blue inside `.md-body` is set the same
+way, per theme. `frontend/tests/formatters.spec.ts` asserts the invariant
+directly — no bare 300/400 tint or `status-*` token as a light-theme base — so
+a new level can't quietly reintroduce it.
 
 Covered by `frontend/tests/markdown.spec.ts` (the renderer, incl. the escaping
 cases) and `frontend/tests/log-markdown.spec.ts` (the DOM: toggle, expansion,
