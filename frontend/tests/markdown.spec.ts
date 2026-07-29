@@ -14,6 +14,8 @@ import { test, expect } from '@playwright/test';
 import {
     escapeHtml,
     hasMarkdown,
+    hasStrongMarkdown,
+    looksLikeMachineOutput,
     renderInline,
     renderMarkdown,
 } from '../src/lib/markdown';
@@ -69,6 +71,67 @@ test.describe('hasMarkdown', () => {
     test('tolerates null and undefined', () => {
         expect(hasMarkdown(undefined)).toBe(false);
         expect(hasMarkdown(null)).toBe(false);
+    });
+});
+
+test.describe('hasStrongMarkdown', () => {
+    const structural: Array<[string, string]> = [
+        ['a table', '| a | b |\n|---|---|\n| 1 | 2 |'],
+        ['a fence', '```go\nx := 1\n```'],
+        ['a heading', '## Report\n\nbody'],
+    ];
+    for (const [name, src] of structural) {
+        test(`accepts ${name} on its own`, () => {
+            expect(hasStrongMarkdown(src)).toBe(true);
+        });
+    }
+
+    test('accepts two different kinds of markup together', () => {
+        expect(
+            hasStrongMarkdown('- **Invariant (BUG-341):** `chrome_layout` is read-only'),
+        ).toBe(true);
+    });
+
+    test('rejects a single stray signal', () => {
+        expect(hasStrongMarkdown('- fixed the thing\n- and another')).toBe(false);
+        expect(hasStrongMarkdown('run `cargo build` first')).toBe(false);
+        expect(hasStrongMarkdown('')).toBe(false);
+        expect(hasStrongMarkdown(null)).toBe(false);
+    });
+});
+
+test.describe('looksLikeMachineOutput', () => {
+    const positives: Array<[string, string]> = [
+        ['Read line numbers', '1\t    Checking simd-adler32 v0.3.9\n2\t   Compiling syn v2.0.117'],
+        [
+            'a tool wrapper tag',
+            '<persisted-output>\nOutput too large (116.5KB).\n\nPreview:\n| a | b |',
+        ],
+        ['a diff', 'diff --git a/ROADMAP.md b/ROADMAP.md\nindex f1ecad92..fb50ef8b 100644'],
+        ['a hunk header', '@@ -106,7 +106,7 @@ context\n line'],
+        ['a git listing', '  remotes/origin/p1-history-nav-api\n  remotes/origin/p1-meta-viewport'],
+        [
+            'mostly indented columns',
+            '    Checking a v1\n    Checking b v2\n    Checking c v3\n    Checking d v4\n' +
+                '    Checking e v5\ntail',
+        ],
+    ];
+    for (const [name, src] of positives) {
+        test(`detects ${name}`, () => {
+            expect(looksLikeMachineOutput(src)).toBe(true);
+        });
+    }
+
+    test('leaves prose and documents alone', () => {
+        expect(looksLikeMachineOutput('## Report\n\nSome **bold** prose.')).toBe(false);
+        expect(looksLikeMachineOutput('- one\n- two')).toBe(false);
+        expect(looksLikeMachineOutput('')).toBe(false);
+        expect(looksLikeMachineOutput(undefined)).toBe(false);
+    });
+
+    test('a short indented snippet is not output', () => {
+        // Fewer than 5 lines: not enough evidence to call it a column listing.
+        expect(looksLikeMachineOutput('    a\n    b')).toBe(false);
     });
 });
 

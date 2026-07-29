@@ -130,15 +130,56 @@ test.describe('LogStream markdown', () => {
         await expect(page.locator('.md-body')).toHaveCount(0);
     });
 
-    test('tool output is never reinterpreted as markdown', async ({ page }) => {
+    // A .md file someone `cat`-ed: structural markup, no machine-output
+    // markers → formatted straight away, with the M button lit so one click
+    // gets the source back.
+    test('tool output with a real document renders by default', async ({ page }) => {
         await openSession(page);
-        // A shell transcript whose comment lines look like ATX headings.
-        await pushLog(page, '# build the thing\n$ go build ./...', 'tool_result');
+        await pushLog(
+            page,
+            '667 subsystems/shell.md\n\n- **Invariant (BUG-341):** `chrome_layout` is read-only\n- **Done (BUG-428):** canvas pixels live in CPU buffers',
+            'tool_result',
+        );
 
-        await expect(page.locator('text=# build the thing').first()).toBeVisible({
-            timeout: 5_000,
-        });
+        const body = page.locator('.md-body').first();
+        await expect(body).toBeVisible({ timeout: 5_000 });
+        await expect(body.locator('li')).toHaveCount(2);
+
+        const raw = page.locator('button[title="Show this entry as raw text"]');
+        await expect(raw).toBeVisible();
+        await raw.click();
         await expect(page.locator('.md-body')).toHaveCount(0);
+        await expect(page.locator('text=**Invariant').first()).toBeVisible();
+
+        // …and back again for that one row.
+        await page.locator('button[title="Render this entry as markdown"]').first().click();
+        await expect(page.locator('.md-body').first()).toBeVisible();
+    });
+
+    // Machine output where alignment carries the meaning: Read's numbered
+    // lines. Left raw despite the backticks; the button still offers it.
+    test('machine output stays raw but can be rendered per entry', async ({ page }) => {
+        await openSession(page);
+        await pushLog(
+            page,
+            '1\t    Checking simd-adler32 v0.3.9\n2\t   Compiling `syn` v2.0.117\n3\t    Checking memchr v2.8.0',
+            'tool_result',
+        );
+
+        await expect(page.locator('.md-body')).toHaveCount(0);
+        const render = page.locator('button[title="Render this entry as markdown"]');
+        await expect(render).toBeVisible({ timeout: 5_000 });
+        await render.click();
+        await expect(page.locator('.md-body').first()).toBeVisible();
+    });
+
+    test('prose entries get no per-entry button', async ({ page }) => {
+        await openSession(page);
+        await pushLog(page, '## Report\n\nSome **bold** prose.', 'text');
+
+        await expect(page.locator('.md-body').first()).toBeVisible({ timeout: 5_000 });
+        await expect(page.locator('button[title="Show this entry as raw text"]')).toHaveCount(0);
+        await expect(page.locator('button[title="Render this entry as markdown"]')).toHaveCount(0);
     });
 
     test('the choice survives a reload', async ({ page }) => {

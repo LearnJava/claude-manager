@@ -609,12 +609,34 @@ alignment, soft line breaks, bold/italic/strike/inline-code/links/bare URLs.
 `marked`/`markdown-it` would have been a runtime dependency plus a sanitizer for
 a renderer this small, in an app that otherwise ships zero frontend deps.
 
-**Two gates before anything is reformatted.** `hasMarkdown` looks for actual
-markup (a heading, list, fence, table, emphasis…) — plain prose is left exactly
-as it was. And only levels that carry prose (`text`, `thinking`, `result`,
-`user`, plus unset) are eligible: a `tool_result` holding a shell transcript
-whose comments start with `#` must not sprout headings, and tool input/errors
-stay raw for the same reason.
+**Two tiers of detection, split by who wrote the message.** Prose levels
+(`text`, `thinking`, `result`, `user`, plus unset) format on any single signal
+`hasMarkdown` finds — Claude's own writing, where markup is intentional.
+Everything else, tool output above all, needs `hasStrongMarkdown` (a table, a
+fence, a heading — or two different kinds of markup in one message) *and* must
+not trip `looksLikeMachineOutput` (Read's numbered lines, a diff, a git
+listing, a mostly-indented body). Those two guards are the difference between
+formatting a `.md` file someone `cat`-ed and mangling `cargo build` output,
+where column alignment is the content.
+
+The thresholds come from measuring the real corpus (46 313 rows of
+`~/.claude-manager/history.db`): `result` 85.5 % of rows carry markup, `text`
+43.8 %, `tool_result` 40.8 %, everything else under 4 %. Of `tool_result`,
+17.3 % clears the strong bar and 8 points of that are machine output the
+markers above catch. What survives is roughly the `cat SKILL.md` / `tail
+docs/tasks/*.md` population — plus a residue that no content-based rule can
+separate (`git status --short --branch` really does start a line with
+`## main`), which is what the per-entry button below is for.
+
+**The per-entry `M` button** sits next to the ＋/− toggle on non-prose rows that
+carry markup, lit when that row is being rendered. It flips *that one row* —
+back to raw when the guess was wrong, or into markdown when the machine-output
+guard held it back. Deliberately not persisted: unlike the global checkbox this
+is a per-glance decision, and the log buffer it keys off (`seq`) doesn't
+outlive the session anyway. Toggling it pins the row's collapse state, because
+that state otherwise follows the markdown decision — switching back to raw
+would fold the row to its first line, so the click would read as "hid my entry"
+instead of "unformatted it".
 
 **Markdown entries default to expanded.** The collapse-to-first-line rule for
 long entries (see `COLLAPSE_CHARS`) is exactly wrong for a table or a code

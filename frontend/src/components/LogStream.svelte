@@ -3,7 +3,12 @@
     import { sessionLogs, type LogEntry } from '../stores/sessions';
     import { logSearch, logSearchText, logSearchFocus } from '../stores/logSearch';
     import { logMarkdown } from '../stores/logView';
-    import { hasMarkdown, renderMarkdown } from '../lib/markdown';
+    import {
+        hasMarkdown,
+        hasStrongMarkdown,
+        looksLikeMachineOutput,
+        renderMarkdown,
+    } from '../lib/markdown';
     import {
         formatTime,
         logEntryColor,
@@ -44,18 +49,47 @@
     // code block is exactly the part that needed formatting).
     let overrides = new Map<number, boolean>();
 
-    // Levels whose message is prose that Claude (or the user) wrote, so markup
-    // in it is intentional. Tool input/output, errors and cost lines are left
-    // raw: a `# comment` line in a shell transcript is not a heading.
+    // Levels whose message is prose that Claude (or the user) wrote, so any
+    // markup in it is intentional and a single signal is enough.
     const MARKDOWN_LEVELS = new Set(['', 'text', 'thinking', 'result', 'user']);
 
-    // Deliberately independent of the Markdown checkbox: it decides whether an
-    // entry is *authored* as markdown, which is what drives the default
-    // expanded state. Flipping the checkbox then only changes the presentation
-    // — it never collapses or expands rows under the user.
-    function isMarkdownSource(e: LogEntry): boolean {
-        if (!MARKDOWN_LEVELS.has((e.level ?? '').toLowerCase())) return false;
+    // Everything else — tool output above all — is formatted too, but only on
+    // structural markup (`hasStrongMarkdown`) and never when the body is
+    // machine output whose column alignment carries the meaning (a Read
+    // listing with line numbers, a diff, a git listing). Those two guards are
+    // the difference between formatting a .md file someone `cat`-ed and
+    // mangling `cargo build` output.
+    function autoMarkdown(e: LogEntry): boolean {
+        const msg = e.message ?? '';
+        if (MARKDOWN_LEVELS.has((e.level ?? '').toLowerCase())) return hasMarkdown(msg);
+        return hasStrongMarkdown(msg) && !looksLikeMachineOutput(msg);
+    }
+
+    // Per-entry override of that decision, keyed by seq. The `M` button writes
+    // here, so one row can be forced back to raw (a `## main` line from
+    // `git status` really isn't a heading) or forced into markdown (output the
+    // guards above held back). Nothing is remembered across restarts — this is
+    // a per-glance decision, unlike the global Markdown checkbox.
+    let mdOverride = new Map<number, boolean>();
+
+    // The button is only offered where the call is genuinely ambiguous: tool
+    // output and other non-prose levels that carry markup. Prose levels follow
+    // the global checkbox alone, so their rows stay uncluttered.
+    function offersMarkdown(e: LogEntry): boolean {
+        if (MARKDOWN_LEVELS.has((e.level ?? '').toLowerCase())) return false;
         return hasMarkdown(e.message ?? '');
+    }
+
+    // `on` / `open` are the row's state *before* the click. Collapse state is
+    // pinned here on purpose: it otherwise follows the markdown decision, so
+    // switching a row back to raw would fold it to its first line — the click
+    // would look like it hid the entry rather than unformatted it. Turning
+    // rendering on always expands, since a collapsed body shows no formatting.
+    function toggleForced(key: number, on: boolean, open: boolean) {
+        mdOverride.set(key, !on);
+        overrides.set(key, on ? open : true);
+        mdOverride = mdOverride; // trigger Svelte reactivity
+        overrides = overrides;
     }
 
     // renderMarkdown re-runs for every visible row whenever any reactive
@@ -241,8 +275,9 @@
             {#each entries as e, i (entryKey(e, i))}
                 {@const msg = e.message ?? ''}
                 {@const key = entryKey(e, i)}
-                {@const mdSrc = isMarkdownSource(e)}
+                {@const mdSrc = mdOverride.get(key) ?? autoMarkdown(e)}
                 {@const md = $logMarkdown && mdSrc}
+                {@const offered = $logMarkdown && offersMarkdown(e)}
                 {@const collapsible = isCollapsible(msg)}
                 {@const isOpen = collapsible ? overrides.get(key) ?? mdSrc : true}
                 <div class="flex items-start gap-2 py-px {logEntryColor(e)}">
@@ -260,6 +295,22 @@
                             class="shrink-0 select-none w-4 text-center text-text-dim
                                    hover:text-text font-bold leading-5">
                             {isOpen ? '−' : '＋'}
+                        </button>
+                    {:else}
+                        <span class="shrink-0 w-4 select-none"></span>
+                    {/if}
+                    {#if offered}
+                        <button
+                            type="button"
+                            on:click={() => toggleForced(key, mdSrc, isOpen)}
+                            title={mdSrc
+                                ? 'Show this entry as raw text'
+                                : 'Render this entry as markdown'}
+                            class="shrink-0 select-none w-4 text-center leading-5 text-[10px]
+                                   rounded {mdSrc
+                                       ? 'text-blue-600 dark:text-blue-400 font-bold'
+                                       : 'text-text-dim hover:text-text'}">
+                            M
                         </button>
                     {:else}
                         <span class="shrink-0 w-4 select-none"></span>

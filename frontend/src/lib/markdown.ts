@@ -29,24 +29,62 @@ export function escapeHtml(s: string): string {
 // Markup that makes a message worth rendering as markdown. Deliberately
 // conservative: a false positive turns a plain log line into a heading or a
 // list, which is worse than leaving it as text.
-const MARKDOWN_SIGNALS: RegExp[] = [
-    /^\s{0,3}(```|~~~)/m,               // fenced code
-    /^\s{0,3}#{1,6}\s+\S/m,             // ATX heading
-    /^\s{0,3}([-*+]|\d{1,9}[.)])\s+\S/m, // list item
-    /^\s{0,3}>\s?\S/m,                  // blockquote
-    /^\s{0,3}\|.*\|/m,                  // table row
-    /^\s{0,3}([-*_])\s*(\1\s*){2,}$/m,  // horizontal rule
-    /\*\*[^*\n]+\*\*/,                  // bold
-    /(^|\s)_[^_\n]+_(\s|$)/,            // italic
-    /~~[^~\n]+~~/,                      // strikethrough
-    /`[^`\n]+`/,                        // inline code
-    /\[[^\]\n]*\]\([^)\s]+\)/,          // link
+const MARKDOWN_SIGNALS: Array<{ name: string; re: RegExp }> = [
+    { name: 'fence', re: /^\s{0,3}(```|~~~)/m },
+    { name: 'heading', re: /^\s{0,3}#{1,6}\s+\S/m },
+    { name: 'list', re: /^\s{0,3}([-*+]|\d{1,9}[.)])\s+\S/m },
+    { name: 'quote', re: /^\s{0,3}>\s?\S/m },
+    { name: 'table', re: /^\s{0,3}\|.*\|/m },
+    { name: 'hr', re: /^\s{0,3}([-*_])\s*(\1\s*){2,}$/m },
+    { name: 'bold', re: /\*\*[^*\n]+\*\*/ },
+    { name: 'italic', re: /(^|\s)_[^_\n]+_(\s|$)/ },
+    { name: 'strike', re: /~~[^~\n]+~~/ },
+    { name: 'code', re: /`[^`\n]+`/ },
+    { name: 'link', re: /\[[^\]\n]*\]\([^)\s]+\)/ },
 ];
 
-export function hasMarkdown(text: string | undefined | null): boolean {
+// Markup that on its own says "this is a document", not "one line of command
+// output happened to start with a dash".
+const STRONG_SIGNALS = new Set(['fence', 'table', 'heading']);
+
+function signalsIn(text: string | undefined | null): string[] {
     const s = String(text ?? '');
-    if (!s.trim()) return false;
-    return MARKDOWN_SIGNALS.some((re) => re.test(s));
+    if (!s.trim()) return [];
+    return MARKDOWN_SIGNALS.filter((sig) => sig.re.test(s)).map((sig) => sig.name);
+}
+
+export function hasMarkdown(text: string | undefined | null): boolean {
+    return signalsIn(text).length > 0;
+}
+
+// Stricter than hasMarkdown: a structural block, or at least two different
+// kinds of markup in one message. Used where a false positive is expensive —
+// tool output, where a stray `- ` or `## main` from `git status` would be
+// reformatted into a list or a heading.
+export function hasStrongMarkdown(text: string | undefined | null): boolean {
+    const hits = signalsIn(text);
+    if (hits.some((h) => STRONG_SIGNALS.has(h))) return true;
+    return hits.length >= 2;
+}
+
+// Machine output where column alignment carries meaning: Read's numbered
+// lines, tool wrapper tags, diffs, git listings, or a body that is mostly
+// indented. Rendering these as markdown destroys the alignment.
+const OUTPUT_MARKERS: RegExp[] = [
+    /^\s*\d+\t/m,                                              // Read: "12\tcontent"
+    /^<(persisted-output|retrieval_status|system-reminder|task_id|output|exit_code)/m,
+    /^(diff --git|@@ |index [0-9a-f]{7})/m,                    // diff / patch
+    /^\s*(remotes\/|origin\/|commit [0-9a-f]{7})/m,            // git listings
+];
+
+export function looksLikeMachineOutput(text: string | undefined | null): boolean {
+    const s = String(text ?? '');
+    if (!s) return false;
+    if (OUTPUT_MARKERS.some((re) => re.test(s))) return true;
+    const lines = s.split('\n').filter((l) => l.trim() !== '');
+    if (lines.length < 5) return false;
+    const indented = lines.filter((l) => l.startsWith('    ') || l.startsWith('\t')).length;
+    return indented / lines.length > 0.5;
 }
 
 // ---- Inline ----------------------------------------------------------------

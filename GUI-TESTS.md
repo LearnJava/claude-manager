@@ -95,7 +95,9 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | LS-12 | Markdown checkbox switches to raw | Uncheck "Markdown" | `.md-body` gone, `**bold**` visible verbatim | ✓ |
 | LS-13 | Markdown entry starts expanded | Push a long markdown entry | Full body shown, not the one-line summary | ✓ |
 | LS-14 | Plain text unaffected by the toggle | Push `Working on the task...` | Text rendered as before, no `.md-body` | ✓ |
-| LS-15 | Tool output never parsed as markdown | Push a `tool_result` entry starting with `# comment` | Raw text, no `.md-body` | ✓ |
+| LS-15 | Tool output with a document renders by default | Push a `tool_result` with `- **bold**` list | `.md-body` with 2 `<li>`; `M` button lit, click → raw, click → back | ✓ |
+| LS-17 | Machine output stays raw, button offers it | Push a `tool_result` with Read line numbers | No `.md-body`; clicking `M` renders that row | ✓ |
+| LS-18 | Prose rows have no per-entry button | Push a `text` entry with markdown | Rendered, but no `M` button | ✓ |
 | LS-16 | Markdown choice persists | Uncheck, reload the app | Checkbox still unchecked (localStorage) | ✓ |
 
 ---
