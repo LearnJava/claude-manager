@@ -281,6 +281,11 @@ export async function initSessions(): Promise<void> {
     EventsOn('session:status', (evt: { id: string; status: SessionStatus }) => {
         if (!evt || !evt.id) return;
         const clearPerm = (['idle', 'error', 'stopping'] as SessionStatus[]).includes(evt.status);
+        // A pending question is only valid while status stays waiting_for_user
+        // (mirrors manager.go's GetSession) — any other status means the
+        // backend already resolved it (human answer or the timeout
+        // auto-answer), and a stale banner must not linger in the UI.
+        const clearQuestion = evt.status !== 'waiting_for_user';
         // A fresh run (starting) never carries over a previous run's soft-stop
         // request; session:stop_requested(false) also fires for this case, but
         // clearing it here too covers event-ordering races.
@@ -289,7 +294,7 @@ export async function initSessions(): Promise<void> {
             ...s,
             status: evt.status,
             pending_permission: clearPerm ? null : s.pending_permission,
-            pending_question: clearPerm ? null : s.pending_question,
+            pending_question: clearQuestion ? null : s.pending_question,
             stop_requested: clearStopReq ? false : s.stop_requested,
         }));
     });

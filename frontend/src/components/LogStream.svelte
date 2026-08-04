@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { tick, afterUpdate, onMount } from 'svelte';
+    import { tick, beforeUpdate, afterUpdate, onMount } from 'svelte';
     import { sessionLogs, type LogEntry } from '../stores/sessions';
     import { logSearch, logSearchText, logSearchFocus } from '../stores/logSearch';
     import { logMarkdown } from '../stores/logView';
@@ -24,17 +24,26 @@
     let searchInput: HTMLInputElement | undefined;
     let stuckToBottom = true;
     let prevLogLen = 0;
-    // Programmatic scrollTop writes (pin-to-bottom) still emit a 'scroll'
-    // event, sometimes before the browser has finished laying out a burst of
-    // newly-appended entries — onScroll can then read a stale scrollHeight
-    // and mistake our own auto-scroll for the user scrolling away, freezing
-    // autoscroll with no way back short of clicking "Jump to latest". Ignore
-    // exactly the one 'scroll' event that follows our own write.
-    let ignoreNextScroll = false;
+    // Whether we were pinned to the bottom right before this update touched
+    // the DOM. Computed in beforeUpdate (real scrollTop, pre-update) and
+    // consumed in afterUpdate — not derived from watching for the 'scroll'
+    // event our own pinToBottom() write triggers. That event-matching
+    // approach (a one-shot "ignore next scroll" flag) is inherently racy
+    // under a burst of fast-arriving log lines: a programmatic write that
+    // happens to be a no-op fires no event at all, and a coalesced or
+    // out-of-order event can consume the flag at the wrong time — either
+    // way `stuckToBottom` can get stuck `false` with no way to self-correct
+    // short of clicking "Jump to latest". Reading the DOM directly before
+    // each update sidesteps that race entirely.
+    let pendingStick = true;
+
+    function distanceFromBottom(): number {
+        if (!container) return 0;
+        return container.scrollHeight - container.scrollTop - container.clientHeight;
+    }
 
     function pinToBottom() {
         if (!container) return;
-        ignoreNextScroll = true;
         container.scrollTop = container.scrollHeight;
     }
 
@@ -153,13 +162,7 @@
 
     function onScroll() {
         if (!container) return;
-        if (ignoreNextScroll) {
-            ignoreNextScroll = false;
-            return;
-        }
-        const distance =
-            container.scrollHeight - container.scrollTop - container.clientHeight;
-        stuckToBottom = distance < FREEZE_THRESHOLD_PX;
+        stuckToBottom = distanceFromBottom() < FREEZE_THRESHOLD_PX;
     }
 
     async function jumpToBottom() {
@@ -174,21 +177,26 @@
         pinToBottom();
     });
 
+    beforeUpdate(() => {
+        pendingStick = distanceFromBottom() < FREEZE_THRESHOLD_PX;
+    });
+
     afterUpdate(() => {
         if (!container) return;
         const grew = entries.length > prevLogLen;
         prevLogLen = entries.length;
-        if (grew && stuckToBottom) {
+        if (grew && pendingStick) {
             pinToBottom();
+            stuckToBottom = true;
         }
     });
 
     // Reset autoscroll state ONLY when the selected session actually changes.
     // Guarding on a remembered id is essential: this block re-evaluates on every
-    // reactive update, and re-running its body each time resets prevLogLen to 0,
-    // which makes afterUpdate perpetually detect "grew" and re-scroll, whose
-    // scroll event re-invalidates stuckToBottom — an infinite render loop that
-    // hard-freezes the page. The id guard makes the body run once per session.
+    // reactive update, and re-running its body each time would reset prevLogLen
+    // to 0, which makes afterUpdate perpetually detect "grew" and re-scroll on
+    // every render — an infinite render loop that hard-freezes the page. The id
+    // guard makes the body run once per session.
     // `overrides` is intentionally NOT reset here: seq keys are globally unique,
     // so entries a user opened in another session stay open when switching back.
     let lastSessionId: string | undefined;
