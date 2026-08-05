@@ -23,7 +23,13 @@
     let container: HTMLDivElement | undefined;
     let searchInput: HTMLInputElement | undefined;
     let stuckToBottom = true;
-    let prevLogLen = 0;
+    // Highest LogEntry.seq seen in the previous render, NOT entries.length:
+    // the log is a ring buffer (LOG_BUFFER_LIMIT in stores/sessions.ts) that
+    // evicts the oldest entry for every new one once full, so length stops
+    // growing forever after the cap — a length-based "did it grow" check goes
+    // permanently false there and autoscroll silently dies for any session
+    // whose log passes the cap. seq keeps climbing regardless of eviction.
+    let prevLastSeq = 0;
     // Whether we were pinned to the bottom right before this update touched
     // the DOM. Computed in beforeUpdate (real scrollTop, pre-update) and
     // consumed in afterUpdate — not derived from watching for the 'scroll'
@@ -183,8 +189,10 @@
 
     afterUpdate(() => {
         if (!container) return;
-        const grew = entries.length > prevLogLen;
-        prevLogLen = entries.length;
+        const lastEntry = entries[entries.length - 1];
+        const lastSeq = lastEntry ? entryKey(lastEntry, entries.length - 1) : 0;
+        const grew = lastSeq > prevLastSeq;
+        prevLastSeq = lastSeq;
         if (grew && pendingStick) {
             pinToBottom();
             stuckToBottom = true;
@@ -193,7 +201,7 @@
 
     // Reset autoscroll state ONLY when the selected session actually changes.
     // Guarding on a remembered id is essential: this block re-evaluates on every
-    // reactive update, and re-running its body each time would reset prevLogLen
+    // reactive update, and re-running its body each time would reset prevLastSeq
     // to 0, which makes afterUpdate perpetually detect "grew" and re-scroll on
     // every render — an infinite render loop that hard-freezes the page. The id
     // guard makes the body run once per session.
@@ -203,7 +211,7 @@
     $: if (sessionId !== lastSessionId) {
         lastSessionId = sessionId;
         stuckToBottom = true;
-        prevLogLen = 0;
+        prevLastSeq = 0;
         // Wait until the new entries are rendered, then pin to bottom.
         tick().then(() => pinToBottom());
     }
