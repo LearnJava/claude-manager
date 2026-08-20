@@ -4,6 +4,7 @@
     import { analysis } from '../../wailsjs/go/models';
     import { formatCost, formatTokens, formatDuration } from '../lib/formatters';
     import { MODELS, EFFORTS, modelLabel, isKnownModel } from '../lib/models';
+    import { renderMarkdown } from '../lib/markdown';
 
     // ---- Local types (mirror internal/analysis/plan.go JSON tags) ----
 
@@ -385,7 +386,7 @@
                 {#if working.shared_context}
                     <section>
                         <h3 class="text-text font-semibold text-sm mb-2">Project summary</h3>
-                        <div class="text-text text-sm whitespace-pre-wrap">{working.shared_context}</div>
+                        <div class="md-body text-text text-sm">{@html renderMarkdown(working.shared_context)}</div>
                     </section>
                 {/if}
             {/if}

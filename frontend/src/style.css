@@ -67,3 +67,112 @@ html, body {
 .dot-blink {
     animation: blink 1.2s ease-in-out infinite;
 }
+
+/*
+  Styling for {@html}-injected markdown (frontend/src/lib/markdown.ts),
+  shared by every component that renders it (LogStream, PlanReview). Global
+  rather than a component-scoped <style> block because Svelte's scoping class
+  never reaches nodes injected via {@html} — this needs plain selectors
+  anyway, so one shared definition beats copy-pasting it per component.
+  Tailwind's preflight resets lists, headings and tables to nothing, so every
+  element needs its rule back. Colors come from the theme CSS vars so
+  light/dark both work.
+*/
+.md-body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+        'Helvetica Neue', sans-serif;
+    line-height: 1.5;
+}
+.md-body p {
+    margin: 0.15em 0;
+}
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4,
+.md-body h5,
+.md-body h6 {
+    font-weight: 600;
+    line-height: 1.3;
+    margin: 0.5em 0 0.2em;
+    color: rgb(var(--c-text));
+}
+.md-body h1 { font-size: 1.5em; }
+.md-body h2 { font-size: 1.3em; }
+.md-body h3 { font-size: 1.15em; }
+.md-body h4,
+.md-body h5,
+.md-body h6 { font-size: 1em; }
+.md-body strong {
+    font-weight: 600;
+    color: rgb(var(--c-text));
+}
+.md-body em { font-style: italic; }
+.md-body del { text-decoration: line-through; opacity: 0.7; }
+.md-body ul,
+.md-body ol {
+    margin: 0.2em 0;
+    padding-left: 1.5em;
+}
+.md-body ul { list-style: disc; }
+.md-body ol { list-style: decimal; }
+.md-body li { margin: 0.1em 0; }
+.md-body li > ul,
+.md-body li > ol { margin: 0.1em 0; }
+.md-body code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.92em;
+    background: rgb(var(--c-bg-elevated));
+    border-radius: 3px;
+    padding: 0 0.25em;
+}
+.md-body pre {
+    background: rgb(var(--c-bg-elevated));
+    border: 1px solid rgb(var(--c-bg-border));
+    border-radius: 4px;
+    padding: 0.4em 0.6em;
+    margin: 0.3em 0;
+    overflow-x: auto;
+}
+.md-body pre code {
+    background: none;
+    padding: 0;
+    white-space: pre;
+}
+.md-body blockquote {
+    border-left: 3px solid rgb(var(--c-bg-border));
+    padding-left: 0.6em;
+    margin: 0.3em 0;
+    color: rgb(var(--c-text-dim));
+}
+.md-body hr {
+    border: 0;
+    border-top: 1px solid rgb(var(--c-bg-border));
+    margin: 0.5em 0;
+}
+.md-body table {
+    border-collapse: collapse;
+    margin: 0.3em 0;
+    font-size: 0.95em;
+}
+.md-body th,
+.md-body td {
+    border: 1px solid rgb(var(--c-bg-border));
+    padding: 0.15em 0.45em;
+    text-align: left;
+    vertical-align: top;
+}
+.md-body th {
+    background: rgb(var(--c-bg-elevated));
+    font-weight: 600;
+    color: rgb(var(--c-text));
+}
+/* Link blue is set per theme: #60a5fa is a dark-theme tint and drops to
+   ~3:1 contrast on the light panel. */
+.md-body a {
+    color: #1d4ed8;
+    text-decoration: underline;
+}
+.md-body a:hover { color: #2563eb; }
+html.dark .md-body a { color: #60a5fa; }
+html.dark .md-body a:hover { color: #93c5fd; }
