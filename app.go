@@ -40,6 +40,7 @@ type App struct {
 	wailsEmitter *control.WailsEmitter
 	ctrlServer   *control.Server
 	closeLog     func() // shuts down the file logger on exit
+	trayEnabled  bool   // set by main() before wails.Run; see main.go for why
 }
 
 // NewApp creates a new App with the default config path.
@@ -147,7 +148,9 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.store != nil {
 		_ = a.store.Close()
 	}
-	systray.Quit()
+	if a.trayEnabled {
+		systray.Quit()
+	}
 	logger.L.Info("shutdown.complete")
 	runtime.LogInfo(ctx, "Claude Session Manager shutting down")
 	if a.closeLog != nil {
