@@ -78,14 +78,58 @@ type InputMessage struct {
 }
 
 // InputPayload is the nested Anthropic message object carried by InputMessage.
+// Content is a bare string for plain-text turns, or a []contentBlock when the
+// turn carries image attachments (see userMessageWithImages) — the CLI's
+// stream-json input mirrors the Anthropic Messages API, which accepts both.
 type InputPayload struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
 }
 
-// userMessage builds the stream-json envelope for a user turn.
+// ImageAttachment is a base64-encoded image pasted into the message box
+// alongside text, sent to the CLI as an Anthropic image content block.
+type ImageAttachment struct {
+	MediaType  string `json:"media_type"`  // e.g. "image/png"
+	DataBase64 string `json:"data_base64"` // raw base64 payload, no "data:" prefix
+}
+
+// contentBlock is one element of an Anthropic content-block array. Only used
+// when a message carries images; plain text alone stays a bare string.
+type contentBlock struct {
+	Type   string              `json:"type"`
+	Text   string              `json:"text,omitempty"`
+	Source *contentImageSource `json:"source,omitempty"`
+}
+
+type contentImageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+}
+
+// userMessage builds the stream-json envelope for a plain-text user turn.
 func userMessage(text string) InputMessage {
 	return InputMessage{Type: "user", Message: InputPayload{Role: "user", Content: text}}
+}
+
+// userMessageWithImages builds the stream-json envelope for a user turn that
+// carries image attachments. Falls back to the plain-string shape (identical
+// to userMessage) when there are no images.
+func userMessageWithImages(text string, images []ImageAttachment) InputMessage {
+	if len(images) == 0 {
+		return userMessage(text)
+	}
+	blocks := make([]contentBlock, 0, len(images)+1)
+	for _, img := range images {
+		blocks = append(blocks, contentBlock{
+			Type:   "image",
+			Source: &contentImageSource{Type: "base64", MediaType: img.MediaType, Data: img.DataBase64},
+		})
+	}
+	if strings.TrimSpace(text) != "" {
+		blocks = append(blocks, contentBlock{Type: "text", Text: text})
+	}
+	return InputMessage{Type: "user", Message: InputPayload{Role: "user", Content: blocks}}
 }
 
 // PendingQuestion is a session's currently open ask-user question (Kind ==
@@ -377,13 +421,21 @@ func (s *Session) Stop(soft bool) {
 // channel. Returns an error if the session is not in a state that accepts
 // input.
 func (s *Session) SendMessage(msg string) error {
+	return s.SendMessageWithImages(msg, nil)
+}
+
+// SendMessageWithImages writes a user turn — optionally carrying image
+// attachments pasted into the message box — to the session's stdin via the
+// input channel. Returns an error if the session is not in a state that
+// accepts input.
+func (s *Session) SendMessageWithImages(msg string, images []ImageAttachment) error {
 	s.mu.Lock()
 	st := s.status
 	s.mu.Unlock()
 	if st != config.StatusWorking && st != config.StatusWaitingPermission {
 		return fmt.Errorf("session %s is not active (status=%s)", s.ID, st)
 	}
-	data, err := json.Marshal(userMessage(msg))
+	data, err := json.Marshal(userMessageWithImages(msg, images))
 	if err != nil {
 		return err
 	}

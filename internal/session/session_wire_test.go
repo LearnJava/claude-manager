@@ -35,6 +35,60 @@ func TestUserMessage_Envelope(t *testing.T) {
 	}
 }
 
+// TestUserMessageWithImages_ContentBlocks verifies an image attachment
+// produces an Anthropic content-block array (image block + trailing text
+// block), not the plain-string shape used when there are no images.
+func TestUserMessageWithImages_ContentBlocks(t *testing.T) {
+	data, err := json.Marshal(userMessageWithImages("what is this?", []ImageAttachment{
+		{MediaType: "image/png", DataBase64: "Zm9v"},
+	}))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	msg := got["message"].(map[string]any)
+	blocks, ok := msg["content"].([]any)
+	if !ok {
+		t.Fatalf("content is not a block array: %T", msg["content"])
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 content blocks, got %d: %v", len(blocks), blocks)
+	}
+	img := blocks[0].(map[string]any)
+	if img["type"] != "image" {
+		t.Errorf("blocks[0].type = %v, want \"image\"", img["type"])
+	}
+	src := img["source"].(map[string]any)
+	if src["type"] != "base64" || src["media_type"] != "image/png" || src["data"] != "Zm9v" {
+		t.Errorf("unexpected image source: %v", src)
+	}
+	text := blocks[1].(map[string]any)
+	if text["type"] != "text" || text["text"] != "what is this?" {
+		t.Errorf("unexpected text block: %v", text)
+	}
+}
+
+// TestUserMessageWithImages_NoImagesFallsBackToPlainString verifies the
+// zero-images call site produces the exact same plain-string envelope as
+// userMessage, so callers without attachments see no behavior change.
+func TestUserMessageWithImages_NoImagesFallsBackToPlainString(t *testing.T) {
+	got, err := json.Marshal(userMessageWithImages("hi", nil))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	want, err := json.Marshal(userMessage("hi"))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("userMessageWithImages(no images) = %s, want %s", got, want)
+	}
+}
+
 // TestBuildCLIArgs_WorktreeNameExplicit verifies an explicit WorktreeName is
 // passed as the --worktree argument so branches aren't randomly named.
 func TestBuildCLIArgs_WorktreeNameExplicit(t *testing.T) {

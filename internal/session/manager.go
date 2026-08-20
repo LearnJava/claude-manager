@@ -777,6 +777,16 @@ func (m *SessionManager) SendMessage(id, message string) error {
 	return ms.session.SendMessage(message)
 }
 
+// SendMessageWithImages writes a user message — optionally with image
+// attachments pasted into the message box — to the running session's stdin.
+func (m *SessionManager) SendMessageWithImages(id, message string, images []ImageAttachment) error {
+	ms := m.get(id)
+	if ms == nil {
+		return fmt.Errorf("session %q not found", id)
+	}
+	return ms.session.SendMessageWithImages(message, images)
+}
+
 // RespondPermission resolves a pending permission request. decision is one
 // of: allow, deny, allow_session, allow_similar, allow_always, deny_always.
 func (m *SessionManager) RespondPermission(id, requestID, decision string) error {

@@ -550,6 +550,12 @@ func (a *App) SendMessage(id, message string) error {
 	return a.manager.SendMessage(id, message)
 }
 
+// SendMessageWithImages writes a user message with optional image
+// attachments (pasted from the clipboard) to a running session's stdin.
+func (a *App) SendMessageWithImages(id, message string, images []session.ImageAttachment) error {
+	return a.manager.SendMessageWithImages(id, message, images)
+}
+
 func (a *App) RespondPermission(id, requestID, decision string) error {
 	return a.manager.RespondPermission(id, requestID, decision)
 }
