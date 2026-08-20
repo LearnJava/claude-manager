@@ -174,6 +174,22 @@ absent overlay field leaves the global value untouched.
 ### Bidirectional Streaming
 Sessions use `--input-format stream-json` + `--output-format stream-json`. Manager writes to stdin (user messages, permission responses) and reads stdout (events). This enables interactive sessions, not just one-shot `-p` calls.
 
+**Image attachments.** `InputPayload.Content` (`internal/session/session.go`) is
+`any`, not a bare string, so a user turn can carry pasted images: with no
+images it stays the plain-string shape (`userMessage`, unchanged, still what
+`TestUserMessage_Envelope` locks in); with one or more it becomes an Anthropic
+content-block array — one `{"type":"image","source":{"type":"base64",
+"media_type":...,"data":...}}` block per image, followed by a trailing
+`{"type":"text",...}` block if there's any text (`userMessageWithImages`).
+`SendMessageWithImages(msg, images []ImageAttachment)` is `SendMessage`'s
+superset (`SendMessage` now just calls it with `nil`), plumbed the same way
+through `SessionManager` and `App`. `SessionInput.svelte` intercepts a
+clipboard paste event only when it actually carries `image/*` items (plain
+text paste is untouched), reads each via `FileReader.readAsDataURL`, and shows
+removable thumbnails above the textarea until send. Not wired into the
+control-plane/MCP tools — pasting a clipboard image isn't something an
+automated caller does; same reasoning as the ask-user protocol above.
+
 ### CLI Launch Command
 ```bash
 claude -p \
@@ -280,7 +296,8 @@ Source Check above has anything to consume.
 
 **Generation** (`GenerateRoadmap(project, idea, model)`, Opus by default —
 unlike pre-flight triage, roadmap quality is the main lever on every
-downstream session's success): runs `analysis.RunAnalysis` with a dedicated
+downstream session's success): runs `analysis.RunAnalysisStreaming` (not
+`RunAnalysis` — see "Progress reporting" below) with a dedicated
 `RoadmapJSONSchema`/`RoadmapSystemPrompt` (`internal/analysis/schema.go`) that
 decomposes a whole project idea into a dependency-ordered backlog of
 session-sized tasks for a **single developer** (parallel `execution_order`
@@ -294,6 +311,32 @@ plan explicitly). The idea is reviewed/edited in `PlanReview.svelte`
 (`mode="roadmap"` — same subtask editor as the ad-hoc pre-flight flow, with
 the single-task feasibility panel hidden and `shared_context` shown as a
 "Project summary" instead).
+
+**Progress reporting & recovery.** `GenerateRoadmap` is a single Wails call the
+frontend awaits for the whole run — on Opus that can be 5-10+ minutes with
+`RunAnalysis` (`--output-format json`), which gives the caller nothing at all
+until the CLI process exits. `RunAnalysisStreaming`
+(`internal/analysis/preflight.go`) requests `--output-format stream-json`
+instead and reports each `assistant` event (a tool call or a text chunk,
+summarized to one line by `summarizeAssistantLine`) through an `onProgress`
+callback; `SessionManager.generateRoadmap` wires that callback to
+`m.emit(EventNameRoadmapProgress, ...)` (`plan:roadmap_progress` — `project`,
+`text`), which `Settings.svelte` shows next to the "Generating…" button so a
+long run reads as "alive and doing X" instead of a frozen spinner. The
+terminating `result` stream-json event carries the same wrapper shape
+`ParseAnalysisOutput` already parses, so `AnalysisResult` decoding is
+unchanged. `RunPreflight`'s ad-hoc single-task triage stays on the plain
+`RunAnalysis`/`analyzeFn` — it's haiku-fast and doesn't need this.
+
+Because the plan is saved to SQLite (`analysis.SavePlan`, status `draft`)
+*before* `GenerateRoadmap` returns to its Wails caller, a dropped IPC response
+— page reload, a suspended WebView2 during a long call, anything that loses
+the awaited promise on the JS side — used to silently strand a fully-generated,
+already-paid-for plan with nothing in the UI to show for it and no session ever
+bootstrapped. `GetLatestDraftRoadmap(project)` looks up the newest
+`Kind=roadmap, Status=draft` plan for a project via `store.ListPlans` +
+`analysis.LoadPlan`, so `Settings.svelte` can offer to reopen it in
+`PlanReview` instead of regenerating from scratch.
 
 **Materialization** (`ApproveRoadmap` → `analysis.WriteRoadmapFiles`) writes
 three things:
@@ -663,6 +706,15 @@ Covered by `frontend/tests/markdown.spec.ts` (the renderer, incl. the escaping
 cases) and `frontend/tests/log-markdown.spec.ts` (the DOM: toggle, expansion,
 persistence) — GUI-TESTS.md LS-11..16.
 
+**`.md-body` is a global style, not LogStream's.** The rules above live in
+`frontend/src/style.css`, not a component `<style>` block — `{@html}`-injected
+nodes never get Svelte's scoping class, so the selectors had to be global
+(`:global(...)`) either way, and a shared definition means every component
+that renders analyst/Claude-written prose gets the same look for free.
+`PlanReview.svelte`'s roadmap "Project summary" (`shared_context`, always
+analyst prose — no `hasMarkdown` gate needed, unlike LogStream's tool-output
+rows) renders through the same `renderMarkdown` + `.md-body` pair.
+
 ### Live Model Switching
 
 Lets the user change a **running** session's model from a small dropdown in
@@ -968,7 +1020,8 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `ApprovePlan(plan)` | Persist an (edited) plan as approved; returns plan with store ID |
 | `ExecutePlan(planID)` | Execute persisted plan (one-shot CLI per subtask, context handoff) |
 | `GetPlan(planID)` | Load persisted plan with subtasks (poll during execution) |
-| `GenerateRoadmap(project, idea, model)` | Decompose a project idea into a draft roadmap plan (Opus by default) |
+| `GenerateRoadmap(project, idea, model)` | Decompose a project idea into a draft roadmap plan (Opus by default); streams `plan:roadmap_progress` while running |
+| `GetLatestDraftRoadmap(project)` | Recover the most recent unapproved roadmap plan for a project — e.g. after a `GenerateRoadmap` response never reached the frontend — without re-running the analyst |
 | `ApproveRoadmap(planID, overwrite)` | Write ROADMAP.md/STATUS-P1.md into the project + bootstrap the "P1" session |
 | `GetSessionRoadmap(project, session)` | Roadmap tree for the TaskPanel "Roadmap" tab (tasks + done/current/pending, one group node per pointed-at roadmap file); nil when the session has no task source or the project has no roadmap |
 | `GetRoadmapTaskDetail(project, relPath)` | Body of one `tasks/NN-*.md` file (path confined to the project folder) |
@@ -991,6 +1044,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `StopProject(project)` | Stop all sessions in a project |
 | `StopAll()` | Stop every session |
 | `SendMessage(id, message)` | Write user_message to stdin |
+| `SendMessageWithImages(id, message, images)` | Write a user turn with pasted image attachments (`session.ImageAttachment{media_type, data_base64}`) as an Anthropic content-block array |
 | `RespondPermission(id, requestID, decision)` | Write permission response to stdin |
 | `GetPendingPermissions()` | All sessions with pending permission requests |
 | `AnswerQuestion(id, questionID, answer)` | Resolve a pending ask-user question (genuine decision), continuing the same conversation |

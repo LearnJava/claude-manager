@@ -21,6 +21,18 @@ func stubAnalyzer(result *analysis.AnalysisResult) (analyzeFn, *[]string) {
 	return fn, &tasks
 }
 
+// stubStreamingAnalyzer is stubAnalyzer's roadmapAnalyzeFn counterpart, for
+// generateRoadmap tests. It ignores onProgress — no test here asserts on
+// progress callbacks.
+func stubStreamingAnalyzer(result *analysis.AnalysisResult) (roadmapAnalyzeFn, *[]string) {
+	var tasks []string
+	fn := func(_ context.Context, _ string, task string, _ analysis.AnalysisConfig, _ analysis.ProgressFunc) (*analysis.AnalysisResult, error) {
+		tasks = append(tasks, task)
+		return result, nil
+	}
+	return fn, &tasks
+}
+
 func twoStepAnalysis() *analysis.AnalysisResult {
 	return &analysis.AnalysisResult{
 		RecommendedModel: "sonnet",
@@ -185,7 +197,7 @@ func TestExecutePlanMissingPlan(t *testing.T) {
 
 func TestGenerateRoadmapSavesRoadmapKindPlan(t *testing.T) {
 	m, _ := newTestManagerWithStore(t)
-	analyze, tasks := stubAnalyzer(twoStepAnalysis())
+	analyze, tasks := stubStreamingAnalyzer(twoStepAnalysis())
 
 	plan, err := m.generateRoadmap(context.Background(), "lumen", "build a chat app", "", analyze)
 	if err != nil {
@@ -212,7 +224,7 @@ func TestGenerateRoadmapSavesRoadmapKindPlan(t *testing.T) {
 
 func TestGenerateRoadmapUnknownProject(t *testing.T) {
 	m, _ := newTestManagerWithStore(t)
-	analyze, _ := stubAnalyzer(twoStepAnalysis())
+	analyze, _ := stubStreamingAnalyzer(twoStepAnalysis())
 	if _, err := m.generateRoadmap(context.Background(), "no-such", "idea", "", analyze); err == nil {
 		t.Fatal("expected error for unknown project")
 	}
@@ -220,7 +232,7 @@ func TestGenerateRoadmapUnknownProject(t *testing.T) {
 
 func TestExecutePlanRejectsRoadmapKind(t *testing.T) {
 	m, _ := newTestManagerWithStore(t)
-	analyze, _ := stubAnalyzer(twoStepAnalysis())
+	analyze, _ := stubStreamingAnalyzer(twoStepAnalysis())
 	plan, err := m.generateRoadmap(context.Background(), "lumen", "idea", "", analyze)
 	if err != nil {
 		t.Fatal(err)
@@ -237,7 +249,7 @@ func TestExecutePlanRejectsRoadmapKind(t *testing.T) {
 
 func TestApproveRoadmapFilesWritesAndCompletesPlan(t *testing.T) {
 	m, _ := newTestManagerWithStore(t)
-	analyze, _ := stubAnalyzer(twoStepAnalysis())
+	analyze, _ := stubStreamingAnalyzer(twoStepAnalysis())
 	plan, err := m.generateRoadmap(context.Background(), "lumen", "idea", "", analyze)
 	if err != nil {
 		t.Fatal(err)

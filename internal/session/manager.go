@@ -1529,16 +1529,33 @@ func (m *SessionManager) runPreflight(ctx context.Context, project, task string,
 	return plan, nil
 }
 
+// EventNameRoadmapProgress notifies the frontend of activity (assistant text,
+// tool calls) while GenerateRoadmap's analyst CLI run is in flight — that run
+// takes minutes on Opus and, unlike a normal session, has no other visible
+// signal that it is still alive rather than hung.
+const EventNameRoadmapProgress = "plan:roadmap_progress"
+
+// RoadmapProgressEvent is the payload of EventNameRoadmapProgress.
+type RoadmapProgressEvent struct {
+	Project string `json:"project"`
+	Text    string `json:"text"`
+}
+
+// roadmapAnalyzeFn abstracts analysis.RunAnalysisStreaming so tests can stub
+// the analyst CLI. Kept distinct from analyzeFn (used by RunPreflight, which
+// has no need for progress reporting) to keep that path unchanged.
+type roadmapAnalyzeFn func(ctx context.Context, projectPath, task string, cfg analysis.AnalysisConfig, onProgress analysis.ProgressFunc) (*analysis.AnalysisResult, error)
+
 // GenerateRoadmap decomposes a whole project idea into a durable backlog
 // (draft roadmap plan), using Opus by default — unlike RunPreflight's
 // single-task triage, roadmap quality is the main lever on every downstream
 // session's success, so it defaults to the strongest model. model overrides
 // the default when non-empty (e.g. "sonnet"/"haiku" for cheaper iteration).
 func (m *SessionManager) GenerateRoadmap(project, idea, model string) (*analysis.TaskPlan, error) {
-	return m.generateRoadmap(context.Background(), project, idea, model, analysis.RunAnalysis)
+	return m.generateRoadmap(context.Background(), project, idea, model, analysis.RunAnalysisStreaming)
 }
 
-func (m *SessionManager) generateRoadmap(ctx context.Context, project, idea, model string, analyze analyzeFn) (*analysis.TaskPlan, error) {
+func (m *SessionManager) generateRoadmap(ctx context.Context, project, idea, model string, analyze roadmapAnalyzeFn) (*analysis.TaskPlan, error) {
 	path, err := m.projectPath(project)
 	if err != nil {
 		return nil, err
@@ -1557,7 +1574,10 @@ func (m *SessionManager) generateRoadmap(ctx context.Context, project, idea, mod
 	}
 	m.mu.Unlock()
 
-	result, err := analyze(ctx, path, idea, acfg)
+	onProgress := func(text string) {
+		m.emit(EventNameRoadmapProgress, RoadmapProgressEvent{Project: project, Text: text})
+	}
+	result, err := analyze(ctx, path, idea, acfg, onProgress)
 	if err != nil {
 		return nil, fmt.Errorf("roadmap: %w", err)
 	}
@@ -1569,6 +1589,28 @@ func (m *SessionManager) generateRoadmap(ctx context.Context, project, idea, mod
 	logger.L.Info("manager.roadmap_generated",
 		"project", project, "plan_id", plan.ID, "subtasks", len(plan.Subtasks), "model", model)
 	return plan, nil
+}
+
+// GetLatestDraftRoadmap returns the most recently generated but not-yet-
+// approved roadmap plan for a project, or nil if there isn't one. Recovers a
+// plan whose GenerateRoadmap response never reached the frontend (a dropped
+// Wails IPC callback, a reloaded page mid-request) without re-running — and
+// re-paying for — the analyst call; the plan itself was already durably saved
+// by generateRoadmap above before GenerateRoadmap ever returned to its caller.
+func (m *SessionManager) GetLatestDraftRoadmap(project string) (*analysis.TaskPlan, error) {
+	if m.store == nil {
+		return nil, nil
+	}
+	plans, err := m.store.ListPlans(project, 10)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range plans {
+		if p.Kind == string(analysis.PlanKindRoadmap) && p.Status == string(analysis.PlanStatusDraft) {
+			return analysis.LoadPlan(m.store, p.ID)
+		}
+	}
+	return nil, nil
 }
 
 // ApproveRoadmapFiles materializes an approved roadmap plan into

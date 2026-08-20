@@ -1,13 +1,15 @@
 <script lang="ts">
-    import { createEventDispatcher, onMount } from 'svelte';
+    import { createEventDispatcher, onMount, onDestroy } from 'svelte';
     import {
         GetConfig,
         UpdateConfig,
         PickDirectory,
         GenerateRoadmap,
+        GetLatestDraftRoadmap,
         GetProjectLogFiles,
         ClearProjectLogs,
     } from '../../wailsjs/go/main/App';
+    import { EventsOn } from '../../wailsjs/runtime/runtime';
     import { initProjects } from '../stores/projects';
     import { refreshSessions } from '../stores/sessions';
     import { setTheme, type Theme } from '../stores/theme';
@@ -305,6 +307,7 @@
                 addProject();
             }
             loadAllProjectLogInfo();
+            loadAllRoadmapDrafts();
         } catch (e: any) {
             error = `Load failed: ${e?.message ?? String(e)}`;
         } finally {
@@ -313,6 +316,24 @@
     }
 
     onMount(load);
+
+    // Live progress for an in-flight GenerateRoadmap call (see CLAUDE.md
+    // "AI-Generated Project Roadmap… Progress reporting & recovery") — without
+    // this, a multi-minute Opus run looks identical to a hung one.
+    let unsubRoadmapProgress: (() => void) | null = null;
+    onMount(() => {
+        unsubRoadmapProgress = EventsOn('plan:roadmap_progress', (evt: { project: string; text: string }) => {
+            if (!cfg) return;
+            const idx = cfg.Projects.findIndex((p) => p.Name === evt.project);
+            if (idx === -1) return;
+            roadmapProgress[idx] = evt.text;
+            roadmapProgress = roadmapProgress;
+        });
+    });
+    onDestroy(() => {
+        unsubRoadmapProgress?.();
+        if (roadmapElapsedTimer) clearInterval(roadmapElapsedTimer);
+    });
 
     function clampSelections() {
         if (!cfg) return;
@@ -400,19 +421,81 @@
     let roadmapBusy: number | null = null;
     let roadmapPlan: any = null;
 
+    // Live progress + elapsed timer while a generation is in flight (see
+    // CLAUDE.md "Progress reporting & recovery") — GenerateRoadmap on Opus can
+    // run 5-10+ minutes, and without this the button gives no sign of life.
+    let roadmapProgress: Record<number, string> = {};
+    let roadmapStartedAt: Record<number, number> = {};
+    let roadmapElapsedTick = 0;
+    let roadmapElapsedTimer: ReturnType<typeof setInterval> | null = null;
+    $: roadmapElapsedText = (() => {
+        roadmapElapsedTick; // reactive dependency — recompute every tick
+        if (roadmapBusy === null || !roadmapStartedAt[roadmapBusy]) return '';
+        const secs = Math.floor((Date.now() - roadmapStartedAt[roadmapBusy]) / 1000);
+        const m = Math.floor(secs / 60);
+        const s = secs % 60;
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    })();
+
+    // Draft roadmap plans recovered from a previous GenerateRoadmap call whose
+    // result never reached this page (dropped IPC response, reload mid-request)
+    // — see GetLatestDraftRoadmap. Dismissal is client-side only, same as the
+    // "No CLAUDE.md" banner in Sidebar.svelte.
+    let roadmapDraft: Record<number, any> = {};
+    let roadmapDraftDismissed: Set<number> = new Set();
+
+    function loadAllRoadmapDrafts() {
+        if (!cfg) return;
+        cfg.Projects.forEach((p, i) => {
+            if (!p.Path) return;
+            GetLatestDraftRoadmap(p.Name)
+                .then((plan) => {
+                    if (plan) {
+                        roadmapDraft[i] = plan;
+                        roadmapDraft = roadmapDraft;
+                    }
+                })
+                .catch(() => {});
+        });
+    }
+
+    function openRecoveredDraft(idx: number) {
+        roadmapPlan = roadmapDraft[idx];
+    }
+
+    function dismissRoadmapDraft(idx: number) {
+        roadmapDraftDismissed.add(idx);
+        roadmapDraftDismissed = roadmapDraftDismissed;
+    }
+
     async function generateRoadmapForProject(idx: number) {
         if (!cfg) return;
         const idea = (roadmapIdea[idx] ?? '').trim();
         if (!idea) return;
         roadmapBusy = idx;
+        roadmapProgress[idx] = '';
+        roadmapStartedAt[idx] = Date.now();
+        if (!roadmapElapsedTimer) {
+            roadmapElapsedTimer = setInterval(() => { roadmapElapsedTick++; }, 1000);
+        }
         error = '';
         info = '';
         try {
             roadmapPlan = await GenerateRoadmap(cfg.Projects[idx].Name, idea, roadmapModel[idx] ?? 'opus');
+            delete roadmapDraft[idx];
+            roadmapDraft = roadmapDraft;
         } catch (e: any) {
             error = `Roadmap generation failed: ${e?.message ?? String(e)}`;
+            // The plan may still have been generated and saved server-side even
+            // though this call itself failed/never resolved cleanly — re-check
+            // so a paid-for run isn't silently stranded.
+            loadAllRoadmapDrafts();
         } finally {
             roadmapBusy = null;
+            if (roadmapElapsedTimer) {
+                clearInterval(roadmapElapsedTimer);
+                roadmapElapsedTimer = null;
+            }
         }
     }
 
@@ -964,6 +1047,31 @@
                                             <code class="font-mono">STATUS-P1.md</code> into the project, and
                                             configures a "P1" Sonnet session to work through them one at a time.
                                         </div>
+                                        {#if roadmapDraft[i] && !roadmapDraftDismissed.has(i) && roadmapBusy !== i}
+                                            <div class="flex items-center justify-between gap-2 text-xs bg-amber-500/10
+                                                        border border-amber-500/40 rounded px-2 py-1.5">
+                                                <span class="text-text">
+                                                    Found an unreviewed roadmap from a previous run —
+                                                    {roadmapDraft[i].subtasks?.length ?? 0} tasks,
+                                                    already generated (nothing spent re-running it).
+                                                </span>
+                                                <div class="flex items-center gap-1 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        on:click={() => openRecoveredDraft(i)}
+                                                        class="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white">
+                                                        Review
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        on:click={() => dismissRoadmapDraft(i)}
+                                                        class="px-2 py-0.5 rounded bg-bg border border-bg-border
+                                                               text-text-muted hover:text-text">
+                                                        Dismiss
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        {/if}
                                         <label class="flex flex-col text-xs text-text-muted gap-1">
                                             Project idea
                                             <textarea
@@ -992,9 +1100,14 @@
                                                 disabled={!p.Path || !(roadmapIdea[i] ?? '').trim() || roadmapBusy !== null}
                                                 class="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white
                                                        disabled:opacity-50 disabled:cursor-not-allowed">
-                                                {roadmapBusy === i ? 'Generating…' : 'Generate Roadmap with AI'}
+                                                {roadmapBusy === i ? `Generating… ${roadmapElapsedText}` : 'Generate Roadmap with AI'}
                                             </button>
                                         </div>
+                                        {#if roadmapBusy === i}
+                                            <div class="text-[11px] text-text-muted font-mono truncate" title={roadmapProgress[i] ?? ''}>
+                                                {roadmapProgress[i] ? roadmapProgress[i] : 'Starting analyst session…'}
+                                            </div>
+                                        {/if}
                                         {#if !p.Path}
                                             <span class="text-[11px] text-text-muted/60">
                                                 Set a project folder above first.

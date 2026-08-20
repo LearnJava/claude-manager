@@ -277,6 +277,15 @@ func (a *App) GenerateRoadmap(project, idea, model string) (*analysis.TaskPlan, 
 	return a.manager.GenerateRoadmap(project, idea, model)
 }
 
+// GetLatestDraftRoadmap returns the most recently generated but unapproved
+// roadmap plan for a project, or null. Lets the UI recover a plan whose
+// GenerateRoadmap call finished on the backend but never made it back to the
+// frontend (e.g. a page reload while the request was in flight), without
+// paying for a second analyst run.
+func (a *App) GetLatestDraftRoadmap(project string) (*analysis.TaskPlan, error) {
+	return a.manager.GetLatestDraftRoadmap(project)
+}
+
 // ApproveRoadmap materializes an approved roadmap plan into
 // <project>/ROADMAP.md + <project>/STATUS-P1.md and bootstraps (or updates)
 // a "P1" session pointed at the result, reusing the same GetConfig-mutate-
