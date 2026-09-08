@@ -9,7 +9,9 @@ when_to_use: >
   Фразы-триггеры: "начни задачу", "возьми задачу", "start task", "взять
   следующую задачу", "создай ветку для". Также когда пользователь говорит
   «ты программист N».
-disable-model-invocation: true
+# Model-invocable on purpose, unlike the lumen skill this is modelled on: an
+# autonomous queue-driven session has no human to type the slash command,
+# and the start protocol is exactly what it must run first.
 model: claude-sonnet-5
 allowed-tools: Bash(git *) Bash(bash scripts/*) Read Edit
 ---

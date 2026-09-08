@@ -7,7 +7,9 @@ description: >
 when_to_use: >
   Trigger phrases: "start a task", "take the next task", "begin work on",
   "create a branch for". Also when the user says "you are developer N".
-disable-model-invocation: true
+# Model-invocable on purpose, unlike the lumen skill this is modelled on: an
+# autonomous queue-driven session has no human to type the slash command,
+# and the start protocol is exactly what it must run first.
 allowed-tools: Bash(git *) Bash(bash scripts/*) Read Edit
 ---
 
