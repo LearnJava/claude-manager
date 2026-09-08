@@ -7,9 +7,12 @@
         rateLimitedSessions,
         errorSessions,
         todayCost,
+        todayTokens,
         appStartedAt,
         rateLimitStatus,
     } from '../stores/sessions';
+    import { costUnit, toggleCostUnit } from '../stores/units';
+    import { formatTokens, tokenSplitLabel } from '../lib/formatters';
 
     const dispatch = createEventDispatcher();
 
@@ -87,9 +90,25 @@
         Errors: {errors}
     </span>
 
-    <span>
-        Cost today: <span class="text-text">{fmtCost($todayCost)}</span>
-    </span>
+    <!--
+        Tokens lead, dollars follow. Click switches which one is the headline;
+        the other stays visible either way, so the switch changes emphasis, not
+        available information. Tooltip carries the in/out/cache split — the
+        total alone hides that a cache read is ~10x cheaper than fresh input.
+    -->
+    <button
+        class="hover:underline focus:outline-none"
+        on:click={toggleCostUnit}
+        type="button"
+        title="Today: {tokenSplitLabel($todayTokens)} — click to switch units">
+        {#if $costUnit === 'tokens'}
+            Today: <span class="text-text">{formatTokens($todayTokens.total)}</span> tok
+            <span class="opacity-60">({fmtCost($todayCost)})</span>
+        {:else}
+            Today: <span class="text-text">{fmtCost($todayCost)}</span>
+            <span class="opacity-60">({formatTokens($todayTokens.total)} tok)</span>
+        {/if}
+    </button>
 
     {#if rlUtil !== undefined}
         <span title="Global rate-limit utilization">

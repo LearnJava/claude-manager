@@ -71,13 +71,15 @@ CREATE TABLE IF NOT EXISTS plan_subtasks (
 
 	sqlCreateDailyMetrics = `
 CREATE TABLE IF NOT EXISTS daily_metrics (
-    date                TEXT NOT NULL,
-    project             TEXT NOT NULL,
-    total_cost          REAL DEFAULT 0,
-    total_input_tokens  INTEGER DEFAULT 0,
-    total_output_tokens INTEGER DEFAULT 0,
-    total_runs          INTEGER DEFAULT 0,
-    total_tasks         INTEGER DEFAULT 0,
+    date                        TEXT NOT NULL,
+    project                     TEXT NOT NULL,
+    total_cost                  REAL DEFAULT 0,
+    total_input_tokens          INTEGER DEFAULT 0,
+    total_output_tokens         INTEGER DEFAULT 0,
+    total_cache_read_tokens     INTEGER DEFAULT 0,
+    total_cache_creation_tokens INTEGER DEFAULT 0,
+    total_runs                  INTEGER DEFAULT 0,
+    total_tasks                 INTEGER DEFAULT 0,
     PRIMARY KEY (date, project)
 )`
 
@@ -125,6 +127,21 @@ func migrate(db *sql.DB) error {
 	if _, err := db.Exec(`ALTER TABLE task_plans ADD COLUMN kind TEXT NOT NULL DEFAULT 'adhoc'`); err != nil {
 		if !strings.Contains(err.Error(), "duplicate column") {
 			return fmt.Errorf("migrate: add task_plans.kind: %w", err)
+		}
+	}
+
+	// daily_metrics predates showing token volume rather than dollars in the
+	// UI: it tracked only input/output, so a day's cache traffic — usually the
+	// bulk of the tokens actually pushed through the model — was invisible.
+	// Same additive pattern as task_plans.kind above.
+	for _, col := range []string{
+		`ALTER TABLE daily_metrics ADD COLUMN total_cache_read_tokens INTEGER DEFAULT 0`,
+		`ALTER TABLE daily_metrics ADD COLUMN total_cache_creation_tokens INTEGER DEFAULT 0`,
+	} {
+		if _, err := db.Exec(col); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column") {
+				return fmt.Errorf("migrate: %s: %w", col, err)
+			}
 		}
 	}
 	return nil

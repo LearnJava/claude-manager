@@ -8,7 +8,10 @@
         formatPercent,
         cacheHitRatio,
         contextBarColor,
+        tokenSplit,
+        tokenSplitLabel,
     } from '../lib/formatters';
+    import { costUnit } from '../stores/units';
 
     export let session: SessionState;
 
@@ -72,6 +75,7 @@
 
     $: runtime = formatDuration(runtimeMs(session, now));
     $: hit = cacheHitRatio(session.cache_read, session.cache_creation);
+    $: split = tokenSplit(session);
     $: util = Number(session.context_util) || 0;
     $: utilPct = Math.min(100, Math.max(0, Math.round(util * 100)));
     $: blink = session.status === 'waiting_permission' || session.status === 'waiting_for_user';
@@ -110,10 +114,13 @@
             <span>Task: <span class="text-text">{session.current_task}</span></span>
         {/if}
         <span>Turns: <span class="text-text">{session.num_turns ?? 0}</span></span>
-        <span>
+        <span title={tokenSplitLabel(session)}>
             Tokens:
-            <span class="text-text">{formatTokens(session.input_tokens)}</span> in /
-            <span class="text-text">{formatTokens(session.output_tokens)}</span> out
+            <span class="text-text">{formatTokens(split.total)}</span>
+            <span class="opacity-70">
+                ({formatTokens(split.input)} in / {formatTokens(split.output)} out /
+                {formatTokens(split.cacheRead)} cached)
+            </span>
         </span>
         {#if session.model}
             <span>Model: <span class="text-text">{session.model}</span></span>
@@ -122,7 +129,13 @@
 
     <!-- Row 3: cost / cache hit / context bar -->
     <div class="mt-1 flex items-center gap-x-4 text-xs text-text-muted">
-        <span>Cost: <span class="text-text">{formatCost(session.total_cost_usd)}</span></span>
+        <!-- Dollars stay on screen but step back when tokens are the chosen unit. -->
+        <span>
+            Cost:
+            <span class={$costUnit === 'usd' ? 'text-text' : 'opacity-70'}>
+                {formatCost(session.total_cost_usd)}
+            </span>
+        </span>
         <span>Cache hit: <span class="text-text">{formatPercent(hit)}</span></span>
 
         <div class="flex items-center gap-2 ml-auto min-w-[160px]">

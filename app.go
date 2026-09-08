@@ -690,8 +690,16 @@ func (a *App) GetDailyCost(date string) (float64, error) {
 	return a.manager.GetDailyCost(date)
 }
 
+func (a *App) GetDailyTokens(date string) (session.DailyTokens, error) {
+	return a.manager.GetDailyTokens(date)
+}
+
 func (a *App) GetProjectCost(project string, days int) (float64, error) {
 	return a.manager.GetProjectCost(project, days)
+}
+
+func (a *App) GetProjectTokens(project string, days int) (session.DailyTokens, error) {
+	return a.manager.GetProjectTokens(project, days)
 }
 
 func (a *App) GetRateLimitStatus() *session.RateLimitInfo {

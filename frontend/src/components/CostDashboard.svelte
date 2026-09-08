@@ -2,12 +2,20 @@
     import { createEventDispatcher, onMount } from 'svelte';
     import {
         GetDailyCost,
+        GetDailyTokens,
         GetHistory,
         GetProjectCost,
+        GetProjectTokens,
         GetRateLimitStatus,
     } from '../../wailsjs/go/main/App';
     import { projects } from '../stores/projects';
-    import { formatCost, formatPercent } from '../lib/formatters';
+    import {
+        formatCost,
+        formatPercent,
+        formatTokens,
+        tokenSplit,
+    } from '../lib/formatters';
+    import { costUnit, setCostUnit } from '../stores/units';
 
     const dispatch = createEventDispatcher();
 
@@ -49,10 +57,29 @@
         { id: 'month', label: 'This month' },
     ];
 
+    // Every aggregate carries both units side by side and the view picks one
+    // ($costUnit). Fetching only the selected unit would make switching a
+    // round-trip and would let the two readouts drift apart on a stale reload.
+    interface Amount {
+        cost: number;
+        tokens: number;
+    }
+
     let runs: SessionRun[] = [];
-    let dailyByDate: { date: string; cost: number }[] = [];
-    let projectCosts: { project: string; cost: number }[] = [];
+    let dailyByDate: ({ date: string } & Amount)[] = [];
+    let projectCosts: ({ project: string } & Amount)[] = [];
     let rateLimit: RateLimit | null = null;
+
+    // Unit-aware readers, so each chart body stays free of if/else.
+    function amountOf(a: Amount): number {
+        return $costUnit === 'tokens' ? a.tokens : a.cost;
+    }
+
+    function fmtAmount(v: number): string {
+        return $costUnit === 'tokens' ? `${formatTokens(v)} tok` : formatCost(v);
+    }
+
+    $: unitLabel = $costUnit === 'tokens' ? 'tokens' : 'cost';
 
     let loading = true;
     let error = '';
@@ -108,33 +135,45 @@
             const days = periodDays(period);
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-            const daily: { date: string; cost: number }[] = [];
+            const daily: ({ date: string } & Amount)[] = [];
             for (let i = days - 1; i >= 0; i--) {
                 const d = new Date(today);
                 d.setDate(d.getDate() - i);
                 const iso = isoDate(d);
+                let cost = 0;
+                let tokens = 0;
                 try {
-                    const c = (await GetDailyCost(iso)) as number;
-                    daily.push({ date: iso, cost: Number(c) || 0 });
+                    cost = Number(await GetDailyCost(iso)) || 0;
                 } catch {
-                    daily.push({ date: iso, cost: 0 });
+                    /* keep 0 */
                 }
+                try {
+                    tokens = Number(((await GetDailyTokens(iso)) as any)?.total) || 0;
+                } catch {
+                    /* keep 0 */
+                }
+                daily.push({ date: iso, cost, tokens });
             }
             dailyByDate = daily;
 
-            // 3. Per-project cost across the period.
+            // 3. Per-project totals across the period.
             const projList = $projects;
-            const perProj: { project: string; cost: number }[] = [];
+            const perProj: ({ project: string } & Amount)[] = [];
             for (const p of projList) {
+                let cost = 0;
+                let tokens = 0;
                 try {
-                    const c = (await GetProjectCost(p.name, days)) as number;
-                    perProj.push({ project: p.name, cost: Number(c) || 0 });
+                    cost = Number(await GetProjectCost(p.name, days)) || 0;
                 } catch {
-                    perProj.push({ project: p.name, cost: 0 });
+                    /* keep 0 */
                 }
+                try {
+                    tokens = Number(((await GetProjectTokens(p.name, days)) as any)?.total) || 0;
+                } catch {
+                    /* keep 0 */
+                }
+                perProj.push({ project: p.name, cost, tokens });
             }
-            // Sort descending by cost.
-            perProj.sort((a, b) => b.cost - a.cost);
             projectCosts = perProj;
 
             // 4. Current rate limit status.
@@ -163,25 +202,33 @@
 
     // Total from the daily aggregates (authoritative since daily_metrics is
     // what the manager increments on each completed run).
-    $: dailyTotal = dailyByDate.reduce((sum, d) => sum + d.cost, 0);
+    $: dailyTotal = dailyByDate.reduce((sum, d) => sum + amountOf(d), 0);
 
-    // Cost-by-model — derived from session_runs in the period.
+    // By model — derived from session_runs in the period, in both units.
     $: byModel = (() => {
-        const map = new Map<string, number>();
+        const map = new Map<string, Amount>();
         for (const r of periodRuns) {
             const m = r.Model || 'unknown';
-            map.set(m, (map.get(m) ?? 0) + (r.TotalCostUSD || 0));
+            const cur = map.get(m) ?? { cost: 0, tokens: 0 };
+            cur.cost += r.TotalCostUSD || 0;
+            cur.tokens += tokenSplit(r as any).total;
+            map.set(m, cur);
         }
-        const arr = Array.from(map.entries()).map(([model, cost]) => ({ model, cost }));
-        arr.sort((a, b) => b.cost - a.cost);
+        const arr = Array.from(map.entries()).map(([model, a]) => ({ model, ...a }));
+        arr.sort((a, b) => amountOf(b) - amountOf(a));
         return arr;
     })();
 
-    $: maxModelCost = byModel.reduce((m, x) => Math.max(m, x.cost), 0);
-    $: maxProjectCost = projectCosts.reduce((m, x) => Math.max(m, x.cost), 0);
-    $: maxDailyCost = dailyByDate.reduce((m, d) => Math.max(m, d.cost), 0);
+    // Sorted for display in the active unit — the biggest spender by tokens is
+    // not always the biggest by dollars (a haiku session can dominate volume
+    // and barely register in cost), and that difference is the point.
+    $: projectRows = [...projectCosts].sort((a, b) => amountOf(b) - amountOf(a));
 
-    $: projectTotal = projectCosts.reduce((s, x) => s + x.cost, 0);
+    $: maxModelAmount = byModel.reduce((m, x) => Math.max(m, amountOf(x)), 0);
+    $: maxProjectAmount = projectRows.reduce((m, x) => Math.max(m, amountOf(x)), 0);
+    $: maxDailyAmount = dailyByDate.reduce((m, d) => Math.max(m, amountOf(d)), 0);
+
+    $: projectTotal = projectRows.reduce((s, x) => s + amountOf(x), 0);
 
     // Cache efficiency — reads / (reads + creation) across periodRuns.
     $: cacheStats = (() => {
@@ -196,18 +243,22 @@
         return { read, creation, ratio };
     })();
 
-    // Avg cost per task — total cost / total tasks (skip runs with 0 tasks).
-    $: avgCostPerTask = (() => {
+    // Avg per task — total / total tasks (skip runs with 0 tasks). In token
+    // mode this is the number worth watching over time: it is what a skill or
+    // a context primer is supposed to move (see LEARN-TASKS.md LN-11/LN-16).
+    $: avgPerTask = (() => {
         let totalTasks = 0;
-        let totalCost = 0;
+        let total = 0;
         for (const r of periodRuns) {
             const tasks = r.TasksDone || 0;
             if (tasks > 0) {
                 totalTasks += tasks;
-                totalCost += r.TotalCostUSD || 0;
+                total += $costUnit === 'tokens'
+                    ? tokenSplit(r as any).total
+                    : (r.TotalCostUSD || 0);
             }
         }
-        return totalTasks > 0 ? totalCost / totalTasks : 0;
+        return totalTasks > 0 ? total / totalTasks : 0;
     })();
 
     $: rlUtil = rateLimit
@@ -249,8 +300,37 @@
         on:keydown|stopPropagation>
         <!-- Header -->
         <div class="px-4 py-3 border-b border-bg-border flex items-center justify-between shrink-0">
-            <h2 class="text-text font-semibold text-base">Cost Dashboard</h2>
+            <h2 class="text-text font-semibold text-base">Usage Dashboard</h2>
             <div class="flex items-center gap-3">
+                <!--
+                    Unit switch. Tokens are the default: on a subscription the
+                    dollar figure prices something already paid for, while the
+                    rate limit meters tokens. Dollars remain one click away —
+                    they are the right unit for comparing models and for API-key
+                    billing.
+                -->
+                <div class="flex items-center gap-1 text-xs">
+                    <button
+                        type="button"
+                        on:click={() => setCostUnit('tokens')}
+                        title="Show token volume — what the rate limit meters"
+                        class="px-2 py-1 rounded border
+                            {$costUnit === 'tokens'
+                                ? 'bg-bg-elevated border-blue-500 text-text'
+                                : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
+                        Tokens
+                    </button>
+                    <button
+                        type="button"
+                        on:click={() => setCostUnit('usd')}
+                        title="Show US dollars — API price-list value"
+                        class="px-2 py-1 rounded border
+                            {$costUnit === 'usd'
+                                ? 'bg-bg-elevated border-blue-500 text-text'
+                                : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
+                        USD
+                    </button>
+                </div>
                 <div class="flex items-center gap-1 text-xs">
                     {#each periodOptions as opt (opt.id)}
                         <button
@@ -289,8 +369,8 @@
                 <!-- Total + KPI row -->
                 <section class="mb-6 grid grid-cols-4 gap-3">
                     <div class="bg-bg-elevated border border-bg-border rounded p-3">
-                        <div class="text-text-muted text-xs">Total cost</div>
-                        <div class="text-text text-2xl font-semibold mt-1">{formatCost(dailyTotal)}</div>
+                        <div class="text-text-muted text-xs">Total {unitLabel}</div>
+                        <div class="text-text text-2xl font-semibold mt-1">{fmtAmount(dailyTotal)}</div>
                         <div class="text-text-dim text-xs mt-1">
                             {period === 'today' ? 'Today' : period === 'week' ? 'Last 7 days' : 'Last 30 days'}
                         </div>
@@ -305,9 +385,9 @@
                         </div>
                     </div>
                     <div class="bg-bg-elevated border border-bg-border rounded p-3">
-                        <div class="text-text-muted text-xs">Avg cost per task</div>
+                        <div class="text-text-muted text-xs">Avg per task</div>
                         <div class="text-text text-2xl font-semibold mt-1">
-                            {formatCost(avgCostPerTask)}
+                            {fmtAmount(avgPerTask)}
                         </div>
                         <div class="text-text-dim text-xs mt-1">
                             {periodRuns.length} run{periodRuns.length === 1 ? '' : 's'} in period
@@ -327,17 +407,22 @@
 
                 <!-- Cost by model -->
                 <section class="mb-6">
-                    <h3 class="text-text font-semibold text-sm mb-2">Cost by model</h3>
+                    <h3 class="text-text font-semibold text-sm mb-2">By model — {unitLabel}</h3>
                     {#if byModel.length === 0}
                         <div class="text-text-dim text-xs italic">No runs in selected period.</div>
                     {:else}
                         <div class="space-y-2">
                             {#each byModel as row (row.model)}
-                                {@const pct = maxModelCost > 0 ? (row.cost / maxModelCost) * 100 : 0}
+                                {@const val = amountOf(row)}
+                                {@const pct = maxModelAmount > 0 ? (val / maxModelAmount) * 100 : 0}
                                 <div>
                                     <div class="flex justify-between text-xs mb-0.5">
                                         <span class="text-text">{row.model}</span>
-                                        <span class="text-text-muted font-mono">{formatCost(row.cost)}</span>
+                                        <span
+                                            class="text-text-muted font-mono"
+                                            title="{formatTokens(row.tokens)} tok · {formatCost(row.cost)}">
+                                            {fmtAmount(val)}
+                                        </span>
                                     </div>
                                     <div class="h-3 bg-bg-elevated rounded overflow-hidden">
                                         <div
@@ -352,19 +437,22 @@
 
                 <!-- Cost by project -->
                 <section class="mb-6">
-                    <h3 class="text-text font-semibold text-sm mb-2">Cost by project</h3>
-                    {#if projectCosts.length === 0}
+                    <h3 class="text-text font-semibold text-sm mb-2">By project — {unitLabel}</h3>
+                    {#if projectRows.length === 0}
                         <div class="text-text-dim text-xs italic">No projects configured.</div>
                     {:else}
                         <div class="space-y-2">
-                            {#each projectCosts as row (row.project)}
-                                {@const pct = maxProjectCost > 0 ? (row.cost / maxProjectCost) * 100 : 0}
-                                {@const share = projectTotal > 0 ? (row.cost / projectTotal) * 100 : 0}
+                            {#each projectRows as row (row.project)}
+                                {@const val = amountOf(row)}
+                                {@const pct = maxProjectAmount > 0 ? (val / maxProjectAmount) * 100 : 0}
+                                {@const share = projectTotal > 0 ? (val / projectTotal) * 100 : 0}
                                 <div>
                                     <div class="flex justify-between text-xs mb-0.5">
                                         <span class="text-text">{row.project}</span>
-                                        <span class="text-text-muted font-mono">
-                                            {formatCost(row.cost)}
+                                        <span
+                                            class="text-text-muted font-mono"
+                                            title="{formatTokens(row.tokens)} tok · {formatCost(row.cost)}">
+                                            {fmtAmount(val)}
                                             <span class="text-text-dim ml-2">({share.toFixed(0)}%)</span>
                                         </span>
                                     </div>
@@ -387,15 +475,16 @@
                     {:else}
                         <div class="flex items-end gap-2 h-32 bg-bg-elevated border border-bg-border rounded p-3">
                             {#each dailyByDate as d (d.date)}
-                                {@const heightPct = maxDailyCost > 0 ? (d.cost / maxDailyCost) * 100 : 0}
+                                {@const val = amountOf(d)}
+                                {@const heightPct = maxDailyAmount > 0 ? (val / maxDailyAmount) * 100 : 0}
                                 <div class="flex-1 flex flex-col items-center justify-end gap-1 min-w-[14px]">
                                     <span class="text-text-dim text-[10px] font-mono leading-none">
-                                        {d.cost > 0 ? formatCost(d.cost) : ''}
+                                        {val > 0 ? fmtAmount(val) : ''}
                                     </span>
                                     <div
                                         class="w-full bg-blue-500 rounded-sm"
-                                        style="height: {heightPct.toFixed(1)}%; min-height: {d.cost > 0 ? '2px' : '0'}"
-                                        title="{d.date}: {formatCost(d.cost)}"></div>
+                                        style="height: {heightPct.toFixed(1)}%; min-height: {val > 0 ? '2px' : '0'}"
+                                        title="{d.date}: {formatTokens(d.tokens)} tok · {formatCost(d.cost)}"></div>
                                     <span class="text-text-muted text-[10px] leading-none">
                                         {dayLabel(d.date)}
                                     </span>

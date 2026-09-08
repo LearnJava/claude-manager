@@ -29,6 +29,57 @@ export function formatTokens(n: number | undefined | null): string {
     return String(Math.round(v));
 }
 
+// A run's token volume, split the way the API bills it. Kept as one shape so
+// every readout adds the same four numbers up the same way.
+export interface TokenSplit {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheCreation: number;
+    total: number;
+}
+
+// Accepts either the snake_case shape (SessionState / SessionMetrics /
+// DailyTokens) or the Go-exported PascalCase one (store.SessionRun rows from
+// GetHistory) — both reach the UI, and having two summing helpers is how the
+// two drift apart.
+export function tokenSplit(src: Record<string, any> | undefined | null): TokenSplit {
+    const n = (...keys: string[]): number => {
+        for (const k of keys) {
+            const v = src?.[k];
+            if (typeof v === 'number' && !isNaN(v)) return v;
+        }
+        return 0;
+    };
+    const input = n('input_tokens', 'InputTokens');
+    const output = n('output_tokens', 'OutputTokens');
+    const cacheRead = n('cache_read', 'cache_read_tokens', 'CacheReadTokens');
+    const cacheCreation = n('cache_creation', 'cache_creation_tokens', 'CacheCreationTokens');
+    return {
+        input,
+        output,
+        cacheRead,
+        cacheCreation,
+        total: input + output + cacheRead + cacheCreation,
+    };
+}
+
+// Total tokens pushed through the model — the number the rate limit meters.
+export function totalTokens(src: Record<string, any> | undefined | null): number {
+    return tokenSplit(src).total;
+}
+
+// One-line breakdown for a tooltip: the total alone hides that a cache read
+// costs roughly a tenth of fresh input, so two equal totals can differ several
+// -fold in real spend.
+export function tokenSplitLabel(src: Record<string, any> | undefined | null): string {
+    const s = tokenSplit(src);
+    return (
+        `${formatTokens(s.input)} in · ${formatTokens(s.output)} out · ` +
+        `${formatTokens(s.cacheRead)} cache read · ${formatTokens(s.cacheCreation)} cache write`
+    );
+}
+
 export function formatDuration(ms: number | undefined | null): string {
     if (ms === undefined || ms === null || isNaN(ms as number)) return '0s';
     let s = Math.max(0, Math.floor(Number(ms) / 1000));

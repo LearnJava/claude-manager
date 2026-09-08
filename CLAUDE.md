@@ -634,6 +634,39 @@ project's `logs/` dir (`store.ClearProjectLogFiles`) *and* the project's
 without their log bodies. Two-click confirm button (`window.confirm()` is
 disabled in Wails WebView2 — see Conventions).
 
+### Tokens vs Dollars in the Usage Readouts
+
+Every usage figure is available in two units and the UI leads with **tokens**
+(`frontend/src/stores/units.ts`, `costUnit`, persisted in localStorage like the
+theme and the log's markdown switch). On a subscription the dollar number is an
+API price-list valuation of something already paid for, while the rate limit
+meters tokens — "how much more can I get done today" is a token question.
+Dollars stay one click away, because they are still the right unit for
+comparing models (what `ModelRouter`/LN-13 reason about) and for API-key
+billing.
+
+**The total always includes cache traffic** (`tokenSplit` /`totalTokens`,
+`frontend/src/lib/formatters.ts`): input + output + cache read + cache
+creation. Cache reads usually dominate the volume, so a total that ignored them
+would understate a run by an order of magnitude — and since a cache read costs
+roughly a tenth of fresh input, two equal totals can differ several-fold in
+real spend. That is why the split is never hidden: it is in the tooltip
+everywhere the total is shown (`tokenSplitLabel`), and spelled out inline on
+`SessionCard`.
+
+`tokenSplit` accepts both the snake_case shape (`SessionState`,
+`SessionMetrics`, `DailyTokens`) and the Go-exported PascalCase one
+(`store.SessionRun` rows from `GetHistory`) — the dashboard sums run rows while
+the sidebar sums live session state, and a helper that understood only one of
+them would silently report zero on half the screens (`frontend/tests/tokens.spec.ts`).
+
+`daily_metrics` gained `total_cache_read_tokens` / `total_cache_creation_tokens`
+for this (additive `ALTER TABLE`, same tolerate-duplicate-column pattern as
+`task_plans.kind`). `GetDailyTokens` / `GetProjectTokens` read the *same rows*
+as `GetDailyCost` / `GetProjectCost`, so the two units shown side by side can
+never describe different sets of runs — `TestGetDailyTokensMatchesGetDailyCost`
+locks that in.
+
 ### Markdown in the Log
 
 Claude writes markdown — tables, headings, checklists, fenced code — and the
@@ -1056,7 +1089,9 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetSessionMetrics(id)` | Token/cost metrics for one session |
 | `GetHistory(project, limit)` | Past session runs from SQLite |
 | `GetDailyCost(date)` | Cost aggregate for a date |
+| `GetDailyTokens(date)` | Token volume for a date (input/output/cache split + total), from the same `daily_metrics` rows as `GetDailyCost` |
 | `GetProjectCost(project, days)` | Cost aggregate for a project over N days |
+| `GetProjectTokens(project, days)` | Token volume for a project over N days — the token twin of `GetProjectCost` |
 | `GetRateLimitStatus()` | Current rate limit info |
 | `ExportLog(id, entries, format)` | Save log as MD/JSON/TXT via native dialog |
 | `CleanOldLogs(days)` | Delete logs older than N days from SQLite |
@@ -1186,7 +1221,7 @@ claude_path = "build/fakeclaude.exe"
 
 - `session_runs` — completed runs with cost/tokens/duration/model
 - `session_logs` — log entries per run (batch insert)
-- `daily_metrics` — aggregated cost/tokens per day per project
+- `daily_metrics` — aggregated cost/tokens per day per project (input, output, **cache read, cache creation**)
 - `task_plans` — pre-flight analysis plans
 - `plan_subtasks` — subtasks within plans
 - `mixed_briefs` — generated mixed-programming briefs (MP-06)

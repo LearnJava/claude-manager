@@ -1042,6 +1042,57 @@ func (m *SessionManager) GetDailyCost(date string) (float64, error) {
 	return total, nil
 }
 
+// DailyTokens is a day's token volume across all projects, split by kind.
+// The UI leads with tokens rather than dollars: on a subscription the dollar
+// figure is a price-list calculation of something already paid for, while the
+// token volume is what the rate limit actually meters. The split matters
+// because cache reads are an order of magnitude cheaper than fresh input —
+// two days with the same total can differ several-fold in real cost.
+type DailyTokens struct {
+	Date          string `json:"date"`
+	InputTokens   int64  `json:"input_tokens"`
+	OutputTokens  int64  `json:"output_tokens"`
+	CacheRead     int64  `json:"cache_read"`
+	CacheCreation int64  `json:"cache_creation"`
+	Total         int64  `json:"total"`
+	CostUSD       float64 `json:"cost_usd"`
+}
+
+// GetDailyTokens returns the token volume across all projects for the given
+// date (format YYYY-MM-DD). It reads the same daily_metrics rows as
+// GetDailyCost, so the token and dollar figures shown side by side always
+// cover the same set of runs.
+func (m *SessionManager) GetDailyTokens(date string) (DailyTokens, error) {
+	out := DailyTokens{Date: date}
+	if m.store == nil {
+		return out, nil
+	}
+	m.mu.Lock()
+	projects := make([]string, 0)
+	if m.cfg != nil {
+		for _, p := range m.cfg.Projects {
+			projects = append(projects, p.Name)
+		}
+	}
+	m.mu.Unlock()
+	for _, p := range projects {
+		dm, err := m.store.GetDailyMetrics(date, p)
+		if err != nil {
+			return DailyTokens{Date: date}, err
+		}
+		if dm == nil {
+			continue
+		}
+		out.InputTokens += dm.TotalInputTokens
+		out.OutputTokens += dm.TotalOutputTokens
+		out.CacheRead += dm.TotalCacheReadTokens
+		out.CacheCreation += dm.TotalCacheCreationTokens
+		out.CostUSD += dm.TotalCost
+	}
+	out.Total = out.InputTokens + out.OutputTokens + out.CacheRead + out.CacheCreation
+	return out, nil
+}
+
 // GetProjectCost returns the total cost for a project over the last `days`
 // days.
 func (m *SessionManager) GetProjectCost(project string, days int) (float64, error) {
@@ -1060,6 +1111,32 @@ func (m *SessionManager) GetProjectCost(project string, days int) (float64, erro
 		total += dm.TotalCost
 	}
 	return total, nil
+}
+
+// GetProjectTokens returns the token volume for a project over the last `days`
+// days — the token twin of GetProjectCost, reading the same daily_metrics rows
+// so the two units describe the same runs.
+func (m *SessionManager) GetProjectTokens(project string, days int) (DailyTokens, error) {
+	var out DailyTokens
+	if m.store == nil {
+		return out, nil
+	}
+	if days <= 0 {
+		days = 30
+	}
+	metrics, err := m.store.ListDailyMetrics(project, days)
+	if err != nil {
+		return DailyTokens{}, err
+	}
+	for _, dm := range metrics {
+		out.InputTokens += dm.TotalInputTokens
+		out.OutputTokens += dm.TotalOutputTokens
+		out.CacheRead += dm.TotalCacheReadTokens
+		out.CacheCreation += dm.TotalCacheCreationTokens
+		out.CostUSD += dm.TotalCost
+	}
+	out.Total = out.InputTokens + out.OutputTokens + out.CacheRead + out.CacheCreation
+	return out, nil
 }
 
 // GetRateLimitStatus returns the most-restrictive active rate-limit window
@@ -1401,6 +1478,8 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg string) {
 	totalCost := ms.totalCostUSD
 	inTok := ms.inputTokens
 	outTok := ms.outputTokens
+	cacheReadTok := ms.cacheReadTokens
+	cacheCreateTok := ms.cacheCreateTokens
 	project := ms.project
 	ms.mu.Unlock()
 
@@ -1430,13 +1509,15 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg string) {
 
 	if status == "completed" {
 		_ = m.store.AddDailyMetrics(&store.DailyMetrics{
-			Date:              now.Format("2006-01-02"),
-			Project:           project,
-			TotalCost:         totalCost,
-			TotalInputTokens:  inTok,
-			TotalOutputTokens: outTok,
-			TotalRuns:         1,
-			TotalTasks:        1,
+			Date:                     now.Format("2006-01-02"),
+			Project:                  project,
+			TotalCost:                totalCost,
+			TotalInputTokens:         inTok,
+			TotalOutputTokens:        outTok,
+			TotalCacheReadTokens:     cacheReadTok,
+			TotalCacheCreationTokens: cacheCreateTok,
+			TotalRuns:                1,
+			TotalTasks:               1,
 		})
 	}
 }

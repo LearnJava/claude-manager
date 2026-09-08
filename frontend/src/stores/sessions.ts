@@ -4,6 +4,7 @@ import {
     GetAllSessions,
     GetRateLimitStatus,
     GetDailyCost,
+    GetDailyTokens,
     Notify,
 } from '../../wailsjs/go/main/App';
 
@@ -120,6 +121,24 @@ export const rateLimitStatus = writable<RateLimitInfo | null>(null);
 
 // Total cost for today (in USD)
 export const todayCost = writable<number>(0);
+
+// Today's token volume, split by kind. Same daily_metrics rows as todayCost,
+// so the two always describe the same set of runs.
+export interface DailyTokenTotals {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read: number;
+    cache_creation: number;
+    total: number;
+}
+
+export const todayTokens = writable<DailyTokenTotals>({
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read: 0,
+    cache_creation: 0,
+    total: 0,
+});
 
 // Track when the manager started (for uptime in the status bar)
 export const appStartedAt = writable<Date>(new Date());
@@ -409,12 +428,24 @@ function notify(title: string, body: string) {
 }
 
 async function refreshTodayCost() {
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     try {
-        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
         const cost = await GetDailyCost(today);
         todayCost.set(cost ?? 0);
     } catch (e) {
         // store may not be ready on first launch; ignore.
+    }
+    try {
+        const t: any = await GetDailyTokens(today);
+        todayTokens.set({
+            input_tokens: Number(t?.input_tokens) || 0,
+            output_tokens: Number(t?.output_tokens) || 0,
+            cache_read: Number(t?.cache_read) || 0,
+            cache_creation: Number(t?.cache_creation) || 0,
+            total: Number(t?.total) || 0,
+        });
+    } catch (e) {
+        // ditto — a missing token total must not blank out the cost readout.
     }
 }
 

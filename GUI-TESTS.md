@@ -176,6 +176,9 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | CD-06 | Cache efficiency calculated | Sessions with cache data | Efficiency = `cache_read / (cache_read + cache_creation)` | ○ |
 | CD-07 | Rate limit red when >85% | RL utilization > 85% | RL KPI card has red color | ○ |
 | CD-08 | Cost by project bar chart rendered | Multiple projects with cost | Bar chart with project labels visible | ○ |
+| CD-09 | Unit switch flips every chart | Click "Tokens" / "USD" | Headings read "By model — tokens"/"— cost"; KPI + bars reformat, bar order re-sorts by the active unit | ○ |
+| CD-10 | Unit choice persists | Pick USD, reload | "USD" still active (localStorage `cm.costUnit`) | ○ |
+| CD-11 | Bar tooltip always shows both units | Hover a project bar | `title` has `<N> tok · $<X>` regardless of active unit | ○ |
 
 ---
 
@@ -271,7 +274,8 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | STB-02 | Waiting count shown | Session waits for permission | "Waiting: 1" colored entry visible | ○ |
 | STB-03 | Click Waiting opens queue modal | Click "Waiting: N" | PermissionQueue modal appears | ○ |
 | STB-04 | Error count shown | Session errors | "Errors: 1" colored entry visible | ○ |
-| STB-05 | Cost today shown | Complete session with cost | "Cost today: $X.XX" shown | ○ |
+| STB-05 | Today's usage shown | Complete session with cost | "Today: <N> tok ($X.XX)" shown, tokens leading | ○ |
+| STB-05b | Clicking the total switches units | Click the "Today:" readout | Dollars become the headline, tokens move to parentheses; choice persists | ○ |
 | STB-06 | Rate limit shown red >85% | RL utilization >85% | "RL:" value in red | ○ |
 | STB-07 | Uptime increments | Wait 2 seconds | Uptime increases by ~2s | ○ |
 

@@ -47,13 +47,15 @@ type LogEntry struct {
 
 // DailyMetrics represents a row in daily_metrics.
 type DailyMetrics struct {
-	Date              string // "2026-05-22"
-	Project           string
-	TotalCost         float64
-	TotalInputTokens  int64
-	TotalOutputTokens int64
-	TotalRuns         int
-	TotalTasks        int
+	Date                     string // "2026-05-22"
+	Project                  string
+	TotalCost                float64
+	TotalInputTokens         int64
+	TotalOutputTokens        int64
+	TotalCacheReadTokens     int64
+	TotalCacheCreationTokens int64
+	TotalRuns                int
+	TotalTasks               int
 }
 
 // TaskPlan represents a row in task_plans.
@@ -325,17 +327,21 @@ func (s *Store) DeleteLogsForProject(project string) error {
 // AddDailyMetrics upserts daily aggregate metrics, adding the delta to any existing row.
 func (s *Store) AddDailyMetrics(m *DailyMetrics) error {
 	const q = `INSERT INTO daily_metrics
-    (date, project, total_cost, total_input_tokens, total_output_tokens, total_runs, total_tasks)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+    (date, project, total_cost, total_input_tokens, total_output_tokens,
+     total_cache_read_tokens, total_cache_creation_tokens, total_runs, total_tasks)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(date, project) DO UPDATE SET
-    total_cost          = total_cost          + excluded.total_cost,
-    total_input_tokens  = total_input_tokens  + excluded.total_input_tokens,
-    total_output_tokens = total_output_tokens + excluded.total_output_tokens,
-    total_runs          = total_runs          + excluded.total_runs,
-    total_tasks         = total_tasks         + excluded.total_tasks`
+    total_cost                  = total_cost                  + excluded.total_cost,
+    total_input_tokens          = total_input_tokens          + excluded.total_input_tokens,
+    total_output_tokens         = total_output_tokens         + excluded.total_output_tokens,
+    total_cache_read_tokens     = total_cache_read_tokens     + excluded.total_cache_read_tokens,
+    total_cache_creation_tokens = total_cache_creation_tokens + excluded.total_cache_creation_tokens,
+    total_runs                  = total_runs                  + excluded.total_runs,
+    total_tasks                 = total_tasks                 + excluded.total_tasks`
 	_, err := s.db.Exec(q,
 		m.Date, m.Project, m.TotalCost,
 		m.TotalInputTokens, m.TotalOutputTokens,
+		m.TotalCacheReadTokens, m.TotalCacheCreationTokens,
 		m.TotalRuns, m.TotalTasks,
 	)
 	return err
@@ -343,12 +349,14 @@ ON CONFLICT(date, project) DO UPDATE SET
 
 // GetDailyMetrics returns metrics for a specific date and project, or nil if not found.
 func (s *Store) GetDailyMetrics(date, project string) (*DailyMetrics, error) {
-	const q = `SELECT date, project, total_cost, total_input_tokens, total_output_tokens, total_runs, total_tasks
+	const q = `SELECT date, project, total_cost, total_input_tokens, total_output_tokens,
+       total_cache_read_tokens, total_cache_creation_tokens, total_runs, total_tasks
     FROM daily_metrics WHERE date=? AND project=?`
 	var m DailyMetrics
 	err := s.db.QueryRow(q, date, project).Scan(
 		&m.Date, &m.Project, &m.TotalCost,
 		&m.TotalInputTokens, &m.TotalOutputTokens,
+		&m.TotalCacheReadTokens, &m.TotalCacheCreationTokens,
 		&m.TotalRuns, &m.TotalTasks,
 	)
 	if err == sql.ErrNoRows {
@@ -362,7 +370,8 @@ func (s *Store) GetDailyMetrics(date, project string) (*DailyMetrics, error) {
 
 // ListDailyMetrics returns metrics for a project over the last days days, newest first.
 func (s *Store) ListDailyMetrics(project string, days int) ([]*DailyMetrics, error) {
-	const q = `SELECT date, project, total_cost, total_input_tokens, total_output_tokens, total_runs, total_tasks
+	const q = `SELECT date, project, total_cost, total_input_tokens, total_output_tokens,
+       total_cache_read_tokens, total_cache_creation_tokens, total_runs, total_tasks
     FROM daily_metrics WHERE project=? AND date >= date('now', ?)
     ORDER BY date DESC`
 	rows, err := s.db.Query(q, project, fmt.Sprintf("-%d days", days))
@@ -377,6 +386,7 @@ func (s *Store) ListDailyMetrics(project string, days int) ([]*DailyMetrics, err
 		if err := rows.Scan(
 			&m.Date, &m.Project, &m.TotalCost,
 			&m.TotalInputTokens, &m.TotalOutputTokens,
+			&m.TotalCacheReadTokens, &m.TotalCacheCreationTokens,
 			&m.TotalRuns, &m.TotalTasks,
 		); err != nil {
 			return nil, err
