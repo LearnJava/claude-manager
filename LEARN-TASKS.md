@@ -62,7 +62,7 @@ use_worktree = true
 
 | Задача | Статус | Ключевые файлы |
 |---|---|---|
-| LN-01 | ○ TODO | internal/experience/transcript.go, testdata/transcripts/ |
+| LN-01 | ✓ DONE (2026-09-08) | internal/experience/transcript.go, testdata/transcripts/ |
 | LN-02 | ○ TODO | internal/experience/signature.go, internal/store/migrations.go, store.go |
 | LN-03 | ○ TODO | internal/experience/indexer.go, manager.go, app.go, ExperiencePanel.svelte |
 | LN-04 | ○ TODO | internal/experience/allowlist.go, internal/store (permission_events), app.go |
