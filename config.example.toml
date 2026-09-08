@@ -144,6 +144,12 @@ path = 'D:\RustProjects\lumen-browser'
   # session via --resume. Leave empty to use the built-in English default.
   # crash_recovery_prompt = "Сессия была прервана. Проверь git status и STATUS-P1.md, продолжи задачу."
 
+  # Context primer (LEARN-TASKS.md LN-05): prepend an auto-generated "Project
+  # state" block (current task, git state, files the previous run touched,
+  # gate commands) to a fresh run's initial prompt, capped at ~2000 chars.
+  # Off by default.
+  context_primer = false
+
   # Auto-approve rules evaluated in order; first match wins
   [[project.session.permission_rule]]
   tool = "Bash"

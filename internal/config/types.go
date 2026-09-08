@@ -186,6 +186,13 @@ type SessionConfig struct {
 	// Crash recovery: message sent to Claude when resuming an interrupted session.
 	// Leave empty to use the built-in default recovery prompt.
 	CrashRecoveryPrompt string `toml:"crash_recovery_prompt"`
+
+	// ContextPrimer prepends an auto-generated "Project state" block (current
+	// task, git state, files the previous run touched, gate commands) to the
+	// initial prompt of a fresh run, so it doesn't re-discover from scratch
+	// what the manager already knows (LEARN-TASKS.md LN-05). Off by default;
+	// with it false the prompt is byte-identical to before this flag existed.
+	ContextPrimer bool `toml:"context_primer"`
 }
 
 type PermissionRule struct {

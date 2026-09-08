@@ -128,6 +128,24 @@ func (a *App) startup(ctx context.Context) {
 		})
 	}
 
+	// Wire the context primer (LEARN-TASKS.md LN-05): only ever called for a
+	// session with ContextPrimer=true (checked in Session.initialPromptText),
+	// so this is safe to wire unconditionally even for projects that never
+	// opt in.
+	{
+		st := a.store
+		a.manager.SetPrimerBuilder(func(project, sessionName, projectPath, taskDesc string, gates []string) string {
+			return experience.BuildPrimer(experience.PrimerInput{
+				Project:     project,
+				Session:     sessionName,
+				ProjectPath: projectPath,
+				TaskDesc:    taskDesc,
+				Gates:       gates,
+				Store:       st,
+			})
+		})
+	}
+
 	// Start the control-plane server (no-op when CM_CONTROL disables it).
 	if controlEmitter != nil {
 		srv, err := control.StartFromEnv(ctx, a.manager, a, controlEmitter)

@@ -237,6 +237,12 @@ type SessionManager struct {
 	// cfg.Optimization.ExperienceTracking is on — see SetActionIndexer.
 	indexRun ActionIndexFunc
 
+	// primerFn is nil unless app.go has wired the context primer
+	// (LEARN-TASKS.md LN-05); passed through to every new Session's PrimerFn
+	// field, which only calls it when that session's own ContextPrimer flag
+	// is on — see SetPrimerBuilder.
+	primerFn PrimerFunc
+
 	runtimeRules *permission.RuntimeRuleSet
 	queue        *permission.PendingQueue
 
@@ -306,6 +312,16 @@ func (m *SessionManager) SetConfig(cfg *config.AppConfig) {
 func (m *SessionManager) SetActionIndexer(fn ActionIndexFunc) {
 	m.mu.Lock()
 	m.indexRun = fn
+	m.mu.Unlock()
+}
+
+// SetPrimerBuilder wires the experience-layer context primer (LEARN-TASKS.md
+// LN-05). Pass nil to disable it entirely. Each session's own ContextPrimer
+// flag still gates whether it's ever called for that session (see
+// Session.initialPromptText), so this only needs to be set once at startup.
+func (m *SessionManager) SetPrimerBuilder(fn PrimerFunc) {
+	m.mu.Lock()
+	m.primerFn = fn
 	m.mu.Unlock()
 }
 
@@ -426,6 +442,9 @@ func (m *SessionManager) StartSession(project, name string) error {
 		project: project,
 		name:    name,
 	}
+	m.mu.Lock()
+	primerFn := m.primerFn
+	m.mu.Unlock()
 	sess := New(Params{
 		ID:                id,
 		ProjectName:       project,
@@ -436,6 +455,8 @@ func (m *SessionManager) StartSession(project, name string) error {
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
 		CrashRecovery:     m.cfg.Settings.CrashRecovery,
+		Gates:             proj.Gates,
+		PrimerFn:          primerFn,
 		OnEvent: func(sid string, ev SessionEvent) {
 			m.onSessionEvent(sid, ev)
 		},
@@ -493,6 +514,9 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 	}
 
 	ms := &managedSession{project: project, name: name}
+	m.mu.Lock()
+	primerFn := m.primerFn
+	m.mu.Unlock()
 	sess := New(Params{
 		ID:                id,
 		ProjectName:       project,
@@ -503,6 +527,8 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
 		CrashRecovery:     m.cfg.Settings.CrashRecovery,
+		Gates:             proj.Gates,
+		PrimerFn:          primerFn,
 		OnEvent:           func(sid string, ev SessionEvent) { m.onSessionEvent(sid, ev) },
 	})
 	ms.session = sess
@@ -694,6 +720,9 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 	sessionCfg.Model = model
 
 	ms := &managedSession{project: project, name: name}
+	m.mu.Lock()
+	primerFn := m.primerFn
+	m.mu.Unlock()
 	sess := New(Params{
 		ID:                id,
 		ProjectName:       project,
@@ -704,6 +733,8 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
 		CrashRecovery:     m.cfg.Settings.CrashRecovery,
+		Gates:             proj.Gates,
+		PrimerFn:          primerFn,
 		ResumeSessionID:   resumeID,
 		OnEvent:           func(sid string, ev SessionEvent) { m.onSessionEvent(sid, ev) },
 	})
