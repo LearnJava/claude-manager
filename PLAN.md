@@ -2986,6 +2986,11 @@ auto_model_routing = false           # true = выбор модели по сл�
 # Reporting
 show_cost_per_turn = true            # Показывать стоимость каждого turn в логе
 show_cache_efficiency = true         # Показывать cache efficiency в session header
+
+# Experience layer (LEARN-TASKS.md LN-03..18) — mining the app's own run
+# history into token/time savings. Off by default: no transcript is opened
+# until this is set.
+experience_tracking = false
 ```
 
 ### 20.5 Автоматические действия менеджера (без участия пользователя)

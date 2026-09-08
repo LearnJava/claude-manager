@@ -59,6 +59,11 @@ type OptimizationSettings struct {
 	// Reporting (PLAN.md 20.6)
 	ShowCostPerTurn     bool `toml:"show_cost_per_turn"`
 	ShowCacheEfficiency bool `toml:"show_cache_efficiency"`
+
+	// Experience layer (LEARN-TASKS.md LN-03): mines CLI transcripts into
+	// action_signatures for the "Actions" tab and downstream candidate mining.
+	// Default off — with it off, finishRun never opens a transcript file.
+	ExperienceTracking bool `toml:"experience_tracking"`
 }
 
 type GlobalSettings struct {

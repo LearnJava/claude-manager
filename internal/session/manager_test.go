@@ -558,6 +558,78 @@ func TestFinishRun_NoLogsNoFile(t *testing.T) {
 	}
 }
 
+// indexCall captures one ActionIndexFunc invocation for the tests below.
+type indexCall struct {
+	project, sessionName, cliSessionID, projectPath, taskPtr string
+	runID                                                    int64
+}
+
+// TestFinishRun_IndexesActionsWhenTrackingEnabled: with experience_tracking
+// on and an indexer wired (app.go's job normally), a completed run with a
+// CLI session id triggers exactly one indexing call carrying the run's
+// identity (LEARN-TASKS.md LN-03).
+func TestFinishRun_IndexesActionsWhenTrackingEnabled(t *testing.T) {
+	m, _ := newTestManagerWithStore(t)
+	ms := addStubSession(m, "lumen", "P1")
+	ms.session.CLISessionID = "cli-123"
+
+	m.cfg.Optimization.ExperienceTracking = true
+	calls := make(chan indexCall, 1)
+	m.SetActionIndexer(func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr string) error {
+		calls <- indexCall{project, sessionName, cliSessionID, projectPath, taskPtr, runID}
+		return nil
+	})
+
+	m.beginRun(ms)
+	m.finishRun(ms, "completed", "")
+
+	select {
+	case c := <-calls:
+		if c.project != "lumen" || c.sessionName != "P1" || c.cliSessionID != "cli-123" {
+			t.Errorf("unexpected index call: %+v", c)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the indexer to be called")
+	}
+}
+
+// TestFinishRun_NoIndexingWhenTrackingDisabled: the flag being off (the
+// default) must mean the indexer is never invoked, even though it's wired —
+// "no transcript is opened at all", not just "the result is discarded".
+func TestFinishRun_NoIndexingWhenTrackingDisabled(t *testing.T) {
+	m, _ := newTestManagerWithStore(t)
+	ms := addStubSession(m, "lumen", "P1")
+	ms.session.CLISessionID = "cli-123"
+
+	calls := make(chan indexCall, 1)
+	m.SetActionIndexer(func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr string) error {
+		calls <- indexCall{project, sessionName, cliSessionID, projectPath, taskPtr, runID}
+		return nil
+	})
+
+	m.beginRun(ms)
+	m.finishRun(ms, "completed", "")
+
+	select {
+	case c := <-calls:
+		t.Fatalf("indexer must not run with experience_tracking off, got %+v", c)
+	case <-time.After(100 * time.Millisecond):
+		// expected: nothing arrived
+	}
+}
+
+// TestFinishRun_NoIndexerWiredIsSafe: the default (no app.go wiring at all)
+// must not panic finishRun.
+func TestFinishRun_NoIndexerWiredIsSafe(t *testing.T) {
+	m, _ := newTestManagerWithStore(t)
+	ms := addStubSession(m, "lumen", "P1")
+	ms.session.CLISessionID = "cli-123"
+	m.cfg.Optimization.ExperienceTracking = true
+
+	m.beginRun(ms)
+	m.finishRun(ms, "completed", "") // must not panic
+}
+
 func TestSetConfigReplacesConfig(t *testing.T) {
 	m := newTestManager(t)
 	newCfg := &config.AppConfig{

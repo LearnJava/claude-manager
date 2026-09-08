@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"claude-manager/internal/analysis"
 	"claude-manager/internal/config"
@@ -311,6 +312,56 @@ func TestProjectPath_NoConfigLoaded(t *testing.T) {
 	a := &App{}
 	if _, err := a.projectPath("lumen"); err == nil {
 		t.Error("expected error when no config is loaded")
+	}
+}
+
+func TestGetTopActions_NoStore(t *testing.T) {
+	a := &App{}
+	if _, err := a.GetTopActions("lumen", 30); err == nil {
+		t.Error("expected error with no store opened")
+	}
+}
+
+func TestGetActionSamples_NoStore(t *testing.T) {
+	a := &App{}
+	if _, err := a.GetActionSamples("lumen", "Bash:git status", 0); err == nil {
+		t.Error("expected error with no store opened")
+	}
+}
+
+// TestGetTopActions_IncludesBulkImportedRows: a row with RunID == nil (from
+// IngestDir's bulk import, LEARN-TASKS.md LN-17) must still show up in
+// GetTopActions — the "Actions" tab must not silently drop imported history
+// (LEARN-TASKS.md LN-03 "Готово когда").
+func TestGetTopActions_IncludesBulkImportedRows(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	a := &App{store: st}
+
+	if err := st.InsertActions([]store.ActionRow{
+		{Project: "lumen", Session: "S1", CLISessionID: "old-log.md", Tool: "Bash",
+			Sig: "Bash:git status", Arg: "git status --short", Timestamp: time.Now().UTC()},
+	}); err != nil {
+		t.Fatalf("InsertActions: %v", err)
+	}
+
+	stats, err := a.GetTopActions("lumen", 30)
+	if err != nil {
+		t.Fatalf("GetTopActions: %v", err)
+	}
+	if len(stats) != 1 || stats[0].Count != 1 {
+		t.Fatalf("GetTopActions = %+v, want one row with Count 1", stats)
+	}
+
+	samples, err := a.GetActionSamples("lumen", "Bash:git status", 0)
+	if err != nil {
+		t.Fatalf("GetActionSamples: %v", err)
+	}
+	if len(samples) != 1 || samples[0].Arg != "git status --short" {
+		t.Fatalf("GetActionSamples = %+v, want the one bulk-imported row", samples)
 	}
 }
 
