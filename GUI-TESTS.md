@@ -306,6 +306,21 @@ rendering and the "Add rule" round-trip without a real store.
 
 ---
 
+## ExperiencePanel.svelte — Timing Tab (LEARN-TASKS.md LN-18)
+
+Same `store=nil` limitation as the Actions tab above: `GetDurationProfile` is
+stubbed empty in `helpers/bridge.ts` by default, so EXP-15's populated-table
+case overrides the stub via `page.evaluate` (same pattern as EXP-11) instead
+of relying on a real store.
+
+| ID | Title | Steps | Assert | Status |
+|----|-------|-------|--------|--------|
+| EXP-14 | Tab switches, empty state | Click "Timing" tab | Tab highlighted; "No duration profile…" names the 10-sample floor and the flag | **✓** |
+| EXP-15 | Duration table renders | Override `GetDurationProfile` to return one signature, click Refresh | Row renders with signature, N, median/p90/max/total formatted via `formatDuration` | **✓** |
+| EXP-16 | Fail-rate highlighted | Project with a signature carrying `FailRate > 0` | Fail-rate cell rendered in the error color | ○ |
+
+---
+
 ## StatusBar.svelte — Footer Metrics
 
 | ID | Title | Steps | Assert | Status |

@@ -155,6 +155,7 @@ func actionRows(traj Trajectory, project, sessionName string, runID *int64, cliS
 			IsError:      step.ResultIsError,
 			OutTokens:    outTokens,
 			ResultChars:  step.ResultChars,
+			DurSec:       stepDurSec(step),
 			Timestamp:    step.Time,
 		})
 	}

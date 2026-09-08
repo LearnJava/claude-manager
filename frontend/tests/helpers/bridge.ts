@@ -123,6 +123,17 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         GetMixedRounds: (project: string) => rpc('GetMixedRounds', { project }),
         GetMixedQuality: (project: string) => rpc('GetMixedQuality', { project }),
         CancelMixedTask: (id: string) => rpc('CancelMixedTask', { id }),
+        // GetLatestDraftRoadmap is called unconditionally for every project
+        // with a Path as soon as Settings loads (Settings.svelte
+        // loadAllRoadmapDrafts, called from load()) — leaving it undefined
+        // throws synchronously ("... is not a function"), which load()'s own
+        // catch turns into a persistent "Load failed" error that then hides
+        // any later `info` message (the template shows error *or* info, error
+        // wins), most visibly swallowing the "Saved." confirmation after
+        // save()'s own re-`load()`. Not Wails-only in the sense of the other
+        // roadmap calls below — this one runs on every Settings open/save
+        // regardless of whether a spec ever touches the roadmap feature.
+        GetLatestDraftRoadmap: () => Promise.resolve(null),
         // Stubs for platform-specific calls that don't exist in the test server.
         PickDirectory: () => Promise.resolve(''),
         Notify: () => Promise.resolve(undefined),
@@ -145,6 +156,9 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         // "Add rule" button is never reachable in this harness either.
         GetPermissionCandidates: () => Promise.resolve({ Safe: [], NeedsReview: [] }),
         AddPermissionRule: () => Promise.resolve(undefined),
+        // GetDurationProfile (LEARN-TASKS.md LN-18) reads from the same store
+        // as GetTopActions above — same reason, same stub shape.
+        GetDurationProfile: () => Promise.resolve([]),
       };
 
       (window as typeof window & { go: unknown }).go = { main: { App } };

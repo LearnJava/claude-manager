@@ -57,6 +57,13 @@ type Step struct {
 	ResultIsError bool
 	Stdout        string
 	Stderr        string
+	// ResultTime is the timestamp of the tool_result (or error) line that
+	// closed this call — zero when no result ever arrived (a call still in
+	// flight when the read window ended). Time and ResultTime together are
+	// the manager's own measurement of how long the call actually took
+	// (LEARN-TASKS.md LN-18); a naive parser has no other source for this,
+	// since neither backend's tool_use event carries a duration itself.
+	ResultTime time.Time
 
 	Usage *session.TokenUsage
 }
@@ -337,6 +344,7 @@ func processUser(traj *Trajectory, toolIndex map[string]int, raw rawLine) {
 	if err := json.Unmarshal(raw.Message.Content, &blocks); err != nil {
 		return
 	}
+	ts := parseTimestamp(raw.Timestamp)
 	for _, b := range blocks {
 		if b.Type != "tool_result" {
 			continue
@@ -352,6 +360,7 @@ func processUser(traj *Trajectory, toolIndex map[string]int, raw rawLine) {
 		step.ResultText = text
 		step.ResultChars = utf8.RuneCountInString(text)
 		step.ResultIsError = b.IsError
+		step.ResultTime = ts
 		if raw.ToolUseResult != nil {
 			step.Stdout = raw.ToolUseResult.Stdout
 			step.Stderr = raw.ToolUseResult.Stderr

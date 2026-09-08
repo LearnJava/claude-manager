@@ -94,11 +94,15 @@ claude-manager/
 │   │   ├── allowlist.go             # LN-04: ClassifyPermission/Candidates — a hard read-only
 │   │   │                            #   whitelist over permission_events (store/migrations.go),
 │   │   │                            #   feeding the Permissions tab's rule suggestions.
-│   │   └── primer.go                # LN-05: BuildPrimer — the "Project state (auto-generated)"
-│   │                                #   block prepended to a fresh run's prompt (task, git state,
-│   │                                #   files the previous run touched, gate commands), capped
-│   │                                #   at MaxPrimerChars; wired via session.PrimerFunc to avoid
-│   │                                #   the same import cycle as ActionIndexFunc (LN-03).
+│   │   ├── primer.go                # LN-05: BuildPrimer — the "Project state (auto-generated)"
+│   │   │                            #   block prepended to a fresh run's prompt (task, git state,
+│   │   │                            #   files the previous run touched, gate commands), capped
+│   │   │                            #   at MaxPrimerChars; wired via session.PrimerFunc to avoid
+│   │   │                            #   the same import cycle as ActionIndexFunc (LN-03).
+│   │   └── duration.go              # LN-18: DurationProfile — median/p90/max/fail-rate per
+│   │                                #   signature from action_signatures.dur_sec (n>=10 only);
+│   │                                #   durationSection renders the primer's "Command timing"
+│   │                                #   block (LN-05) and the sleep anti-pattern line.
 │   ├── store/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs
 │   │   ├── migrations.go            # CREATE TABLE statements, indexes
@@ -1385,6 +1389,45 @@ would be redundant with (or contradict) the crash-recovery reconciliation
 step. With the flag off or no `PrimerFn` wired, `initialPromptText` is
 byte-identical to before this feature existed.
 
+**Duration profile** (LN-18, `internal/experience/duration.go`). A fresh
+session has no idea how long this project's own slow commands take, and
+finds out the only way it can — by hitting a timeout. The manager already
+knows: every ingested tool call's `ts` (LN-01/17) brackets its own
+tool_use→tool_result gap. `Step.ResultTime` (set by both ingest backends —
+`processUser` for JSONL, the `tool_result`/`error` case for markdown logs)
+captures the result's own timestamp alongside the existing tool_use `Time`;
+`stepDurSec` rounds their difference to whole seconds, or reports 0 when
+either timestamp is missing (no result ever arrived within the ingested
+window) — 0 means unknown, never "instant", and `store.ActionDurations`
+filters on `dur_sec > 0` for exactly that reason so an unknown call can never
+drag a median toward zero. The column is additive
+(`action_signatures.dur_sec`, same tolerate-duplicate-column `ALTER TABLE`
+pattern as `task_plans.kind`) and filled at ingest time for both the bulk
+import (LN-17) and the live per-run indexer (LN-03) — one code path
+(`actionRows`) feeds both.
+
+`DurationProfile(st, project)` groups `store.ActionDurations`' rows by
+signature and reports median/p90/max/total/fail-rate, dropping any signature
+under `MinDurationSamples` (10) — a median of two calls is noise, not a
+profile. Measured against a real corpus (lumen, 79k calls): `git worktree add
+-b` averaged 120s with 31 failures out of 90 calls, `sleep <ARG>` alone
+accounted for ~28 hours of total wait across 953 calls — the kind of thing a
+session has no way to know without this.
+
+`durationSection` renders the primer's (LN-05) "Command timing" block: one
+line per signature whose median clears `durationThresholdSec` (60s), capped
+at `maxDurationLines` (5) so the primer's own token budget is never crowded
+out by a long tail of slow commands. `sleep` gets a dedicated line instead of
+the generic timeout tip — a high `sleep` median is not "this command is slow
+and needs a bigger timeout", it's the "wait for a background task"
+anti-pattern that cannot work in this session model at all (see
+"Background-Task Warning" above: stdin closes at turn end, so nothing is left
+to wait out the sleep). `App.GetDurationProfile` exposes the same data to
+`ExperiencePanel.svelte`'s "Timing" tab — the human-readable twin of the
+primer section, gated on the same `[optimization] experience_tracking` flag
+LN-03/04 use (no new config surface needed: `dur_sec` is derived from
+timestamps ingestion already collects when that flag is on).
+
 ## Wails Bindings (app.go)
 
 All exported methods become async JS functions via auto-generated bindings in `frontend/wailsjs/`.
@@ -1440,6 +1483,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetProjectTokens(project, days)` | Token volume for a project over N days — the token twin of `GetProjectCost` |
 | `GetTopActions(project, days)` | Aggregated tool-call signatures for the "Actions" tab (LEARN-TASKS.md LN-03) |
 | `GetActionSamples(project, sig, limit)` | Concrete example rows for one signature — the "Actions" tab's click-through |
+| `GetDurationProfile(project)` | Median/p90/max/fail-rate duration profile per signature — the "Timing" tab (LEARN-TASKS.md LN-18) |
 | `GetPermissionCandidates(project, days)` | Suggested auto-allow permission rules, split into safe/needs-review — the "Permissions" tab (LEARN-TASKS.md LN-04) |
 | `AddPermissionRule(project, session, tool, pattern, decision)` | Append a `PermissionRule` to one session's config — the Permissions tab's "Add rule" button |
 | `GetRateLimitStatus()` | Current rate limit info |
@@ -1570,7 +1614,7 @@ claude_path = "build/fakeclaude.exe"
 - `task_plans` — pre-flight analysis plans
 - `plan_subtasks` — subtasks within plans
 - `mixed_briefs` — generated mixed-programming briefs (MP-06)
-- `action_signatures` — normalized tool-call signatures mined from CLI transcripts, per run (LN-02)
+- `action_signatures` — normalized tool-call signatures mined from CLI transcripts, per run (LN-02); `dur_sec` is the tool_use→tool_result gap, feeding the duration profile (LN-18)
 - `ingest_state` — per-CLI-session transcript byte offset, so re-indexing never re-inserts rows (LN-02)
 - `imported_logfiles` — bulk-import dedup for `IngestDir`, keyed by (project, name, size, mtime) (LN-17)
 - `permission_events` — one row per resolved permission_request (auto-decided or human), source for the Permissions tab's rule suggestions (LN-04)

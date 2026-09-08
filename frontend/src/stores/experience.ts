@@ -7,6 +7,7 @@
 import {
     AddPermissionRule,
     GetActionSamples,
+    GetDurationProfile,
     GetPermissionCandidates,
     GetTopActions,
 } from '../../wailsjs/go/main/App';
@@ -58,6 +59,27 @@ export async function fetchActionSamples(
     limit = 20,
 ): Promise<ActionRow[]> {
     const raw = (await GetActionSamples(project, sig, limit)) as ActionRow[] | null;
+    return raw ?? [];
+}
+
+// SignatureDuration mirrors experience.SignatureDuration — the "Timing" tab's
+// row shape (LEARN-TASKS.md LN-18): how long a normalized command actually
+// takes in this project, aggregated from action_signatures.dur_sec.
+export interface SignatureDuration {
+    Sig: string;
+    Tool: string;
+    Count: number;
+    MedianSec: number;
+    P90Sec: number;
+    MaxSec: number;
+    TotalSec: number;
+    FailRate: number;
+}
+
+// fetchDurationProfile aggregates action_signatures durations for a project,
+// most time-consuming (by median) first.
+export async function fetchDurationProfile(project: string): Promise<SignatureDuration[]> {
+    const raw = (await GetDurationProfile(project)) as SignatureDuration[] | null;
     return raw ?? [];
 }
 

@@ -43,10 +43,12 @@ type PrimerInput struct {
 // BuildPrimer renders the context-primer text: a short, auto-generated block
 // of state a fresh session would otherwise spend several tool calls
 // re-discovering — current task, git state, files the previous run touched,
-// the project's gate commands. Sections are appended in a fixed priority
-// order (matching LEARN-TASKS.md LN-05's numbered list) and the whole result
-// is capped at MaxPrimerChars: truncation drops whole trailing sections,
-// lowest priority first, never mid-section.
+// the project's gate commands, and (LN-18) how long this project's slow
+// commands actually take. Sections are appended in a fixed priority order
+// (matching LEARN-TASKS.md LN-05's numbered list, with the LN-18 timing
+// section appended last as the lowest priority) and the whole result is
+// capped at MaxPrimerChars: truncation drops whole trailing sections, lowest
+// priority first, never mid-section.
 //
 // Sections 5 (files re-read 3+ times, LN-08) and 6 (journal "avoid" lines,
 // LN-06) are not implemented yet — both depend on features that land after
@@ -72,6 +74,14 @@ func BuildPrimer(in PrimerInput) string {
 
 	if len(in.Gates) > 0 {
 		sections = append(sections, "Gate commands:\n"+strings.Join(in.Gates, "\n"))
+	}
+
+	if in.Store != nil {
+		if profile, err := DurationProfile(in.Store, in.Project); err == nil {
+			if dur := durationSection(profile); dur != "" {
+				sections = append(sections, dur)
+			}
+		}
 	}
 
 	return truncateSections(sections, MaxPrimerChars)
