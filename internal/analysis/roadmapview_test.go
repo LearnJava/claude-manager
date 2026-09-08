@@ -221,8 +221,10 @@ func TestReadRoadmap_CuratedUsesItsOwnStatusColumn(t *testing.T) {
 	if got := nodeByName(t, view, "CC-14").Status; got != RoadmapTaskActive {
 		t.Errorf("CC-14 is pointed at by the session, want active, got %q", got)
 	}
-	if got := nodeByName(t, view, "CC-15").Status; got != RoadmapTaskActive {
-		t.Errorf("CC-15 is queued by the session, want active, got %q", got)
+	if got := nodeByName(t, view, "CC-15").Status; got != RoadmapTaskPending {
+		// Queued, but not the task in hand: only the first pointer is active,
+		// or a whole-backlog queue would paint every row in progress.
+		t.Errorf("CC-15 is queued behind CC-14, want pending, got %q", got)
 	}
 	if got := nodeByName(t, view, "CC-8").Status; got != RoadmapTaskDone {
 		t.Errorf("CC-8 is done in the status column, got %q", got)
@@ -418,8 +420,8 @@ func TestReadRoadmap_QueueSpanningTwoFiles(t *testing.T) {
 	if cc14.Current || !cc14.InQueue {
 		t.Errorf("CC-14: current=%v in_queue=%v, want queued only", cc14.Current, cc14.InQueue)
 	}
-	if cc14.Status != RoadmapTaskActive {
-		t.Errorf("CC-14 status %q — a queued planned task reads as active", cc14.Status)
+	if cc14.Status != RoadmapTaskPending {
+		t.Errorf("CC-14 status %q — queued behind the current task, want pending", cc14.Status)
 	}
 }
 
@@ -605,10 +607,15 @@ func TestResolveStatus_CuratedVocabulary(t *testing.T) {
 			t.Errorf("status %q → %q, want %q", raw, got, want)
 		}
 	}
-	// A planned task the session actually took reads as active.
-	node := &RoadmapNode{StatusRaw: "planned", Line: 5, InQueue: true}
+	// A planned task the session actually took reads as active; one merely
+	// queued behind it stays pending.
+	node := &RoadmapNode{StatusRaw: "planned", Line: 5, InQueue: true, Current: true}
 	if got := resolveStatus(node, StatusModelCurated, map[int]bool{5: true}); got != RoadmapTaskActive {
-		t.Errorf("queued planned task → %q", got)
+		t.Errorf("current planned task → %q", got)
+	}
+	queued := &RoadmapNode{StatusRaw: "planned", Line: 6, InQueue: true}
+	if got := resolveStatus(queued, StatusModelCurated, map[int]bool{5: true, 6: true}); got != RoadmapTaskPending {
+		t.Errorf("queued planned task → %q, want pending", got)
 	}
 }
 
@@ -678,6 +685,107 @@ func TestConfinedPath_RefusesToEscapeTheProject(t *testing.T) {
 		}
 		if _, err := ReadRoadmapRowDetail(project, bad, 1); err == nil {
 			t.Errorf("row detail path %q should have been rejected", bad)
+		}
+	}
+}
+
+// ---- curated status glyphs and heading pointers ----
+
+// writeGlyphRoadmap mirrors this repo's own LEARN-TASKS.md: an index table
+// whose status cells lead with a marker glyph, task headings below it, and a
+// status file pointing at the *headings* rather than at the table rows.
+func writeGlyphRoadmap(t *testing.T, status string) string {
+	t.Helper()
+	dir := t.TempDir()
+	roadmap := "# Слой опыта — план работ\n\n" +
+		"| Задача | Статус | Ключевые файлы |\n" +
+		"|---|---|---|\n" +
+		"| LN-01 | ✓ DONE (2026-09-08) | internal/experience/transcript.go |\n" +
+		"| LN-02 | ○ TODO | internal/experience/signature.go |\n" +
+		"| LN-03 | ● IN PROGRESS | internal/experience/indexer.go |\n" +
+		"\n" +
+		"## LN-01: Чтение транскриптов\n\nтекст\n" +
+		"## LN-02: Сигнатуры действий\n\nтекст\n" +
+		"## LN-03: Индексатор\n\nтекст\n"
+	if err := os.WriteFile(filepath.Join(dir, "TASKS.md"), []byte(roadmap), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "STATUS.md"), []byte(status), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestReadRoadmap_StatusGlyphsAreNotTheStatusWord(t *testing.T) {
+	// "✓ DONE" must read as done: taking the leading token literally yields the
+	// glyph, every row falls through to pending, and the panel reports 0/N.
+	view, err := ReadRoadmap(writeGlyphRoadmap(t, "TASKS.md:9\n"), "STATUS.md")
+	if err != nil {
+		t.Fatalf("ReadRoadmap: %v", err)
+	}
+	if view.StatusModel != StatusModelCurated {
+		t.Fatalf("status model: %q", view.StatusModel)
+	}
+	if view.Done != 1 || view.Total != 3 {
+		t.Fatalf("progress %d/%d, want 1/3", view.Done, view.Total)
+	}
+	if got := nodeByName(t, view, "LN-01").Status; got != RoadmapTaskDone {
+		t.Errorf("LN-01 (✓ DONE) → %q", got)
+	}
+	if got := nodeByName(t, view, "LN-02").Status; got != RoadmapTaskPending {
+		t.Errorf("LN-02 (○ TODO) → %q", got)
+	}
+	if got := nodeByName(t, view, "LN-03").Status; got != RoadmapTaskActive {
+		t.Errorf("LN-03 (● IN PROGRESS) → %q", got)
+	}
+}
+
+func TestReadRoadmap_PointerAtHeadingMarksItsRow(t *testing.T) {
+	// The queue points at "## LN-02: …" (line 12), not at the table row (line
+	// 6). Matching by id is what puts the "← now" mark on a curated breakdown.
+	view, err := ReadRoadmap(writeGlyphRoadmap(t, "TASKS.md:12\nTASKS.md:15\n"), "STATUS.md")
+	if err != nil {
+		t.Fatalf("ReadRoadmap: %v", err)
+	}
+	ln02 := nodeByName(t, view, "LN-02")
+	if !ln02.Current || !ln02.InQueue {
+		t.Errorf("LN-02: current=%v in_queue=%v, want the current task", ln02.Current, ln02.InQueue)
+	}
+	ln03 := nodeByName(t, view, "LN-03")
+	if ln03.Current || !ln03.InQueue {
+		t.Errorf("LN-03: current=%v in_queue=%v, want queued only", ln03.Current, ln03.InQueue)
+	}
+	if ln01 := nodeByName(t, view, "LN-01"); ln01.InQueue {
+		t.Error("LN-01 has no pointer and must not be in queue")
+	}
+}
+
+func TestRemapPointers_UnmatchedPointerIsLeftAlone(t *testing.T) {
+	// A pointer into prose that names no known task must not be attached to
+	// some row by accident — it simply marks nothing.
+	view, err := ReadRoadmap(writeGlyphRoadmap(t, "TASKS.md:1\n"), "STATUS.md")
+	if err != nil {
+		t.Fatalf("ReadRoadmap: %v", err)
+	}
+	for _, n := range flattenNodes(view.Nodes) {
+		if n.Current || n.InQueue {
+			t.Errorf("node %q got marked by an unrelated pointer", n.Name)
+		}
+	}
+}
+
+func TestStatusWord_StripsMarkers(t *testing.T) {
+	cases := map[string]string{
+		"✓ DONE (2026-09-08)": "done",
+		"○ TODO":              "todo",
+		"● IN PROGRESS":       "in progress",
+		"[x] done":            "done",
+		"— blocked":           "blocked",
+		"done":                "done",
+	}
+	for raw, want := range cases {
+		if got := statusWord(raw); got != want {
+			t.Errorf("statusWord(%q) = %q, want %q", raw, got, want)
 		}
 	}
 }

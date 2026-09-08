@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // This file is the read side of the roadmap: it turns a project's ROADMAP.md
@@ -432,6 +433,7 @@ func splitRow(row string) []string {
 
 func parseRoadmap(content string, open map[int]bool, firstOpen int) *RoadmapView {
 	rows, title, context := parseTables(content)
+	open, firstOpen = remapPointers(content, rows, open, firstOpen)
 	view := &RoadmapView{Title: title, Context: strings.Join(context, " ")}
 
 	var tasks []*RoadmapNode
@@ -624,6 +626,7 @@ func shortSummary(s string) string {
 func statusWord(raw string) string {
 	s := strings.ToLower(strings.TrimSpace(raw))
 	s = strings.Trim(s, "*_`")
+	s = strings.TrimSpace(trimStatusGlyphs(s))
 	for _, multi := range []string{"in progress", "in-progress", "in_progress", "в работе", "не начат"} {
 		if strings.HasPrefix(s, multi) {
 			return "in progress"
@@ -633,6 +636,23 @@ func statusWord(raw string) string {
 		s = s[:i]
 	}
 	return s
+}
+
+// trimStatusGlyphs drops the leading marker a hand-maintained status column
+// puts in front of the word — "✓ DONE", "○ TODO", "● IN PROGRESS", "[x] done".
+// Without this the keyword extracted below is the glyph itself, every row
+// falls through to "pending", and a finished roadmap reads 0/N done.
+func trimStatusGlyphs(s string) string {
+	// A checkbox is a marker too, but its own letter ("[x]") would survive the
+	// rune trim below and become the keyword.
+	if strings.HasPrefix(s, "[") {
+		if i := strings.Index(s, "]"); i > 0 && i <= 3 {
+			s = s[i+1:]
+		}
+	}
+	return strings.TrimLeftFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
 }
 
 // resolveStatus maps a row onto a normalized status.
@@ -649,7 +669,13 @@ func resolveStatus(node *RoadmapNode, model string, open map[int]bool) string {
 			return RoadmapTaskBlocked
 		default:
 			// planned / queued / ready / opt / unset
-			if node.InQueue {
+			//
+			// Only the task the session actually took reads as active. Every
+			// other pointer is a queue entry, and a status file may well hold
+			// the whole backlog (LEARN-STATUS.md queues all 18 open tasks) —
+			// treating each as active would paint the entire roadmap
+			// in-progress. The UI marks the rest as queued from InQueue.
+			if node.Current {
 				return RoadmapTaskActive
 			}
 			return RoadmapTaskPending
@@ -801,4 +827,78 @@ func confinedPath(root, rel string) (string, error) {
 		return "", fmt.Errorf("analysis: path escapes the project: %s", rel)
 	}
 	return full, nil
+}
+
+// ---- pointer remapping ----
+
+// pointerIDRe pulls the task id out of a pointed-at line that is not a table
+// row: "## LN-02: Сигнатуры…" → "LN-02", "### BUG-349 …" → "BUG-349".
+var pointerIDRe = regexp.MustCompile(`^[#>\-*\s\x60]*([A-Za-zА-Яа-я]+[-_]?\d+(?:\.\d+)*)`)
+
+// remapPointers resolves pointer lines that do not land on a table row.
+//
+// A generated roadmap's queue points straight at ROADMAP.md table rows, so the
+// line number matches and nothing happens here. A curated breakdown
+// (LEARN-TASKS.md, MIXED-TASKS.md) is the opposite shape: the queue points at
+// the task's *heading* ("LEARN-TASKS.md:292" → "## LN-02: …") while the table
+// at the top of the same file is the index. Without this the pointed-at line
+// belongs to no row, nothing is marked "← now" or queued, and a session's
+// current task is invisible in the panel.
+//
+// The mapping is by id: the leading token of the pointed-at line matched
+// against each row's id (or the leading token of its name). An unmatched
+// pointer is kept as-is — a pointer into a source file stays meaningless, as
+// before.
+func remapPointers(content string, rows []tableRow, open map[int]bool, first int) (map[int]bool, int) {
+	if len(open) == 0 && first == 0 {
+		return open, first
+	}
+	rowLines := make(map[int]bool, len(rows))
+	byID := make(map[string]int, len(rows))
+	for _, row := range rows {
+		rowLines[row.line] = true
+		node, _ := rowToNode(row)
+		if node == nil {
+			continue
+		}
+		for _, key := range []string{node.ID, node.Name} {
+			if k := pointerKey(key); k != "" {
+				if _, seen := byID[k]; !seen {
+					byID[k] = row.line
+				}
+			}
+		}
+	}
+	if len(byID) == 0 {
+		return open, first
+	}
+	lines := strings.Split(content, "\n")
+	resolve := func(line int) int {
+		if line <= 0 || rowLines[line] || line > len(lines) {
+			return line
+		}
+		m := pointerIDRe.FindStringSubmatch(strings.TrimSpace(lines[line-1]))
+		if m == nil {
+			return line
+		}
+		if row, ok := byID[pointerKey(m[1])]; ok {
+			return row
+		}
+		return line
+	}
+	remapped := make(map[int]bool, len(open))
+	for line := range open {
+		remapped[resolve(line)] = true
+	}
+	return remapped, resolve(first)
+}
+
+// pointerKey normalizes an id for matching: case-insensitive, without the
+// markdown emphasis and link syntax a cell may carry.
+func pointerKey(s string) string {
+	s = plainCell(s)
+	if m := pointerIDRe.FindStringSubmatch(s); m != nil {
+		s = m[1]
+	}
+	return strings.ToUpper(strings.TrimSpace(s))
 }

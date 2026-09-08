@@ -447,10 +447,33 @@ finished. So when a `status` column exists it wins, and pointers only set
 `Current` (the first pointer, what the session takes next) and `InQueue`.
 Curated status vocabulary is normalized onto `done|active|blocked|pending`
 (`done/fixed/closed`, `active/inprogress/wip`, `blocker/blocked/wait/wontfix`,
-and `open/planned/queued/ready/opt` → pending), with a pointed-at `planned` task
-shown as active — the session is on it regardless of what the column says.
-`wontfix` counts as blocked, not done: those rows are deferred (`WONTFIX (Phase
-N+)`) and marking them finished would inflate the progress bar.
+and `open/planned/queued/ready/opt` → pending), with the *current* task shown as
+active regardless of what its column says — the session is on it. Only the first
+pointer gets that: a status file may hold the whole backlog (this repo's
+`LEARN-STATUS.md` queues all 18 open tasks), and promoting every queued row to
+active would paint the entire roadmap in progress; the rest are marked queued
+via `InQueue` instead. `wontfix` counts as blocked, not done: those rows are
+deferred (`WONTFIX (Phase N+)`) and marking them finished would inflate the
+progress bar.
+
+**The status word is not the first token.** A hand-maintained column writes the
+state with a marker in front — `✓ DONE (2026-09-08)`, `○ TODO`, `● IN PROGRESS`,
+`[x] done` — and splitting on the first space yields the glyph, which matches
+nothing and falls through to `pending`. `trimStatusGlyphs` drops leading
+non-alphanumeric runes (and a `[x]` checkbox, whose own letter would otherwise
+become the keyword) before `statusWord` takes the keyword. Without it this
+repo's own `LEARN-TASKS.md` rendered 0/18 done with LN-01 finished.
+
+**A pointer may address the task's heading, not its table row.** A generated
+roadmap's queue points straight at ROADMAP.md rows, so the line number matches.
+A curated breakdown is the opposite shape: `LEARN-STATUS.md` holds
+`LEARN-TASKS.md:292`, which is `## LN-02: …` — the heading of the task's own
+section, while the table at the top of that file is the index. `remapPointers`
+therefore resolves a pointer that lands on no row by id: the leading token of
+the pointed-at line (`LN-02`, `BUG-349`) matched against each row's id or the
+first token of its name. An unmatched pointer is left alone — a pointer into a
+source file still means nothing. Without this the "← now" mark and the queued
+marks never appeared on a curated breakdown at all.
 
 **One status file, several roadmaps.** A queue is not required to live in one
 file — lumen-browser's `STATUS-P1.md` holds nineteen `BUGS.md` pointers and one
