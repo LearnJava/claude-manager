@@ -183,7 +183,24 @@ type Params struct {
 	// reflects a more recent confirmed session_id than this constructor-time
 	// value.
 	ResumeSessionID string
+
+	// Gates are the project's blocking check commands (ProjectConfig.Gates),
+	// passed through to PrimerFn — Session has no other access to project-level
+	// config beyond its own SessionConfig.
+	Gates []string
+	// PrimerFn builds the context-primer block (LEARN-TASKS.md LN-05); nil
+	// disables it regardless of Config.ContextPrimer (e.g. app.go wires it
+	// only when a store is open).
+	PrimerFn PrimerFunc
 }
+
+// PrimerFunc builds the context-primer text prepended to a fresh run's
+// initial prompt (LEARN-TASKS.md LN-05). Declared here and consumed by
+// initialPromptText, wired from app.go to a closure over
+// experience.BuildPrimer — a direct import would cycle, since
+// internal/experience already imports internal/session for Step/TokenUsage
+// (same reasoning as ActionIndexFunc in manager.go).
+type PrimerFunc func(project, sessionName, projectPath, taskDesc string, gates []string) string
 
 // Session is a single Claude CLI process managed by a goroutine.
 // All fields are guarded by mu except where noted.
@@ -199,6 +216,8 @@ type Session struct {
 	rateLimitPauseSec int
 	questionTimeout   time.Duration
 	onEvent           EventCallback
+	gates             []string
+	primerFn          PrimerFunc
 
 	mu              sync.Mutex
 	status          config.SessionStatus
@@ -280,6 +299,8 @@ func New(p Params) *Session {
 		rateLimitPauseSec: p.RateLimitPauseSec,
 		questionTimeout:   time.Duration(p.QuestionTimeoutSec) * time.Second,
 		onEvent:           p.OnEvent,
+		gates:             p.Gates,
+		primerFn:          p.PrimerFn,
 		status:            config.StatusIdle,
 		stateStore:        p.StateStore,
 		crashRecovery:     p.CrashRecovery,
@@ -1109,7 +1130,7 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 func (s *Session) initialPromptText(forceInteractive bool) string {
 	s.mu.Lock()
 	recovering := s.resumeSessionID != ""
-	interruptedTask := s.taskSourceDesc
+	taskDesc := s.taskSourceDesc
 	s.mu.Unlock()
 
 	if recovering {
@@ -1128,8 +1149,8 @@ func (s *Session) initialPromptText(forceInteractive bool) string {
 		}
 		b.WriteString(", and use the conversation history above together with the current repository state to determine what is already done. ")
 		b.WriteString("Then continue the task from where it stopped.")
-		if interruptedTask != "" {
-			fmt.Fprintf(&b, " The interrupted task was: %s", interruptedTask)
+		if taskDesc != "" {
+			fmt.Fprintf(&b, " The interrupted task was: %s", taskDesc)
 		}
 		return b.String()
 	}
@@ -1140,7 +1161,17 @@ func (s *Session) initialPromptText(forceInteractive bool) string {
 			s.Config.TaskSource,
 		)
 	}
-	return strings.TrimSpace(s.Config.Prompt)
+	prompt := strings.TrimSpace(s.Config.Prompt)
+	// Context primer (LEARN-TASKS.md LN-05): only in the plain-prompt branch —
+	// crash recovery and the no-tasks fallback above have their own semantics
+	// and are never prefixed. With the flag off (default) or no PrimerFn wired,
+	// prompt is unchanged, so this is byte-identical to before LN-05 existed.
+	if s.Config.ContextPrimer && s.primerFn != nil {
+		if primer := s.primerFn(s.ProjectName, s.Config.Name, s.ProjectPath, taskDesc, s.gates); primer != "" {
+			prompt = "--- Project state (auto-generated) ---\n" + primer + "\n\n" + prompt
+		}
+	}
+	return prompt
 }
 
 // sendInitialPrompt pushes prompt onto the input channel before any user messages.

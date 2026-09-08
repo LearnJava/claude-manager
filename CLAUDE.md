@@ -91,9 +91,14 @@ claude-manager/
 │   │                                #   SessionManager.finishRun per completed run via the
 │   │                                #   ingest_state offset (LN-02), wired in app.go and gated on
 │   │                                #   [optimization] experience_tracking.
-│   │   └── allowlist.go             # LN-04: ClassifyPermission/Candidates — a hard read-only
-│   │                                #   whitelist over permission_events (store/migrations.go),
-│   │                                #   feeding the Permissions tab's rule suggestions.
+│   │   ├── allowlist.go             # LN-04: ClassifyPermission/Candidates — a hard read-only
+│   │   │                            #   whitelist over permission_events (store/migrations.go),
+│   │   │                            #   feeding the Permissions tab's rule suggestions.
+│   │   └── primer.go                # LN-05: BuildPrimer — the "Project state (auto-generated)"
+│   │                                #   block prepended to a fresh run's prompt (task, git state,
+│   │                                #   files the previous run touched, gate commands), capped
+│   │                                #   at MaxPrimerChars; wired via session.PrimerFunc to avoid
+│   │                                #   the same import cycle as ActionIndexFunc (LN-03).
 │   ├── store/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs
 │   │   ├── migrations.go            # CREATE TABLE statements, indexes
@@ -1348,6 +1353,37 @@ session's own `PermissionRules` (a duplicate `{tool, pattern, decision}`
 triple is a no-op). `ExperiencePanel.svelte`'s "Permissions" tab renders both
 lists, with a per-row session `<select>` (defaulting to the project's first
 configured session) next to each `Safe` row's "Add rule" button.
+
+**Context primer** (LN-05, `internal/experience/primer.go`). The main token
+sink in an `auto_restart` loop: every fresh CLI process re-discovers from
+scratch what the manager already knows — the current task, the repo's git
+state, what the previous run just touched. `SessionConfig.ContextPrimer`
+(`context_primer`, default false) prepends a `BuildPrimer(PrimerInput)` block
+to the plain-prompt branch of `Session.initialPromptText`, capped at
+`MaxPrimerChars` (2000): current task (`taskSourceDesc`), git state (main
+branch, remote presence/name, current branch, `git log --oneline -3` — direct
+`exec` with a 3s timeout; a failed or missing `.git` just omits the section,
+never blocks the start), files the session's previous run touched
+(`store.ListRuns(project,session,1)` → `ActionsForRun`, Edit/Write args), and
+the project's `Gates` commands. `truncateSections` drops whole trailing
+sections — lowest priority first — rather than mid-section, so a huge gate
+list can never crowd out the current task. Sections 5 (files re-read 3+
+times, LN-08) and 6 (journal `avoid` lines, LN-06) are deferred to those
+tasks.
+
+**Wired like `ActionIndexFunc`, for the same reason.** `internal/experience`
+already imports `internal/session` (for `Step`/`TokenUsage`), so
+`session.go` cannot call `experience.BuildPrimer` directly. `session.PrimerFunc`
+is a plain-argument function type (`project, sessionName, projectPath,
+taskDesc string, gates []string) string`) stored on `Session` (via
+`Params.PrimerFn`) and on `SessionManager` (`SetPrimerBuilder`, mirroring
+`SetActionIndexer`); `app.go` wires it to a closure over
+`experience.BuildPrimer` plus the store. Crash recovery and the "no pending
+tasks" interactive fallback (see "Task Source Check" above) are never
+primed — they already have their own dedicated prompt text, and the primer
+would be redundant with (or contradict) the crash-recovery reconciliation
+step. With the flag off or no `PrimerFn` wired, `initialPromptText` is
+byte-identical to before this feature existed.
 
 ## Wails Bindings (app.go)
 

@@ -367,6 +367,10 @@ type SessionConfig struct {
     // Хуки
     PreTaskHook         string           `toml:"pre_task_hook"`
     PostTaskHook        string           `toml:"post_task_hook"`
+
+    // Context primer (LEARN-TASKS.md LN-05): prepend an auto-generated
+    // "Project state" block to a fresh run's prompt.
+    ContextPrimer       bool             `toml:"context_primer"`
 }
 
 type PermissionRule struct {

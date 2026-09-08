@@ -899,6 +899,121 @@ func TestInitialPromptText_Recovery_CustomPrompt(t *testing.T) {
 	}
 }
 
+// TestInitialPromptText_ContextPrimer_FlagOffByteIdentical locks in
+// LEARN-TASKS.md LN-05's invariant: with ContextPrimer=false (the default)
+// the prompt is unchanged even when a PrimerFn is wired, so turning the
+// feature off is a true no-op.
+func TestInitialPromptText_ContextPrimer_FlagOffByteIdentical(t *testing.T) {
+	called := false
+	s := New(Params{
+		Config: config.SessionConfig{Prompt: "do the thing"},
+		PrimerFn: func(project, sessionName, projectPath, taskDesc string, gates []string) string {
+			called = true
+			return "SHOULD NOT APPEAR"
+		},
+	})
+	if got := s.initialPromptText(false); got != "do the thing" {
+		t.Errorf("got %q, want prompt unchanged with ContextPrimer=false", got)
+	}
+	if called {
+		t.Error("PrimerFn must not be called when ContextPrimer is false")
+	}
+}
+
+// TestInitialPromptText_ContextPrimer_NilFn checks the flag being on with no
+// PrimerFn wired (e.g. app.go never wired one) degrades to the plain prompt
+// instead of panicking.
+func TestInitialPromptText_ContextPrimer_NilFn(t *testing.T) {
+	s := New(Params{
+		Config: config.SessionConfig{Prompt: "do the thing", ContextPrimer: true},
+	})
+	if got := s.initialPromptText(false); got != "do the thing" {
+		t.Errorf("got %q, want prompt unchanged with a nil PrimerFn", got)
+	}
+}
+
+// TestInitialPromptText_ContextPrimer_Prefixed checks that with the flag on
+// and a PrimerFn wired, the primer text is prefixed onto the configured
+// prompt behind an explicit separator, and that the function receives the
+// session's own project/name/path/task/gates.
+func TestInitialPromptText_ContextPrimer_Prefixed(t *testing.T) {
+	var gotProject, gotSession, gotPath, gotTask string
+	var gotGates []string
+	s := New(Params{
+		ProjectName: "proj",
+		ProjectPath: "/repo",
+		Config: config.SessionConfig{
+			Prompt:        "do the thing",
+			ContextPrimer: true,
+			Name:          "S1",
+		},
+		Gates: []string{"go build ./..."},
+		PrimerFn: func(project, sessionName, projectPath, taskDesc string, gates []string) string {
+			gotProject, gotSession, gotPath, gotTask, gotGates = project, sessionName, projectPath, taskDesc, gates
+			return "Current task: X"
+		},
+	})
+	s.mu.Lock()
+	s.taskSourceDesc = "ROADMAP.md:1 | X"
+	s.mu.Unlock()
+
+	got := s.initialPromptText(false)
+	want := "--- Project state (auto-generated) ---\nCurrent task: X\n\ndo the thing"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if gotProject != "proj" || gotSession != "S1" || gotPath != "/repo" || gotTask != "ROADMAP.md:1 | X" {
+		t.Errorf("PrimerFn args = (%q,%q,%q,%q), unexpected", gotProject, gotSession, gotPath, gotTask)
+	}
+	if len(gotGates) != 1 || gotGates[0] != "go build ./..." {
+		t.Errorf("PrimerFn gates = %v, want [go build ./...]", gotGates)
+	}
+}
+
+// TestInitialPromptText_ContextPrimer_EmptyPrimerOmitted checks that a
+// PrimerFn returning "" (nothing to report) leaves the prompt untouched,
+// with no stray separator.
+func TestInitialPromptText_ContextPrimer_EmptyPrimerOmitted(t *testing.T) {
+	s := New(Params{
+		Config: config.SessionConfig{Prompt: "do the thing", ContextPrimer: true},
+		PrimerFn: func(project, sessionName, projectPath, taskDesc string, gates []string) string {
+			return ""
+		},
+	})
+	if got := s.initialPromptText(false); got != "do the thing" {
+		t.Errorf("got %q, want prompt unchanged when PrimerFn returns \"\"", got)
+	}
+}
+
+// TestInitialPromptText_ContextPrimer_NeverAppliesDuringRecoveryOrForceInteractive
+// checks the primer is only ever prefixed in the plain-prompt branch — crash
+// recovery and the no-tasks interactive fallback have their own dedicated
+// text and must never be touched by it.
+func TestInitialPromptText_ContextPrimer_NeverAppliesDuringRecoveryOrForceInteractive(t *testing.T) {
+	primerFn := func(project, sessionName, projectPath, taskDesc string, gates []string) string {
+		return "SHOULD NOT APPEAR"
+	}
+
+	recovering := New(Params{
+		Config:   config.SessionConfig{Prompt: "normal", ContextPrimer: true},
+		PrimerFn: primerFn,
+	})
+	recovering.mu.Lock()
+	recovering.resumeSessionID = "abc-123"
+	recovering.mu.Unlock()
+	if got := recovering.initialPromptText(false); strings.Contains(got, "SHOULD NOT APPEAR") {
+		t.Errorf("crash-recovery prompt must never be primed: %q", got)
+	}
+
+	forced := New(Params{
+		Config:   config.SessionConfig{Prompt: "normal", TaskSource: "STATUS-P1.md", ContextPrimer: true},
+		PrimerFn: primerFn,
+	})
+	if got := forced.initialPromptText(true); strings.Contains(got, "SHOULD NOT APPEAR") {
+		t.Errorf("force-interactive prompt must never be primed: %q", got)
+	}
+}
+
 func TestSession_EmitInvokesCallback(t *testing.T) {
 	var got []SessionEvent
 	s := New(Params{
