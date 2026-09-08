@@ -266,6 +266,29 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 
 ---
 
+## ExperiencePanel.svelte — Actions Tab (LEARN-TASKS.md LN-03)
+
+`GetTopActions`/`GetActionSamples` read the app's own SQLite store, which
+`cmd/playwright-server` runs with `store=nil` (same reason History/CostDashboard
+above have no real-data rows) — the row-population/click-through cases below
+are `○` for that reason, not because the feature is unbuilt; `helpers/bridge.ts`
+stubs both calls to an empty array so what the harness *can* exercise (the
+modal, the pickers, the empty state, the config round-trip) is `✓`.
+
+| ID | Title | Steps | Assert | Status |
+|----|-------|-------|--------|--------|
+| EXP-01 | Modal opens from header | Click Experience | Modal titled "Experience" appears, "Actions" tab shown | **✓** |
+| EXP-02 | Configured project preselected | Open modal | Project select shows the first configured project | **✓** |
+| EXP-03 | Period buttons switch | Click "7 days" | Button becomes active; list reloads for the new window | **✓** |
+| EXP-04 | Empty state when no rows | `experience_tracking` off or no history | "No recorded actions…" message names the flag | **✓** |
+| EXP-05 | Settings checkbox persists | Settings → Global → toggle "Experience layer" → Save | `UpdateConfig` carries `Optimization.ExperienceTracking`; `GetConfig` confirms it | **✓** |
+| EXP-06 | Signature rows render | Project with indexed history | Sortable table: signature, N, runs, errors, tokens, last seen | ○ |
+| EXP-07 | Sort by column | Click a column header twice | Sort direction flips (▲/▼) | ○ |
+| EXP-08 | Click a signature → examples | Click a row | Row expands; sample rows (time, session, arg) load below | ○ |
+| EXP-09 | Bulk-imported row counted | A signature with only `run_id = NULL` rows | `DistinctRuns` still counts via `cli_session_id`, not zero | ○ |
+
+---
+
 ## StatusBar.svelte — Footer Metrics
 
 | ID | Title | Steps | Assert | Status |

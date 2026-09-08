@@ -130,6 +130,14 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         ShowMainWindow: () => Promise.resolve(undefined),
         ExportLog: () => Promise.resolve(''),
         CleanOldLogs: () => Promise.resolve(undefined),
+        // GetTopActions/GetActionSamples (LEARN-TASKS.md LN-03) read straight
+        // from the App's own SQLite store, which playwright-server never opens
+        // (see cmd/playwright-server/main.go — SessionManager gets store=nil,
+        // same reason History/CostDashboard have no real-data Playwright
+        // coverage either). Stubbed empty so ExperiencePanel renders its
+        // legitimate "no actions" empty state instead of an RPC error.
+        GetTopActions: () => Promise.resolve([]),
+        GetActionSamples: () => Promise.resolve([]),
       };
 
       (window as typeof window & { go: unknown }).go = { main: { App } };

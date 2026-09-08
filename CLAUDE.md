@@ -86,9 +86,11 @@ claude-manager/
 │   │   └── indexer.go               # LN-17: IngestDir — recursive bulk import of a log directory
 │   │                                #   (.jsonl via transcript.go, .md via mdlog.go) into
 │   │                                #   action_signatures, deduped by store.IsLogFileImported
-│   │                                #   (name+size+mtime, since one file = one closed run). Not
-│   │                                #   yet wired into app.go/UI — that lands with the indexing
-│   │                                #   pipeline and "Experience" panel in LN-03.
+│   │                                #   (name+size+mtime, since one file = one closed run).
+│   │                                #   LN-03: IngestRun — the live twin, called from
+│   │                                #   SessionManager.finishRun per completed run via the
+│   │                                #   ingest_state offset (LN-02), wired in app.go and gated on
+│   │                                #   [optimization] experience_tracking.
 │   ├── store/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs
 │   │   ├── migrations.go            # CREATE TABLE statements, indexes
@@ -104,8 +106,10 @@ claude-manager/
 │   │   ├── theme.ts                 # Dark/light theme toggle, localStorage persistence
 │   │   ├── logSearch.ts             # Log filter store, Ctrl+F focus
 │   │   ├── logView.ts               # Log rendering mode: markdown vs raw (localStorage)
-│   │   └── workers.ts               # Mixed programming: worker:* events, per-project tasks/
-│   │                                #   quality, register+dispatch+cancel actions (MP-08)
+│   │   ├── workers.ts               # Mixed programming: worker:* events, per-project tasks/
+│   │   │                            #   quality, register+dispatch+cancel actions (MP-08)
+│   │   └── experience.ts            # LN-03: fetchTopActions/fetchActionSamples wrappers +
+│   │                                #   SignatureStat/ActionRow row types for ExperiencePanel
 │   ├── components/
 │   │   ├── Sidebar.svelte           # Project tree, session indicators, start/stop/delete,
 │   │   │                            #   auto-routing trigger, resizable via drag handle
@@ -135,6 +139,8 @@ claude-manager/
 │   │   ├── CostDashboard.svelte     # Cost by period/project, cache efficiency, rate limit
 │   │   ├── MixedRun.svelte          # Mixed programming: dispatch form, live activity, round
 │   │   │                            #   timelines w/ gate output, model-quality table (MP-08)
+│   │   ├── ExperiencePanel.svelte   # LN-03: "Experience" modal, "Actions" tab — sortable
+│   │   │                            #   signature table, click a row to load sample calls
 │   │   └── RateLimitBanner.svelte   # Rate limit countdown banner
 │   └── lib/
 │       ├── formatters.ts            # Log formatting, time, cost, tokens, percent;
@@ -1223,9 +1229,9 @@ a call boundary.
 **Bulk import** (`internal/experience/indexer.go`, `IngestDir(store, root,
 project, opts)`) recursively imports a whole log directory — `.jsonl` via
 `transcript.Read`, `.md` via `ParseLogFile` — into `action_signatures`, so a
-corpus that predates this app's own indexing (LN-03, not yet built) is not
-lost. Rows are written with no `session_runs` row to point at (`RunID = nil`)
-and `CLISessionID` set to the file's own name, since a markdown log carries no
+corpus that predates this app's own live indexing (LN-03, below) is not lost.
+Rows are written with no `session_runs` row to point at (`RunID = nil`) and
+`CLISessionID` set to the file's own name, since a markdown log carries no
 CLI session UUID. Idempotent by design: `store.IsLogFileImported`/
 `MarkLogFileImported` (`imported_logfiles` table) dedup by `(project, name,
 size, mtime)` — a closed, complete log file either was imported or wasn't,
@@ -1233,9 +1239,50 @@ unlike a live JSONL transcript's byte-offset checkpoint (`ingest_state`) — so
 re-running `IngestDir` over a directory it already covered inserts nothing
 twice. `ImportOpts.OnProgress(processed, total)` reports as it walks, since an
 import of thousands of files with no feedback reads as a hung process. Not
-yet wired into `app.go`/a frontend button: that lands together with the
-"Experience" panel and its own indexing hook in LN-03, which touches the same
-`internal/experience/indexer.go` file.
+yet wired into `app.go`/a frontend button of its own — bulk re-indexing an
+old corpus is an occasional maintenance action, not part of the per-run flow
+LN-03 wires up below.
+
+**Live indexing + the "Actions" tab** (LN-03, `internal/experience/indexer.go`
+`IngestRun`, `internal/store/store.go` `TopSignatures`/`ActionSamples`).
+`IngestRun(st, project, sessionName, runID, cliSessionID, projectPath,
+taskPtr)` is the per-run twin of `IngestDir` above: it locates the CLI's own
+JSONL transcript (`FindTranscript`), resumes from the byte offset
+`GetIngestOffset` last left off (LN-02's `ingest_state`), and inserts the
+newly-appended `tool_use` steps with a real `run_id` — unlike a bulk-imported
+row, a live run always has a `session_runs` row to point at. Called from
+`SessionManager.finishRun` (the same choke point the log autosave and daily
+metrics update already use) in its own fire-and-forget goroutine, gated on
+`[optimization] experience_tracking` (default off) so the flag being off
+means a transcript is never opened at all, not just that the result is
+discarded — `SessionManager.SetActionIndexer` takes the indexing function as
+an `ActionIndexFunc`, wired from `app.go` to `experience.IngestRun`, rather
+than `internal/session` importing `internal/experience` directly: the latter
+already imports `internal/session` (for `Step`/`TokenUsage`), so a direct
+import back would cycle — the same `Emitter`-interface trick the control-plane
+integration uses (see "Testing & Control Harness" below).
+
+`Store.TopSignatures` aggregates rows into the `SignatureStat` list the
+"Actions" tab (`ExperiencePanel.svelte`) renders — count, distinct runs, error
+rate, summed output tokens, sample args, most frequent signature first.
+`DistinctRuns` counts by `COALESCE(run_id, cli_session_id)`, not bare
+`run_id`: a bulk-imported row's `run_id` is `NULL`, and plain `COUNT(DISTINCT
+run_id)` silently drops every `NULL` — a signature that only appears in
+imported history would otherwise report zero distinct runs instead of falling
+back to counting by the file-derived `cli_session_id`. `Store.ActionSamples`
+returns full rows for one `(project, sig)` pair, most recent first — the
+click-through from an aggregated signature to concrete examples. Both are
+exposed as `App.GetTopActions`/`App.GetActionSamples`; like
+`ApproveRoadmap`/`GenerateClaudeMdSession` above, they are Wails-only, not on
+`control.AppAPI` — `cmd/playwright-server` runs `SessionManager` with a `nil`
+store (see its own doc comment), so there is nothing for a control-plane RPC
+to read here regardless, the same reason `History.svelte`/`CostDashboard.svelte`
+have no real-data Playwright coverage (GUI-TESTS.md HI-01, CD-01 are still
+"○"). `frontend/tests/experience.spec.ts` covers what the harness actually
+supports: the modal opening, the project/period pickers, and the panel's own
+empty-state message when `GetTopActions` returns nothing (stubbed in
+`helpers/bridge.ts`) — plus a real backend round-trip for the Settings
+"Experience layer" checkbox through `UpdateConfig`/`GetConfig`.
 
 ## Wails Bindings (app.go)
 
@@ -1290,6 +1337,8 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetDailyTokens(date)` | Token volume for a date (input/output/cache split + total), from the same `daily_metrics` rows as `GetDailyCost` |
 | `GetProjectCost(project, days)` | Cost aggregate for a project over N days |
 | `GetProjectTokens(project, days)` | Token volume for a project over N days — the token twin of `GetProjectCost` |
+| `GetTopActions(project, days)` | Aggregated tool-call signatures for the "Actions" tab (LEARN-TASKS.md LN-03) |
+| `GetActionSamples(project, sig, limit)` | Concrete example rows for one signature — the "Actions" tab's click-through |
 | `GetRateLimitStatus()` | Current rate limit info |
 | `ExportLog(id, entries, format)` | Save log as MD/JSON/TXT via native dialog |
 | `CleanOldLogs(days)` | Delete logs older than N days from SQLite |
