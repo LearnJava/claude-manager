@@ -1326,7 +1326,7 @@ The app is fully drivable and testable without a GUI and without spending API to
 - **`fakeclaude`** (`cmd/fakeclaude`) — a scripted Claude CLI double. Set as `claude_path`, it emits deterministic stream-json from JSON scenarios in `testdata/scenarios/`. Covers every Session Status (permission, rate limit, error, loop, context-growth).
 - **`fakeworker`** (`cmd/fakeworker`) — a scripted OpenAI-compatible worker double for mixed programming (MP-07). Serves `POST /chat/completions` as SSE from JSON scenarios in `testdata/worker-scenarios/` (clean patch, broken patch → feedback, 429 storm, `finish_reason=length` continuation/loop, missing `>>>END`). Point a `[[worker]]` `base_url` at it; scenario via `-scenario` flag or `FAKEWORKER_SCENARIO`.
 - **`Emitter` indirection** (`internal/control/emit.go`) — all `session:*` events flow through an `Emitter` interface, not direct `runtime.EventsEmit`. `WailsEmitter` feeds the UI; `ControlEmitter` broadcasts to the control-plane. The SessionManager takes an `Emitter` in its constructor.
-- **Control-plane** (`internal/control`) — at `CM_CONTROL=1`, a loopback HTTP+WS server exposes every SessionManager method via JSON-RPC and streams events, plus `/wait` for blocking until a status/event. Additive to the GUI.
+- **Control-plane** (`internal/control`) — a loopback HTTP+WS server exposing every SessionManager method via JSON-RPC, streaming events, plus `/wait` for blocking until a status/event. Additive to the GUI and **on by default** (`control.Enabled()`; set `CM_CONTROL=0`/`false`/`off` to turn it off): an app that is only drivable after a relaunch with a special environment variable is, in practice, never drivable when it matters — the session you want to inspect is the one already running. Port from `CM_CONTROL_PORT` (default 7333), token from `CM_CONTROL_TOKEN` (else generated). Since a GUI build has no terminal to print a generated token to, the server writes `~/.claude-manager/control.json` (`{addr, token, pid}`, mode 0600, atomic tmp→rename) and deletes it when it stops; `cm-mcp` reads that file when `CM_CONTROL_ADDR`/`CM_CONTROL_TOKEN` are unset, so the tools work against a normally-launched app with no setup. The listener is bound synchronously in `StartFromEnv`, so a port clash (a second instance, or `wails dev` next to the installed app) fails loudly instead of leaving a stale endpoint file pointing at someone else's server.
 - **MCP server** (`cmd/cm-mcp`) — proxies the control-plane into agent tools (`start_session`, `send_message`, `approve_permission`, `wait_for_status`, …) so Claude can press every button.
 - **E2E runner** (`internal/control/e2e_test.go`) — replays `testdata/e2e/*.json` (`do`/`wait`/`assert`) against the app + fakeclaude, deterministically.
 - **Playwright** (`frontend/tests`) — clicks the real DOM and double-checks via the control-plane event stream.
@@ -1353,16 +1353,11 @@ The registration is stored in `.claude.json` (project scope) and persists across
 
 #### Starting a testable instance
 
-In **PowerShell**:
-```powershell
-$env:CM_CONTROL=1; wails dev
-```
-In **bash / Git Bash**:
 ```bash
-CM_CONTROL=1 wails dev
+wails dev
 ```
 
-This starts the full Wails GUI **and** binds the control-plane on `http://127.0.0.1:7333`. The cm-mcp server connects to that address automatically.
+Any normal launch — `wails dev` or the built `claude-manager.exe` — starts the full Wails GUI **and** binds the control-plane on `http://127.0.0.1:7333`, writing its address and token to `~/.claude-manager/control.json`. The cm-mcp server reads that file, so it connects with no environment set. Pass `CM_CONTROL=0` to run without it.
 
 > For headless (no Wails GUI) backend-only testing, use `playwright-server` instead:
 > ```bash
@@ -1396,7 +1391,7 @@ This starts the full Wails GUI **and** binds the control-plane on `http://127.0.
 #### Typical test workflow
 
 ```
-1. User runs: CM_CONTROL=1 wails dev   (or playwright-server for headless)
+1. User runs: wails dev   (or playwright-server for headless) — control-plane is on by default
 2. Claude starts a new conversation — cm-mcp tools are now available
 3. Claude calls start_session → wait_for_status(working)
 4. Claude reads get_session_logs to verify output

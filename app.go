@@ -101,21 +101,22 @@ func (a *App) startup(ctx context.Context) {
 		}
 	}
 
-	// Build the emitter chain. If CM_CONTROL=1 we fan-out to both Wails and
-	// the ControlEmitter so the GUI and the headless bridge receive all events.
+	// Build the emitter chain. With the control-plane enabled (the default) we
+	// fan-out to both Wails and the ControlEmitter so the GUI and the headless
+	// bridge receive all events.
 	a.wailsEmitter = control.NewWailsEmitter()
 	a.wailsEmitter.SetContext(ctx)
 
 	var sessionEmitter session.Emitter = a.wailsEmitter
 	var controlEmitter *control.ControlEmitter
-	if os.Getenv("CM_CONTROL") == "1" {
+	if control.Enabled() {
 		controlEmitter = control.NewControlEmitter(200)
 		sessionEmitter = control.NewMultiEmitter(a.wailsEmitter, controlEmitter)
 	}
 
 	a.manager = session.NewSessionManager(cfg, a.cfgPath, a.store, sessionEmitter)
 
-	// Start the control-plane server (no-op when CM_CONTROL != "1").
+	// Start the control-plane server (no-op when CM_CONTROL disables it).
 	if controlEmitter != nil {
 		srv, err := control.StartFromEnv(ctx, a.manager, a, controlEmitter)
 		if err != nil {
@@ -147,6 +148,12 @@ func (a *App) shutdown(ctx context.Context) {
 	}
 	if a.store != nil {
 		_ = a.store.Close()
+	}
+	if a.ctrlServer != nil {
+		// Drop the discovery file here as well as in the server goroutine:
+		// shutdown does not necessarily cancel the startup context, and a
+		// stale control.json would send the next cm-mcp at a dead port.
+		control.RemoveEndpoint()
 	}
 	if a.trayEnabled {
 		systray.Quit()

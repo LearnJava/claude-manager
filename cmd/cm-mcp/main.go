@@ -4,10 +4,14 @@
 //
 //	claude mcp add cm -- cm-mcp
 //
-// Environment variables:
+// Address and token are discovered from ~/.claude-manager/control.json, which
+// the running app writes on startup; a GUI build has no terminal to print the
+// generated token to, so requiring the user to export it would mean the tools
+// only work in the `wails dev` flow. Environment variables override the file:
 //
-//	CM_CONTROL_ADDR  – control-plane base URL (default: http://127.0.0.1:7333)
-//	CM_CONTROL_TOKEN – authentication token (required when server uses token auth)
+//	CM_CONTROL_ADDR  – control-plane base URL (default: the endpoint file, else
+//	                   http://127.0.0.1:7333)
+//	CM_CONTROL_TOKEN – authentication token (default: the endpoint file)
 package main
 
 import (
@@ -58,12 +62,25 @@ type mcpServer struct {
 
 func newMCPServer() *mcpServer {
 	addr := os.Getenv("CM_CONTROL_ADDR")
+	token := os.Getenv("CM_CONTROL_TOKEN")
+	if addr == "" || token == "" {
+		// A missing or unreadable endpoint file is not fatal: fall through to
+		// the defaults and let the first RPC report the real failure.
+		if ep, err := control.LoadEndpoint(); err == nil && ep != nil {
+			if addr == "" {
+				addr = ep.Addr
+			}
+			if token == "" {
+				token = ep.Token
+			}
+		}
+	}
 	if addr == "" {
 		addr = "http://127.0.0.1:7333"
 	}
 	return &mcpServer{
 		baseURL: addr,
-		token:   os.Getenv("CM_CONTROL_TOKEN"),
+		token:   token,
 		// No timeout: wait_for_* calls can block for extended durations; the
 		// control-plane /wait endpoint enforces its own timeout_ms.
 		client: &http.Client{},

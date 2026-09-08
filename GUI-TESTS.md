@@ -1,6 +1,6 @@
 # GUI Test Descriptions
 
-Playwright specs against the running Wails app (`CM_CONTROL=1 wails dev`).  
+Playwright specs against the running Wails app (`wails dev` — the control-plane is on by default).  
 Test fixtures: `frontend/tests/fixtures.ts` — provides `page` (Playwright) and `ctrl` (control-plane RPC client).
 
 Legend: **✓ exists** = spec already written; **○ missing** = not yet covered.
@@ -317,6 +317,6 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 - **Fixtures:** `frontend/tests/fixtures.ts` — import `ctrl` for RPC, `page` for DOM
 - **Fakeclaude scenarios:** `testdata/scenarios/` — use `FAKECLAUDE_SCENARIO` env var or `claude_path` in config
 - **Control-plane base URL:** `http://127.0.0.1:7333`
-- **Start command:** `CM_CONTROL=1 wails dev` (GUI) or `./build/playwright-server.exe` (headless)
+- **Start command:** `wails dev` (GUI; control-plane on by default) or `./build/playwright-server.exe` (headless)
 - **RPC helpers available:** `ctrl.rpc('StartSession', ...)`, `ctrl.wait('session:status', ...)`
 - **Existing specs:** `frontend/tests/{permission,session,settings,sidebar}.spec.ts`
