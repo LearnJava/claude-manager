@@ -195,7 +195,20 @@ interface MixedOpts {
 function writeTestConfig(tmpDir: string, fakeclaudePath: string, mixed: MixedOpts): string {
   // Normalise to forward slashes for TOML string compatibility on Windows.
   const claudePathToml = fakeclaudePath.replace(/\\/g, '/');
-  const projectPath = ROOT.replace(/\\/g, '/');
+  // The "test" project's path must NOT be ROOT (this checkout): fakeclaude is
+  // fully scripted and never touches the filesystem, but config.go's project
+  // overlay does — it reads a real `<path>/.claude-manager/config.toml` off
+  // disk and *replaces* the project's sessions with whatever it finds there
+  // (config.go: `if len(ov.Sessions) > 0 { p.Sessions = ov.Sessions }`). This
+  // repo commits exactly such a file at its own root (self-hosting: the
+  // "Chat"/"Программист 1" sessions from CLAUDE.md's own dev loop), so
+  // pointing "test" at ROOT silently replaced S1/S2/S3 with those real
+  // sessions in every checkout, failing every spec that looks for S1/S2/S3
+  // (sidebar/session/settings/permission/resume/visual/log-markdown/mixed) —
+  // a plain empty directory has no such file and cannot collide with it.
+  const testProjectDir = path.join(tmpDir, 'testproj');
+  fs.mkdirSync(testProjectDir, { recursive: true });
+  const projectPath = testProjectDir.replace(/\\/g, '/');
   const cfgPath = path.join(tmpDir, 'playwright-runtime.toml');
 
   const lines = [
