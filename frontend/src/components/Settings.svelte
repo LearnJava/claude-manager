@@ -117,6 +117,7 @@
 
     interface OptimizationSettings {
         AutoModelRouting: boolean;
+        ExperienceTracking: boolean;
     }
 
     interface AppConfig {
@@ -288,6 +289,7 @@
         }));
         const optimization: OptimizationSettings = {
             AutoModelRouting: false,
+            ExperienceTracking: false,
             ...(raw?.Optimization ?? {}),
         };
         return { Settings: settings, Optimization: optimization, Projects: projects, Workers: workers };
@@ -884,6 +886,19 @@
                             <input type="checkbox" bind:checked={cfg.Optimization.AutoModelRouting} />
                             Auto model routing (choose model by task complexity via pre-flight)
                         </label>
+                    </section>
+
+                    <section>
+                        <h3 class="text-text font-semibold text-sm mb-2">Experience layer</h3>
+                        <label class="flex items-center gap-2 text-sm text-text">
+                            <input type="checkbox" bind:checked={cfg.Optimization.ExperienceTracking} />
+                            Index finished runs into the Actions tab (LEARN-TASKS.md LN-03)
+                        </label>
+                        <p class="text-text-dim text-xs mt-1">
+                            Mines this app's own CLI transcripts into normalized tool-call
+                            signatures — no external service, nothing leaves this machine. Off by
+                            default: with it off, no transcript is ever opened.
+                        </p>
                     </section>
 
                     <section>
