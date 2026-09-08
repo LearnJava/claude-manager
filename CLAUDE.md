@@ -134,7 +134,9 @@ claude-manager/
 ├── PLAN.md                          # Full specification (§14-21)
 ├── TASKS.md                         # App task breakdown (TASK-01..15)
 ├── HARNESS-TASKS.md                 # Test/control harness task breakdown (H1..H6)
-└── MIXED-TASKS.md                   # Mixed programming task breakdown (MP-01..08, done)
+├── MIXED-TASKS.md                   # Mixed programming task breakdown (MP-01..08, done)
+└── LEARN-TASKS.md                   # Experience layer task breakdown (LN-01..18, planned)
+    + LEARN-STATUS.md                #   pointer queue for the LN session
 ```
 
 ## Key Design Decisions
@@ -1284,14 +1286,14 @@ Update docs **in the same change** as the code, not as a follow-up:
 | New stream-json event type or field the parser handles | "Stream-JSON Events (stdout)" section above |
 | New `cm-mcp` tool | "cm-mcp tools available to Claude" table above |
 | New fakeclaude/fakeworker scenario | `testdata/scenarios/scenarios_doc.md` entry describing state/feature covered and its `match` pattern |
-| New app-level task breakdown item done | Corresponding checkbox/row in `TASKS.md` / `HARNESS-TASKS.md` / `MIXED-TASKS.md` |
+| New app-level task breakdown item done | Corresponding checkbox/row in `TASKS.md` / `HARNESS-TASKS.md` / `MIXED-TASKS.md` / `LEARN-TASKS.md` (+ delete its pointer line from the matching `*-STATUS.md` queue) |
 
 ## When in doubt
 
 - **Wails binding signatures / IPC shape** — the "Wails Bindings (app.go)" table above, then `app.go` itself.
 - **Session lifecycle / CLI flags** — "Bidirectional Streaming" and "CLI Launch Command" above, then `internal/session/session.go`.
 - **Why a design decision was made** — "Key Design Decisions" above; if still unclear, `git log -p` on the relevant file.
-- **What's left to build** — `TASKS.md` / `HARNESS-TASKS.md` / `MIXED-TASKS.md`.
+- **What's left to build** — `TASKS.md` / `HARNESS-TASKS.md` / `MIXED-TASKS.md` / `LEARN-TASKS.md`.
 - **How to test without spending API tokens** — "Testing & Control Harness" section above.
 
 If none of these answer it — ask the user, don't assume.
@@ -1300,6 +1302,6 @@ If none of these answer it — ask the user, don't assume.
 
 Full specification: [PLAN.md](./PLAN.md) — sections 14-21 cover CLI flags, bidirectional streaming, permissions, pre-flight analysis, token metrics, optimization, and the test/control harness.
 
-Task breakdowns: [TASKS.md](./TASKS.md) (app, TASK-01..15), [HARNESS-TASKS.md](./HARNESS-TASKS.md) (harness, H1..H6), and [MIXED-TASKS.md](./MIXED-TASKS.md) (mixed programming, MP-01..08 — включает очередь задач для сессий и стартовый промпт).
+Task breakdowns: [TASKS.md](./TASKS.md) (app, TASK-01..15), [HARNESS-TASKS.md](./HARNESS-TASKS.md) (harness, H1..H6), [MIXED-TASKS.md](./MIXED-TASKS.md) (mixed programming, MP-01..08 — включает очередь задач для сессий и стартовый промпт), and [LEARN-TASKS.md](./LEARN-TASKS.md) (experience layer — transcript mining, permission allowlists, context primer, project journal, distilled skills with measured effect; LN-01..18, planned; queue in [LEARN-STATUS.md](./LEARN-STATUS.md)).
 
 GUI test descriptions (Playwright): [GUI-TESTS.md](./GUI-TESTS.md) — ~100 test cases across all Svelte components, with status (✓ exists / ○ missing).
