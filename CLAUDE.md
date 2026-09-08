@@ -64,6 +64,14 @@ claude-manager/
 │   │   ├── round.go                 # RoundOrchestrator: brief→patches→gates loop, TaskStore,
 │   │   │                            #   worker:round/patch/gate/done events, crash-resume
 │   │   └── quality.go               # BuildQualityReport: per-worker ModelQuality aggregate
+│   ├── experience/                  # Experience layer (LEARN-TASKS.md LN-01..18, planned): mines
+│   │   │                            #   the app's own run history into token/time savings for the
+│   │   │                            #   next session. Off by default, stdlib only, no external workers.
+│   │   └── transcript.go            # LN-01: Trajectory — backend-agnostic parse of Claude CLI's
+│   │                                #   own JSONL transcripts (~/.claude/projects/<slug>/<id>.jsonl,
+│   │                                #   CM_TRANSCRIPTS_DIR override); tool_use/tool_result stitching,
+│   │                                #   incremental ReadFrom(path, offset). A second backend (LN-17,
+│   │                                #   markdown logs) will produce the same Trajectory type.
 │   ├── store/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs
 │   │   ├── migrations.go            # CREATE TABLE statements, indexes
@@ -128,7 +136,8 @@ claude-manager/
 │   └── control/                     # Headless control-plane: Emitter, RPC (incl. mixed), WS,
 │                                    #   wait/wait-for-worker, MCP tools, e2e runner
 ├── testdata/                        # scenarios/ (fakeclaude), worker-scenarios/ (fakeworker),
-│                                    #   e2e/ (runner, incl. mixed-*.json), configs/
+│                                    #   e2e/ (runner, incl. mixed-*.json), configs/,
+│                                    #   transcripts/ (LN-01: trimmed real JSONL fixtures)
 ├── frontend/tests/                  # Playwright DOM specs (incl. mixed.spec.ts)
 ├── config.example.toml
 ├── PLAN.md                          # Full specification (§14-21)
