@@ -845,6 +845,82 @@ func TestTopSignaturesSinceDaysExcludesOld(t *testing.T) {
 	}
 }
 
+// TestTopSignatures_NullRunIDGroupsByCLISessionID: a bulk-imported row
+// (LEARN-TASKS.md LN-17) has RunID == nil — DistinctRuns must still count it
+// by falling back to cli_session_id, not silently drop it the way plain
+// COUNT(DISTINCT run_id) would (LEARN-TASKS.md LN-03).
+func TestTopSignatures_NullRunIDGroupsByCLISessionID(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC()
+
+	run := &SessionRun{Project: "p", Session: "S1", Model: "sonnet", StartedAt: now, Status: "completed"}
+	if err := s.InsertRun(run); err != nil {
+		t.Fatalf("InsertRun: %v", err)
+	}
+
+	rows := []ActionRow{
+		// A live run — has a run_id.
+		{Project: "p", Session: "S1", RunID: &run.ID, Tool: "Bash", Sig: "Bash:git status", StepIndex: 0, Timestamp: now},
+		// Two bulk-imported rows from different files — RunID nil, distinguished
+		// only by cli_session_id (the file name, per IngestDir).
+		{Project: "p", Session: "S1", CLISessionID: "log-a.md", Tool: "Bash", Sig: "Bash:git status", StepIndex: 0, Timestamp: now},
+		{Project: "p", Session: "S1", CLISessionID: "log-b.md", Tool: "Bash", Sig: "Bash:git status", StepIndex: 0, Timestamp: now},
+	}
+	if err := s.InsertActions(rows); err != nil {
+		t.Fatalf("InsertActions: %v", err)
+	}
+
+	stats, err := s.TopSignatures("p", 30, 0)
+	if err != nil {
+		t.Fatalf("TopSignatures: %v", err)
+	}
+	if len(stats) != 1 {
+		t.Fatalf("TopSignatures: got %d groups, want 1", len(stats))
+	}
+	if stats[0].Count != 3 {
+		t.Errorf("Count = %d, want 3 (all rows visible, none dropped for a NULL run_id)", stats[0].Count)
+	}
+	if stats[0].DistinctRuns != 3 {
+		t.Errorf("DistinctRuns = %d, want 3 (1 real run + 2 distinct cli_session_ids)", stats[0].DistinctRuns)
+	}
+}
+
+// TestActionSamples returns full rows for one (project, sig) pair, most
+// recent first, respecting limit — the "Actions" tab's click-through.
+func TestActionSamples(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC()
+
+	rows := []ActionRow{
+		{Project: "p", Session: "S1", Tool: "Bash", Sig: "Bash:git status", Arg: "git status --short", StepIndex: 0, Timestamp: now},
+		{Project: "p", Session: "S1", Tool: "Bash", Sig: "Bash:git status", Arg: "git status", StepIndex: 1, Timestamp: now.Add(time.Second)},
+		{Project: "p", Session: "S1", Tool: "Read", Sig: "Read:internal/*.go", Arg: "internal/app.go", StepIndex: 2, Timestamp: now},
+	}
+	if err := s.InsertActions(rows); err != nil {
+		t.Fatalf("InsertActions: %v", err)
+	}
+
+	samples, err := s.ActionSamples("p", "Bash:git status", 0)
+	if err != nil {
+		t.Fatalf("ActionSamples: %v", err)
+	}
+	if len(samples) != 2 {
+		t.Fatalf("ActionSamples: got %d rows, want 2", len(samples))
+	}
+	// Most recent (highest id) first.
+	if samples[0].Arg != "git status" {
+		t.Errorf("ActionSamples[0].Arg = %q, want most recent row first", samples[0].Arg)
+	}
+
+	limited, err := s.ActionSamples("p", "Bash:git status", 1)
+	if err != nil {
+		t.Fatalf("ActionSamples limited: %v", err)
+	}
+	if len(limited) != 1 {
+		t.Errorf("ActionSamples limit 1: got %d rows", len(limited))
+	}
+}
+
 func TestGetSetIngestOffset(t *testing.T) {
 	s := newTestStore(t)
 

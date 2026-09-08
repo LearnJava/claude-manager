@@ -13,6 +13,7 @@ import (
 	"claude-manager/internal/analysis"
 	"claude-manager/internal/config"
 	"claude-manager/internal/control"
+	"claude-manager/internal/experience"
 	"claude-manager/internal/gitutil"
 	"claude-manager/internal/logger"
 	"claude-manager/internal/optimization"
@@ -115,6 +116,17 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	a.manager = session.NewSessionManager(cfg, a.cfgPath, a.store, sessionEmitter)
+
+	// Wire the experience-layer indexer (LEARN-TASKS.md LN-03): finishRun
+	// calls this after every run, but only actually opens a transcript when
+	// [optimization] experience_tracking is on (checked live against
+	// whatever config SetConfig last installed, not just at startup).
+	if a.store != nil {
+		st := a.store
+		a.manager.SetActionIndexer(func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr string) error {
+			return experience.IngestRun(st, project, sessionName, runID, cliSessionID, projectPath, taskPtr)
+		})
+	}
 
 	// Start the control-plane server (no-op when CM_CONTROL disables it).
 	if controlEmitter != nil {
@@ -987,6 +999,27 @@ func (a *App) sessionTaskSource(project, sessionName string) string {
 		}
 	}
 	return ""
+}
+
+// GetTopActions aggregates action_signatures for a project over the last
+// days days, most frequent signature first — the "Actions" tab table
+// (LEARN-TASKS.md LN-03). Requires [optimization] experience_tracking to have
+// been on for some runs; with it off, the table is simply empty.
+func (a *App) GetTopActions(project string, days int) ([]store.SignatureStat, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no store")
+	}
+	return a.store.TopSignatures(project, days, 0)
+}
+
+// GetActionSamples returns concrete example rows for one (project, sig) pair
+// — the "Actions" tab's click-through from an aggregated signature to what
+// it actually covers.
+func (a *App) GetActionSamples(project, sig string, limit int) ([]store.ActionRow, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no store")
+	}
+	return a.store.ActionSamples(project, sig, limit)
 }
 
 // GetProjectLogFiles lists the auto-saved session-log files in

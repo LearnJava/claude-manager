@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"claude-manager/internal/store"
 )
@@ -130,6 +131,94 @@ func TestIngestDir_MixedFormats(t *testing.T) {
 	}
 	if stats.Files != 2 {
 		t.Errorf("Files = %d, want 2 (one .jsonl, one .md)", stats.Files)
+	}
+}
+
+// TestIngestRun_FixtureAndOffsetIdempotent is the LN-03 twin of the LN-01/17
+// fixture tests above: it indexes a live run's real JSONL transcript via
+// CM_TRANSCRIPTS_DIR, checking the three tool_use rows land with a real
+// run_id and the resolved task pointer, then that a second call (same
+// cli_session_id, transcript unchanged) is a no-op thanks to the ingest
+// offset (LN-02).
+func TestIngestRun_FixtureAndOffsetIdempotent(t *testing.T) {
+	s := newTestStore(t)
+	dir := t.TempDir()
+	const cliSessionID = "11111111-1111-1111-1111-111111111111"
+	copyFile(t, "../../testdata/transcripts/sample.jsonl", filepath.Join(dir, cliSessionID+".jsonl"))
+	t.Setenv("CM_TRANSCRIPTS_DIR", dir)
+
+	run := &store.SessionRun{Project: "proj", Session: "S1", Model: "sonnet", StartedAt: time.Now().UTC(), Status: "working"}
+	if err := s.InsertRun(run); err != nil {
+		t.Fatalf("InsertRun: %v", err)
+	}
+
+	err := IngestRun(s, "proj", "S1", run.ID, cliSessionID, `D:\Project\example-app`, "STATUS-P1.md:5")
+	if err != nil {
+		t.Fatalf("IngestRun: %v", err)
+	}
+
+	stats, err := s.TopSignatures("proj", 3650, 0)
+	if err != nil {
+		t.Fatalf("TopSignatures: %v", err)
+	}
+	var total int
+	for _, st := range stats {
+		total += st.Count
+	}
+	// Fixture has exactly 3 tool_use steps (Bash, Read, Grep).
+	if total != 3 {
+		t.Fatalf("action rows = %d, want 3", total)
+	}
+
+	samples, err := s.ActionSamples("proj", "Bash:git status --short", 0)
+	if err != nil {
+		t.Fatalf("ActionSamples: %v", err)
+	}
+	if len(samples) != 1 {
+		t.Fatalf("ActionSamples: got %d rows, want 1", len(samples))
+	}
+	if samples[0].RunID == nil || *samples[0].RunID != run.ID {
+		t.Errorf("RunID = %v, want %d (a live run's rows carry a real run_id)", samples[0].RunID, run.ID)
+	}
+	if samples[0].TaskPtr != "STATUS-P1.md:5" {
+		t.Errorf("TaskPtr = %q, want the resolved task pointer", samples[0].TaskPtr)
+	}
+	if samples[0].CLISessionID != cliSessionID {
+		t.Errorf("CLISessionID = %q, want %q", samples[0].CLISessionID, cliSessionID)
+	}
+
+	// Re-running with the same cli_session_id must not duplicate rows: the
+	// transcript hasn't grown, so the saved offset already covers it all.
+	if err := IngestRun(s, "proj", "S1", run.ID, cliSessionID, `D:\Project\example-app`, "STATUS-P1.md:5"); err != nil {
+		t.Fatalf("IngestRun (second): %v", err)
+	}
+	stats2, err := s.TopSignatures("proj", 3650, 0)
+	if err != nil {
+		t.Fatalf("TopSignatures (second): %v", err)
+	}
+	var total2 int
+	for _, st := range stats2 {
+		total2 += st.Count
+	}
+	if total2 != 3 {
+		t.Errorf("action rows after reimport = %d, want 3 (no duplicates)", total2)
+	}
+}
+
+// TestIngestRun_EmptyCLISessionIDIsNoop: a run that never got a system/init
+// event (e.g. the process died immediately) has no CLI session id and thus
+// no transcript to find — IngestRun must not error, just do nothing.
+func TestIngestRun_EmptyCLISessionIDIsNoop(t *testing.T) {
+	s := newTestStore(t)
+	if err := IngestRun(s, "proj", "S1", 1, "", "/some/path", ""); err != nil {
+		t.Fatalf("IngestRun with empty cliSessionID: %v", err)
+	}
+	stats, err := s.TopSignatures("proj", 3650, 0)
+	if err != nil {
+		t.Fatalf("TopSignatures: %v", err)
+	}
+	if len(stats) != 0 {
+		t.Errorf("expected no rows, got %+v", stats)
 	}
 }
 

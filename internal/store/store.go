@@ -755,8 +755,14 @@ func scanAction(row rowScanner) (*ActionRow, error) {
 
 // TopSignatures aggregates action_signatures for a project over the last
 // sinceDays days, most frequent signature first. Pass limit<=0 for no limit.
+//
+// DistinctRuns groups by run_id, falling back to cli_session_id when run_id
+// is NULL — a bulk-imported row (LEARN-TASKS.md LN-17: IngestDir) never has a
+// session_runs row to point at, and plain COUNT(DISTINCT run_id) silently
+// ignores every NULL, undercounting (or zeroing) DistinctRuns for a
+// signature that only appears in imported history.
 func (s *Store) TopSignatures(project string, sinceDays, limit int) ([]SignatureStat, error) {
-	q := `SELECT sig, tool, COUNT(*), COUNT(DISTINCT run_id),
+	q := `SELECT sig, tool, COUNT(*), COUNT(DISTINCT COALESCE(CAST(run_id AS TEXT), cli_session_id)),
        SUM(CASE WHEN is_error THEN 1 ELSE 0 END), SUM(out_tokens), MIN(ts), MAX(ts)
     FROM action_signatures
     WHERE project=? AND ts >= datetime('now', ?)
@@ -826,6 +832,36 @@ func (s *Store) sampleArgs(project, sig string, n int) ([]string, error) {
 		samples = append(samples, a)
 	}
 	return samples, rows.Err()
+}
+
+// ActionSamples returns up to limit full action_signatures rows for one
+// (project, sig) pair, most recent first — the "Actions" tab's click-through
+// from a signature to concrete examples (LEARN-TASKS.md LN-03). Pass
+// limit<=0 for no limit.
+func (s *Store) ActionSamples(project, sig string, limit int) ([]ActionRow, error) {
+	q := `SELECT id, project, session, run_id, cli_session_id, task_ptr, step_index, tool, sig, arg, is_error, out_tokens, result_chars, ts
+    FROM action_signatures WHERE project=? AND sig=? ORDER BY id DESC`
+	args := []any{project, sig}
+	if limit > 0 {
+		q += " LIMIT ?"
+		args = append(args, limit)
+	}
+
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []ActionRow
+	for rows.Next() {
+		r, err := scanAction(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *r)
+	}
+	return out, rows.Err()
 }
 
 // GetIngestOffset returns the last-indexed transcript path and byte offset

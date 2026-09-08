@@ -107,7 +107,7 @@ func ingestOne(st *store.Store, path, project string, stats *ImportStats) {
 	// worth surfacing in the summary.
 	stats.Errors += traj.Skipped
 
-	rows := actionRows(traj, project, name)
+	rows := actionRows(traj, project, traj.SessionID, nil, name, "")
 	if len(rows) > 0 {
 		if err := st.InsertActions(rows); err != nil {
 			stats.Errors++
@@ -127,28 +127,86 @@ func ingestOne(st *store.Store, path, project string, stats *ImportStats) {
 }
 
 // actionRows converts a Trajectory's tool_use steps into store.ActionRow
-// values ready for InsertActions — the same normalization SessionManager
-// will apply live once it ingests as runs happen (LN-03), applied here in
-// bulk for history that predates that hook.
-func actionRows(traj Trajectory, project, fileName string) []store.ActionRow {
+// values ready for InsertActions — shared by the bulk import above (LN-17:
+// runID nil, cliSessionID the file name) and IngestRun below (LN-03: a real
+// runID when the finished run has a session_runs row, the CLI's own session
+// id, and the resolved task pointer).
+func actionRows(traj Trajectory, project, sessionName string, runID *int64, cliSessionID, taskPtr string) []store.ActionRow {
 	var rows []store.ActionRow
 	for _, step := range traj.Steps {
 		if step.Kind != StepToolUse || step.ToolName == "" {
 			continue
 		}
 		sig, arg := Signature(step.ToolName, step.InputText, traj.ProjectPath)
+		var outTokens int64
+		if step.Usage != nil {
+			outTokens = int64(step.Usage.OutputTokens)
+		}
 		rows = append(rows, store.ActionRow{
 			Project:      project,
-			Session:      traj.SessionID,
-			CLISessionID: fileName,
+			Session:      sessionName,
+			RunID:        runID,
+			CLISessionID: cliSessionID,
+			TaskPtr:      taskPtr,
 			StepIndex:    step.Index,
 			Tool:         step.ToolName,
 			Sig:          sig,
 			Arg:          arg,
 			IsError:      step.ResultIsError,
+			OutTokens:    outTokens,
 			ResultChars:  step.ResultChars,
 			Timestamp:    step.Time,
 		})
 	}
 	return rows
+}
+
+// IngestRun indexes the newly-appended portion of one finished run's CLI
+// JSONL transcript into action_signatures (LEARN-TASKS.md LN-03), called
+// from SessionManager.finishRun when experience_tracking is on. It is
+// idempotent via the per-CLI-session byte offset in ingest_state
+// (GetIngestOffset/SetIngestOffset, LN-02): re-running it for the same
+// cliSessionID only reads what wasn't read last time, so a retried or
+// duplicate call never re-inserts rows.
+//
+// A live run's transcript (unlike a closed, bulk-imported log file) is the
+// one place a real run_id is available, so rows carry it — TopSignatures'
+// DistinctRuns then counts these rows by run_id directly, falling back to
+// cli_session_id only for the bulk-imported rows that have none.
+func IngestRun(st *store.Store, project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr string) error {
+	if cliSessionID == "" {
+		// No system/init event ever arrived (e.g. the process died before
+		// producing one) — there is no transcript file to find.
+		return nil
+	}
+
+	path, err := FindTranscript(TranscriptsRoot(), projectPath, cliSessionID)
+	if err != nil {
+		return err
+	}
+
+	_, offset, ok, err := st.GetIngestOffset(cliSessionID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		offset = 0
+	}
+
+	traj, newOffset, err := ReadFrom(path, offset)
+	if err != nil {
+		return err
+	}
+
+	var rid *int64
+	if runID != 0 {
+		rid = &runID
+	}
+	rows := actionRows(traj, project, sessionName, rid, cliSessionID, taskPtr)
+	if len(rows) > 0 {
+		if err := st.InsertActions(rows); err != nil {
+			return err
+		}
+	}
+	return st.SetIngestOffset(cliSessionID, path, newOffset)
 }

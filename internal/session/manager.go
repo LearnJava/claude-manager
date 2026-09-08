@@ -24,6 +24,13 @@ type Emitter interface {
 	Emit(event string, data any)
 }
 
+// ActionIndexFunc indexes one finished run's newly-appended CLI transcript
+// lines into action_signatures (LEARN-TASKS.md LN-03). Declared as a function
+// type here, consumed by finishRun, and wired from app.go to
+// internal/experience.IngestRun — a direct import would cycle, since
+// internal/experience already imports internal/session for Step/TokenUsage.
+type ActionIndexFunc func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr string) error
+
 // Event names emitted to the Wails frontend (see PLAN.md section 8).
 const (
 	EventNameStatus     = "session:status"
@@ -225,6 +232,11 @@ type SessionManager struct {
 	store   *store.Store
 	emitter Emitter
 
+	// indexRun is nil unless app.go has wired the experience-layer indexer
+	// (LEARN-TASKS.md LN-03); even then, finishRun only calls it when
+	// cfg.Optimization.ExperienceTracking is on — see SetActionIndexer.
+	indexRun ActionIndexFunc
+
 	runtimeRules *permission.RuntimeRuleSet
 	queue        *permission.PendingQueue
 
@@ -283,6 +295,17 @@ func (m *SessionManager) SetContext(ctx context.Context) {
 func (m *SessionManager) SetConfig(cfg *config.AppConfig) {
 	m.mu.Lock()
 	m.cfg = cfg
+	m.mu.Unlock()
+}
+
+// SetActionIndexer wires the experience-layer indexer (LEARN-TASKS.md LN-03).
+// Pass nil to disable it entirely (the zero value — no app.go wiring means no
+// transcript is ever opened). Even wired, finishRun still gates every call on
+// the live experience_tracking config flag, so flipping the setting off stops
+// indexing immediately without needing to re-wire anything.
+func (m *SessionManager) SetActionIndexer(fn ActionIndexFunc) {
+	m.mu.Lock()
+	m.indexRun = fn
 	m.mu.Unlock()
 }
 
@@ -1520,6 +1543,30 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg string) {
 			TotalRuns:                1,
 			TotalTasks:               1,
 		})
+	}
+
+	// Index this run's transcript into action_signatures for the "Actions"
+	// tab (LEARN-TASKS.md LN-03) — same fire-and-forget goroutine pattern as
+	// the log autosave above, so a failure here can never affect the run's
+	// own completed/error/stopped status. Gated on experience_tracking so the
+	// flag being off means a transcript is never opened at all, not just that
+	// the result is discarded.
+	m.mu.Lock()
+	indexRun := m.indexRun
+	tracking := m.cfg != nil && m.cfg.Optimization.ExperienceTracking
+	m.mu.Unlock()
+	if indexRun != nil && tracking {
+		sessID := ms.session.ID
+		cliSessionID := ms.session.CLISessionID
+		projectPath := ms.session.ProjectPath
+		taskPtr := ms.session.taskSourceDesc
+		sessionName := ms.name
+		go func() {
+			defer logger.Recover("manager.index_run", "id", sessID)
+			if err := indexRun(project, sessionName, runID, cliSessionID, projectPath, taskPtr); err != nil {
+				logger.L.Error("session.index_run_failed", "id", sessID, "error", err)
+			}
+		}()
 	}
 }
 
