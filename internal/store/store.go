@@ -134,6 +134,37 @@ type SignatureStat struct {
 	LastSeen     time.Time
 }
 
+// PermissionEvent represents a row in permission_events — one resolved
+// permission_request, whether a config/runtime rule or bypassPermissions
+// decided it automatically (Auto=true) or a human answered it (Auto=false)
+// (LEARN-TASKS.md LN-04). RunID is nil when no run was in flight (mirrors
+// ActionRow.RunID).
+type PermissionEvent struct {
+	ID        int64
+	Project   string
+	Session   string
+	RunID     *int64
+	Tool      string
+	Pattern   string
+	Decision  string
+	Auto      bool
+	Timestamp time.Time
+}
+
+// PermissionEventStat aggregates permission_events sharing the same (project,
+// tool, pattern) — the input to the permission-rule classifier (LN-04):
+// AllowCount/DenyCount tell whether a repeated ask was consistently approved,
+// which is a precondition for suggesting an auto-allow rule.
+type PermissionEventStat struct {
+	Tool       string
+	Pattern    string
+	Count      int
+	AllowCount int
+	DenyCount  int
+	FirstSeen  time.Time
+	LastSeen   time.Time
+}
+
 // Store wraps a SQLite database and provides CRUD for all tables.
 type Store struct {
 	db *sql.DB
@@ -862,6 +893,103 @@ func (s *Store) ActionSamples(project, sig string, limit int) ([]ActionRow, erro
 		out = append(out, *r)
 	}
 	return out, rows.Err()
+}
+
+// InsertPermissionEvent records one resolved permission request. Unlike
+// InsertActions (batched per ingest pass), permission decisions arrive one at
+// a time from SessionManager.handlePermission/RespondPermission, so this is a
+// single-row insert.
+func (s *Store) InsertPermissionEvent(ev PermissionEvent) error {
+	const q = `INSERT INTO permission_events
+	    (project, session, run_id, tool, pattern, decision, auto, ts)
+	    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	auto := 0
+	if ev.Auto {
+		auto = 1
+	}
+	_, err := s.db.Exec(q,
+		ev.Project, ev.Session, nullInt64(ev.RunID), ev.Tool, nullStr(ev.Pattern),
+		ev.Decision, auto, ev.Timestamp,
+	)
+	return err
+}
+
+// PermissionEventsForProject returns every raw permission_events row for a
+// project, most recent first — mainly a test/debugging accessor since the
+// "Permissions" tab (LEARN-TASKS.md LN-04) works off the aggregated
+// TopPermissionEvents view, not individual rows.
+func (s *Store) PermissionEventsForProject(project string) ([]PermissionEvent, error) {
+	const q = `SELECT id, project, session, run_id, tool, pattern, decision, auto, ts
+	    FROM permission_events WHERE project=? ORDER BY id DESC`
+	rows, err := s.db.Query(q, project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []PermissionEvent
+	for rows.Next() {
+		var ev PermissionEvent
+		var runID sql.NullInt64
+		var pattern sql.NullString
+		var auto int
+		if err := rows.Scan(&ev.ID, &ev.Project, &ev.Session, &runID, &ev.Tool,
+			&pattern, &ev.Decision, &auto, &ev.Timestamp); err != nil {
+			return nil, err
+		}
+		if runID.Valid {
+			v := runID.Int64
+			ev.RunID = &v
+		}
+		ev.Pattern = pattern.String
+		ev.Auto = auto != 0
+		out = append(out, ev)
+	}
+	return out, rows.Err()
+}
+
+// TopPermissionEvents aggregates permission_events for a project over the
+// last sinceDays days into per (tool, pattern) stats, most frequent first.
+// Only auto=0 rows are counted: an auto=1 row means a rule already resolves
+// that (tool, pattern) automatically, so it is not a candidate for a new
+// suggestion — counting it in would make an already-covered case look like it
+// still needs one. Pass limit<=0 for no limit.
+func (s *Store) TopPermissionEvents(project string, sinceDays, limit int) ([]PermissionEventStat, error) {
+	q := `SELECT tool, pattern, COUNT(*),
+       SUM(CASE WHEN decision IN ('allow','allow_session','allow_similar','allow_always') THEN 1 ELSE 0 END),
+       SUM(CASE WHEN decision IN ('deny','deny_always') THEN 1 ELSE 0 END),
+       MIN(ts), MAX(ts)
+    FROM permission_events
+    WHERE project=? AND auto=0 AND ts >= datetime('now', ?)
+    GROUP BY tool, pattern
+    ORDER BY COUNT(*) DESC`
+	args := []any{project, fmt.Sprintf("-%d days", sinceDays)}
+	if limit > 0 {
+		q += " LIMIT ?"
+		args = append(args, limit)
+	}
+
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []PermissionEventStat
+	for rows.Next() {
+		var st PermissionEventStat
+		var pattern sql.NullString
+		var firstSeen, lastSeen string
+		if err := rows.Scan(&st.Tool, &pattern, &st.Count, &st.AllowCount, &st.DenyCount,
+			&firstSeen, &lastSeen); err != nil {
+			return nil, err
+		}
+		st.Pattern = pattern.String
+		st.FirstSeen = parseAggTime(firstSeen)
+		st.LastSeen = parseAggTime(lastSeen)
+		stats = append(stats, st)
+	}
+	return stats, rows.Err()
 }
 
 // GetIngestOffset returns the last-indexed transcript path and byte offset

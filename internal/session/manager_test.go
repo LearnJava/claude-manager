@@ -420,6 +420,78 @@ func TestHandlePermissionQueuesWhenNoRuleMatches(t *testing.T) {
 	}
 }
 
+// TestRecordPermissionEvent_GatedOnExperienceTracking (LEARN-TASKS.md LN-04):
+// with the flag off (the default), handlePermission's auto-allow path must
+// not touch the store at all — same "off means nothing is read/written"
+// contract as the transcript indexer (LN-03).
+func TestRecordPermissionEvent_GatedOnExperienceTracking(t *testing.T) {
+	m, st := newTestManagerWithStore(t)
+	ms := addStubSession(m, "lumen", "P1")
+	ms.session.Config.PermissionRules = []config.PermissionRule{
+		{Tool: "Bash", Pattern: "ls", Decision: "allow"},
+	}
+	// ExperienceTracking left at its zero value (false).
+
+	m.handlePermission(ms, &PermissionRequest{ID: "r1", Tool: "Bash", Command: "ls"})
+
+	rows, err := st.PermissionEventsForProject("lumen")
+	if err != nil {
+		t.Fatalf("PermissionEventsForProject: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Errorf("expected no permission_events rows with experience_tracking off, got %+v", rows)
+	}
+}
+
+// TestHandlePermission_RecordsAutoDecision: with the flag on, a config-rule
+// auto-allow is recorded with Auto=true.
+func TestHandlePermission_RecordsAutoDecision(t *testing.T) {
+	m, st := newTestManagerWithStore(t)
+	m.cfg.Optimization.ExperienceTracking = true
+	ms := addStubSession(m, "lumen", "P1")
+	ms.session.Config.PermissionRules = []config.PermissionRule{
+		{Tool: "Bash", Pattern: "ls", Decision: "allow"},
+	}
+
+	m.handlePermission(ms, &PermissionRequest{ID: "r1", Tool: "Bash", Command: "ls"})
+
+	rows, err := st.PermissionEventsForProject("lumen")
+	if err != nil {
+		t.Fatalf("PermissionEventsForProject: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if !rows[0].Auto || rows[0].Decision != "allow" || rows[0].Tool != "Bash" || rows[0].Pattern != "ls" {
+		t.Errorf("unexpected row: %+v", rows[0])
+	}
+}
+
+// TestRespondPermission_RecordsHumanDecision: a human decision through
+// RespondPermission is recorded with Auto=false.
+func TestRespondPermission_RecordsHumanDecision(t *testing.T) {
+	m, st := newTestManagerWithStore(t)
+	m.cfg.Optimization.ExperienceTracking = true
+	ms := addStubSession(m, "lumen", "P1")
+
+	req := permission.PermissionRequest{
+		ID: "r5", SessionID: ms.session.ID, Tool: "Bash", Command: "npm test",
+	}
+	m.queue.Add(req)
+	_ = m.RespondPermission(ms.session.ID, "r5", "allow")
+
+	rows, err := st.PermissionEventsForProject("lumen")
+	if err != nil {
+		t.Fatalf("PermissionEventsForProject: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].Auto || rows[0].Decision != "allow" || rows[0].Pattern != "npm test" {
+		t.Errorf("unexpected row: %+v", rows[0])
+	}
+}
+
 func TestRespondPermissionRegistersRuntimeRule(t *testing.T) {
 	m := newTestManager(t)
 	ms := addStubSession(m, "lumen", "P1")

@@ -1,15 +1,15 @@
 /**
- * Experience panel spec — LEARN-TASKS.md LN-03
+ * Experience panel spec — LEARN-TASKS.md LN-03/LN-04
  *
- * GetTopActions/GetActionSamples read straight from the app's own SQLite
- * store, which playwright-server never opens (cmd/playwright-server/main.go
- * passes SessionManager a nil store) — the same reason History.svelte and
- * CostDashboard.svelte have no real-data Playwright coverage (GUI-TESTS.md
- * HI-01, CD-01 are still "○"). helpers/bridge.ts stubs both calls to an
- * empty array, so this spec covers what's actually reachable here: the modal
- * opens/closes, the project/period pickers render and are interactive, and
- * an empty result renders the panel's own "no actions" empty state rather
- * than an unhandled RPC error.
+ * GetTopActions/GetActionSamples/GetPermissionCandidates read straight from
+ * the app's own SQLite store, which playwright-server never opens
+ * (cmd/playwright-server/main.go passes SessionManager a nil store) — the
+ * same reason History.svelte and CostDashboard.svelte have no real-data
+ * Playwright coverage (GUI-TESTS.md HI-01, CD-01 are still "○").
+ * helpers/bridge.ts stubs all three to an empty result, so this spec covers
+ * what's actually reachable here: the modal opens/closes, the tabs switch,
+ * the project/period pickers render and are interactive, and an empty result
+ * renders each tab's own empty state rather than an unhandled RPC error.
  *
  * The Settings checkbox test is a real backend round-trip: toggling
  * "Experience layer" and saving does call UpdateConfig with
@@ -52,6 +52,66 @@ test.describe('Experience panel', () => {
     // The "✕" button closes the modal (same convention as History/CostDashboard).
     await modal.getByRole('button', { name: '✕' }).click();
     await expect(modal).not.toBeVisible({ timeout: 3_000 });
+  });
+
+  test('Permissions tab: empty state, then a suggestion list with a working Add-rule button', async ({
+    page,
+  }) => {
+    await page.goto('/');
+
+    const experienceBtn = page.getByRole('button', { name: 'Experience' });
+    await expect(experienceBtn).toBeVisible({ timeout: 5_000 });
+    await experienceBtn.click();
+
+    const modal = page.getByRole('dialog');
+    await expect(modal).toBeVisible({ timeout: 3_000 });
+
+    await modal.getByRole('button', { name: 'Permissions' }).click();
+
+    // GetPermissionCandidates is stubbed empty by default — the tab's own
+    // empty state renders instead of an error.
+    await expect(modal.getByText(/No permission candidates/i)).toBeVisible({ timeout: 5_000 });
+
+    // Override the stub to return one safe candidate and record AddPermissionRule
+    // calls, then reload the panel via Refresh to pick it up.
+    await page.evaluate(() => {
+      const w = window as any;
+      w.__addRuleCalls = [] as unknown[];
+      const App = w.go.main.App;
+      App.GetPermissionCandidates = () =>
+        Promise.resolve({
+          Safe: [
+            {
+              Tool: 'Bash',
+              Pattern: 'go test ./...',
+              Count: 5,
+              AllowCount: 5,
+              DenyCount: 0,
+              Safe: true,
+              FirstSeen: new Date().toISOString(),
+              LastSeen: new Date().toISOString(),
+            },
+          ],
+          NeedsReview: [],
+        });
+      App.AddPermissionRule = (...args: unknown[]) => {
+        w.__addRuleCalls.push(args);
+        return Promise.resolve(undefined);
+      };
+    });
+    await modal.getByRole('button', { name: 'Refresh' }).click();
+
+    await expect(modal.getByText('go test ./...')).toBeVisible({ timeout: 5_000 });
+    await expect(modal.getByText('Safe to auto-allow (1)')).toBeVisible();
+
+    // Whichever session the row's picker defaults to (the project's first
+    // configured session) is what "Add rule" must target.
+    const sessionPicked = await modal.locator('table').first().locator('select').inputValue();
+    await modal.getByRole('button', { name: 'Add rule' }).click();
+    await expect(modal.getByText('Added')).toBeVisible({ timeout: 3_000 });
+
+    const calls = await page.evaluate(() => (window as any).__addRuleCalls);
+    expect(calls).toEqual([['test', sessionPicked, 'Bash', 'go test ./...', 'allow']]);
   });
 
   test('Settings → Global: toggling Experience layer persists through Save', async ({

@@ -138,6 +138,13 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         // legitimate "no actions" empty state instead of an RPC error.
         GetTopActions: () => Promise.resolve([]),
         GetActionSamples: () => Promise.resolve([]),
+        // GetPermissionCandidates (LEARN-TASKS.md LN-04) reads from the same
+        // store as GetTopActions above — same reason, same stub shape.
+        // AddPermissionRule *does* go through UpdateConfig in the real app,
+        // but since GetPermissionCandidates never returns a row here, its
+        // "Add rule" button is never reachable in this harness either.
+        GetPermissionCandidates: () => Promise.resolve({ Safe: [], NeedsReview: [] }),
+        AddPermissionRule: () => Promise.resolve(undefined),
       };
 
       (window as typeof window & { go: unknown }).go = { main: { App } };

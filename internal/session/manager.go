@@ -826,6 +826,7 @@ func (m *SessionManager) RespondPermission(id, requestID, decision string) error
 		case "deny_always":
 			m.runtimeRules.Add(req.Tool, req.Pattern(), "deny")
 		}
+		m.recordPermissionEvent(ms, req, decision, false)
 	}
 	m.queue.Remove(requestID)
 	return ms.session.RespondPermission(requestID, decision)
@@ -1588,6 +1589,7 @@ func (m *SessionManager) handlePermission(ms *managedSession, req *PermissionReq
 	// 1. Session-config rules (per-session, declared in TOML).
 	if dec, _, ok := permission.MatchRules(ms.session.Config.PermissionRules, permReq); ok {
 		if dec != "ask" {
+			m.recordPermissionEvent(ms, permReq, dec, true)
 			_ = ms.session.RespondPermission(permReq.ID, dec)
 			return
 		}
@@ -1595,12 +1597,14 @@ func (m *SessionManager) handlePermission(ms *managedSession, req *PermissionReq
 	// 2. Runtime rules (allow_session / allow_always added at runtime).
 	if dec, ok := m.runtimeRules.Match(permReq); ok {
 		if dec != "ask" {
+			m.recordPermissionEvent(ms, permReq, dec, true)
 			_ = ms.session.RespondPermission(permReq.ID, dec)
 			return
 		}
 	}
 	// 3. Bypass mode auto-allows everything.
 	if ms.session.Config.PermissionMode == "bypassPermissions" {
+		m.recordPermissionEvent(ms, permReq, "allow", true)
 		_ = ms.session.RespondPermission(permReq.ID, "allow")
 		return
 	}
@@ -1608,6 +1612,38 @@ func (m *SessionManager) handlePermission(ms *managedSession, req *PermissionReq
 	// Otherwise queue + notify the UI.
 	m.queue.Add(permReq)
 	m.emit(EventNamePermission, PermissionEvent{ID: ms.session.ID, Request: permReq})
+}
+
+// recordPermissionEvent persists one resolved permission request into
+// permission_events (LEARN-TASKS.md LN-04) — both auto-decided (a rule or
+// bypassPermissions, called from handlePermission) and human-decided (called
+// from RespondPermission), so a later candidate query can tell "still needs
+// asking" apart from "a rule already covers this". Gated on the same
+// [optimization] experience_tracking flag as the rest of the experience
+// layer (off by default) and a no-op without a store (e.g. playwright-server).
+func (m *SessionManager) recordPermissionEvent(ms *managedSession, req permission.PermissionRequest, decision string, auto bool) {
+	if m.store == nil || m.cfg == nil || !m.cfg.Optimization.ExperienceTracking {
+		return
+	}
+	ms.mu.Lock()
+	var runID *int64
+	if ms.runID != 0 {
+		v := ms.runID
+		runID = &v
+	}
+	project, name := ms.project, ms.name
+	ms.mu.Unlock()
+
+	_ = m.store.InsertPermissionEvent(store.PermissionEvent{
+		Project:   project,
+		Session:   name,
+		RunID:     runID,
+		Tool:      req.Tool,
+		Pattern:   req.Pattern(),
+		Decision:  decision,
+		Auto:      auto,
+		Timestamp: time.Now(),
+	})
 }
 
 // ---- Pre-flight plans (PLAN.md section 17) ----
