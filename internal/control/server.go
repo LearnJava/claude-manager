@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"claude-manager/internal/analysis"
@@ -95,15 +96,31 @@ func NewServer(manager ManagerAPI, app AppAPI, emitter *ControlEmitter, token st
 // Start binds to 127.0.0.1:<port> (loopback only) and serves until ctx is
 // cancelled.
 func (s *Server) Start(ctx context.Context, port string) error {
+	ln, err := s.Listen(port)
+	if err != nil {
+		return err
+	}
+	return s.Serve(ctx, ln)
+}
+
+// Listen binds to 127.0.0.1:<port> (loopback only) without serving, so a
+// caller can learn the real address — and fail loudly on a port clash — before
+// it advertises the endpoint to clients.
+func (s *Server) Listen(port string) (net.Listener, error) {
 	if port == "" {
 		port = "7333"
 	}
 	addr := "127.0.0.1:" + port
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("control: listen %s: %w", addr, err)
+		return nil, fmt.Errorf("control: listen %s: %w", addr, err)
 	}
-	logger.L.Info("control.server.listening", "addr", addr)
+	logger.L.Info("control.server.listening", "addr", ln.Addr().String())
+	return ln, nil
+}
+
+// Serve handles requests on ln until ctx is cancelled.
+func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	go func() {
 		defer logger.Recover("control.server.shutdown_watcher")
 		<-ctx.Done()
@@ -154,12 +171,30 @@ func GenerateToken() string {
 	return hex.EncodeToString(b)
 }
 
-// StartFromEnv reads CM_CONTROL / CM_CONTROL_PORT / CM_CONTROL_TOKEN,
-// starts the server in a goroutine when CM_CONTROL=1, and returns it (or nil
-// when disabled). A generated token is printed to stdout so the caller can
-// supply it to clients.
+// Enabled reports whether the control-plane should run. It is **on by
+// default**: the server is loopback-only and token-authenticated, and having
+// it always available is what makes the app drivable from cm-mcp without the
+// user having to remember to relaunch with a special environment variable.
+// Set CM_CONTROL to 0/false/off/no to turn it off.
+func Enabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("CM_CONTROL"))) {
+	case "0", "false", "off", "no":
+		return false
+	}
+	return true
+}
+
+// StartFromEnv reads CM_CONTROL / CM_CONTROL_PORT / CM_CONTROL_TOKEN, starts
+// the server in a goroutine unless the control-plane is disabled, and returns
+// it (or nil when disabled).
+//
+// The listener is bound synchronously so a port clash — a second instance, or
+// a `wails dev` run next to the installed app — is reported to the caller
+// instead of being logged from a goroutine after the endpoint file has already
+// claimed the address. A generated token is written to the endpoint file (and
+// printed to stdout, which is where the dev flow reads it from).
 func StartFromEnv(ctx context.Context, manager ManagerAPI, app AppAPI, emitter *ControlEmitter) (*Server, error) {
-	if os.Getenv("CM_CONTROL") != "1" {
+	if !Enabled() {
 		return nil, nil
 	}
 	token := os.Getenv("CM_CONTROL_TOKEN")
@@ -172,9 +207,21 @@ func StartFromEnv(ctx context.Context, manager ManagerAPI, app AppAPI, emitter *
 		port = "7333"
 	}
 	srv := NewServer(manager, app, emitter, token)
+	ln, err := srv.Listen(port)
+	if err != nil {
+		return nil, err
+	}
+	if err := WriteEndpoint(Endpoint{
+		Addr:  "http://" + ln.Addr().String(),
+		Token: token,
+		PID:   os.Getpid(),
+	}); err != nil {
+		logger.L.Warn("control.endpoint.write", "error", err)
+	}
 	go func() {
 		defer logger.Recover("control.server.start")
-		if err := srv.Start(ctx, port); err != nil {
+		defer RemoveEndpoint()
+		if err := srv.Serve(ctx, ln); err != nil {
 			logger.L.Error("control.server.error", "error", err)
 		}
 	}()
