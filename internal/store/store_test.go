@@ -919,3 +919,45 @@ func TestMigrateIsIdempotent(t *testing.T) {
 		t.Errorf("data lost across re-migration: got (%d, %v)", offset, ok)
 	}
 }
+
+// --- imported_logfiles (LEARN-TASKS.md LN-17) ---
+
+func TestIsMarkLogFileImported(t *testing.T) {
+	s := newTestStore(t)
+	mtime := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+
+	imported, err := s.IsLogFileImported("proj", "S1-20260908.md", 1234, mtime)
+	if err != nil {
+		t.Fatalf("IsLogFileImported: %v", err)
+	}
+	if imported {
+		t.Error("expected imported=false before MarkLogFileImported")
+	}
+
+	if err := s.MarkLogFileImported("proj", "S1-20260908.md", 1234, mtime); err != nil {
+		t.Fatalf("MarkLogFileImported: %v", err)
+	}
+
+	imported, err = s.IsLogFileImported("proj", "S1-20260908.md", 1234, mtime)
+	if err != nil {
+		t.Fatalf("IsLogFileImported (after mark): %v", err)
+	}
+	if !imported {
+		t.Error("expected imported=true after MarkLogFileImported")
+	}
+
+	// A different size or mtime for the same name is a different file — not
+	// considered already imported (the file was rewritten/appended).
+	imported, err = s.IsLogFileImported("proj", "S1-20260908.md", 9999, mtime)
+	if err != nil {
+		t.Fatalf("IsLogFileImported (different size): %v", err)
+	}
+	if imported {
+		t.Error("expected imported=false for a changed file size")
+	}
+
+	// Re-marking the same triple is a no-op, not an error (idempotent).
+	if err := s.MarkLogFileImported("proj", "S1-20260908.md", 1234, mtime); err != nil {
+		t.Fatalf("MarkLogFileImported (re-mark): %v", err)
+	}
+}

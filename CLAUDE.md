@@ -74,11 +74,21 @@ claude-manager/
 │   │                                #   own JSONL transcripts (~/.claude/projects/<slug>/<id>.jsonl,
 │   │                                #   CM_TRANSCRIPTS_DIR override); tool_use/tool_result stitching,
 │   │                                #   incremental ReadFrom(path, offset). A second backend (LN-17,
-│   │                                #   markdown logs) will produce the same Trajectory type.
-│   │   └── signature.go             # LN-02: Signature — normalizes a Step's InputText into an
+│   │                                #   markdown logs) produces the same Trajectory type.
+│   │   ├── signature.go             # LN-02: Signature — normalizes a Step's InputText into an
 │   │                                #   aggregable sig (Bash argv rules, path/pattern rules) +
 │   │                                #   the verbatim arg; feeds action_signatures/ingest_state
 │   │                                #   (store/migrations.go) via Store.InsertActions/TopSignatures.
+│   │   ├── mdlog.go                 # LN-17: ParseLogFile — the markdown-backend twin of
+│   │                                #   transcript.go's Read/ReadFrom, parsing store.RenderExport's
+│   │                                #   "md" format (auto-saved per-run logs) into a Trajectory via
+│   │                                #   a FIFO tool_use/tool_result binding queue.
+│   │   └── indexer.go               # LN-17: IngestDir — recursive bulk import of a log directory
+│   │                                #   (.jsonl via transcript.go, .md via mdlog.go) into
+│   │                                #   action_signatures, deduped by store.IsLogFileImported
+│   │                                #   (name+size+mtime, since one file = one closed run). Not
+│   │                                #   yet wired into app.go/UI — that lands with the indexing
+│   │                                #   pipeline and "Experience" panel in LN-03.
 │   ├── store/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs
 │   │   ├── migrations.go            # CREATE TABLE statements, indexes
@@ -1119,15 +1129,15 @@ quality flow. MCP tools: `register_mixed_brief`, `dispatch_mixed_task`,
 
 ### Experience Layer (LEARN-TASKS.md, LN-01..18)
 
-Mines the app's own operational history — CLI transcripts today, auto-saved
-markdown logs later (LN-17) — into things that save the *next* session tokens
-and time: permission allowlists, a warm context primer, distilled skills. Off
-by default; every feature is additive and stdlib-only (no external workers,
+Mines the app's own operational history — CLI JSONL transcripts and auto-saved
+markdown logs (LN-17) — into things that save the *next* session tokens and
+time: permission allowlists, a warm context primer, distilled skills. Off by
+default; every feature is additive and stdlib-only (no external workers,
 unlike Mixed Programming above).
 
 **Ingest backends produce one common shape.** `experience.Trajectory`/`Step`
 (`internal/experience/transcript.go`, LN-01) is backend-agnostic: a JSONL
-transcript backend today, a markdown-log backend later, both stitch
+transcript backend and a markdown-log backend (LN-17) both stitch
 `tool_use`↔`tool_result` into the same `Step` fields. Consumers must not
 assume every field is populated — `Input`/`ToolUseID`/`Usage` are simply zero
 on a backend that never had raw JSON to begin with.
@@ -1158,6 +1168,51 @@ batch-inserts per ingest pass (mirrors `InsertLogs`); `Store.TopSignatures`
 aggregates by `(project, sig)` over a trailing window (count, distinct runs,
 error rate, sample args) — the input the "Actions" tab (LN-03) and downstream
 candidate mining (LN-04 permission rules, LN-07/08 skill promotion) both read.
+
+**A second backend: auto-saved markdown logs** (LN-17, `internal/experience/mdlog.go`).
+JSONL transcripts (LN-01) live only on the machine a session ran on and get
+cleaned up; the auto-saved per-run markdown logs (`SaveSessionLogFile`, see
+"Automatic Log Saving" above) accumulate in the project and travel between
+machines — measured against a real 6207-run/231 MB corpus, they are the only
+practically available history at any scale. `ParseLogFile(path)` parses
+`store.RenderExport`'s `"md"` format into the same `Trajectory` type LN-01
+produces, so every downstream consumer (signatures, LN-03's Actions tab,
+candidate mining) is backend-agnostic already.
+
+The one hard part is rebuilding the tool_use↔tool_result binding the log line
+sequence itself doesn't guarantee: a naive "the next line is the result" rule
+covers only 87.4% of calls in the measured corpus. `ParseLogFile` keeps a FIFO
+queue of pending tool_use steps instead — each `tool` entry enqueues, each
+`tool_result`/`error` entry dequeues the *oldest* pending call, not "the next
+line" — which correctly handles parallel tool_use batches (several `tool`
+entries land back to back, then their results, in the same order). Two more
+things must not break that queue: `tool_progress` heartbeats (long commands
+log raw `{"type":"tool_progress",...}` JSON at `system` level — 9.2% of one
+measured corpus; `internal/session/parser.go` doesn't parse this event type
+yet, so it falls through to a plain `system` log entry — a defect for that
+parser to fix separately, not this ingest layer, which must simply tolerate
+the noise) are skipped without touching the queue, and a failed call is
+logged at `error` level instead of `tool_result` but still closes the queue
+the same way, additionally marking the step's `ResultIsError`. Everything else
+(`text`, `user`, `result`) flushes the queue — those mark a turn boundary, not
+a call boundary.
+
+**Bulk import** (`internal/experience/indexer.go`, `IngestDir(store, root,
+project, opts)`) recursively imports a whole log directory — `.jsonl` via
+`transcript.Read`, `.md` via `ParseLogFile` — into `action_signatures`, so a
+corpus that predates this app's own indexing (LN-03, not yet built) is not
+lost. Rows are written with no `session_runs` row to point at (`RunID = nil`)
+and `CLISessionID` set to the file's own name, since a markdown log carries no
+CLI session UUID. Idempotent by design: `store.IsLogFileImported`/
+`MarkLogFileImported` (`imported_logfiles` table) dedup by `(project, name,
+size, mtime)` — a closed, complete log file either was imported or wasn't,
+unlike a live JSONL transcript's byte-offset checkpoint (`ingest_state`) — so
+re-running `IngestDir` over a directory it already covered inserts nothing
+twice. `ImportOpts.OnProgress(processed, total)` reports as it walks, since an
+import of thousands of files with no feedback reads as a hung process. Not
+yet wired into `app.go`/a frontend button: that lands together with the
+"Experience" panel and its own indexing hook in LN-03, which touches the same
+`internal/experience/indexer.go` file.
 
 ## Wails Bindings (app.go)
 
@@ -1347,6 +1402,7 @@ claude_path = "build/fakeclaude.exe"
 - `mixed_briefs` — generated mixed-programming briefs (MP-06)
 - `action_signatures` — normalized tool-call signatures mined from CLI transcripts, per run (LN-02)
 - `ingest_state` — per-CLI-session transcript byte offset, so re-indexing never re-inserts rows (LN-02)
+- `imported_logfiles` — bulk-import dedup for `IngestDir`, keyed by (project, name, size, mtime) (LN-17)
 
 ## File Logging
 

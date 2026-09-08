@@ -125,6 +125,25 @@ CREATE TABLE IF NOT EXISTS ingest_state (
     updated_at     DATETIME NOT NULL
 )`
 
+	// imported_logfiles backs IngestDir's bulk import of auto-saved markdown
+	// logs (LEARN-TASKS.md LN-17). Unlike ingest_state (a byte offset into one
+	// growing JSONL transcript), a markdown log is one closed, complete run —
+	// there is nothing to resume mid-file, only "already imported or not" —
+	// so the dedup key is the file's identity (name, size, mtime) rather than
+	// an offset. Re-running an import over the same directory is then a
+	// no-op: a file whose (name, size, mtime) triple is already present is
+	// skipped without touching action_signatures again.
+	sqlCreateImportedLogfiles = `
+CREATE TABLE IF NOT EXISTS imported_logfiles (
+    id          INTEGER PRIMARY KEY,
+    project     TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    mtime       DATETIME NOT NULL,
+    imported_at DATETIME NOT NULL,
+    UNIQUE(project, name, size, mtime)
+)`
+
 	sqlIdxLogsRun       = `CREATE INDEX IF NOT EXISTS idx_logs_run ON session_logs(run_id)`
 	sqlIdxRunsProject   = `CREATE INDEX IF NOT EXISTS idx_runs_project ON session_runs(project, session)`
 	sqlIdxBriefsProject = `CREATE INDEX IF NOT EXISTS idx_briefs_project ON mixed_briefs(project)`
@@ -142,6 +161,7 @@ func migrate(db *sql.DB) error {
 		sqlCreateMixedBriefs,
 		sqlCreateActionSignatures,
 		sqlCreateIngestState,
+		sqlCreateImportedLogfiles,
 		sqlIdxLogsRun,
 		sqlIdxRunsProject,
 		sqlIdxBriefsProject,
