@@ -3,18 +3,20 @@
     import { projects } from '../stores/projects';
     import { formatPercent, formatTime, formatTokens } from '../lib/formatters';
     import {
+        addPermissionRule,
         fetchActionSamples,
+        fetchPermissionCandidates,
         fetchTopActions,
         type ActionRow,
+        type PermissionCandidate,
         type SignatureStat,
     } from '../stores/experience';
 
     const dispatch = createEventDispatcher();
 
-    // This modal gains more tabs as later LN items land (LN-04 Permissions,
-    // LN-06 Journal, ...) — one modal, not a new one per tab (see LEARN-TASKS.md
-    // LN-03 "UI").
-    type Tab = 'actions';
+    // This modal gains more tabs as later LN items land (LN-06 Journal, ...) —
+    // one modal, not a new one per tab (see LEARN-TASKS.md LN-03 "UI").
+    type Tab = 'actions' | 'permissions';
     let tab: Tab = 'actions';
 
     type SortKey = 'sig' | 'count' | 'runs' | 'errors' | 'tokens' | 'last';
@@ -40,6 +42,61 @@
     let samplesBySig: Record<string, ActionRow[] | undefined> = {};
     let samplesLoadingBySig: Record<string, boolean> = {};
     let samplesErrorBySig: Record<string, string> = {};
+
+    // Permissions tab (LEARN-TASKS.md LN-04).
+    let permSafe: PermissionCandidate[] = [];
+    let permNeedsReview: PermissionCandidate[] = [];
+    let permLoading = true;
+    let permError = '';
+    // Which session an "Add rule" click targets, per candidate row (keyed by
+    // "tool\0pattern") — defaults to the project's first configured session.
+    let permSessionByRow: Record<string, string> = {};
+    let permAddedRows: Set<string> = new Set();
+    let permAddErrorByRow: Record<string, string> = {};
+
+    function rowKey(c: PermissionCandidate): string {
+        return `${c.Tool}\0${c.Pattern}`;
+    }
+
+    $: projectSessions = $projects.find((p) => p.name === project)?.sessions ?? [];
+
+    async function loadPermissions() {
+        if (!project) {
+            permSafe = [];
+            permNeedsReview = [];
+            permLoading = false;
+            return;
+        }
+        permLoading = true;
+        permError = '';
+        try {
+            const set = await fetchPermissionCandidates(project, days);
+            permSafe = set.Safe ?? [];
+            permNeedsReview = set.NeedsReview ?? [];
+        } catch (e: any) {
+            permError = `Failed to load permission candidates: ${e?.message ?? String(e)}`;
+            permSafe = [];
+            permNeedsReview = [];
+        } finally {
+            permLoading = false;
+        }
+    }
+
+    async function addRule(c: PermissionCandidate) {
+        const key = rowKey(c);
+        const sessionName = permSessionByRow[key] || projectSessions[0]?.name;
+        if (!sessionName) {
+            permAddErrorByRow = { ...permAddErrorByRow, [key]: 'No session configured for this project.' };
+            return;
+        }
+        permAddErrorByRow = { ...permAddErrorByRow, [key]: '' };
+        try {
+            await addPermissionRule(project, sessionName, c.Tool, c.Pattern, 'allow');
+            permAddedRows = new Set(permAddedRows).add(key);
+        } catch (e: any) {
+            permAddErrorByRow = { ...permAddErrorByRow, [key]: e?.message ?? String(e) };
+        }
+    }
 
     function close() {
         dispatch('close');
@@ -79,6 +136,7 @@
     // above, since it starts empty).
     $: if (project || days) {
         load();
+        loadPermissions();
     }
 
     function compareStats(a: SignatureStat, b: SignatureStat): number {
@@ -177,18 +235,28 @@
                 <div class="flex items-center gap-1 text-xs">
                     <button
                         type="button"
+                        on:click={() => (tab = 'actions')}
                         class="px-2 py-1 rounded border
                             {tab === 'actions'
                                 ? 'bg-bg-elevated border-blue-500 text-text'
                                 : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
                         Actions
                     </button>
+                    <button
+                        type="button"
+                        on:click={() => (tab = 'permissions')}
+                        class="px-2 py-1 rounded border
+                            {tab === 'permissions'
+                                ? 'bg-bg-elevated border-blue-500 text-text'
+                                : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
+                        Permissions
+                    </button>
                 </div>
             </div>
             <div class="flex items-center gap-2">
                 <button
                     type="button"
-                    on:click={load}
+                    on:click={() => (tab === 'actions' ? load() : loadPermissions())}
                     class="px-2 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
                     Refresh
                 </button>
@@ -228,7 +296,128 @@
 
         <!-- Body -->
         <div class="flex-1 min-h-0 overflow-y-auto">
-            {#if !project}
+            {#if tab === 'permissions'}
+                {#if !project}
+                    <div class="text-text-muted text-sm italic py-10 text-center">
+                        No project configured.
+                    </div>
+                {:else if permLoading}
+                    <div class="text-text-muted text-sm italic py-10 text-center">
+                        Loading permission candidates…
+                    </div>
+                {:else if permError}
+                    <div class="text-status-error text-sm py-10 text-center">{permError}</div>
+                {:else if permSafe.length === 0 && permNeedsReview.length === 0}
+                    <div class="text-text-muted text-sm italic py-10 text-center">
+                        No permission candidates for this project/period. Enable
+                        <code class="font-mono">[optimization] experience_tracking</code> to start
+                        collecting them.
+                    </div>
+                {:else}
+                    <div class="px-4 py-3">
+                        {#if permSafe.length > 0}
+                            <h3 class="text-text text-sm font-medium mb-2">
+                                Safe to auto-allow ({permSafe.length})
+                            </h3>
+                            <table class="w-full text-sm border-collapse mb-6">
+                                <thead class="bg-bg-elevated text-text-muted text-xs">
+                                    <tr>
+                                        <th class="text-left px-3 py-2 font-medium">Tool</th>
+                                        <th class="text-left px-3 py-2 font-medium">Pattern</th>
+                                        <th class="text-right px-3 py-2 font-medium">Asked</th>
+                                        <th class="text-right px-3 py-2 font-medium">Allowed</th>
+                                        <th class="text-right px-3 py-2 font-medium">Denied</th>
+                                        <th class="text-left px-3 py-2 font-medium">Session</th>
+                                        <th class="text-left px-3 py-2 font-medium"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {#each permSafe as c (rowKey(c))}
+                                        {@const key = rowKey(c)}
+                                        <tr class="border-t border-bg-border">
+                                            <td class="px-3 py-1.5 text-text font-mono text-xs">{c.Tool}</td>
+                                            <td class="px-3 py-1.5 text-text font-mono text-xs break-all">
+                                                {c.Pattern}
+                                            </td>
+                                            <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                                {c.Count}
+                                            </td>
+                                            <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                                {c.AllowCount}
+                                            </td>
+                                            <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                                {c.DenyCount}
+                                            </td>
+                                            <td class="px-3 py-1.5">
+                                                <select
+                                                    bind:value={permSessionByRow[key]}
+                                                    class="bg-bg border border-bg-border rounded px-1 py-0.5 text-xs text-text">
+                                                    {#each projectSessions as s (s.name)}
+                                                        <option value={s.name}>{s.name}</option>
+                                                    {/each}
+                                                </select>
+                                            </td>
+                                            <td class="px-3 py-1.5">
+                                                {#if permAddedRows.has(key)}
+                                                    <span class="text-status-working text-xs">Added</span>
+                                                {:else}
+                                                    <button
+                                                        type="button"
+                                                        on:click={() => addRule(c)}
+                                                        class="px-2 py-0.5 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
+                                                        Add rule
+                                                    </button>
+                                                {/if}
+                                                {#if permAddErrorByRow[key]}
+                                                    <div class="text-status-error text-xs mt-1">
+                                                        {permAddErrorByRow[key]}
+                                                    </div>
+                                                {/if}
+                                            </td>
+                                        </tr>
+                                    {/each}
+                                </tbody>
+                            </table>
+                        {/if}
+
+                        {#if permNeedsReview.length > 0}
+                            <h3 class="text-text text-sm font-medium mb-2">
+                                Needs manual review ({permNeedsReview.length})
+                            </h3>
+                            <table class="w-full text-sm border-collapse">
+                                <thead class="bg-bg-elevated text-text-muted text-xs">
+                                    <tr>
+                                        <th class="text-left px-3 py-2 font-medium">Tool</th>
+                                        <th class="text-left px-3 py-2 font-medium">Pattern</th>
+                                        <th class="text-right px-3 py-2 font-medium">Asked</th>
+                                        <th class="text-right px-3 py-2 font-medium">Allowed</th>
+                                        <th class="text-right px-3 py-2 font-medium">Denied</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {#each permNeedsReview as c (rowKey(c))}
+                                        <tr class="border-t border-bg-border">
+                                            <td class="px-3 py-1.5 text-text font-mono text-xs">{c.Tool}</td>
+                                            <td class="px-3 py-1.5 text-text font-mono text-xs break-all">
+                                                {c.Pattern}
+                                            </td>
+                                            <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                                {c.Count}
+                                            </td>
+                                            <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                                {c.AllowCount}
+                                            </td>
+                                            <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                                {c.DenyCount}
+                                            </td>
+                                        </tr>
+                                    {/each}
+                                </tbody>
+                            </table>
+                        {/if}
+                    </div>
+                {/if}
+            {:else if !project}
                 <div class="text-text-muted text-sm italic py-10 text-center">
                     No project configured.
                 </div>

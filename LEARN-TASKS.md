@@ -75,7 +75,7 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-01 | ✓ DONE (2026-09-08) | internal/experience/transcript.go, testdata/transcripts/ |
 | LN-02 | ✓ DONE (2026-09-08) | internal/experience/signature.go, internal/store/migrations.go, store.go |
 | LN-03 | ✓ DONE (2026-09-08) | internal/experience/indexer.go, manager.go, app.go, ExperiencePanel.svelte |
-| LN-04 | ○ TODO | internal/experience/allowlist.go, internal/store (permission_events), app.go |
+| LN-04 | ✓ DONE (2026-09-09) | internal/experience/allowlist.go, internal/store (permission_events), app.go |
 | LN-05 | ○ TODO | internal/experience/primer.go, internal/session/session.go, config/types.go |
 | LN-06 | ○ TODO | internal/experience/journal.go, internal/analysis/journal.go |
 | LN-07 | ○ TODO | internal/experience/failures.go |

@@ -921,6 +921,101 @@ func TestActionSamples(t *testing.T) {
 	}
 }
 
+// TestTopPermissionEvents_AggregatesAndCountsDecisions (LEARN-TASKS.md LN-04):
+// two allows and a deny for one (tool, pattern), one auto-decided row that
+// must not count towards Count (it's already covered by a rule, not a
+// candidate), and a different project's row that must not leak in.
+func TestTopPermissionEvents_AggregatesAndCountsDecisions(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC()
+
+	events := []PermissionEvent{
+		{Project: "p", Session: "S1", Tool: "Bash", Pattern: "go test ./...", Decision: "allow", Timestamp: now},
+		{Project: "p", Session: "S1", Tool: "Bash", Pattern: "go test ./...", Decision: "allow_session", Timestamp: now},
+		{Project: "p", Session: "S1", Tool: "Bash", Pattern: "go test ./...", Decision: "deny", Timestamp: now},
+		// Already auto-decided (a rule covers this) — must not inflate Count.
+		{Project: "p", Session: "S1", Tool: "Bash", Pattern: "go test ./...", Decision: "allow", Auto: true, Timestamp: now},
+		// A different project must not leak into "p"'s stats.
+		{Project: "other", Session: "S1", Tool: "Bash", Pattern: "go test ./...", Decision: "allow", Timestamp: now},
+	}
+	for _, ev := range events {
+		if err := s.InsertPermissionEvent(ev); err != nil {
+			t.Fatalf("InsertPermissionEvent: %v", err)
+		}
+	}
+
+	stats, err := s.TopPermissionEvents("p", 30, 0)
+	if err != nil {
+		t.Fatalf("TopPermissionEvents: %v", err)
+	}
+	if len(stats) != 1 {
+		t.Fatalf("TopPermissionEvents: got %d groups, want 1", len(stats))
+	}
+	got := stats[0]
+	if got.Tool != "Bash" || got.Pattern != "go test ./..." {
+		t.Errorf("got tool/pattern = %q/%q", got.Tool, got.Pattern)
+	}
+	if got.Count != 3 {
+		t.Errorf("Count = %d, want 3 (auto=1 row excluded)", got.Count)
+	}
+	if got.AllowCount != 2 {
+		t.Errorf("AllowCount = %d, want 2", got.AllowCount)
+	}
+	if got.DenyCount != 1 {
+		t.Errorf("DenyCount = %d, want 1", got.DenyCount)
+	}
+}
+
+func TestPermissionEventsForProject(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC()
+
+	events := []PermissionEvent{
+		{Project: "p", Session: "S1", Tool: "Bash", Pattern: "ls", Decision: "allow", Auto: true, Timestamp: now},
+		{Project: "p", Session: "S1", Tool: "Bash", Pattern: "rm -rf /", Decision: "deny", Auto: false, Timestamp: now.Add(time.Second)},
+		{Project: "other", Session: "S1", Tool: "Bash", Pattern: "ls", Decision: "allow", Auto: true, Timestamp: now},
+	}
+	for _, ev := range events {
+		if err := s.InsertPermissionEvent(ev); err != nil {
+			t.Fatalf("InsertPermissionEvent: %v", err)
+		}
+	}
+
+	rows, err := s.PermissionEventsForProject("p")
+	if err != nil {
+		t.Fatalf("PermissionEventsForProject: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2 (other project excluded)", len(rows))
+	}
+	// Most recent (highest id) first.
+	if rows[0].Pattern != "rm -rf /" || rows[0].Auto {
+		t.Errorf("rows[0] = %+v, want the human-decided deny first", rows[0])
+	}
+	if rows[1].Pattern != "ls" || !rows[1].Auto {
+		t.Errorf("rows[1] = %+v, want the auto-decided allow", rows[1])
+	}
+}
+
+func TestTopPermissionEvents_SinceDaysExcludesOld(t *testing.T) {
+	s := newTestStore(t)
+	old := time.Now().UTC().AddDate(0, 0, -60)
+
+	if err := s.InsertPermissionEvent(PermissionEvent{
+		Project: "p", Session: "S1", Tool: "Bash", Pattern: "git status", Decision: "allow", Timestamp: old,
+	}); err != nil {
+		t.Fatalf("InsertPermissionEvent: %v", err)
+	}
+
+	stats, err := s.TopPermissionEvents("p", 30, 0)
+	if err != nil {
+		t.Fatalf("TopPermissionEvents: %v", err)
+	}
+	if len(stats) != 0 {
+		t.Errorf("expected old row excluded by sinceDays window, got %+v", stats)
+	}
+}
+
 func TestGetSetIngestOffset(t *testing.T) {
 	s := newTestStore(t)
 

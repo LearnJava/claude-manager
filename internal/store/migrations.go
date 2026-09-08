@@ -144,11 +144,32 @@ CREATE TABLE IF NOT EXISTS imported_logfiles (
     UNIQUE(project, name, size, mtime)
 )`
 
-	sqlIdxLogsRun       = `CREATE INDEX IF NOT EXISTS idx_logs_run ON session_logs(run_id)`
-	sqlIdxRunsProject   = `CREATE INDEX IF NOT EXISTS idx_runs_project ON session_runs(project, session)`
-	sqlIdxBriefsProject = `CREATE INDEX IF NOT EXISTS idx_briefs_project ON mixed_briefs(project)`
-	sqlIdxSigProject    = `CREATE INDEX IF NOT EXISTS idx_sig_project ON action_signatures(project, sig)`
-	sqlIdxSigRun        = `CREATE INDEX IF NOT EXISTS idx_sig_run ON action_signatures(run_id)`
+	// permission_events backs the experience layer's permission-rule
+	// suggestions (LEARN-TASKS.md LN-04): one row per permission_request
+	// resolution, both auto-decided (a config/runtime rule or bypassPermissions
+	// answered it, auto=1) and human-decided (auto=0). Both are recorded —
+	// not just the human ones — so a candidate query can tell "this keeps
+	// asking a human" (auto=0) apart from "a rule already covers this"
+	// (auto=1), and never re-suggests a rule that already exists.
+	sqlCreatePermissionEvents = `
+CREATE TABLE IF NOT EXISTS permission_events (
+    id       INTEGER PRIMARY KEY,
+    project  TEXT NOT NULL,
+    session  TEXT NOT NULL,
+    run_id   INTEGER REFERENCES session_runs(id),
+    tool     TEXT NOT NULL,
+    pattern  TEXT,
+    decision TEXT NOT NULL,
+    auto     INTEGER NOT NULL DEFAULT 0,
+    ts       DATETIME NOT NULL
+)`
+
+	sqlIdxLogsRun        = `CREATE INDEX IF NOT EXISTS idx_logs_run ON session_logs(run_id)`
+	sqlIdxRunsProject    = `CREATE INDEX IF NOT EXISTS idx_runs_project ON session_runs(project, session)`
+	sqlIdxBriefsProject  = `CREATE INDEX IF NOT EXISTS idx_briefs_project ON mixed_briefs(project)`
+	sqlIdxSigProject     = `CREATE INDEX IF NOT EXISTS idx_sig_project ON action_signatures(project, sig)`
+	sqlIdxSigRun         = `CREATE INDEX IF NOT EXISTS idx_sig_run ON action_signatures(run_id)`
+	sqlIdxPermEvtProject = `CREATE INDEX IF NOT EXISTS idx_perm_evt_project ON permission_events(project, tool, pattern)`
 )
 
 func migrate(db *sql.DB) error {
@@ -162,11 +183,13 @@ func migrate(db *sql.DB) error {
 		sqlCreateActionSignatures,
 		sqlCreateIngestState,
 		sqlCreateImportedLogfiles,
+		sqlCreatePermissionEvents,
 		sqlIdxLogsRun,
 		sqlIdxRunsProject,
 		sqlIdxBriefsProject,
 		sqlIdxSigProject,
 		sqlIdxSigRun,
+		sqlIdxPermEvtProject,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {

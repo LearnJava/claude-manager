@@ -289,6 +289,23 @@ modal, the pickers, the empty state, the config round-trip) is `✓`.
 
 ---
 
+## ExperiencePanel.svelte — Permissions Tab (LEARN-TASKS.md LN-04)
+
+Same `store=nil` limitation as the Actions tab above: `GetPermissionCandidates`
+is stubbed empty in `helpers/bridge.ts`, so the real-data list/click-through
+cases below are `○`. EXP-11 overrides the stub via `page.addInitScript`/
+`page.evaluate` (same pattern as `resume.spec.ts`) to exercise the list
+rendering and the "Add rule" round-trip without a real store.
+
+| ID | Title | Steps | Assert | Status |
+|----|-------|-------|--------|--------|
+| EXP-10 | Tab switches, empty state | Click "Permissions" tab | Tab highlighted; "No permission candidates…" names the flag | **✓** |
+| EXP-11 | Suggestion list + Add rule | Override `GetPermissionCandidates` to return one safe candidate, click Add rule | Row renders under "Safe to auto-allow"; `AddPermissionRule(project, session, tool, pattern, "allow")` called; button becomes "Added" | **✓** |
+| EXP-12 | Needs-review list populates | Project with unsafe-but-frequent candidates | Rows render under "Needs manual review" with no Add-rule button | ○ |
+| EXP-13 | Per-row session picker | Project with multiple sessions | `<select>` lists all configured sessions; changing it changes AddPermissionRule's target | ○ |
+
+---
+
 ## StatusBar.svelte — Footer Metrics
 
 | ID | Title | Steps | Assert | Status |

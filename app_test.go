@@ -243,6 +243,70 @@ func TestSetSessionModelInConfig_DoesNotMutateCallerSlices(t *testing.T) {
 	}
 }
 
+// TestAddPermissionRuleInConfig_AppendsRule (LEARN-TASKS.md LN-04): the "Add
+// rule" button writes into the target session's own PermissionRules — the
+// project overlay round-trips this through the exact same
+// GetConfig/UpdateConfig path as every other session field, since
+// PermissionRules lives on SessionConfig inside the (possibly overlay-backed)
+// ProjectConfig.
+func TestAddPermissionRuleInConfig_AppendsRule(t *testing.T) {
+	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{
+		Name:     "lumen",
+		Sessions: []config.SessionConfig{{Name: "P1"}},
+	}}}
+	if !addPermissionRuleInConfig(cfg, "lumen", "P1", "Bash", "go test ./...", "allow") {
+		t.Fatal("expected a change to be reported")
+	}
+	rules := cfg.Projects[0].Sessions[0].PermissionRules
+	if len(rules) != 1 || rules[0] != (config.PermissionRule{Tool: "Bash", Pattern: "go test ./...", Decision: "allow"}) {
+		t.Fatalf("got rules %+v", rules)
+	}
+}
+
+func TestAddPermissionRuleInConfig_DuplicateIsNoOp(t *testing.T) {
+	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{
+		Name: "lumen",
+		Sessions: []config.SessionConfig{{
+			Name:            "P1",
+			PermissionRules: []config.PermissionRule{{Tool: "Bash", Pattern: "ls", Decision: "allow"}},
+		}},
+	}}}
+	if addPermissionRuleInConfig(cfg, "lumen", "P1", "Bash", "ls", "allow") {
+		t.Error("an identical (tool, pattern, decision) triple should report no change")
+	}
+	if len(cfg.Projects[0].Sessions[0].PermissionRules) != 1 {
+		t.Error("duplicate rule must not be appended")
+	}
+}
+
+func TestAddPermissionRuleInConfig_UnknownProjectOrSession(t *testing.T) {
+	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{
+		Name:     "lumen",
+		Sessions: []config.SessionConfig{{Name: "P1"}},
+	}}}
+	if addPermissionRuleInConfig(cfg, "other", "P1", "Bash", "ls", "allow") {
+		t.Error("unknown project should report no change")
+	}
+	if addPermissionRuleInConfig(cfg, "lumen", "P9", "Bash", "ls", "allow") {
+		t.Error("unknown session should report no change")
+	}
+	if len(cfg.Projects[0].Sessions[0].PermissionRules) != 0 {
+		t.Error("existing session must be untouched")
+	}
+}
+
+func TestAddPermissionRuleInConfig_DoesNotMutateCallerSlices(t *testing.T) {
+	original := []config.PermissionRule{{Tool: "Bash", Pattern: "ls", Decision: "allow"}}
+	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{
+		Name:     "lumen",
+		Sessions: []config.SessionConfig{{Name: "P1", PermissionRules: original}},
+	}}}
+	addPermissionRuleInConfig(cfg, "lumen", "P1", "Bash", "go test ./...", "allow")
+	if len(original) != 1 {
+		t.Errorf("addPermissionRuleInConfig must not mutate the caller's slice in place, got len=%d", len(original))
+	}
+}
+
 func TestSplitSessionID(t *testing.T) {
 	cases := []struct {
 		id            string

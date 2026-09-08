@@ -83,7 +83,7 @@ claude-manager/
 │   │                                #   transcript.go's Read/ReadFrom, parsing store.RenderExport's
 │   │                                #   "md" format (auto-saved per-run logs) into a Trajectory via
 │   │                                #   a FIFO tool_use/tool_result binding queue.
-│   │   └── indexer.go               # LN-17: IngestDir — recursive bulk import of a log directory
+│   │   ├── indexer.go               # LN-17: IngestDir — recursive bulk import of a log directory
 │   │                                #   (.jsonl via transcript.go, .md via mdlog.go) into
 │   │                                #   action_signatures, deduped by store.IsLogFileImported
 │   │                                #   (name+size+mtime, since one file = one closed run).
@@ -91,6 +91,9 @@ claude-manager/
 │   │                                #   SessionManager.finishRun per completed run via the
 │   │                                #   ingest_state offset (LN-02), wired in app.go and gated on
 │   │                                #   [optimization] experience_tracking.
+│   │   └── allowlist.go             # LN-04: ClassifyPermission/Candidates — a hard read-only
+│   │                                #   whitelist over permission_events (store/migrations.go),
+│   │                                #   feeding the Permissions tab's rule suggestions.
 │   ├── store/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs
 │   │   ├── migrations.go            # CREATE TABLE statements, indexes
@@ -109,7 +112,9 @@ claude-manager/
 │   │   ├── workers.ts               # Mixed programming: worker:* events, per-project tasks/
 │   │   │                            #   quality, register+dispatch+cancel actions (MP-08)
 │   │   └── experience.ts            # LN-03: fetchTopActions/fetchActionSamples wrappers +
-│   │                                #   SignatureStat/ActionRow row types for ExperiencePanel
+│   │                                #   SignatureStat/ActionRow row types for ExperiencePanel;
+│   │                                #   LN-04: fetchPermissionCandidates/addPermissionRule +
+│   │                                #   PermissionCandidate/CandidateSet types
 │   ├── components/
 │   │   ├── Sidebar.svelte           # Project tree, session indicators, start/stop/delete,
 │   │   │                            #   auto-routing trigger, resizable via drag handle
@@ -140,7 +145,9 @@ claude-manager/
 │   │   ├── MixedRun.svelte          # Mixed programming: dispatch form, live activity, round
 │   │   │                            #   timelines w/ gate output, model-quality table (MP-08)
 │   │   ├── ExperiencePanel.svelte   # LN-03: "Experience" modal, "Actions" tab — sortable
-│   │   │                            #   signature table, click a row to load sample calls
+│   │   │                            #   signature table, click a row to load sample calls;
+│   │   │                            #   LN-04: "Permissions" tab — safe/needs-review suggestion
+│   │   │                            #   tables, per-row session picker + "Add rule" button
 │   │   └── RateLimitBanner.svelte   # Rate limit countdown banner
 │   └── lib/
 │       ├── formatters.ts            # Log formatting, time, cost, tokens, percent;
@@ -1284,6 +1291,64 @@ empty-state message when `GetTopActions` returns nothing (stubbed in
 `helpers/bridge.ts`) — plus a real backend round-trip for the Settings
 "Experience layer" checkbox through `UpdateConfig`/`GetConfig`.
 
+**Permission-rule suggestions** (LN-04, `internal/experience/allowlist.go`).
+The cheapest win in the whole experience layer: a command the agent runs in
+every run and that waits on `waiting_permission` every single time, because no
+rule covers it yet. `permission_events` (`internal/store/migrations.go`) is a
+new table, not a repurposing of `action_signatures` — it records the
+*resolution* of a permission_request (tool, pattern, decision, who decided
+it), which `action_signatures` has no room for. `SessionManager.
+recordPermissionEvent` writes a row from both call sites that already resolve
+a request: `handlePermission` (a config rule, a runtime rule, or
+`bypassPermissions` — `Auto=true`) and `RespondPermission` (a human answer —
+`Auto=false`). Both are recorded, not just the human ones, so a later query
+can tell "this still needs asking" (`auto=0`) apart from "a rule already
+covers this" (`auto=1`) and never re-suggests a rule that already exists.
+Gated on the same `[optimization] experience_tracking` flag LN-03 uses (off by
+default) — permission decisions carry far less of a privacy risk than a full
+transcript, but the invariant in LEARN-TASKS.md is that *every* new piece of
+history collection is opt-in, and reusing the existing flag needed no new
+config surface.
+
+`Store.TopPermissionEvents` aggregates rows by `(project, tool, pattern)` over
+a trailing window, counting `allow`-ish vs `deny`-ish decisions — the
+precondition for a suggestion is that the human has been saying yes
+consistently, not just often. Only `auto=0` rows are counted: an `auto=1` row
+means a rule already resolves that pair automatically, so it must not inflate
+`Count` into looking like it's still an open ask. `experience.Candidates`
+turns those stats into `PermissionCandidate`s, dropping anything with fewer
+than `MinPermissionCount` (2) occurrences or with as many/more denials than
+allows — this feature only ever proposes *allow* rules, never a deny.
+
+**The classifier is a hard whitelist, never a heuristic score**
+(`ClassifyPermission`): `Read`/`Grep`/`Glob` are always safe (nothing they do
+can mutate anything, whatever the pattern); every other tool but `Bash`
+(`Edit`, `Write`, `McpTool`, ...) always requires a human, because there is no
+whitelist here for anything that writes. A `Bash` command is safe only when
+it contains none of a fixed list of dangerous substrings (`rm`, `mv`, `>`/`>>`,
+`curl`, `wget`, `ssh`, `sudo`, `git push`/`reset`/`checkout --`, `--force` —
+matched with word boundaries, so "term" doesn't trip the `rm` check) *and*
+every chained/piped segment matches one of the explicit read-only prefixes
+LEARN-TASKS.md LN-04 lists (`ls`, `cat`, `head`, `tail`, `sed -n`, `grep`,
+`rg`, `find`, `git status`/`log`/`diff`/`show`, `go build`/`test`/`vet`,
+`cargo check`/`build`/`test`/`clippy`, `npm test`/`run build`). An unmatched
+command is unsafe by default — the classifier never guesses, and a command
+that merely *looks* safe (e.g. `git log && rm -rf /`) is rejected because the
+dangerous-substring check runs on the whole line before it is ever split into
+segments.
+
+**Never auto-applied.** `Candidates` splits its output into `Safe` (cleared by
+the classifier, offered an "Add rule" button) and `NeedsReview` (frequent and
+consistently allowed, but not whitelisted — Edit/Write, or a Bash command
+outside the list) purely for display; nothing in this path writes a rule on
+its own. `App.AddPermissionRule` → `addPermissionRuleInConfig` is the actual
+write, and it goes through the exact `GetConfig`→mutate→`UpdateConfig`
+round-trip every other config edit in this app uses, appending to the target
+session's own `PermissionRules` (a duplicate `{tool, pattern, decision}`
+triple is a no-op). `ExperiencePanel.svelte`'s "Permissions" tab renders both
+lists, with a per-row session `<select>` (defaulting to the project's first
+configured session) next to each `Safe` row's "Add rule" button.
+
 ## Wails Bindings (app.go)
 
 All exported methods become async JS functions via auto-generated bindings in `frontend/wailsjs/`.
@@ -1339,6 +1404,8 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetProjectTokens(project, days)` | Token volume for a project over N days — the token twin of `GetProjectCost` |
 | `GetTopActions(project, days)` | Aggregated tool-call signatures for the "Actions" tab (LEARN-TASKS.md LN-03) |
 | `GetActionSamples(project, sig, limit)` | Concrete example rows for one signature — the "Actions" tab's click-through |
+| `GetPermissionCandidates(project, days)` | Suggested auto-allow permission rules, split into safe/needs-review — the "Permissions" tab (LEARN-TASKS.md LN-04) |
+| `AddPermissionRule(project, session, tool, pattern, decision)` | Append a `PermissionRule` to one session's config — the Permissions tab's "Add rule" button |
 | `GetRateLimitStatus()` | Current rate limit info |
 | `ExportLog(id, entries, format)` | Save log as MD/JSON/TXT via native dialog |
 | `CleanOldLogs(days)` | Delete logs older than N days from SQLite |
@@ -1470,6 +1537,7 @@ claude_path = "build/fakeclaude.exe"
 - `action_signatures` — normalized tool-call signatures mined from CLI transcripts, per run (LN-02)
 - `ingest_state` — per-CLI-session transcript byte offset, so re-indexing never re-inserts rows (LN-02)
 - `imported_logfiles` — bulk-import dedup for `IngestDir`, keyed by (project, name, size, mtime) (LN-17)
+- `permission_events` — one row per resolved permission_request (auto-decided or human), source for the Permissions tab's rule suggestions (LN-04)
 
 ## File Logging
 

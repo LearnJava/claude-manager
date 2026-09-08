@@ -1022,6 +1022,75 @@ func (a *App) GetActionSamples(project, sig string, limit int) ([]store.ActionRo
 	return a.store.ActionSamples(project, sig, limit)
 }
 
+// GetPermissionCandidates aggregates permission_events for a project into
+// suggested auto-allow rules (LEARN-TASKS.md LN-04) — the "Permissions" tab
+// of the Experience panel. Safe are (tool, pattern) pairs that keep asking,
+// have been consistently approved, and passed the read-only whitelist
+// classifier; NeedsReview holds everything else that still meets the
+// frequency/consistency bar (Edit/Write, or a Bash command outside the
+// whitelist) — never auto-applied, just surfaced so a human can decide.
+// Requires [optimization] experience_tracking to have been on for some runs;
+// with it off, both lists are simply empty.
+func (a *App) GetPermissionCandidates(project string, days int) (*experience.CandidateSet, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no store")
+	}
+	stats, err := a.store.TopPermissionEvents(project, days, 0)
+	if err != nil {
+		return nil, err
+	}
+	safe, needsReview := experience.Candidates(stats, experience.MinPermissionCount)
+	return &experience.CandidateSet{Safe: safe, NeedsReview: needsReview}, nil
+}
+
+// AddPermissionRule appends a PermissionRule to one session's config — the
+// "Add rule" button on the Permissions tab (LEARN-TASKS.md LN-04). Goes
+// through the same GetConfig→mutate→UpdateConfig round-trip every other
+// config edit in this app uses; a rule already present for this exact
+// (tool, pattern, decision) triple is a no-op rather than a duplicate.
+func (a *App) AddPermissionRule(project, sessionName, tool, pattern, decision string) error {
+	if a.cfg == nil {
+		return fmt.Errorf("no config")
+	}
+	cfg := *a.cfg
+	cfg.Projects = append([]config.ProjectConfig(nil), a.cfg.Projects...)
+	if !addPermissionRuleInConfig(&cfg, project, sessionName, tool, pattern, decision) {
+		return nil
+	}
+	return a.UpdateConfig(cfg)
+}
+
+// addPermissionRuleInConfig appends the rule to project/sessionName's
+// PermissionRules in cfg, operating on cloned slices so the caller's config
+// is never mutated in place (same rule as setSessionModelInConfig above).
+// Reports whether anything changed, so an unchanged config is never rewritten
+// to disk.
+func addPermissionRuleInConfig(cfg *config.AppConfig, project, sessionName, tool, pattern, decision string) bool {
+	for pi := range cfg.Projects {
+		if cfg.Projects[pi].Name != project {
+			continue
+		}
+		for si, sc := range cfg.Projects[pi].Sessions {
+			if sc.Name != sessionName {
+				continue
+			}
+			for _, r := range sc.PermissionRules {
+				if r.Tool == tool && r.Pattern == pattern && r.Decision == decision {
+					return false
+				}
+			}
+			sessions := append([]config.SessionConfig(nil), cfg.Projects[pi].Sessions...)
+			rules := append([]config.PermissionRule(nil), sc.PermissionRules...)
+			rules = append(rules, config.PermissionRule{Tool: tool, Pattern: pattern, Decision: decision})
+			sessions[si].PermissionRules = rules
+			cfg.Projects[pi].Sessions = sessions
+			return true
+		}
+		return false
+	}
+	return false
+}
+
 // GetProjectLogFiles lists the auto-saved session-log files in
 // <project>/.claude-manager/logs (see "Automatic Log Saving" in CLAUDE.md),
 // newest first — the Settings project-logs panel uses this to show file
