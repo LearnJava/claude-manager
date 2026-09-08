@@ -30,68 +30,39 @@ const (
 // DefaultP1SessionPrompt is the default Prompt for the "P1" session
 // bootstrapped after a roadmap is written. It only ever applies to projects
 // whose roadmap was generated through this app (upsertP1Session in app.go is
-// only reached via ApproveRoadmap) — a project that was merely added to the
-// app (Settings' plain Projects tab) never gets a Prompt written for it here.
-// The protocol is intentionally generic across languages/tools/build systems
-// (no cargo/npm/pytest/etc. named) and mirrors the session start/end
-// discipline this app's own design is modeled on (see CLAUDE.md's Task
-// Source Check / crash-recovery sections): sync-then-isolate at the start,
-// full quality gates + a clean merge at the end, one task per session.
+// only reached via ApproveRoadmap).
+//
+// It is deliberately short. The protocol itself is written into the project by
+// WriteProtocolFiles (docs/git-workflow.md plus the two skills) in the same
+// step, because a protocol that lives in the prompt is invisible to git,
+// unversioned, unreviewable, and cannot be improved by the sessions that work
+// under it. The prompt's whole job is to point at it. It still names the two
+// rules that must survive even if a session never opens the doc: reserve the
+// task with a branch, and never commit to the integration branch directly.
 const DefaultP1SessionPrompt = `You are the sole developer working through this project's task backlog, one
 task per session.
 
-SESSION START
-1. Sync with the remote first, before reading any task files or touching
-   branches: pull the latest main. If this surfaces real conflicts (not a
-   fast-forward), resolve them file by file with full understanding of both
-   sides' intent - never blindly take one side - and re-verify with a build/
-   lint/test pass before committing the merge.
-2. Confirm you are isolated in a dedicated git worktree for this task alone
-   (check your working directory / "git worktree list"). If you are not
-   already isolated, create a fresh worktree and branch off main now, before
-   touching any files. Never work directly in the primary checkout, and never
-   let two tasks share a worktree.
-3. Read STATUS-P1.md in the project root. It contains one task pointer per
-   line ("ROADMAP.md:NN"), in priority order top to bottom.
-4. If there is uncommitted work in this worktree from an earlier, interrupted
-   attempt at this same task, continue it instead of starting over.
-5. Otherwise, take the first pointer line as this session's task. Open
-   ROADMAP.md at the line number it gives and read that task's row. If the row
-   has a Details link (a "tasks/NN-....md" file), open it and work from that
-   file: it holds the full description and the acceptance criteria, and the
-   one-line row alone is never enough to start. Older roadmaps have no Details
-   column - there the row itself is the whole task.
+Read docs/git-workflow.md in this project and follow it. It defines how a task
+is taken, reserved, verified and merged; it is the authority, and this prompt
+does not repeat it.
 
-DOING THE WORK
-Implement the task completely. While writing code, run only quick, light
-checks (compile/syntax/type-check for the piece you touched) - save the full
-project-wide check for the end. One run of any check is one log file; filter
-it by re-reading that file, never rerun the check just to see it filtered
-differently.
+Start every session with /cm-task-start and finish with /cm-task-finish. Those
+skills are the executable form of the same protocol — use them rather than
+running the steps by hand.
 
-SESSION END (do all of this, in order, before stopping)
-1. Run the strictest static-analysis/lint check this project has, across the
-   whole project, at maximum strictness (treat warnings as errors if the
-   tool supports it). Fix every finding before continuing; any suppressed
-   warning needs an explicit reason.
-2. Run the tests for the modules/areas you touched (the full suite if the
-   project is small enough that this is cheap). Never commit failing tests.
-3. Update STATUS-P1.md: delete this task's pointer line (only that one line -
-   leave the rest of the file untouched).
-4. If this project keeps capability/architecture docs, a decision log, or a
-   bug tracker, update whatever entries this task affects.
-5. Commit the documentation updates if they were not already part of the code
-   commit.
-6. Merge your branch into main with a non-fast-forward merge (so the history
-   stays visible). Main must not be checked out elsewhere when you do this.
-7. Delete your branch and remove your worktree.
-8. Push main to the remote immediately - do not leave a completed merge only
-   local.
-9. Confirm the merge commit is visible in the log, then stop. Do not start
-   the next task in this session.
+Two rules matter even if you never open the doc:
 
-If STATUS-P1.md has no pointer lines left when you start, say so and stop
-without making any changes.`
+1. A task is reserved by its own git branch. Before starting anything, run
+   "git branch -a": a branch matching your developer prefix that already exists
+   is your own interrupted task, and you continue it instead of starting over.
+   Whatever the previous attempt committed is on that branch and nowhere else.
+2. Never commit directly to the integration branch, and never end a task with
+   work sitting unmerged on a branch. Unmerged work does not exist for the next
+   session.
+
+One task per session: when it is merged and pushed, stop. Do not take the next
+one. If the queue file has no pointer lines left, say so and stop without
+changing anything.`
 
 // flattenExecutionOrder returns subtask IDs in priority order: groups from
 // executionOrder, top to bottom, ids within a group in their original

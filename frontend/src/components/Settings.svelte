@@ -8,6 +8,7 @@
         GetLatestDraftRoadmap,
         GetProjectLogFiles,
         ClearProjectLogs,
+        InstallSessionProtocol,
     } from '../../wailsjs/go/main/App';
     import { EventsOn } from '../../wailsjs/runtime/runtime';
     import { initProjects } from '../stores/projects';
@@ -512,6 +513,31 @@
     // ---- Project log files (auto-saved on task/run completion — see
     // CLAUDE.md "Automatic Log Saving") ----
     let projectLogInfo: Record<number, { count: number; size: number } | null> = {};
+    // Developer-session protocol (docs/git-workflow.md + the two skills). A
+    // roadmap-generated project already has it; this is the retrofit path for
+    // projects that predate it or whose queue was written by hand.
+    let protocolBusy: number | null = null;
+    let protocolResult: Record<number, string> = {};
+
+    async function installProtocol(idx: number) {
+        if (!cfg) return;
+        const p = cfg.Projects[idx];
+        protocolBusy = idx;
+        error = '';
+        try {
+            const files = await InstallSessionProtocol(p.Name);
+            protocolResult[idx] = (files ?? []).length
+                ? `Installed: ${(files ?? []).join(', ')}`
+                : 'Already present — nothing written.';
+            protocolResult = protocolResult;
+            info = `Session protocol checked for ${p.Name}.`;
+        } catch (e: any) {
+            error = `Install protocol failed: ${e?.message ?? String(e)}`;
+        } finally {
+            protocolBusy = null;
+        }
+    }
+
     let logsBusy: number | null = null;
     let logsPendingClear: number | null = null;
     let logsPendingClearTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1158,6 +1184,29 @@
                                             Every finished task/run auto-saves its log as markdown here.
                                             Clearing removes those files and their SQLite log entries —
                                             History/Dashboard run records are kept.
+                                        </p>
+                                    </div>
+                                    <div class="border-t border-bg-border pt-2 mt-1 space-y-1">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <span class="text-xs text-text-muted">Session protocol</span>
+                                            <button
+                                                type="button"
+                                                on:click={() => installProtocol(i)}
+                                                disabled={!p.Path || protocolBusy !== null}
+                                                title="Write docs/git-workflow.md, scripts/worktree-pool.sh and the /cm-task-start, /cm-task-finish skills into this project. Existing files are never overwritten."
+                                                class="px-2 py-0.5 text-xs rounded bg-bg border border-bg-border
+                                                       text-text-muted hover:text-text disabled:opacity-40 disabled:cursor-not-allowed">
+                                                {#if protocolBusy === i}…{:else}Install session protocol{/if}
+                                            </button>
+                                        </div>
+                                        {#if protocolResult[i]}
+                                            <p class="text-[11px] text-status-ok/90 leading-snug">{protocolResult[i]}</p>
+                                        {/if}
+                                        <p class="text-[11px] text-text-muted/70 leading-snug">
+                                            Rules a queue-driven session follows: reserve a task with a branch,
+                                            work in a persistent worktree slot, merge <code>--no-ff</code> after
+                                            every commit. Without them an interrupted session silently starts its
+                                            task over. Roadmap-generated projects get this automatically.
                                         </p>
                                     </div>
                                 </li>

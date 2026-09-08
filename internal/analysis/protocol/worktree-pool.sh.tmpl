@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# A pool of persistent git worktrees: one slot per developer session, instead of
+# an add/remove cycle per task.
+#
+# Why: a worktree created fresh from HEAD on every session start cannot see what
+# the previous, interrupted attempt at the same task did — so the task gets
+# started over from scratch, as often as it gets interrupted. A slot keeps the
+# task's branch, and with it the work, across restarts. It also keeps whatever
+# the previous task warmed up (installed dependencies, build cache), which
+# `git worktree remove` would delete along with the directory.
+#
+# Usage:
+#   bash scripts/worktree-pool.sh <slot> <branch> [base]   # occupy a slot
+#   bash scripts/worktree-pool.sh release <slot> [base]    # free a slot
+#   bash scripts/worktree-pool.sh list                     # what each slot holds
+#
+#   slot   — a directory under .claude/worktrees/: p1-work, p2-work, ...
+#   branch — the task branch (p<N>-<task>); an existing one is checked out,
+#            a new one is created from base
+#   base   — base for a new branch, default {{.MainBranch}}
+#
+# `release` parks the slot on a detached HEAD at base: while a slot holds a
+# branch, `git branch -d` refuses ("used by worktree"), so the delete-branch step
+# of the completion checklist comes AFTER release. The slot itself stays.
+# A slot cannot sit on {{.MainBranch}} — the primary checkout holds it — hence
+# detached.
+#
+# The last line of output is the slot's absolute path, for
+# `cd "$(... | tail -1)"`.
+#
+# Guards (nothing is ever wiped silently):
+#   1. uncommitted work in the slot -> refuse (commit it, or sort it out);
+#   2. own commits not merged into {{.MainBranch}} -> refuse (merge or delete
+#      the branch first);
+#   3. an interrupted `git worktree add` (index.lock present, index absent, no
+#      own commits) -> repaired here: that is a half-finished checkout, not work.
+
+set -u
+
+die() { printf '%s\n' "$*" >&2; exit 1; }
+
+# The primary working tree, even when this script runs from inside a worktree:
+# --git-common-dir points at <main>/.git.
+common=$(git rev-parse --git-common-dir 2>/dev/null) || die 'Not a git repository.'
+common=$(cd "$common" && pwd) || die "Cannot read git dir: $common"
+ROOT=$(dirname "$common")
+POOL="$ROOT/.claude/worktrees"
+INTEGRATION={{.MainBranch}}
+
+# gitdir of a registered worktree (empty if the directory is not one)
+slot_gitdir() {
+  local p="$1" gd
+  [ -f "$p/.git" ] || return 1
+  gd=$(sed -n 's/^gitdir: *//p' "$p/.git" | head -1)
+  [ -n "$gd" ] && [ -d "$gd" ] && printf '%s\n' "$gd"
+}
+
+if [ "${1:-}" = "list" ]; then
+  printf '%-12s %-32s %s\n' SLOT BRANCH DIRTY
+  found=0
+  for d in "$POOL"/*-work; do
+    [ -d "$d" ] || continue
+    found=1
+    b=$(git -C "$d" branch --show-current 2>/dev/null)
+    [ -n "$b" ] || b='(detached)'
+    n=$(git -C "$d" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    printf '%-12s %-32s %s\n' "$(basename "$d")" "$b" "$n"
+  done
+  [ "$found" = 1 ] || echo '(no slots yet — the first one is created on first use)'
+  exit 0
+fi
+
+mode=occupy
+if [ "${1:-}" = "release" ]; then
+  mode=release
+  slot=${2:-}
+  base=${3:-$INTEGRATION}
+  branch=''
+  [ -n "$slot" ] || die 'Usage: worktree-pool.sh release <slot> [base]'
+else
+  slot=${1:-}
+  branch=${2:-}
+  base=${3:-$INTEGRATION}
+  [ -n "$slot" ] && [ -n "$branch" ] \
+    || die 'Usage: worktree-pool.sh <slot> <branch> [base] | release <slot> | list'
+fi
+case "$slot" in
+  *[!a-z0-9-]* | '' ) die "Bad slot name: '$slot' (a-z, 0-9, dash only)" ;;
+esac
+
+path="$POOL/$slot"
+git rev-parse --verify --quiet "$base^{commit}" >/dev/null \
+  || die "Base '$base' does not resolve to a commit."
+
+branch_exists() { git show-ref --verify --quiet "refs/heads/$1"; }
+
+# --- No slot yet: create it ---
+if ! gd=$(slot_gitdir "$path"); then
+  [ "$mode" = release ] && die "Slot $slot does not exist — nothing to free."
+  [ -e "$path" ] && die "$path exists but is not a registered worktree.
+Leftover: check 'git worktree list', run 'git worktree prune' if needed and
+remove the directory by hand."
+  mkdir -p "$POOL"
+  if branch_exists "$branch"; then
+    git worktree add "$path" "$branch" || die 'git worktree add failed.'
+  else
+    git worktree add "$path" -b "$branch" "$base" || die 'git worktree add failed.'
+  fi
+  echo "Slot $slot created, holding branch $branch."
+  printf '%s\n' "$path"
+  exit 0
+fi
+
+own_commits() { git -C "$path" log --oneline "$INTEGRATION..HEAD" 2>/dev/null | wc -l | tr -d ' '; }
+
+# --- Guard 3: interrupted checkout ---
+if [ -f "$gd/index.lock" ] && [ ! -f "$gd/index" ]; then
+  if [ "$(own_commits)" != 0 ]; then
+    die "$path has an index.lock and its own commits — not touching it."
+  fi
+  echo "Interrupted checkout detected (index.lock without index) — repairing..."
+  rm -f "$gd/index.lock"
+  git -C "$path" reset --hard HEAD >/dev/null 2>&1 || die 'Repair failed.'
+  echo 'Repaired.'
+fi
+
+# --- Guard 1: uncommitted work ---
+dirty=$(git -C "$path" status --porcelain 2>/dev/null)
+if [ -n "$dirty" ]; then
+  echo "Slot $slot has uncommitted work — NOT switched:" >&2
+  printf '%s\n' "$dirty" | head -20 >&2
+  n=$(printf '%s\n' "$dirty" | wc -l | tr -d ' ')
+  [ "$n" -gt 20 ] && echo "  ... $n entries in total" >&2
+  die "Commit it (git -C \"$path\" commit -am 'wip: ...') or clear it, then retry."
+fi
+
+# --- Guard 2: own commits not merged into the integration branch ---
+cur=$(git -C "$path" branch --show-current 2>/dev/null)
+ahead=$(own_commits)
+if [ "$ahead" != 0 ]; then
+  echo "Slot $slot: branch '${cur:-detached}' has $ahead commit(s) outside '$INTEGRATION':" >&2
+  git -C "$path" log --oneline "$INTEGRATION..HEAD" | head -10 >&2
+  die "Merge or delete them first — switching would hide them."
+fi
+
+# --- Release ---
+if [ "$mode" = release ]; then
+  git -C "$path" checkout -q --detach "$base" || die "Could not park the slot on detached $base."
+  echo "Slot $slot freed: detached HEAD at $base (branch '${cur:-detached}' is no longer held)."
+  [ -n "$cur" ] && echo "You can now: git branch -d $cur"
+  printf '%s\n' "$path"
+  exit 0
+fi
+
+# --- Switch ---
+if [ "$cur" = "$branch" ]; then
+  echo "Slot $slot is already on branch $branch."
+else
+  if branch_exists "$branch"; then
+    git -C "$path" checkout -q "$branch" || die "Could not switch to $branch."
+    echo "Slot $slot switched to existing branch $branch."
+  else
+    git -C "$path" checkout -q -b "$branch" "$base" || die "Could not create $branch from $base."
+    echo "Slot $slot: created branch $branch from $base."
+  fi
+fi
+
+printf '%s\n' "$path"

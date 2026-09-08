@@ -1,0 +1,69 @@
+---
+name: cm-task-start
+description: >
+  Starts a task under this project's developer protocol: sync with the remote,
+  check via git branch that the task is not already taken, occupy the pool slot
+  with a feature branch and publish it — the branch is the reservation.
+when_to_use: >
+  Trigger phrases: "start a task", "take the next task", "begin work on",
+  "create a branch for". Also when the user says "you are developer N".
+disable-model-invocation: true
+allowed-tools: Bash(git *) Bash(bash scripts/*) Read Edit
+---
+
+# Task start
+
+$ARGUMENTS — short kebab-case task name (e.g. `parse-config`). If not given,
+derive it from the task you are taking.
+
+Full protocol: [docs/git-workflow.md](../../../docs/git-workflow.md).
+
+## Step 1 — Sync, then see what is taken
+
+```bash
+git pull origin {{.MainBranch}}
+git branch -a
+```
+
+**The branch is the reservation** — there is no separate "in progress" registry,
+and the pointer line in `{{.QueueFile}}` stays put until the task is done.
+
+- A `p<N>-…` branch that is **yours and unfinished** → that is your interrupted
+  task. **Continue it.** Do not create a new branch and do not take a different
+  task. Find out what is already done from `git log <branch>` and
+  `git diff {{.MainBranch}}...<branch>`, not from memory — the previous session
+  could have died at any point.
+- A branch belonging to another developer number → taken; move to the next
+  pointer.
+
+## Step 2 — Take the task from the queue
+
+The **first** pointer line of `{{.QueueFile}}` whose dependencies are already
+done. Strictly top to bottom: the order encodes dependencies, not convenience.
+Open the file and line the pointer names; if that row links a details file, work
+from the details file — the row alone is navigation, not a specification.
+
+## Step 3 — Occupy your pool slot
+
+Do not create a worktree per task — occupy your persistent slot:
+
+```bash
+cd "$(bash scripts/worktree-pool.sh p1-work p1-$ARGUMENTS | tail -1)"
+git branch --show-current      # must print your branch before you edit anything
+```
+
+If the script refuses (uncommitted or unmerged work in the slot), do not force
+it: find out what is in there, it is somebody's unfinished task.
+
+## Step 4 — Publish the branch (this is the reservation)
+
+Before the first code edit, if this project has a remote:
+
+```bash
+git push origin p1-$ARGUMENTS
+```
+
+## Step 5 — Report
+
+Which task you took, which branch and slot, and whether this is a fresh start or
+the continuation of an interrupted one.

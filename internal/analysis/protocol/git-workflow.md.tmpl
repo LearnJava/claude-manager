@@ -1,0 +1,145 @@
+# Git workflow
+
+How a developer session takes a task, finishes it, and gets its work into
+`{{.MainBranch}}`. Written by claude-manager when this project's roadmap was
+approved; edit it freely — it is this project's protocol now, and the app never
+overwrites it.
+
+## The one rule everything else follows from
+
+**The state of a task lives in git, not in the session.** A branch named
+`p<N>-<task>` that exists means the task is taken and started. A session that
+was interrupted — rate limit, an API error, the app restarting — leaves that
+branch behind, and the next session finds it with `git branch` and continues it.
+
+Nothing else provides that. A session's own memory dies with its process, and a
+worktree created fresh from `{{.MainBranch}}` on every start cannot see what the
+previous attempt did. Without a branch to find, an interrupted task is silently
+started over from scratch — repeatedly, for as long as it keeps being
+interrupted.
+
+## Branches
+
+**All work happens in feature branches. Direct commits to `{{.MainBranch}}` are
+forbidden** — including docs and a one-line status update.
+
+Branch name: `p<N>-<task>`, kebab-case, developer number first —
+`p1-user-auth`, `p1-parse-config`. The prefix identifies the owner of a branch
+left behind by a crashed session.
+
+**The branch is the reservation.** The pointer line in `{{.QueueFile}}` stays in
+place until the task is finished — that file is the queue, not the progress
+tracker.
+
+## Worktree pool — mandatory
+
+Each session works in its own slot: `.claude/worktrees/p<N>-work`.
+
+```bash
+cd "$(bash scripts/worktree-pool.sh p1-work p1-<task> | tail -1)"
+```
+
+**The slot is persistent — one per developer, not one per task.** Only the
+branch changes. The slot and its branch survive an interrupted session; a
+throwaway worktree per task does not, and it also discards whatever build cache
+or installed dependencies the previous task warmed up.
+
+The script refuses to switch a slot holding uncommitted work or commits not
+merged into `{{.MainBranch}}` — a crashed session's work is never wiped
+silently. Commit (`git -C <slot> commit -am "wip: ..."`) or merge first.
+`bash scripts/worktree-pool.sh list` shows what each slot holds.
+
+The manager's own `use_worktree` setting must stay **off** for a session
+following this protocol: it would create a second, anonymous worktree from HEAD
+on every process start, and work not yet merged would be invisible to the next
+one.
+
+## Session start
+
+1. **Sync with the remote first**, before reading {{.QueueFile}} or creating a
+   branch: `git pull origin {{.MainBranch}}`. If that surfaces real conflicts
+   (not a fast-forward), resolve them file by file understanding both sides —
+   never blindly take one — and re-verify with a full check before committing
+   the merge.
+2. **`git branch -a`.** A `p<N>-…` branch that already exists is your own
+   interrupted task: **continue it.** Read `git log` and
+   `git diff {{.MainBranch}}...<branch>` to see what is already done rather than
+   assuming.
+3. Otherwise take the **first** pointer line of `{{.QueueFile}}` — priority is
+   top to bottom, and the order encodes dependencies, not preference. Open the
+   file and line it names. If that row links a details file, the details file is
+   the task; the row alone is never enough to start from.
+4. Occupy your slot with a new `p<N>-<task>` branch, then **confirm you are not
+   in the root checkout**: `git branch --show-current` must print your branch
+   before you edit anything.
+5. Publish the branch (`git push origin p<N>-<task>`) if this project has a
+   remote — its existence there reserves the task for any parallel session.
+
+If `{{.QueueFile}}` has no pointer lines left, say so and stop without changing
+anything.
+
+## Commits
+
+- One logical step = one commit; the project must at least compile before each.
+- Imperative subject line, body explains *why*, not *what*.
+- Stage specific paths (`git add path1 path2`), not `git add -A`.
+- Trailer naming the model that authored it:
+  `Co-Authored-By: Claude <model> <noreply@anthropic.com>`
+
+## Merge and push after every commit
+
+**Every commit is merged into `{{.MainBranch}}` and pushed right after it is
+made** — work is not accumulated on a branch until the task is done. Unmerged
+work does not exist for the next session, and small frequent merges replace one
+large end-of-task conflict with several trivial ones.
+
+```bash
+{{.GateBlock}}
+git commit -m "..."
+git -C <repo-root> merge --no-ff p1-<task> -m "Merge p1-<task>: ..."
+git push origin {{.MainBranch}}
+```
+
+`--no-ff` is required: it keeps "this commit series = one task" visible in
+`git log --graph`.
+
+If the root checkout is dirty and blocks the merge, merge in a throwaway
+worktree taken from the remote instead:
+
+```bash
+git worktree add .claude/worktrees/merge-tmp -b merge-tmp-<task> origin/{{.MainBranch}}
+git -C .claude/worktrees/merge-tmp merge --no-ff p1-<task> -m "Merge p1-<task>: ..."
+git -C .claude/worktrees/merge-tmp push origin HEAD:{{.MainBranch}}
+git worktree remove .claude/worktrees/merge-tmp && git branch -D merge-tmp-<task>
+```
+
+## Task completion
+
+**Run `/cm-task-finish`.** It is the executable protocol; do not hand-run the
+steps beside it. What must be true when a task is closed:
+
+- **The gate ran and is green** — the project-wide checks, at maximum
+  strictness, once, synchronously.
+- **Docs moved with the code**; at minimum the task's pointer line is deleted
+  from `{{.QueueFile}}`.
+- **The branch is merged `--no-ff` and pushed.** Never by committing on
+  `{{.MainBranch}}` directly — put the status edit in the task branch and let
+  the merge carry it.
+- **The slot is freed, then the branch deleted** (in that order — a slot holding
+  the branch makes `git branch -d` fail). The slot itself stays.
+- **The remote branch is deleted** if one was pushed.
+
+## If work is cancelled
+
+```bash
+bash scripts/worktree-pool.sh release p1-work   # refuses while unmerged commits exist
+git branch -D p1-<task>
+```
+Leave the queue untouched unless the task is genuinely abandoned — the pointer
+is what makes the next session pick it up.
+
+## Forbidden
+
+- Any commit directly to `{{.MainBranch}}`.
+- Force-push, rewriting published history, `git config`, skipping hooks.
+- Merging a red gate.

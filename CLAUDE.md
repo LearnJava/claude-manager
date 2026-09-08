@@ -45,6 +45,9 @@ claude-manager/
 │   │   ├── preflight.go             # Run analyst session (haiku, --permission-mode plan, --json-schema)
 │   │   ├── plan.go                  # TaskPlan: subtasks, execution order, dependencies, context passing
 │   │   ├── executor.go              # One-shot CLI executor for approved plan subtasks (context handoff)
+│   │   ├── protocol.go              # WriteProtocolFiles: install the developer-session protocol
+│   │   │   └── protocol/            #   into a project (git-workflow.md, worktree-pool.sh, the two
+│   │   │                            #   skills) from embedded per-project templates; never overwrites
 │   │   ├── brief.go                 # Mixed-programming brief generation (MP-06): self-contained
 │   │   │                            #   English ТЗ, verbatim excerpts, patch-format instructions
 │   │   └── schema.go                # JSON Schema for analyst structured output + brief output
@@ -483,24 +486,77 @@ win, so an operator edit in the Plan Review UI is never overwritten.
 `default_permission_mode` or `bypassPermissions` if unset — an autonomous
 `auto_restart` loop with nobody watching to answer a permission prompt needs
 full permissions, not `acceptEdits`, or it silently stalls on the first
-disallowed `Bash` call — `use_worktree = true` — bare
-`--worktree`, fresh from HEAD every run, so "one task = one session = one
-worktree" holds without any prompt-level bookkeeping — `task_source =
-"STATUS-P1.md"`, `stop_when_no_tasks = true`, `auto_restart = true`, and
-`analysis.DefaultP1SessionPrompt`) into the project — reusing the exact
-`GetConfig`→mutate→`UpdateConfig` round-trip every other project/session edit
-already goes through, no new persistence path. If a `"P1"` session already
-exists, only the `task_source`-related fields are forced so a user's manual
-model/prompt edits survive re-generating the roadmap. `DefaultP1SessionPrompt`
-is deliberately language/tool-agnostic (no build system or linter named) and
-spells out a full session-start → work → session-end protocol: sync with the
-remote and confirm worktree isolation before reading `STATUS-P1.md`; at the
-end, run the project's strictest lint/test gates once, update docs if the
-project keeps any, merge with `--no-ff`, delete the branch/worktree, and push
-`main` immediately. This prompt is only ever written for a project whose
+disallowed `Bash` call — `use_worktree = false` (see "Developer-Session
+Protocol" below: the protocol written into the project owns the worktree),
+`task_source = "STATUS-P1.md"`, `stop_when_no_tasks = true`, `auto_restart =
+true`, and `analysis.DefaultP1SessionPrompt`) into the project — reusing the
+exact `GetConfig`→mutate→`UpdateConfig` round-trip every other project/session
+edit already goes through, no new persistence path. If a `"P1"` session already
+exists, only the `task_source`-related fields and `use_worktree` are forced so
+a user's manual model/prompt edits survive re-generating the roadmap.
+`DefaultP1SessionPrompt` is short by design: it points at
+`docs/git-workflow.md` and the two skills installed alongside the roadmap, and
+restates only the two rules that must survive even if the session never opens
+the doc (a task is reserved by its branch; nothing is committed directly to the
+integration branch). This prompt is only ever written for a project whose
 roadmap went through this generate→approve flow — a project added via
 Settings' plain Projects tab (no roadmap) never has anything written to it
 by this mechanism.
+
+### Developer-Session Protocol Installed Into the Project
+
+A queue-driven session (`task_source` + `auto_restart`) needs rules for taking,
+verifying and landing a task. Those rules are written **into the project**
+(`analysis.WriteProtocolFiles`, `internal/analysis/protocol.go`, templates
+embedded from `internal/analysis/protocol/*.tmpl`), not into the session's
+prompt:
+
+| Installed file | What it is |
+|---|---|
+| `docs/git-workflow.md` | the protocol: branches, reservation, worktree pool, merge cadence, completion invariant |
+| `scripts/worktree-pool.sh` | one persistent worktree slot per developer, with guards that refuse to switch a slot holding uncommitted or unmerged work |
+| `.claude/skills/cm-task-start/SKILL.md` | executable session start |
+| `.claude/skills/cm-task-finish/SKILL.md` | executable completion: gate → doc-sync → merge `--no-ff` → push → free slot → delete branch |
+
+plus `.claude/worktrees/` added to the project's `.gitignore`
+(`config.EnsureGitignore`) — pool slots are working copies of the repository
+itself.
+
+**The load-bearing rule is that a task's state lives in git, not in the
+session.** A `p<N>-<task>` branch that exists means the task is taken and
+started; a session killed by a rate limit, a 403 or an app restart leaves that
+branch behind, and the next session finds it with `git branch` and continues it.
+Without that, an interrupted task is silently re-implemented from scratch —
+observed in this repo on 2026-09-08: the same task was implemented seven times
+in seven anonymous worktrees, four of them to a green committed state, none
+reaching `master`, for ~$12. That is also why `use_worktree` is forced **off**
+for such a session (`upsertP1Session`): the manager's bare `--worktree` makes a
+fresh anonymous worktree from HEAD on every process start, which is exactly the
+mechanism that loses the previous attempt.
+
+**Why files rather than a longer prompt.** A prompt is invisible to git,
+unversioned, unreviewable, cannot be improved by the sessions working under it,
+and is silently truncated by nobody's error message. `DefaultP1SessionPrompt` is
+therefore one paragraph pointing at `docs/git-workflow.md`; the protocol is the
+repository's, and the app never touches it again.
+
+**Never overwrites.** Every file is skipped if it already exists — a project may
+have its own protocol (lumen-browser does, with different skill names), and its
+version is the authority. A second call therefore writes nothing.
+
+**Per-project rendering.** `ProtocolParams` carries the queue file (the
+session's `task_source`), the integration branch (`gitutil.MainBranch`: what
+`origin/HEAD` says, else the checked-out branch, else whichever of main/master
+exists, else `main`) and the project's `Gates`. With gates configured the
+finish skill lists the real commands; without them it describes what a gate must
+be and deliberately names no build system — the app writes protocols into
+projects whose language it does not know.
+
+**Two entry points.** `ApproveRoadmap` installs it in the same step that writes
+`ROADMAP.md`/`STATUS-P1.md`, because a queue without rules for working through
+it is the setup that re-implements its own tasks. `InstallSessionProtocol
+(project)` is the retrofit path for a project that predates this or whose queue
+was written by hand.
 
 ### CLAUDE.md Generation
 
@@ -1078,6 +1134,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetSessionRoadmap(project, session)` | Roadmap tree for the TaskPanel "Roadmap" tab (tasks + done/current/pending, one group node per pointed-at roadmap file); nil when the session has no task source or the project has no roadmap |
 | `GetRoadmapTaskDetail(project, relPath)` | Body of one `tasks/NN-*.md` file (path confined to the project folder) |
 | `GetRoadmapRowDetail(project, roadmapFile, line)` | Long-form text of one roadmap row (its `note` column, else the raw row) for roadmaps that keep descriptions inline |
+| `InstallSessionProtocol(project)` | Write the developer-session protocol (`docs/git-workflow.md`, `scripts/worktree-pool.sh`, the two skills) into an existing project; returns the files actually created, never overwrites |
 | `HasClaudeMd(projectPath)` | Whether `<projectPath>/CLAUDE.md` exists (sidebar banner check) |
 | `GenerateClaudeMdSession(project)` | Bootstrap (or re-point) the "Init" session with `analysis.ClaudeMdInitPrompt` and start it |
 | `StartAdHocChatSession(project)` | Bootstrap (or reuse) a plain interactive "Chat" session (no prompt/task_source) and start it |

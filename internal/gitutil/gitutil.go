@@ -45,3 +45,34 @@ func EnsureRepoWithCommit(ctx context.Context, root string) error {
 	}
 	return nil
 }
+
+// MainBranch reports the name of root's integration branch — the one a task
+// branch is cut from and merged back into. Order of evidence: what the remote
+// says its HEAD is, then the checked-out branch, then whichever of main/master
+// exists locally. Falls back to "main" for a repository with no commits yet
+// (git's own default since 2.28), so a freshly bootstrapped project still gets
+// a usable protocol.
+func MainBranch(ctx context.Context, root string) string {
+	if out, err := runGit(ctx, root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		if name := strings.TrimSpace(out); name != "" {
+			// "origin/main" -> "main"
+			if i := strings.LastIndex(name, "/"); i >= 0 && i+1 < len(name) {
+				name = name[i+1:]
+			}
+			if name != "" {
+				return name
+			}
+		}
+	}
+	if out, err := runGit(ctx, root, "symbolic-ref", "--short", "HEAD"); err == nil {
+		if name := strings.TrimSpace(out); name != "" {
+			return name
+		}
+	}
+	for _, candidate := range []string{"main", "master"} {
+		if _, err := runGit(ctx, root, "rev-parse", "--verify", "--quiet", "refs/heads/"+candidate); err == nil {
+			return candidate
+		}
+	}
+	return "main"
+}

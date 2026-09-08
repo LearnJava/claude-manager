@@ -1,0 +1,108 @@
+---
+name: cm-task-finish
+description: >
+  Finishes a task under this project's developer protocol: run the gate, sync
+  the docs, drop the task's pointer from the queue, merge --no-ff into
+  {{.MainBranch}}, push, free the pool slot and delete the branch.
+when_to_use: >
+  Trigger phrases: "finish the task", "merge the branch", "task is ready",
+  "ready to merge", "done with the task". Also when the implementation is
+  complete and the checks pass.
+# Bash is unrestricted here on purpose: this skill runs the project's own gate
+# commands, and the app that installs it does not know what they are.
+allowed-tools: Bash Read Edit
+---
+
+# Task completion
+
+$ARGUMENTS — the task branch. If not given: `git branch --show-current`.
+
+Full protocol and the completion invariant:
+[docs/git-workflow.md](../../../docs/git-workflow.md).
+
+> **This skill is the final gate.** Do not run the project-wide checks by hand
+> right before invoking it — that pays twice for the same work. While coding,
+> quick local checks are enough; the full pass happens once, here.
+
+> **Run the gate SYNCHRONOUSLY** — an ordinary Bash call with a generous
+> timeout, never in the background. Backgrounded output is buffered, looks
+> empty, and invites minutes of polling followed by a second run of the same
+> command. Write output to a file and filter that file with grep; never re-run
+> the gate just to see it filtered differently.
+
+> **"Merge and push after every commit" means steps 1–5 already ran during the
+> task.** Here they close out the last commit.
+
+## Step 1 — Gate
+
+{{.GateInstructions}}
+
+A red gate means the task is not finished. Fix it; do not suppress it, do not
+skip tests to get it green.
+
+## Step 2 — Sync the docs
+
+1. **`{{.QueueFile}}`** — delete the finished task's pointer line, and only that
+   line. A pointer is a LINE NUMBER: verify against the file itself
+   (`sed -n 'NNp' <file>`), never from memory; other edits move it.
+2. If the task's own file or table tracks status, mark it done with the date.
+3. If this project keeps capability/architecture docs, a decision log or a bug
+   tracker, update whatever entries this task affects.
+4. If you inserted or deleted lines in a file that pointers address, re-index
+   every affected pointer and verify each with `sed -n 'NNp'`.
+
+## Step 3 — Commit the docs
+
+If the doc updates were not part of the code commit, commit them separately.
+
+## Step 4 — Merge into {{.MainBranch}}
+
+Committing on `{{.MainBranch}}` directly is forbidden — the status edit travels
+in the branch and arrives as part of the merge.
+
+```bash
+git -C <repo-root> merge --no-ff $ARGUMENTS -m "Merge $ARGUMENTS: <one line>"
+```
+
+If the root checkout holds someone else's uncommitted files and blocks the
+merge, do it in a throwaway worktree from the remote:
+
+```bash
+git worktree add .claude/worktrees/merge-tmp -b merge-tmp-$ARGUMENTS origin/{{.MainBranch}}
+git -C .claude/worktrees/merge-tmp status --short        # MUST be empty
+git -C .claude/worktrees/merge-tmp merge --no-ff $ARGUMENTS -m "Merge $ARGUMENTS: <one line>"
+git -C .claude/worktrees/merge-tmp push origin HEAD:{{.MainBranch}}
+git worktree remove .claude/worktrees/merge-tmp && git branch -D merge-tmp-$ARGUMENTS
+```
+
+`--no-ff` is required.
+
+## Step 5 — Push
+
+```bash
+git push origin {{.MainBranch}}
+```
+
+## Step 6 — Free the slot, then delete the branch
+
+Order matters: while the slot holds the branch, `git branch -d` refuses.
+
+```bash
+bash scripts/worktree-pool.sh release p1-work
+git branch -d $ARGUMENTS
+git push origin --delete $ARGUMENTS     # if the branch was published
+```
+
+The slot itself is **not** removed — it is persistent.
+
+## Step 7 — Verify
+
+```bash
+git log --oneline --graph -5
+git status --short
+bash scripts/worktree-pool.sh list
+```
+
+The merge commit is visible, the tree is clean, the slot is on a detached HEAD.
+Report what was merged, the gate result, and which pointer left the queue. Then
+stop — do not start the next task in this session.

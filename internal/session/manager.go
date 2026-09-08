@@ -10,6 +10,7 @@ import (
 
 	"claude-manager/internal/analysis"
 	"claude-manager/internal/config"
+	"claude-manager/internal/gitutil"
 	"claude-manager/internal/logger"
 	"claude-manager/internal/permission"
 	"claude-manager/internal/store"
@@ -1718,6 +1719,23 @@ func (m *SessionManager) ApproveRoadmapFiles(planID int64, overwrite bool) (plan
 	if err != nil {
 		return nil, "", "", err
 	}
+	// The roadmap alone is a queue with no rules for working through it. The
+	// protocol is what makes an interrupted session harmless: it reserves a task
+	// with a branch and merges after every commit, so the next session finds the
+	// work instead of starting the task over. Installed here, in the same step
+	// that creates the queue, because a project that gets one without the other
+	// is exactly the setup that silently re-implements its own tasks.
+	protocolFiles, err := analysis.WriteProtocolFiles(path, analysis.ProtocolParams{
+		QueueFile:  filepath.Base(statusPath),
+		MainBranch: gitutil.MainBranch(context.Background(), path),
+		Gates:      m.projectGates(plan.Project),
+	})
+	if err != nil {
+		return nil, "", "", err
+	}
+	if len(protocolFiles) > 0 {
+		logger.L.Info("manager.protocol_written", "project", plan.Project, "files", strings.Join(protocolFiles, ", "))
+	}
 	plan.Status = analysis.PlanStatusCompleted
 	now := time.Now()
 	plan.CompletedAt = &now
@@ -1791,6 +1809,63 @@ func (m *SessionManager) GetPlan(planID int64) (*analysis.TaskPlan, error) {
 }
 
 // projectPath resolves a configured project name to its filesystem path.
+// InstallProtocol writes the developer-session protocol into project's folder
+// without generating or touching a roadmap — the retrofit path for a project
+// that predates it, or one whose queue was written by hand. Returns the files
+// actually created; already-present ones are left alone, so calling it twice is
+// a no-op and a project's own edits are never clobbered.
+//
+// The queue file is taken from the project's first task_source session, since
+// that is the file the protocol has to tell the session to read.
+func (m *SessionManager) InstallProtocol(project string) ([]string, error) {
+	path, err := m.projectPath(project)
+	if err != nil {
+		return nil, err
+	}
+	files, err := analysis.WriteProtocolFiles(path, analysis.ProtocolParams{
+		QueueFile:  m.projectQueueFile(project),
+		MainBranch: gitutil.MainBranch(context.Background(), path),
+		Gates:      m.projectGates(project),
+	})
+	if err != nil {
+		return nil, err
+	}
+	logger.L.Info("manager.protocol_installed", "project", project, "files", strings.Join(files, ", "))
+	return files, nil
+}
+
+// projectQueueFile returns the task_source of project's first queue-driven
+// session, or "" to let ProtocolParams fall back to its default.
+func (m *SessionManager) projectQueueFile(project string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.cfg.Projects {
+		if m.cfg.Projects[i].Name != project {
+			continue
+		}
+		for _, s := range m.cfg.Projects[i].Sessions {
+			if ts := strings.TrimSpace(s.TaskSource); ts != "" {
+				return ts
+			}
+		}
+	}
+	return ""
+}
+
+// projectGates returns project's configured blocking check commands, or nil.
+// Used to render the project's real gate into the installed protocol instead
+// of a language-agnostic description of one.
+func (m *SessionManager) projectGates(project string) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.cfg.Projects {
+		if m.cfg.Projects[i].Name == project {
+			return append([]string(nil), m.cfg.Projects[i].Gates...)
+		}
+	}
+	return nil
+}
+
 func (m *SessionManager) projectPath(project string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -328,6 +328,7 @@ func upsertP1Session(cfg *config.AppConfig, project string) {
 				sessions[si].TaskSource = "STATUS-P1.md"
 				sessions[si].StopWhenNoTasks = true
 				sessions[si].AutoRestart = true
+				sessions[si].UseWorktree = false
 				cfg.Projects[pi].Sessions = sessions
 				return
 			}
@@ -344,12 +345,31 @@ func upsertP1Session(cfg *config.AppConfig, project string) {
 			TaskSource:      "STATUS-P1.md",
 			StopWhenNoTasks: true,
 			AutoRestart:     true,
-			UseWorktree:     true, // one task = one session = one worktree (bare --worktree: fresh from HEAD every run)
+			// Off deliberately, and forced off above even for a pre-existing P1:
+			// the protocol installed into the project (analysis.WriteProtocolFiles)
+			// owns the worktree, keeping one persistent slot per developer whose
+			// branch survives an interrupted run. A bare --worktree would add a
+			// second, anonymous one made fresh from HEAD on every process start,
+			// and any work not yet merged would be invisible to the next session.
+			UseWorktree:     false,
 			Prompt:          analysis.DefaultP1SessionPrompt,
 		})
 		cfg.Projects[pi].Sessions = sessions
 		return
 	}
+}
+
+// InstallSessionProtocol writes the developer-session protocol
+// (docs/git-workflow.md, scripts/worktree-pool.sh, the /cm-task-start and
+// /cm-task-finish skills) into an existing project and gitignores the worktree
+// pool. Returns the files actually created — existing ones are left untouched,
+// so a project that already has its own protocol keeps it and a second call
+// creates nothing.
+//
+// ApproveRoadmap installs the same files for a project whose roadmap this app
+// generated; this is the retrofit path for everything else.
+func (a *App) InstallSessionProtocol(project string) ([]string, error) {
+	return a.manager.InstallProtocol(project)
 }
 
 // HasClaudeMd reports whether projectPath already contains a CLAUDE.md.

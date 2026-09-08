@@ -68,3 +68,26 @@ func TestEnsureRepoWithCommit_NotAGitBinary(t *testing.T) {
 		t.Fatal("expected an error for an invalid git subcommand")
 	}
 }
+
+func TestMainBranch_UsesCheckedOutBranch(t *testing.T) {
+	dir := t.TempDir()
+	if err := EnsureRepoWithCommit(context.Background(), dir); err != nil {
+		t.Fatalf("EnsureRepoWithCommit: %v", err)
+	}
+	// Deliberately not main/master: detection has to follow the repository,
+	// not a guess from a hardcoded list.
+	if _, err := runGit(context.Background(), dir, "checkout", "-b", "trunk"); err != nil {
+		t.Fatalf("checkout -b trunk: %v", err)
+	}
+	if got := MainBranch(context.Background(), dir); got != "trunk" {
+		t.Errorf("MainBranch = %q, want trunk", got)
+	}
+}
+
+// A protocol installed into a repository that does not exist yet still has to
+// name some integration branch; git's own default since 2.28 is the safe guess.
+func TestMainBranch_FallsBackToMain(t *testing.T) {
+	if got := MainBranch(context.Background(), t.TempDir()); got != "main" {
+		t.Errorf("MainBranch on a non-repo = %q, want main", got)
+	}
+}

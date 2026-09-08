@@ -506,3 +506,56 @@ func TestGetRoadmapRowDetail(t *testing.T) {
 		t.Error("path escaping the project must be rejected")
 	}
 }
+
+// TestUpsertP1Session_DoesNotUseManagerWorktree is the guard on the change that
+// made an interrupted session recoverable at all. With the manager's own
+// --worktree on, every process start gets a fresh anonymous worktree cut from
+// HEAD, so an interrupted task's branch is invisible to the next run and the
+// task is silently implemented again. The protocol written into the project
+// owns the worktree instead (one persistent slot per developer).
+func TestUpsertP1Session_DoesNotUseManagerWorktree(t *testing.T) {
+	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{Name: "lumen"}}}
+	upsertP1Session(cfg, "lumen")
+
+	sessions := cfg.Projects[0].Sessions
+	if len(sessions) != 1 || sessions[0].Name != "P1" {
+		t.Fatalf("expected one P1 session, got %+v", sessions)
+	}
+	if sessions[0].UseWorktree {
+		t.Error("P1 must not use the manager's --worktree: the project's protocol owns the worktree")
+	}
+	if sessions[0].TaskSource != "STATUS-P1.md" || !sessions[0].AutoRestart || !sessions[0].StopWhenNoTasks {
+		t.Errorf("P1 queue wiring not set: %+v", sessions[0])
+	}
+	if sessions[0].Prompt != analysis.DefaultP1SessionPrompt {
+		t.Error("P1 should carry DefaultP1SessionPrompt")
+	}
+}
+
+// A P1 session left over from before this change carries use_worktree = true;
+// re-approving a roadmap has to clear it, or the project keeps the exact
+// behaviour the protocol exists to prevent. The user's own model/prompt edits
+// still survive.
+func TestUpsertP1Session_ClearsStaleWorktreeFlagOnExisting(t *testing.T) {
+	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{
+		Name: "lumen",
+		Sessions: []config.SessionConfig{{
+			Name:        "P1",
+			Model:       "opus",
+			Prompt:      "my own prompt",
+			UseWorktree: true,
+		}},
+	}}}
+	upsertP1Session(cfg, "lumen")
+
+	got := cfg.Projects[0].Sessions[0]
+	if got.UseWorktree {
+		t.Error("stale use_worktree = true was not cleared")
+	}
+	if got.Model != "opus" || got.Prompt != "my own prompt" {
+		t.Errorf("manual edits were overwritten: %+v", got)
+	}
+	if got.TaskSource != "STATUS-P1.md" {
+		t.Errorf("TaskSource = %q, want STATUS-P1.md", got.TaskSource)
+	}
+}
