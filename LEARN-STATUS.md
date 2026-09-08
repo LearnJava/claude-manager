@@ -7,7 +7,6 @@
 > таблице Status файла LEARN-TASKS.md, не здесь. Протокол — LEARN-TASKS.md,
 > раздел «Как сессия берёт задачу».
 
-LEARN-TASKS.md:892
 LEARN-TASKS.md:386
 LEARN-TASKS.md:428
 LEARN-TASKS.md:464

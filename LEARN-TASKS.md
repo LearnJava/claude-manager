@@ -85,7 +85,7 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-14 | ○ TODO | internal/optimization/cache.go, internal/experience/affinity.go |
 | LN-15 | ○ TODO | internal/experience/handoff.go, internal/optimization/context.go |
 | LN-16 | ○ TODO | internal/experience/regression.go, CostDashboard.svelte |
-| LN-17 | ● IN PROGRESS | internal/experience/mdlog.go, indexer.go (IngestDir), testdata/logfiles/ |
+| LN-17 | ✓ DONE (2026-09-08) | internal/experience/mdlog.go, indexer.go (IngestDir), testdata/logfiles/ |
 | LN-18 | ○ TODO | internal/experience/duration.go, primer.go, ExperiencePanel.svelte |
 
 > LN-17 и LN-18 дописаны после разведки корпуса. LN-17 по приоритету идёт

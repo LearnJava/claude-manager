@@ -854,6 +854,34 @@ func (s *Store) SetIngestOffset(cliSessionID, path string, offset int64) error {
 	return err
 }
 
+// IsLogFileImported reports whether a file with this exact (project, name,
+// size, mtime) has already been bulk-imported by IngestDir (LEARN-TASKS.md
+// LN-17) — the dedup check that makes re-running an import over the same
+// directory a no-op.
+func (s *Store) IsLogFileImported(project, name string, size int64, mtime time.Time) (bool, error) {
+	const q = `SELECT 1 FROM imported_logfiles WHERE project=? AND name=? AND size=? AND mtime=?`
+	var one int
+	err := s.db.QueryRow(q, project, name, size, mtime).Scan(&one)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// MarkLogFileImported records a file as imported so a later IngestDir pass
+// over the same directory skips it. Idempotent: re-marking the same
+// (project, name, size, mtime) triple is a no-op rather than an error.
+func (s *Store) MarkLogFileImported(project, name string, size int64, mtime time.Time) error {
+	const q = `INSERT INTO imported_logfiles (project, name, size, mtime, imported_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(project, name, size, mtime) DO NOTHING`
+	_, err := s.db.Exec(q, project, name, size, mtime, time.Now())
+	return err
+}
+
 // parseAggTime parses the string an aggregate function (MIN(ts)/MAX(ts))
 // hands back for a DATETIME column. Unlike a plain column reference, the
 // modernc.org/sqlite driver cannot infer the declared type through an
