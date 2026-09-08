@@ -1,24 +1,15 @@
-# STATUS-LN — очередь слоя опыта
-
-> Канонный формат проекта: ниже — ТОЛЬКО голые строки-указатели
-> `LEARN-TASKS.md:NN` на заголовки открытых задач, приоритет сверху вниз
-> (порядок зависимостей, а не номеров: LN-17 идёт третьим, LN-18 — после
-> LN-05). Завершённая задача = строка удаляется. Статус «в работе» — в
-> таблице Status файла LEARN-TASKS.md, не здесь. Протокол — LEARN-TASKS.md,
-> раздел «Как сессия берёт задачу».
-
-LEARN-TASKS.md:386
-LEARN-TASKS.md:428
-LEARN-TASKS.md:464
-LEARN-TASKS.md:982
-LEARN-TASKS.md:503
-LEARN-TASKS.md:543
-LEARN-TASKS.md:590
-LEARN-TASKS.md:652
-LEARN-TASKS.md:703
-LEARN-TASKS.md:731
-LEARN-TASKS.md:764
-LEARN-TASKS.md:792
-LEARN-TASKS.md:819
-LEARN-TASKS.md:838
-LEARN-TASKS.md:866
+LEARN-TASKS.md:389
+LEARN-TASKS.md:431
+LEARN-TASKS.md:467
+LEARN-TASKS.md:985
+LEARN-TASKS.md:506
+LEARN-TASKS.md:546
+LEARN-TASKS.md:593
+LEARN-TASKS.md:655
+LEARN-TASKS.md:706
+LEARN-TASKS.md:734
+LEARN-TASKS.md:767
+LEARN-TASKS.md:795
+LEARN-TASKS.md:822
+LEARN-TASKS.md:841
+LEARN-TASKS.md:869
