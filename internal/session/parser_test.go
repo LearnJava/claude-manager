@@ -635,7 +635,7 @@ func TestAbbreviateInput(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := abbreviateInput(tc.toolName, tc.input)
+			got := AbbreviateInput(tc.toolName, tc.input)
 			if got != tc.want {
 				t.Errorf("got %q, want %q", got, tc.want)
 			}
@@ -647,7 +647,7 @@ func TestAbbreviateInput_NeverTruncates(t *testing.T) {
 	// A Write with a whole file as content must survive the parser intact:
 	// the UI collapses it behind a ＋ toggle instead.
 	body := strings.Repeat("line of code\\n", 500)
-	got := abbreviateInput("MyCustomTool", json.RawMessage(`{"content":"`+body+`"}`))
+	got := AbbreviateInput("MyCustomTool", json.RawMessage(`{"content":"`+body+`"}`))
 	if !strings.Contains(got, body) {
 		t.Errorf("long input was truncated: len=%d", len(got))
 	}

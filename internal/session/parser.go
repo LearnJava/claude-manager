@@ -335,7 +335,7 @@ func handleAssistant(ev rawStreamEvent, now time.Time) ParsedEvent {
 					todos = parsed
 				}
 			}
-			abbrev := abbreviateInput(c.Name, c.Input)
+			abbrev := AbbreviateInput(c.Name, c.Input)
 			entries = append(entries, config.LogEntry{
 				Time:      now,
 				Level:     "tool",
@@ -534,12 +534,14 @@ func handlePermission(ev rawStreamEvent) ParsedEvent {
 
 // ---- Helpers ----
 
-// abbreviateInput reduces a tool_use input to its salient field (the Bash
+// AbbreviateInput reduces a tool_use input to its salient field (the Bash
 // command, the file path, the search pattern — rules from PLAN.md section 6.3)
 // but does NOT truncate the value: the full text must reach the UI and the log
 // store so nothing is lost. Long entries are collapsed at display time by
-// LogStream.svelte, not here.
-func abbreviateInput(toolName string, inputJSON json.RawMessage) string {
+// LogStream.svelte, not here. Exported so internal/experience (LN-01) can
+// derive the same InputText from raw JSONL transcripts without duplicating
+// these rules.
+func AbbreviateInput(toolName string, inputJSON json.RawMessage) string {
 	if len(inputJSON) == 0 {
 		return ""
 	}
