@@ -93,9 +93,43 @@ CREATE TABLE IF NOT EXISTS mixed_briefs (
     created_at DATETIME NOT NULL
 )`
 
+	// action_signatures/ingest_state back the experience layer (LEARN-TASKS.md
+	// LN-02): normalized tool-call signatures mined from CLI transcripts
+	// (LN-01), aggregated per project by TopSignatures for the "Actions" tab
+	// (LN-03) and downstream promotion into permission/skill candidates
+	// (LN-04/07/08). ingest_state is the per-transcript offset checkpoint so
+	// re-indexing a CLI session's JSONL never re-inserts rows already seen.
+	sqlCreateActionSignatures = `
+CREATE TABLE IF NOT EXISTS action_signatures (
+    id             INTEGER PRIMARY KEY,
+    project        TEXT NOT NULL,
+    session        TEXT NOT NULL,
+    run_id         INTEGER REFERENCES session_runs(id),
+    cli_session_id TEXT,
+    task_ptr       TEXT,
+    step_index     INTEGER NOT NULL,
+    tool           TEXT NOT NULL,
+    sig            TEXT NOT NULL,
+    arg            TEXT,
+    is_error       INTEGER DEFAULT 0,
+    out_tokens     INTEGER DEFAULT 0,
+    result_chars   INTEGER DEFAULT 0,
+    ts             DATETIME NOT NULL
+)`
+
+	sqlCreateIngestState = `
+CREATE TABLE IF NOT EXISTS ingest_state (
+    cli_session_id TEXT PRIMARY KEY,
+    path           TEXT NOT NULL,
+    offset         INTEGER NOT NULL,
+    updated_at     DATETIME NOT NULL
+)`
+
 	sqlIdxLogsRun       = `CREATE INDEX IF NOT EXISTS idx_logs_run ON session_logs(run_id)`
 	sqlIdxRunsProject   = `CREATE INDEX IF NOT EXISTS idx_runs_project ON session_runs(project, session)`
 	sqlIdxBriefsProject = `CREATE INDEX IF NOT EXISTS idx_briefs_project ON mixed_briefs(project)`
+	sqlIdxSigProject    = `CREATE INDEX IF NOT EXISTS idx_sig_project ON action_signatures(project, sig)`
+	sqlIdxSigRun        = `CREATE INDEX IF NOT EXISTS idx_sig_run ON action_signatures(run_id)`
 )
 
 func migrate(db *sql.DB) error {
@@ -106,9 +140,13 @@ func migrate(db *sql.DB) error {
 		sqlCreatePlanSubtasks,
 		sqlCreateDailyMetrics,
 		sqlCreateMixedBriefs,
+		sqlCreateActionSignatures,
+		sqlCreateIngestState,
 		sqlIdxLogsRun,
 		sqlIdxRunsProject,
 		sqlIdxBriefsProject,
+		sqlIdxSigProject,
+		sqlIdxSigRun,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {

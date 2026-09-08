@@ -97,6 +97,43 @@ type MixedBrief struct {
 	CreatedAt time.Time
 }
 
+// ActionRow represents a row in action_signatures — one normalized tool call
+// mined from a CLI transcript (LEARN-TASKS.md LN-01/LN-02). RunID is nil when
+// the row was ingested from a transcript with no matching session_runs row
+// yet (e.g. an in-flight run).
+type ActionRow struct {
+	ID           int64
+	Project      string
+	Session      string
+	RunID        *int64
+	CLISessionID string
+	TaskPtr      string
+	StepIndex    int
+	Tool         string
+	Sig          string
+	Arg          string
+	IsError      bool
+	OutTokens    int64
+	ResultChars  int
+	Timestamp    time.Time
+}
+
+// SignatureStat aggregates action_signatures rows sharing the same (project,
+// sig) — the row shape behind the "Actions" tab (LN-03) and the input to
+// downstream candidate mining (LN-04 permission rules, LN-07/08 skill
+// promotion).
+type SignatureStat struct {
+	Sig          string
+	Tool         string
+	Count        int
+	DistinctRuns int
+	ErrorRate    float64
+	SumOutTokens int64
+	SampleArgs   []string
+	FirstSeen    time.Time
+	LastSeen     time.Time
+}
+
 // Store wraps a SQLite database and provides CRUD for all tables.
 type Store struct {
 	db *sql.DB
@@ -629,6 +666,213 @@ func (s *Store) ListBriefs(project string, limit int) ([]*MixedBrief, error) {
 		briefs = append(briefs, b)
 	}
 	return briefs, rows.Err()
+}
+
+// --- action_signatures / ingest_state (LEARN-TASKS.md LN-02) ---
+
+// InsertActions batch-inserts action rows in a single transaction, mirroring
+// InsertLogs — the indexer (LN-03) ingests a transcript's whole unread tail
+// per call.
+func (s *Store) InsertActions(rows []ActionRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	stmt, err := tx.Prepare(
+		`INSERT INTO action_signatures
+	    (project, session, run_id, cli_session_id, task_ptr, step_index, tool, sig, arg, is_error, out_tokens, result_chars, ts)
+	    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, r := range rows {
+		isErr := 0
+		if r.IsError {
+			isErr = 1
+		}
+		if _, err := stmt.Exec(
+			r.Project, r.Session, nullInt64(r.RunID), nullStr(r.CLISessionID),
+			nullStr(r.TaskPtr), r.StepIndex, r.Tool, r.Sig, nullStr(r.Arg),
+			isErr, r.OutTokens, r.ResultChars, r.Timestamp,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ActionsForRun returns all action rows for one session_runs ID, in step order.
+func (s *Store) ActionsForRun(runID int64) ([]*ActionRow, error) {
+	const q = `SELECT id, project, session, run_id, cli_session_id, task_ptr, step_index, tool, sig, arg, is_error, out_tokens, result_chars, ts
+    FROM action_signatures WHERE run_id=? ORDER BY step_index ASC`
+	rows, err := s.db.Query(q, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*ActionRow
+	for rows.Next() {
+		r, err := scanAction(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func scanAction(row rowScanner) (*ActionRow, error) {
+	var r ActionRow
+	var runID sql.NullInt64
+	var cliSessionID, taskPtr, arg sql.NullString
+	var isErr int
+	err := row.Scan(
+		&r.ID, &r.Project, &r.Session, &runID, &cliSessionID, &taskPtr,
+		&r.StepIndex, &r.Tool, &r.Sig, &arg, &isErr, &r.OutTokens, &r.ResultChars, &r.Timestamp,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if runID.Valid {
+		v := runID.Int64
+		r.RunID = &v
+	}
+	r.CLISessionID = cliSessionID.String
+	r.TaskPtr = taskPtr.String
+	r.Arg = arg.String
+	r.IsError = isErr != 0
+	return &r, nil
+}
+
+// TopSignatures aggregates action_signatures for a project over the last
+// sinceDays days, most frequent signature first. Pass limit<=0 for no limit.
+func (s *Store) TopSignatures(project string, sinceDays, limit int) ([]SignatureStat, error) {
+	q := `SELECT sig, tool, COUNT(*), COUNT(DISTINCT run_id),
+       SUM(CASE WHEN is_error THEN 1 ELSE 0 END), SUM(out_tokens), MIN(ts), MAX(ts)
+    FROM action_signatures
+    WHERE project=? AND ts >= datetime('now', ?)
+    GROUP BY sig, tool
+    ORDER BY COUNT(*) DESC`
+	args := []any{project, fmt.Sprintf("-%d days", sinceDays)}
+	if limit > 0 {
+		q += " LIMIT ?"
+		args = append(args, limit)
+	}
+
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []SignatureStat
+	for rows.Next() {
+		var st SignatureStat
+		var errCount int
+		var firstSeen, lastSeen string
+		if err := rows.Scan(&st.Sig, &st.Tool, &st.Count, &st.DistinctRuns,
+			&errCount, &st.SumOutTokens, &firstSeen, &lastSeen); err != nil {
+			return nil, err
+		}
+		st.FirstSeen = parseAggTime(firstSeen)
+		st.LastSeen = parseAggTime(lastSeen)
+		if st.Count > 0 {
+			st.ErrorRate = float64(errCount) / float64(st.Count)
+		}
+		stats = append(stats, st)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for i := range stats {
+		samples, err := s.sampleArgs(project, stats[i].Sig, 3)
+		if err != nil {
+			return nil, err
+		}
+		stats[i].SampleArgs = samples
+	}
+	return stats, nil
+}
+
+// sampleArgs returns up to n distinct non-empty arg values for a (project,
+// sig) pair — enough for a human or a promotion rule (LN-04/07) to eyeball
+// what the signature actually covers, without shipping every row's arg.
+func (s *Store) sampleArgs(project, sig string, n int) ([]string, error) {
+	const q = `SELECT DISTINCT arg FROM action_signatures
+    WHERE project=? AND sig=? AND arg IS NOT NULL AND arg != ''
+    ORDER BY id DESC LIMIT ?`
+	rows, err := s.db.Query(q, project, sig, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var samples []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			return nil, err
+		}
+		samples = append(samples, a)
+	}
+	return samples, rows.Err()
+}
+
+// GetIngestOffset returns the last-indexed transcript path and byte offset
+// for a CLI session, and false if it has never been indexed.
+func (s *Store) GetIngestOffset(cliSessionID string) (path string, offset int64, ok bool, err error) {
+	const q = `SELECT path, offset FROM ingest_state WHERE cli_session_id=?`
+	err = s.db.QueryRow(q, cliSessionID).Scan(&path, &offset)
+	if err == sql.ErrNoRows {
+		return "", 0, false, nil
+	}
+	if err != nil {
+		return "", 0, false, err
+	}
+	return path, offset, true, nil
+}
+
+// SetIngestOffset records the byte offset up to which a CLI session's
+// transcript has been indexed, so the next ingest pass resumes instead of
+// re-reading the whole file (upsert: same cli_session_id overwrites).
+func (s *Store) SetIngestOffset(cliSessionID, path string, offset int64) error {
+	const q = `INSERT INTO ingest_state (cli_session_id, path, offset, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(cli_session_id) DO UPDATE SET
+        path=excluded.path, offset=excluded.offset, updated_at=excluded.updated_at`
+	_, err := s.db.Exec(q, cliSessionID, path, offset, time.Now())
+	return err
+}
+
+// parseAggTime parses the string an aggregate function (MIN(ts)/MAX(ts))
+// hands back for a DATETIME column. Unlike a plain column reference, the
+// modernc.org/sqlite driver cannot infer the declared type through an
+// aggregate, so it comes back as a string in time.Time's own default String()
+// layout rather than as a time.Time value the driver auto-converts — RFC3339
+// (the layout a direct column scan produces) is tried too, in case that ever
+// changes upstream. An unparseable value yields the zero time rather than an
+// error: this only ever feeds a display timestamp, never a comparison.
+func parseAggTime(s string) time.Time {
+	if s == "" {
+		return time.Time{}
+	}
+	if t, err := time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", s); err == nil {
+		return t
+	}
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t
+	}
+	return time.Time{}
 }
 
 // --- helpers ---

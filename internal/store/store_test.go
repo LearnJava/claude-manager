@@ -712,3 +712,210 @@ func TestClose(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 }
+
+// --- action_signatures / ingest_state (LEARN-TASKS.md LN-02) ---
+
+func TestInsertActionsAndActionsForRun(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	run := &SessionRun{Project: "p", Session: "S1", Model: "sonnet", StartedAt: now, Status: "completed"}
+	if err := s.InsertRun(run); err != nil {
+		t.Fatalf("InsertRun: %v", err)
+	}
+
+	rows := []ActionRow{
+		{
+			Project: "p", Session: "S1", RunID: &run.ID, CLISessionID: "cli-1",
+			TaskPtr: "ROADMAP.md:5", StepIndex: 0, Tool: "Bash",
+			Sig: "Bash:git status --short", Arg: "git status --short",
+			OutTokens: 12, ResultChars: 40, Timestamp: now,
+		},
+		{
+			Project: "p", Session: "S1", RunID: &run.ID, CLISessionID: "cli-1",
+			TaskPtr: "ROADMAP.md:5", StepIndex: 1, Tool: "Read",
+			Sig: "Read:internal/experience/*.go", Arg: "internal/experience/signature.go",
+			IsError: true, OutTokens: 3, ResultChars: 0, Timestamp: now.Add(time.Second),
+		},
+	}
+	if err := s.InsertActions(rows); err != nil {
+		t.Fatalf("InsertActions: %v", err)
+	}
+
+	got, err := s.ActionsForRun(run.ID)
+	if err != nil {
+		t.Fatalf("ActionsForRun: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ActionsForRun: got %d rows, want 2", len(got))
+	}
+	if got[0].Sig != rows[0].Sig || got[0].StepIndex != 0 || got[0].IsError {
+		t.Errorf("row 0: unexpected fields: %+v", got[0])
+	}
+	if got[1].Sig != rows[1].Sig || got[1].StepIndex != 1 || !got[1].IsError {
+		t.Errorf("row 1: unexpected fields: %+v", got[1])
+	}
+	if got[1].RunID == nil || *got[1].RunID != run.ID {
+		t.Errorf("row 1: RunID = %v, want %d", got[1].RunID, run.ID)
+	}
+	if got[0].CLISessionID != "cli-1" || got[0].TaskPtr != "ROADMAP.md:5" {
+		t.Errorf("row 0: unexpected CLISessionID/TaskPtr: %+v", got[0])
+	}
+}
+
+func TestInsertActionsEmpty(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.InsertActions(nil); err != nil {
+		t.Fatalf("InsertActions(nil): %v", err)
+	}
+}
+
+func TestTopSignatures(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC()
+
+	var runIDs []int64
+	for i := 0; i < 3; i++ {
+		run := &SessionRun{Project: "p", Session: "S1", Model: "sonnet", StartedAt: now, Status: "completed"}
+		if err := s.InsertRun(run); err != nil {
+			t.Fatalf("InsertRun: %v", err)
+		}
+		runIDs = append(runIDs, run.ID)
+	}
+
+	rows := []ActionRow{
+		{Project: "p", Session: "S1", RunID: &runIDs[0], Tool: "Bash", Sig: "Bash:git status --short", Arg: "git status --short", StepIndex: 0, Timestamp: now},
+		{Project: "p", Session: "S1", RunID: &runIDs[0], Tool: "Bash", Sig: "Bash:git status --short", Arg: "git status", StepIndex: 1, Timestamp: now},
+		{Project: "p", Session: "S1", RunID: &runIDs[1], Tool: "Bash", Sig: "Bash:git status --short", Arg: "git status --short", StepIndex: 0, IsError: true, OutTokens: 5, Timestamp: now},
+		{Project: "p", Session: "S1", RunID: &runIDs[1], Tool: "Read", Sig: "Read:internal/store/*.go", Arg: "internal/store/store.go", StepIndex: 1, OutTokens: 20, Timestamp: now},
+		{Project: "other", Session: "S1", RunID: &runIDs[2], Tool: "Bash", Sig: "Bash:git status --short", Arg: "git status --short", StepIndex: 0, Timestamp: now},
+	}
+	if err := s.InsertActions(rows); err != nil {
+		t.Fatalf("InsertActions: %v", err)
+	}
+
+	stats, err := s.TopSignatures("p", 30, 0)
+	if err != nil {
+		t.Fatalf("TopSignatures: %v", err)
+	}
+	if len(stats) != 2 {
+		t.Fatalf("TopSignatures: got %d groups, want 2", len(stats))
+	}
+
+	// Most frequent first: the git status signature appears 3 times for "p".
+	top := stats[0]
+	if top.Sig != "Bash:git status --short" || top.Count != 3 {
+		t.Errorf("top signature: got %+v", top)
+	}
+	if top.DistinctRuns != 2 {
+		t.Errorf("top signature DistinctRuns: got %d, want 2", top.DistinctRuns)
+	}
+	if top.ErrorRate < 0.33 || top.ErrorRate > 0.34 {
+		t.Errorf("top signature ErrorRate: got %v, want ~1/3", top.ErrorRate)
+	}
+	if len(top.SampleArgs) == 0 {
+		t.Error("top signature: expected at least one SampleArgs entry")
+	}
+
+	limited, err := s.TopSignatures("p", 30, 1)
+	if err != nil {
+		t.Fatalf("TopSignatures limited: %v", err)
+	}
+	if len(limited) != 1 {
+		t.Errorf("TopSignatures limit 1: got %d", len(limited))
+	}
+}
+
+func TestTopSignaturesSinceDaysExcludesOld(t *testing.T) {
+	s := newTestStore(t)
+	old := time.Now().UTC().AddDate(0, 0, -60)
+
+	if err := s.InsertActions([]ActionRow{
+		{Project: "p", Session: "S1", Tool: "Bash", Sig: "Bash:git status", StepIndex: 0, Timestamp: old},
+	}); err != nil {
+		t.Fatalf("InsertActions: %v", err)
+	}
+
+	stats, err := s.TopSignatures("p", 30, 0)
+	if err != nil {
+		t.Fatalf("TopSignatures: %v", err)
+	}
+	if len(stats) != 0 {
+		t.Errorf("expected old row excluded by sinceDays window, got %+v", stats)
+	}
+}
+
+func TestGetSetIngestOffset(t *testing.T) {
+	s := newTestStore(t)
+
+	_, _, ok, err := s.GetIngestOffset("cli-none")
+	if err != nil {
+		t.Fatalf("GetIngestOffset(missing): %v", err)
+	}
+	if ok {
+		t.Error("expected ok=false for a never-indexed session")
+	}
+
+	if err := s.SetIngestOffset("cli-1", "/path/to/cli-1.jsonl", 1024); err != nil {
+		t.Fatalf("SetIngestOffset: %v", err)
+	}
+	path, offset, ok, err := s.GetIngestOffset("cli-1")
+	if err != nil {
+		t.Fatalf("GetIngestOffset: %v", err)
+	}
+	if !ok || path != "/path/to/cli-1.jsonl" || offset != 1024 {
+		t.Errorf("GetIngestOffset: got (%q, %d, %v)", path, offset, ok)
+	}
+
+	// Re-setting the same cli_session_id upserts rather than erroring.
+	if err := s.SetIngestOffset("cli-1", "/path/to/cli-1.jsonl", 2048); err != nil {
+		t.Fatalf("SetIngestOffset (update): %v", err)
+	}
+	_, offset, _, err = s.GetIngestOffset("cli-1")
+	if err != nil {
+		t.Fatalf("GetIngestOffset (after update): %v", err)
+	}
+	if offset != 2048 {
+		t.Errorf("offset after update: got %d, want 2048", offset)
+	}
+}
+
+// TestMigrateIsIdempotent opens the same on-disk database twice, exercising
+// migrate()'s CREATE TABLE IF NOT EXISTS / ALTER TABLE-with-tolerated-error
+// path a second time against tables that already exist and already hold
+// data — the template every future additive column follows (see
+// migrations.go) must not break on a database from a previous app version.
+func TestMigrateIsIdempotent(t *testing.T) {
+	f, err := os.CreateTemp("", "store_migrate_*.db")
+	if err != nil {
+		t.Fatalf("TempFile: %v", err)
+	}
+	f.Close()
+	path := f.Name()
+	defer os.Remove(path)
+
+	s1, err := New(path)
+	if err != nil {
+		t.Fatalf("New (first open): %v", err)
+	}
+	if err := s1.SetIngestOffset("cli-1", "/a.jsonl", 10); err != nil {
+		t.Fatalf("SetIngestOffset: %v", err)
+	}
+	if err := s1.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	s2, err := New(path)
+	if err != nil {
+		t.Fatalf("New (second open, re-runs migrate): %v", err)
+	}
+	defer s2.Close()
+
+	_, offset, ok, err := s2.GetIngestOffset("cli-1")
+	if err != nil {
+		t.Fatalf("GetIngestOffset after re-migration: %v", err)
+	}
+	if !ok || offset != 10 {
+		t.Errorf("data lost across re-migration: got (%d, %v)", offset, ok)
+	}
+}
