@@ -1340,6 +1340,9 @@ nothing is written into a user's repository without approval in the UI).
    dependencies are `✓ DONE`, mark it `● IN PROGRESS` in its task file, and
    occupy your pool slot:
    `cd "$(bash scripts/worktree-pool.sh p<N>-work p<N>-<task> | tail -1)"`.
+4. **Confirm you are not working in the root checkout.** The manager starts the
+   session in the repo root, which holds `master`; `git branch --show-current`
+   must print your `p<N>-…` branch before you edit anything.
 
 One task = one session. Use the skills rather than running the protocol by hand:
 
