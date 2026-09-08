@@ -139,6 +139,14 @@ claude-manager/
 │                                    #   e2e/ (runner, incl. mixed-*.json), configs/,
 │                                    #   transcripts/ (LN-01: trimmed real JSONL fixtures)
 ├── frontend/tests/                  # Playwright DOM specs (incl. mixed.spec.ts)
+├── docs/
+│   └── git-workflow.md              # How a developer session takes a task, merges and pushes:
+│                                    #   p<N>- branches, worktree pool, completion invariant
+├── scripts/
+│   ├── worktree-pool.sh             # Persistent worktree slot per developer (.claude/worktrees/
+│   │                                #   p<N>-work) — the branch survives an interrupted session
+│   └── orchestrator.py              # Standalone predecessor of the session loop (reference)
+├── .claude/skills/                  # Executable protocol, invoked as /cm-task-start, /cm-task-finish
 ├── config.example.toml
 ├── PLAN.md                          # Full specification (§14-21)
 ├── TASKS.md                         # App task breakdown (TASK-01..15)
@@ -1304,11 +1312,71 @@ time=2025-05-24T10:23:50Z level=ERROR msg=session.error id=lumen-browser/S2 erro
 - **Reply language: Russian.** The user writes in Russian; match it even though code, comments, and this file stay in English.
 - **Tone: direct and technical.** State what changed and why; skip preamble and trailing summaries unless asked.
 
+## Roles and session start
+
+A **developer session** is one driven by a task queue (`task_source` +
+`auto_restart` in the manager). It follows the protocol in
+[`docs/git-workflow.md`](./docs/git-workflow.md) — not a protocol pasted into its
+prompt, which is why the prompt is one line.
+
+| Session | Queue (`task_source`) | Task specs | Branch prefix | Pool slot |
+|---|---|---|---|---|
+| `Программист 1` | `LEARN-STATUS.md` | `LEARN-TASKS.md` (LN-01..18) | `p1-` | `p1-work` |
+
+Read the task file's own rules before starting — each breakdown carries
+invariants that are not repeated here (`LEARN-TASKS.md` §Инварианты: everything
+new is off by default, a prompt must stay byte-identical with its flags off,
+nothing is written into a user's repository without approval in the UI).
+
+**Session start:**
+
+1. `git pull origin master` — before reading any `*-STATUS.md` or creating a
+   branch.
+2. `git branch -a`. **A `p<N>-…` branch that already exists is your own
+   interrupted task — continue it**, do not take a new one. This is the recovery
+   mechanism: it works regardless of how the previous run died (rate limit, 403,
+   app restart), because the state lives in git rather than in the manager.
+3. Otherwise take the **top** pointer line of your `*-STATUS.md` whose
+   dependencies are `✓ DONE`, mark it `● IN PROGRESS` in its task file, and
+   occupy your pool slot:
+   `cd "$(bash scripts/worktree-pool.sh p<N>-work p<N>-<task> | tail -1)"`.
+
+One task = one session. Use the skills rather than running the protocol by hand:
+
+| Skill | When |
+|---|---|
+| `/cm-task-start <task>` | starting a task — **explicit `/` invocation only** |
+| `/cm-task-finish [branch]` | task ready: gate → doc-sync → merge `--no-ff` → push → free the slot |
+
+Ad-hoc sessions (`Chat`, `Init`) have no queue and are not covered by this — they
+work wherever the user points them.
+
 ## Git workflow
 
-- Current branch is `master`; there is no enforced feature-branch policy — direct commits to `master` are the norm for this solo project. Only branch off when the user asks for isolation (e.g. a risky exploratory change).
-- Commit messages: Conventional Commits style (`fix:`, `feat:`, `refactor:` — see `git log` for examples), English, imperative subject line, body explains *why* when non-obvious.
-- Never `--no-verify`, `--force`, `git config`, or `git push` without the user explicitly asking — same rule this repo's own session manager enforces on the projects *it* drives (see permission handling above), applied to itself.
+Full protocol, worktree pool, completion invariant —
+[`docs/git-workflow.md`](./docs/git-workflow.md).
+
+- **Direct commits to `master` are forbidden for developer sessions.** Work
+  happens in `p<N>-<task>` branches (developer-number prefix mandatory), merged
+  with `--no-ff`. The branch itself is the task reservation.
+- **Every session works in its own pool slot** — `.claude/worktrees/p<N>-work`,
+  persistent, one per developer, taken via `scripts/worktree-pool.sh`. The
+  manager's own `use_worktree` must be `false` for such a session: it would make
+  a second, anonymous worktree from HEAD on every process start, and unmerged
+  work would be lost on the next restart (this cost ~$12 and seven duplicate
+  implementations of LN-01 on 2026-09-08 — see the doc).
+- **Merge and push after every commit**, not at the end of the task: gate →
+  commit → `git merge --no-ff` into `master` → `git push origin master`.
+  Unpushed work does not exist for the next session.
+- Commit messages: Conventional Commits style (`fix:`, `feat:`, `refactor:` —
+  see `git log` for examples), English, imperative subject line, body explains
+  *why* when non-obvious.
+- **Push boundary.** A developer session pushes exactly two things without
+  asking: its own `p<N>-…` branch, and `master` after a green gate and a
+  `--no-ff` merge. Any other push — a different branch, a tag, a force-push, a
+  push from an ad-hoc session — still requires the user to ask for it.
+- Never `--no-verify`, `--force`, or `git config`. Never rewrite published
+  history.
 
 ## Known gotchas
 
@@ -1331,6 +1399,8 @@ Update docs **in the same change** as the code, not as a follow-up:
 | New `cm-mcp` tool | "cm-mcp tools available to Claude" table above |
 | New fakeclaude/fakeworker scenario | `testdata/scenarios/scenarios_doc.md` entry describing state/feature covered and its `match` pattern |
 | New app-level task breakdown item done | Corresponding checkbox/row in `TASKS.md` / `HARNESS-TASKS.md` / `MIXED-TASKS.md` / `LEARN-TASKS.md` (+ delete its pointer line from the matching `*-STATUS.md` queue) |
+| New package or otherwise notable file under `internal/` | The architecture tree at the top of this file |
+| Change to how a developer session takes/finishes a task | `docs/git-workflow.md` + the two skills under `.claude/skills/` — never a second copy of the steps in this file |
 
 ## When in doubt
 

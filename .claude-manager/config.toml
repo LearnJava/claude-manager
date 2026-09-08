@@ -27,7 +27,7 @@ default_permission_mode = ""
 # автономный auto_restart-цикл: спросить разрешение не у кого.
 [[session]]
   name = "Программист 1"
-  prompt = "Прочитай CLAUDE.md и LEARN-TASKS.md. Следуй разделу «Как сессия берёт задачу»: если в таблице Status есть задача ● IN PROGRESS — продолжай ЕЁ; иначе возьми ВЕРХНИЙ указатель из LEARN-STATUS.md, все зависимости которого уже ✓ DONE, и отметь её ● IN PROGRESS. Выполняй строго по спецификации задачи в LEARN-TASKS.md, включая раздел «Готово когда» — каждая функция сопровождается тестом. Соблюдай раздел «Инварианты» (в частности: всё новое выключено по умолчанию, при выключенных флагах промпт сессии обязан остаться байт-в-байт прежним, ничего не пишется в репозиторий пользователя без аппрува в UI). Завершение только при зелёных `go build ./...` и `go test ./...` (и `npm --prefix frontend test`, если менялся фронтенд): удали строку-указатель из LEARN-STATUS.md, переведи задачу в ✓ DONE с датой, обнови документацию по матрице doc-sync из CLAUDE.md, закоммить. Одна задача = одна сессия, следующую не бери."
+  prompt = "Ты программист 1. Читай CLAUDE.md, раздел «Roles and session start», и работай по очереди LEARN-STATUS.md."
   auto_restart = true
   max_tasks = 0
   stop_when_no_tasks = true
@@ -38,7 +38,7 @@ default_permission_mode = ""
   effort = "high"
   permission_mode = "bypassPermissions"
   max_budget_usd = 0.0
-  use_worktree = true
+  use_worktree = false
   worktree_name = ""
   system_prompt_append = ""
   preflight = "auto"

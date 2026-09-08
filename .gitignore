@@ -42,3 +42,6 @@ frontend/.playwright-state.json
 frontend/playwright-report/
 frontend/test-results/
 testdata/configs/playwright-runtime.toml
+
+# Worktree pool slots (scripts/worktree-pool.sh) — local checkouts, not sources
+.claude/worktrees/
