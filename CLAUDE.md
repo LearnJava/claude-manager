@@ -70,11 +70,15 @@ claude-manager/
 │   ├── experience/                  # Experience layer (LEARN-TASKS.md LN-01..18, planned): mines
 │   │   │                            #   the app's own run history into token/time savings for the
 │   │   │                            #   next session. Off by default, stdlib only, no external workers.
-│   │   └── transcript.go            # LN-01: Trajectory — backend-agnostic parse of Claude CLI's
+│   │   ├── transcript.go            # LN-01: Trajectory — backend-agnostic parse of Claude CLI's
 │   │                                #   own JSONL transcripts (~/.claude/projects/<slug>/<id>.jsonl,
 │   │                                #   CM_TRANSCRIPTS_DIR override); tool_use/tool_result stitching,
 │   │                                #   incremental ReadFrom(path, offset). A second backend (LN-17,
 │   │                                #   markdown logs) will produce the same Trajectory type.
+│   │   └── signature.go             # LN-02: Signature — normalizes a Step's InputText into an
+│   │                                #   aggregable sig (Bash argv rules, path/pattern rules) +
+│   │                                #   the verbatim arg; feeds action_signatures/ingest_state
+│   │                                #   (store/migrations.go) via Store.InsertActions/TopSignatures.
 │   ├── store/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs
 │   │   ├── migrations.go            # CREATE TABLE statements, indexes
@@ -1113,6 +1117,48 @@ loop against a seeded temp repo via the control-plane. Playwright:
 quality flow. MCP tools: `register_mixed_brief`, `dispatch_mixed_task`,
 `get_mixed_rounds`, `wait_for_worker_status`.
 
+### Experience Layer (LEARN-TASKS.md, LN-01..18)
+
+Mines the app's own operational history — CLI transcripts today, auto-saved
+markdown logs later (LN-17) — into things that save the *next* session tokens
+and time: permission allowlists, a warm context primer, distilled skills. Off
+by default; every feature is additive and stdlib-only (no external workers,
+unlike Mixed Programming above).
+
+**Ingest backends produce one common shape.** `experience.Trajectory`/`Step`
+(`internal/experience/transcript.go`, LN-01) is backend-agnostic: a JSONL
+transcript backend today, a markdown-log backend later, both stitch
+`tool_use`↔`tool_result` into the same `Step` fields. Consumers must not
+assume every field is populated — `Input`/`ToolUseID`/`Usage` are simply zero
+on a backend that never had raw JSON to begin with.
+
+**Signatures turn a raw call into something aggregable** (LN-02,
+`internal/experience/signature.go`). `Signature(tool, inputText, projectPath)`
+takes `Step.InputText` — never the raw tool_use JSON, so it works identically
+on either backend — and returns a normalized `sig` (literals masked to
+`<ARG>`, Bash reduced to its argv shape per five measured rules: keep the
+subcommand of a multi-command utility like `git`/`cargo` literal, strip a
+`cd`/`export` navigation prefix, keep an interpreter's script basename
+literal, mask everything else, cap at 6 tokens) plus the original `arg`
+verbatim. Read/Edit/Write reduce to `<first two dir segments>/*<ext>`;
+Grep/Glob keep the pattern (their whole meaning) truncated to 40 chars; every
+other tool falls back to its first input token, truncated to 30. Without the
+masking rules the top of any aggregate degenerates to noise — measured
+directly: `Bash:cd <ARG>` was the single most common raw signature (20 388
+calls) before rule 2, and `git <ARG>` swallowed every subcommand into one
+bucket before rule 1.
+
+**Storage** (`action_signatures`/`ingest_state`, `internal/store/migrations.go`):
+one row per tool call (project, session, run_id, sig, arg, is_error,
+out_tokens, result_chars, ts) plus a per-CLI-session ingest checkpoint
+(`GetIngestOffset`/`SetIngestOffset`) so re-indexing a transcript never
+re-inserts rows already seen — mirrors `StateStore`'s tmp→rename-free
+upsert-by-primary-key approach rather than a file. `Store.InsertActions`
+batch-inserts per ingest pass (mirrors `InsertLogs`); `Store.TopSignatures`
+aggregates by `(project, sig)` over a trailing window (count, distinct runs,
+error rate, sample args) — the input the "Actions" tab (LN-03) and downstream
+candidate mining (LN-04 permission rules, LN-07/08 skill promotion) both read.
+
 ## Wails Bindings (app.go)
 
 All exported methods become async JS functions via auto-generated bindings in `frontend/wailsjs/`.
@@ -1299,6 +1345,8 @@ claude_path = "build/fakeclaude.exe"
 - `task_plans` — pre-flight analysis plans
 - `plan_subtasks` — subtasks within plans
 - `mixed_briefs` — generated mixed-programming briefs (MP-06)
+- `action_signatures` — normalized tool-call signatures mined from CLI transcripts, per run (LN-02)
+- `ingest_state` — per-CLI-session transcript byte offset, so re-indexing never re-inserts rows (LN-02)
 
 ## File Logging
 
