@@ -182,5 +182,9 @@ func renderProtocolTemplate(name string, data map[string]string) (string, error)
 	if err := t.Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("analysis: render template %s: %w", name, err)
 	}
-	return buf.String(), nil
+	// Normalize to LF regardless of how the templates were checked out. This
+	// repo has no .gitattributes, so on Windows the working copy — and with it
+	// the embedded bytes — carries CRLF; a shell script written out that way
+	// dies on its own shebang under bash ("\r: command not found").
+	return strings.ReplaceAll(buf.String(), "\r\n", "\n"), nil
 }

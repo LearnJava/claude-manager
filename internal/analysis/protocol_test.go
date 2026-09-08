@@ -181,6 +181,23 @@ func TestDefaultP1SessionPrompt_PointsAtTheProtocol(t *testing.T) {
 	}
 }
 
+// A rendered shell script must be LF-only whatever the checkout did to the
+// templates: bash rejects a CRLF shebang line outright, and the project this
+// lands in may well be built or run on Linux.
+func TestWriteProtocolFiles_ShellScriptHasNoCarriageReturns(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := WriteProtocolFiles(dir, ProtocolParams{MainBranch: "main"}); err != nil {
+		t.Fatalf("WriteProtocolFiles: %v", err)
+	}
+	body := readFile(t, filepath.Join(dir, "scripts", "worktree-pool.sh"))
+	if strings.Contains(body, "\r") {
+		t.Error("rendered worktree-pool.sh contains carriage returns")
+	}
+	if !strings.HasPrefix(body, "#!/usr/bin/env bash\n") {
+		t.Errorf("shebang line is not clean: %q", body[:40])
+	}
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)
