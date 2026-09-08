@@ -115,7 +115,11 @@ type ActionRow struct {
 	IsError      bool
 	OutTokens    int64
 	ResultChars  int
-	Timestamp    time.Time
+	// DurSec is the tool_use→tool_result gap in whole seconds (LEARN-TASKS.md
+	// LN-18); 0 means unknown, not instant — a call whose result never
+	// arrived within the ingested window.
+	DurSec    int64
+	Timestamp time.Time
 }
 
 // SignatureStat aggregates action_signatures rows sharing the same (project,
@@ -716,8 +720,8 @@ func (s *Store) InsertActions(rows []ActionRow) error {
 
 	stmt, err := tx.Prepare(
 		`INSERT INTO action_signatures
-	    (project, session, run_id, cli_session_id, task_ptr, step_index, tool, sig, arg, is_error, out_tokens, result_chars, ts)
-	    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	    (project, session, run_id, cli_session_id, task_ptr, step_index, tool, sig, arg, is_error, out_tokens, result_chars, dur_sec, ts)
+	    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return err
@@ -732,7 +736,7 @@ func (s *Store) InsertActions(rows []ActionRow) error {
 		if _, err := stmt.Exec(
 			r.Project, r.Session, nullInt64(r.RunID), nullStr(r.CLISessionID),
 			nullStr(r.TaskPtr), r.StepIndex, r.Tool, r.Sig, nullStr(r.Arg),
-			isErr, r.OutTokens, r.ResultChars, r.Timestamp,
+			isErr, r.OutTokens, r.ResultChars, r.DurSec, r.Timestamp,
 		); err != nil {
 			return err
 		}
@@ -740,9 +744,11 @@ func (s *Store) InsertActions(rows []ActionRow) error {
 	return tx.Commit()
 }
 
+const selectActionCols = `id, project, session, run_id, cli_session_id, task_ptr, step_index, tool, sig, arg, is_error, out_tokens, result_chars, dur_sec, ts`
+
 // ActionsForRun returns all action rows for one session_runs ID, in step order.
 func (s *Store) ActionsForRun(runID int64) ([]*ActionRow, error) {
-	const q = `SELECT id, project, session, run_id, cli_session_id, task_ptr, step_index, tool, sig, arg, is_error, out_tokens, result_chars, ts
+	q := `SELECT ` + selectActionCols + `
     FROM action_signatures WHERE run_id=? ORDER BY step_index ASC`
 	rows, err := s.db.Query(q, runID)
 	if err != nil {
@@ -768,7 +774,7 @@ func scanAction(row rowScanner) (*ActionRow, error) {
 	var isErr int
 	err := row.Scan(
 		&r.ID, &r.Project, &r.Session, &runID, &cliSessionID, &taskPtr,
-		&r.StepIndex, &r.Tool, &r.Sig, &arg, &isErr, &r.OutTokens, &r.ResultChars, &r.Timestamp,
+		&r.StepIndex, &r.Tool, &r.Sig, &arg, &isErr, &r.OutTokens, &r.ResultChars, &r.DurSec, &r.Timestamp,
 	)
 	if err != nil {
 		return nil, err
@@ -870,7 +876,7 @@ func (s *Store) sampleArgs(project, sig string, n int) ([]string, error) {
 // from a signature to concrete examples (LEARN-TASKS.md LN-03). Pass
 // limit<=0 for no limit.
 func (s *Store) ActionSamples(project, sig string, limit int) ([]ActionRow, error) {
-	q := `SELECT id, project, session, run_id, cli_session_id, task_ptr, step_index, tool, sig, arg, is_error, out_tokens, result_chars, ts
+	q := `SELECT ` + selectActionCols + `
     FROM action_signatures WHERE project=? AND sig=? ORDER BY id DESC`
 	args := []any{project, sig}
 	if limit > 0 {
@@ -891,6 +897,43 @@ func (s *Store) ActionSamples(project, sig string, limit int) ([]ActionRow, erro
 			return nil, err
 		}
 		out = append(out, *r)
+	}
+	return out, rows.Err()
+}
+
+// DurationRow is one action_signatures row's duration sample — just the
+// fields DurationProfile (LEARN-TASKS.md LN-18) aggregates over, not the full
+// ActionRow.
+type DurationRow struct {
+	Sig     string
+	Tool    string
+	DurSec  int64
+	IsError bool
+}
+
+// ActionDurations returns every action_signatures row with a known duration
+// (dur_sec > 0) for project over the last sinceDays days — the raw sample set
+// experience.DurationProfile groups into per-signature statistics. Rows with
+// dur_sec == 0 (no result ever arrived) are excluded here rather than by the
+// caller, since "unknown" must never silently count as "instant" in a median.
+func (s *Store) ActionDurations(project string, sinceDays int) ([]DurationRow, error) {
+	const q = `SELECT sig, tool, dur_sec, is_error FROM action_signatures
+    WHERE project=? AND dur_sec > 0 AND ts >= datetime('now', ?)`
+	rows, err := s.db.Query(q, project, fmt.Sprintf("-%d days", sinceDays))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []DurationRow
+	for rows.Next() {
+		var r DurationRow
+		var isErr int
+		if err := rows.Scan(&r.Sig, &r.Tool, &r.DurSec, &isErr); err != nil {
+			return nil, err
+		}
+		r.IsError = isErr != 0
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }

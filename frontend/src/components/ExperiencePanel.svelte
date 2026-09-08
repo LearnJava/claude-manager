@@ -1,14 +1,16 @@
 <script lang="ts">
     import { createEventDispatcher, onMount } from 'svelte';
     import { projects } from '../stores/projects';
-    import { formatPercent, formatTime, formatTokens } from '../lib/formatters';
+    import { formatDuration, formatPercent, formatTime, formatTokens } from '../lib/formatters';
     import {
         addPermissionRule,
         fetchActionSamples,
+        fetchDurationProfile,
         fetchPermissionCandidates,
         fetchTopActions,
         type ActionRow,
         type PermissionCandidate,
+        type SignatureDuration,
         type SignatureStat,
     } from '../stores/experience';
 
@@ -16,7 +18,7 @@
 
     // This modal gains more tabs as later LN items land (LN-06 Journal, ...) —
     // one modal, not a new one per tab (see LEARN-TASKS.md LN-03 "UI").
-    type Tab = 'actions' | 'permissions';
+    type Tab = 'actions' | 'permissions' | 'timing';
     let tab: Tab = 'actions';
 
     type SortKey = 'sig' | 'count' | 'runs' | 'errors' | 'tokens' | 'last';
@@ -54,6 +56,13 @@
     let permAddedRows: Set<string> = new Set();
     let permAddErrorByRow: Record<string, string> = {};
 
+    // Timing tab (LEARN-TASKS.md LN-18) — no day-range picker: the profile
+    // always aggregates DurationProfile's own fixed window, same window the
+    // context primer's timing section reads.
+    let durations: SignatureDuration[] = [];
+    let durLoading = true;
+    let durError = '';
+
     function rowKey(c: PermissionCandidate): string {
         return `${c.Tool}\0${c.Pattern}`;
     }
@@ -79,6 +88,24 @@
             permNeedsReview = [];
         } finally {
             permLoading = false;
+        }
+    }
+
+    async function loadDurations() {
+        if (!project) {
+            durations = [];
+            durLoading = false;
+            return;
+        }
+        durLoading = true;
+        durError = '';
+        try {
+            durations = await fetchDurationProfile(project);
+        } catch (e: any) {
+            durError = `Failed to load duration profile: ${e?.message ?? String(e)}`;
+            durations = [];
+        } finally {
+            durLoading = false;
         }
     }
 
@@ -137,6 +164,7 @@
     $: if (project || days) {
         load();
         loadPermissions();
+        loadDurations();
     }
 
     function compareStats(a: SignatureStat, b: SignatureStat): number {
@@ -251,12 +279,21 @@
                                 : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
                         Permissions
                     </button>
+                    <button
+                        type="button"
+                        on:click={() => (tab = 'timing')}
+                        class="px-2 py-1 rounded border
+                            {tab === 'timing'
+                                ? 'bg-bg-elevated border-blue-500 text-text'
+                                : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
+                        Timing
+                    </button>
                 </div>
             </div>
             <div class="flex items-center gap-2">
                 <button
                     type="button"
-                    on:click={() => (tab === 'actions' ? load() : loadPermissions())}
+                    on:click={() => (tab === 'actions' ? load() : tab === 'permissions' ? loadPermissions() : loadDurations())}
                     class="px-2 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
                     Refresh
                 </button>
@@ -417,6 +454,68 @@
                         {/if}
                     </div>
                 {/if}
+            {:else if tab === 'timing'}
+                {#if !project}
+                    <div class="text-text-muted text-sm italic py-10 text-center">
+                        No project configured.
+                    </div>
+                {:else if durLoading}
+                    <div class="text-text-muted text-sm italic py-10 text-center">
+                        Loading duration profile…
+                    </div>
+                {:else if durError}
+                    <div class="text-status-error text-sm py-10 text-center">{durError}</div>
+                {:else if durations.length === 0}
+                    <div class="text-text-muted text-sm italic py-10 text-center">
+                        No duration profile for this project yet — needs at least 10 timed calls
+                        of the same command. Enable
+                        <code class="font-mono">[optimization] experience_tracking</code> to start
+                        collecting them.
+                    </div>
+                {:else}
+                    <table class="w-full text-sm border-collapse">
+                        <thead class="bg-bg-elevated sticky top-0 z-10 text-text-muted text-xs">
+                            <tr>
+                                <th class="text-left px-3 py-2 font-medium">Signature</th>
+                                <th class="text-right px-3 py-2 font-medium">N</th>
+                                <th class="text-right px-3 py-2 font-medium">Median</th>
+                                <th class="text-right px-3 py-2 font-medium">P90</th>
+                                <th class="text-right px-3 py-2 font-medium">Max</th>
+                                <th class="text-right px-3 py-2 font-medium">Total</th>
+                                <th class="text-right px-3 py-2 font-medium">Fail rate</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {#each durations as row (row.Sig)}
+                                <tr class="border-t border-bg-border">
+                                    <td class="px-3 py-1.5 text-text font-mono text-xs break-all">
+                                        {row.Sig}
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                        {row.Count}
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                        {formatDuration(row.MedianSec * 1000)}
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                        {formatDuration(row.P90Sec * 1000)}
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                        {formatDuration(row.MaxSec * 1000)}
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                        {formatDuration(row.TotalSec * 1000)}
+                                    </td>
+                                    <td
+                                        class="px-3 py-1.5 text-right font-mono text-xs
+                                            {row.FailRate > 0 ? 'text-status-error' : 'text-text-muted'}">
+                                        {formatPercent(row.FailRate)}
+                                    </td>
+                                </tr>
+                            {/each}
+                        </tbody>
+                    </table>
+                {/if}
             {:else if !project}
                 <div class="text-text-muted text-sm italic py-10 text-center">
                     No project configured.
@@ -549,7 +648,12 @@
 
         <!-- Footer -->
         <div class="px-4 py-2 border-t border-bg-border text-xs text-text-muted shrink-0">
-            Click a signature to load its recorded examples.
+            {#if tab === 'actions'}
+                Click a signature to load its recorded examples.
+            {:else if tab === 'timing'}
+                Durations come from action_signatures.dur_sec — the tool_use→tool_result gap in each
+                logged call. A signature needs at least 10 timed calls to appear here.
+            {/if}
         </div>
     </div>
 </div>

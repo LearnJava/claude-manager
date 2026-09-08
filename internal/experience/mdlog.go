@@ -107,6 +107,7 @@ func ParseLogFile(path string) (Trajectory, error) {
 				step.ResultText = message
 				step.ResultChars = utf8.RuneCountInString(message)
 				step.ResultIsError = level == "error"
+				step.ResultTime = ts
 			}
 
 		case "text":

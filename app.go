@@ -1040,6 +1040,18 @@ func (a *App) GetActionSamples(project, sig string, limit int) ([]store.ActionRo
 	return a.store.ActionSamples(project, sig, limit)
 }
 
+// GetDurationProfile aggregates action_signatures durations for a project —
+// median/p90/max/failure-rate/count per normalized command, most
+// time-consuming first — the "Timing" tab of the Experience panel
+// (LEARN-TASKS.md LN-18). Requires [optimization] experience_tracking to have
+// been on for some runs; with it off, the table is simply empty.
+func (a *App) GetDurationProfile(project string) ([]experience.SignatureDuration, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no store")
+	}
+	return experience.DurationProfile(a.store, project)
+}
+
 // GetPermissionCandidates aggregates permission_events for a project into
 // suggested auto-allow rules (LEARN-TASKS.md LN-04) — the "Permissions" tab
 // of the Experience panel. Safe are (tool, pattern) pairs that keep asking,

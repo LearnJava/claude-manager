@@ -145,6 +145,9 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         // "Add rule" button is never reachable in this harness either.
         GetPermissionCandidates: () => Promise.resolve({ Safe: [], NeedsReview: [] }),
         AddPermissionRule: () => Promise.resolve(undefined),
+        // GetDurationProfile (LEARN-TASKS.md LN-18) reads from the same store
+        // as GetTopActions above — same reason, same stub shape.
+        GetDurationProfile: () => Promise.resolve([]),
       };
 
       (window as typeof window & { go: unknown }).go = { main: { App } };

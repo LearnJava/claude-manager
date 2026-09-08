@@ -1,12 +1,12 @@
 /**
- * Experience panel spec — LEARN-TASKS.md LN-03/LN-04
+ * Experience panel spec — LEARN-TASKS.md LN-03/LN-04/LN-18
  *
- * GetTopActions/GetActionSamples/GetPermissionCandidates read straight from
- * the app's own SQLite store, which playwright-server never opens
- * (cmd/playwright-server/main.go passes SessionManager a nil store) — the
- * same reason History.svelte and CostDashboard.svelte have no real-data
- * Playwright coverage (GUI-TESTS.md HI-01, CD-01 are still "○").
- * helpers/bridge.ts stubs all three to an empty result, so this spec covers
+ * GetTopActions/GetActionSamples/GetPermissionCandidates/GetDurationProfile
+ * read straight from the app's own SQLite store, which playwright-server
+ * never opens (cmd/playwright-server/main.go passes SessionManager a nil
+ * store) — the same reason History.svelte and CostDashboard.svelte have no
+ * real-data Playwright coverage (GUI-TESTS.md HI-01, CD-01 are still "○").
+ * helpers/bridge.ts stubs all four to an empty result, so this spec covers
  * what's actually reachable here: the modal opens/closes, the tabs switch,
  * the project/period pickers render and are interactive, and an empty result
  * renders each tab's own empty state rather than an unhandled RPC error.
@@ -112,6 +112,51 @@ test.describe('Experience panel', () => {
 
     const calls = await page.evaluate(() => (window as any).__addRuleCalls);
     expect(calls).toEqual([['test', sessionPicked, 'Bash', 'go test ./...', 'allow']]);
+  });
+
+  test('Timing tab: empty state, then a populated duration profile table', async ({
+    page,
+  }) => {
+    await page.goto('/');
+
+    const experienceBtn = page.getByRole('button', { name: 'Experience' });
+    await expect(experienceBtn).toBeVisible({ timeout: 5_000 });
+    await experienceBtn.click();
+
+    const modal = page.getByRole('dialog');
+    await expect(modal).toBeVisible({ timeout: 3_000 });
+
+    await modal.getByRole('button', { name: 'Timing' }).click();
+
+    // GetDurationProfile is stubbed empty by default — the tab's own empty
+    // state renders instead of an error.
+    await expect(modal.getByText(/No duration profile/i)).toBeVisible({ timeout: 5_000 });
+
+    // Override the stub to return one signature, then reload via Refresh.
+    await page.evaluate(() => {
+      const w = window as any;
+      w.go.main.App.GetDurationProfile = () =>
+        Promise.resolve([
+          {
+            Sig: 'Bash:cargo test --release',
+            Tool: 'Bash',
+            Count: 12,
+            MedianSec: 130,
+            P90Sec: 200,
+            MaxSec: 240,
+            TotalSec: 1600,
+            FailRate: 0.1,
+          },
+        ]);
+    });
+    await modal.getByRole('button', { name: 'Refresh' }).click();
+
+    await expect(modal.getByText('Bash:cargo test --release')).toBeVisible({ timeout: 5_000 });
+    // formatDuration(130_000) -> "2m 10s".
+    await expect(modal.getByText('2m 10s')).toBeVisible();
+
+    await modal.getByRole('button', { name: '✕' }).click();
+    await expect(modal).not.toBeVisible({ timeout: 3_000 });
   });
 
   test('Settings → Global: toggling Experience layer persists through Save', async ({

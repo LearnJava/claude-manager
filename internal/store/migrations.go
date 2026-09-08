@@ -99,6 +99,10 @@ CREATE TABLE IF NOT EXISTS mixed_briefs (
 	// (LN-03) and downstream promotion into permission/skill candidates
 	// (LN-04/07/08). ingest_state is the per-transcript offset checkpoint so
 	// re-indexing a CLI session's JSONL never re-inserts rows already seen.
+	// dur_sec is the tool_use→tool_result gap in whole seconds (LN-18); 0
+	// means unknown (no result ever arrived within the read window), not "the
+	// call was instant" — DurationProfile filters on dur_sec > 0 for exactly
+	// this reason.
 	sqlCreateActionSignatures = `
 CREATE TABLE IF NOT EXISTS action_signatures (
     id             INTEGER PRIMARY KEY,
@@ -114,6 +118,7 @@ CREATE TABLE IF NOT EXISTS action_signatures (
     is_error       INTEGER DEFAULT 0,
     out_tokens     INTEGER DEFAULT 0,
     result_chars   INTEGER DEFAULT 0,
+    dur_sec        INTEGER DEFAULT 0,
     ts             DATETIME NOT NULL
 )`
 
@@ -218,6 +223,9 @@ func migrate(db *sql.DB) error {
 	for _, col := range []string{
 		`ALTER TABLE daily_metrics ADD COLUMN total_cache_read_tokens INTEGER DEFAULT 0`,
 		`ALTER TABLE daily_metrics ADD COLUMN total_cache_creation_tokens INTEGER DEFAULT 0`,
+		// action_signatures predates the duration profile (LEARN-TASKS.md
+		// LN-18): same additive pattern as above.
+		`ALTER TABLE action_signatures ADD COLUMN dur_sec INTEGER DEFAULT 0`,
 	} {
 		if _, err := db.Exec(col); err != nil {
 			if !strings.Contains(err.Error(), "duplicate column") {
