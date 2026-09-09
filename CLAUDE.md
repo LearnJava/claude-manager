@@ -112,6 +112,11 @@ claude-manager/
 │   │   │                            #   transitions and action_signatures error→success retries,
 │   │   │                            #   normalizes the failure text (ErrorKey) into a cluster key;
 │   │   │                            #   feeds LN-08/09 and the read-only "Failures" tab.
+│   │   ├── candidate.go             # LN-08: MineCandidates — n-grams (1..4) of signatures
+│   │   │                            #   recurring across a run-share of a project's runs,
+│   │   │                            #   scored distinctRuns*log(1+rediscoveryChars)*outcomeWeight,
+│   │   │                            #   loop-flagged (ContextLossSuspect) rather than inflated,
+│   │   │                            #   nested-n-gram deduped; feeds LN-09's distiller.
 │   │   └── duration.go              # LN-18: DurationProfile — median/p90/max/fail-rate per
 │   │                                #   signature from action_signatures.dur_sec (n>=10 only);
 │   │                                #   durationSection renders the primer's "Command timing"
@@ -1385,9 +1390,12 @@ never blocks the start), files the session's previous run touched
 the project's `Gates` commands. `truncateSections` drops whole trailing
 sections — lowest priority first — rather than mid-section, so a huge gate
 list can never crowd out the current task. Sections 5 (files re-read 3+
-times, LN-08) and 6 (journal `avoid` lines) are not wired in yet: LN-08 hasn't
-landed, and LN-06 (see "Project journal" below) deliberately doesn't touch
-this file — feeding `LastEntries` into `BuildPrimer` is left to whichever task
+times) and 6 (journal `avoid` lines) are not wired in yet: LN-08's
+`experience.MineCandidates` (see "Candidate mining" below) mines re-read
+patterns project-wide for skill distillation, but nothing yet turns that into
+a *this-session's-previous-run* signal for the primer, and LN-06 (see
+"Project journal" below) deliberately doesn't touch this file — feeding
+`LastEntries`/re-read files into `BuildPrimer` is left to whichever task
 explicitly takes it on.
 
 **Wired like `ActionIndexFunc`, for the same reason.** `internal/experience`
@@ -1503,6 +1511,64 @@ gates (see MIXED-TASKS.md's `worker.GateResult`), but a manager-driven
 `docs/git-workflow.md` — the manager has no structured signal of a gate
 failure to pass here, so `finishRun`'s wiring leaves it empty rather than
 scraping log text for a heuristic that would be unreliable either way.
+
+**Candidate mining** (LN-08, `internal/experience/candidate.go`). Picks out
+which recurring tool-call sequences are actually worth distilling into a
+skill (LN-09) — naive n-gram mining over the whole corpus is mostly noise, so
+`MineCandidates` slides contiguous n-grams (length 1..`maxNGram`=4) over each
+run's ordered `store.ActionRow`s and keeps a sequence only when it recurs in
+at least `MinCandidateRuns` (3) runs *and* at least `DefaultMinRunShare` (5%)
+of the project's total runs — a relative bar, not an absolute one: a fixed
+`min_runs=3` measured 719 signatures on a 5654-run corpus, two orders of
+magnitude past what's worth dictating a prompt over, while 5% keeps the
+shortlist to ~30-40 candidates on a large project and ~15 on a small one.
+
+**A loop is a symptom, not a habit, and must not inflate the candidate.**
+`loopSignatures` finds, per run, any signature whose underlying (tool, arg)
+pair repeats `loopThreshold` (3, matching `optimization.LoopDetector`'s own
+threshold) times *identically* within that run; a candidate built from such a
+uniform, self-repeating n-gram is flagged `ContextLossSuspect` rather than
+promoted quietly — a repeated `Read` of the same file is context loss, not a
+workflow worth a skill. Repeating the same signature with *different* args
+(reading three different files) is not a loop and never sets the flag. Either
+way a run only ever contributes 1 to `DistinctRuns` no matter how many times a
+sequence repeats inside it — MineCandidates only asks "did this run see the
+sequence at all", not "how many times".
+
+**Score cannot be pulled up by a failed run.** Each contributing run has an
+`outcomeWeight` (LN-08: 1.0 completed, 0.3 stopped/rate_limited, 0.0 error,
+0.6 neutral for a run with no resolvable status — a bulk-imported row, LN-17,
+has no `run_id` to look up). The spec's formula is `distinctRuns *
+log(1+rediscoveryChars) * outcomeWeight`, where `outcomeWeight` there is the
+*average* per-run weight — since `distinctRuns * average = weightSum`
+algebraically, `candidate.go` computes `Score` directly as `weightSum *
+log(1+rediscoveryChars)`, with both `weightSum` and `rediscoveryChars`
+already accumulating each run's own weight. That makes "a failed run cannot
+teach a good pattern" exact rather than approximate: an `outcomeWeight=0` run
+contributes literally nothing to either term, so adding one to a candidate's
+evidence changes `DistinctRuns` (an honest, unweighted occurrence count) but
+never `Score` — the number that ranks candidates for the distiller.
+`rediscoveryChars` itself is the `result_chars` a session would have to read
+through, from the start of the run to the sequence's first occurrence, to
+rediscover the pattern on its own — summed once per contributing run, not per
+occurrence, matching `result_chars`' own role as the primer's (LN-05) and the
+duration profile's (LN-18) real cost proxy.
+
+**Nested n-grams dedup to the longest.** If a 2-gram `[A B]` never occurs
+without also being part of a 3-gram `[A B C]` — same `DistinctRuns` on both —
+the shorter one is dropped: wherever it fires, the longer one already covers
+it, so keeping both would just double-count the same evidence in the
+shortlist. A shorter sequence survives whenever its own `DistinctRuns` is
+*not* matched by any longer sequence that contains it — it is genuinely more
+frequent on its own.
+
+**RelatedFailures is a best-effort hint, not a guarantee.** A `FailureCluster`
+(LN-07) is attached to a candidate when one of the cluster's own kept
+`Examples` (capped at `maxClusterExamples`=5) shares a run key with one of the
+candidate's contributing runs — `FailureCluster` doesn't otherwise expose its
+full per-cluster run set, so a large cluster whose one overlapping example got
+capped away is silently missed. Acceptable for a "here's a related failure"
+pointer in LN-09's prompt, not a correctness requirement.
 
 **Duration profile** (LN-18, `internal/experience/duration.go`). A fresh
 session has no idea how long this project's own slow commands take, and
