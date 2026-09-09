@@ -95,6 +95,12 @@ func applyProjectOverlays(cfg *AppConfig) error {
 		if ov.MixedMaxRounds != 0 {
 			p.MixedMaxRounds = ov.MixedMaxRounds
 		}
+		if ov.Journal {
+			p.Journal = true
+		}
+		if ov.JournalCommit {
+			p.JournalCommit = true
+		}
 		if len(ov.Workers) > 0 {
 			cfg.Workers = mergeWorkers(cfg.Workers, ov.Workers)
 		}
@@ -149,6 +155,12 @@ func mergeOverlay(dst *ProjectOverlay, src ProjectOverlay) {
 	}
 	if src.MixedMaxRounds != 0 {
 		dst.MixedMaxRounds = src.MixedMaxRounds
+	}
+	if src.Journal {
+		dst.Journal = true
+	}
+	if src.JournalCommit {
+		dst.JournalCommit = true
 	}
 	if len(src.Workers) > 0 {
 		dst.Workers = mergeWorkers(dst.Workers, src.Workers)
@@ -216,8 +228,16 @@ func SaveProjectOverlay(projectPath string, p ProjectConfig, localWorkers []Work
 	local := struct {
 		MixedProgramming bool           `toml:"mixed_programming"`
 		MixedMaxRounds   int            `toml:"mixed_max_rounds"`
+		Journal          bool           `toml:"journal"`
+		JournalCommit    bool           `toml:"journal_commit"`
 		Workers          []WorkerConfig `toml:"worker"`
-	}{MixedProgramming: p.MixedProgramming, MixedMaxRounds: p.MixedMaxRounds, Workers: localWorkers}
+	}{
+		MixedProgramming: p.MixedProgramming,
+		MixedMaxRounds:   p.MixedMaxRounds,
+		Journal:          p.Journal,
+		JournalCommit:    p.JournalCommit,
+		Workers:          localWorkers,
+	}
 	if err := encodeAtomic(ProjectLocalConfigPath(projectPath), local); err != nil {
 		return err
 	}

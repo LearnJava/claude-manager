@@ -71,6 +71,14 @@ path = 'D:\RustProjects\lumen-browser'
 # gates = ["cargo check", "cargo clippy --all-targets -- -D warnings", "cargo test"]
 # mixed_max_rounds = 3                   # feedback rounds before needs-human
 
+# Project journal (LEARN-TASKS.md LN-06): episodic memory between sessions —
+# one short distilled entry per completed task, appended to
+# <project>/.claude-manager/journal.md via a cheap haiku call. Private layer
+# opt-in like mixed_programming above. journal.md is gitignored unless
+# journal_commit = true.
+# journal = true
+# journal_commit = false
+
 # Seeds permission_mode for sessions newly added to this project from now on
 # (empty = built-in default, bypassPermissions). Never touches an existing
 # session's already-saved permission_mode.

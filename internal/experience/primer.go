@@ -50,11 +50,14 @@ type PrimerInput struct {
 // capped at MaxPrimerChars: truncation drops whole trailing sections, lowest
 // priority first, never mid-section.
 //
-// Sections 5 (files re-read 3+ times, LN-08) and 6 (journal "avoid" lines,
-// LN-06) are not implemented yet — both depend on features that land after
-// this one. Plan-driven runs (internal/analysis/executor.go) don't go
-// through Session at all, so their plan_subtasks.files_changed is not a
-// source here; only the action_signatures lookup below is wired.
+// Sections 5 (files re-read 3+ times, LN-08) and 6 (journal "avoid" lines)
+// are not wired in yet: LN-08 hasn't landed, and LN-06 (journal.go, this
+// package) deliberately doesn't touch this file — its own file list and
+// "Готово когда" don't mention primer.go, so feeding LastEntries into
+// BuildPrimer is left to whichever task explicitly takes it on. Plan-driven
+// runs (internal/analysis/executor.go) don't go through Session at all, so
+// their plan_subtasks.files_changed is not a source here; only the
+// action_signatures lookup below is wired.
 func BuildPrimer(in PrimerInput) string {
 	var sections []string
 

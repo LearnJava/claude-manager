@@ -31,6 +31,31 @@ type Emitter interface {
 // internal/experience already imports internal/session for Step/TokenUsage.
 type ActionIndexFunc func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr string) error
 
+// JournalEntry mirrors experience.Entry (LEARN-TASKS.md LN-06) without
+// importing internal/experience — same import-cycle reason as
+// ActionIndexFunc above.
+type JournalEntry struct {
+	Date      time.Time
+	TaskPtr   string
+	Done      string
+	Surprises []string
+	Avoid     []string
+}
+
+// JournalWriteFunc persists one distilled journal entry for a project
+// (LEARN-TASKS.md LN-06). Declared as a function type here, consumed by
+// finishRun, and wired from app.go to internal/experience.AppendEntry — a
+// direct import would cycle, same as ActionIndexFunc.
+type JournalWriteFunc func(projectPath string, commit bool, entry JournalEntry) error
+
+// journalAnalyzeFn abstracts analysis.GenerateJournalEntry so tests can stub
+// the analyst CLI (LEARN-TASKS.md LN-06). Unlike indexRun/primerFn, this one
+// defaults to the real implementation in NewSessionManager rather than
+// starting nil — the distillation call is gated by the project's own Journal
+// flag and by journalFn being wired (see finishRun), not by whether this is
+// set.
+type journalAnalyzeFn func(ctx context.Context, projectPath string, in analysis.JournalInput, cfg analysis.AnalysisConfig) (*analysis.JournalResult, error)
+
 // Event names emitted to the Wails frontend (see PLAN.md section 8).
 const (
 	EventNameStatus     = "session:status"
@@ -216,6 +241,10 @@ type managedSession struct {
 	rateLimit      *RateLimitInfo
 	rateLimitUntil time.Time
 
+	// lastResultText is the most recent `result` event's text — the input
+	// finishRun feeds to journal distillation (LEARN-TASKS.md LN-06).
+	lastResultText string
+
 	// pendingLogs is flushed to the store when the run ends.
 	pendingLogs []store.LogEntry
 }
@@ -243,6 +272,14 @@ type SessionManager struct {
 	// is on — see SetPrimerBuilder.
 	primerFn PrimerFunc
 
+	// journalFn is nil unless app.go has wired the project journal
+	// (LEARN-TASKS.md LN-06); finishRun only calls it for a completed run
+	// whose project has Journal=true — see SetJournalWriter.
+	journalFn JournalWriteFunc
+	// journalAnalyze abstracts the analyst CLI call so tests can stub it;
+	// defaults to analysis.GenerateJournalEntry (see NewSessionManager).
+	journalAnalyze journalAnalyzeFn
+
 	runtimeRules *permission.RuntimeRuleSet
 	queue        *permission.PendingQueue
 
@@ -268,13 +305,14 @@ type SessionManager struct {
 func NewSessionManager(cfg *config.AppConfig, cfgPath string, st *store.Store, emitter Emitter) *SessionManager {
 	stateDir := filepath.Join(filepath.Dir(cfgPath), "state")
 	return &SessionManager{
-		cfg:          cfg,
-		cfgPath:      cfgPath,
-		store:        st,
-		emitter:      emitter,
-		sessions:     make(map[string]*managedSession),
-		stateStore:   NewStateStore(stateDir),
-		runtimeRules: permission.NewRuntimeRuleSet(),
+		cfg:            cfg,
+		cfgPath:        cfgPath,
+		store:          st,
+		emitter:        emitter,
+		sessions:       make(map[string]*managedSession),
+		stateStore:     NewStateStore(stateDir),
+		journalAnalyze: analysis.GenerateJournalEntry,
+		runtimeRules:   permission.NewRuntimeRuleSet(),
 		queue:        permission.NewPendingQueue(),
 		workerStore:  worker.NewStore(stateDir),
 		taskStore:    worker.NewTaskStore(stateDir),
@@ -322,6 +360,17 @@ func (m *SessionManager) SetActionIndexer(fn ActionIndexFunc) {
 func (m *SessionManager) SetPrimerBuilder(fn PrimerFunc) {
 	m.mu.Lock()
 	m.primerFn = fn
+	m.mu.Unlock()
+}
+
+// SetJournalWriter wires the experience-layer project journal (LEARN-TASKS.md
+// LN-06). Pass nil to disable it entirely (the zero value — no app.go wiring
+// means finishRun never calls the distillation analyst at all). Each
+// project's own Journal flag still gates whether it's ever invoked for that
+// project (see finishRun), so this only needs to be set once at startup.
+func (m *SessionManager) SetJournalWriter(fn JournalWriteFunc) {
+	m.mu.Lock()
+	m.journalFn = fn
 	m.mu.Unlock()
 }
 
@@ -1474,6 +1523,7 @@ func (m *SessionManager) handleUsage(ms *managedSession, usage *TokenUsage) {
 func (m *SessionManager) handleResult(ms *managedSession, res *SessionResult) {
 	ms.mu.Lock()
 	ms.totalCostUSD = res.TotalCostUSD
+	ms.lastResultText = res.ResultText
 	if res.NumTurns > 0 {
 		ms.numTurns = res.NumTurns
 	}
@@ -1536,6 +1586,7 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg string) {
 	outTok := ms.outputTokens
 	cacheReadTok := ms.cacheReadTokens
 	cacheCreateTok := ms.cacheCreateTokens
+	resultText := ms.lastResultText
 	project := ms.project
 	ms.mu.Unlock()
 
@@ -1599,6 +1650,92 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg string) {
 				logger.L.Error("session.index_run_failed", "id", sessID, "error", err)
 			}
 		}()
+	}
+
+	// Distill this run into one journal entry for the project's episodic
+	// memory (LEARN-TASKS.md LN-06) — same fire-and-forget goroutine pattern
+	// as the transcript indexer above. Gated on the project's own Journal
+	// flag (off by default) and on a writer actually being wired: with either
+	// missing, the analyst is never invoked at all, not just discarded.
+	if status == "completed" {
+		pcfg := m.findProjectConfig(project)
+		m.mu.Lock()
+		journalWrite := m.journalFn
+		journalAnalyze := m.journalAnalyze
+		m.mu.Unlock()
+		if pcfg != nil && pcfg.Journal && journalWrite != nil {
+			sessID := ms.session.ID
+			projectPath := ms.session.ProjectPath
+			taskPtr := ms.session.taskSourceDesc
+			commit := pcfg.JournalCommit
+			files := filesChangedFromLogs(logs)
+			go func() {
+				defer logger.Recover("manager.journal", "id", sessID)
+				m.runJournalEntry(context.Background(), project, projectPath, taskPtr, resultText, files, commit, journalAnalyze)
+			}()
+		}
+	}
+}
+
+// filesChangedFromLogs extracts the Edit/Write file paths from one run's
+// buffered log entries — the in-memory equivalent of primer.go's
+// previousRunFilesSection, but for the run that just finished rather than a
+// past one read back through the store. The journal's "this run" needs data
+// action_signatures may not have yet: LN-03 ingestion runs in its own async
+// goroutine off this same finishRun call, so it cannot be relied on to have
+// indexed this run already.
+func filesChangedFromLogs(logs []store.LogEntry) []string {
+	seen := make(map[string]bool)
+	var files []string
+	for _, l := range logs {
+		if l.Level != "tool" || (l.ToolName != "Edit" && l.ToolName != "Write") {
+			continue
+		}
+		f := strings.TrimSpace(l.ToolInput)
+		if f == "" || seen[f] {
+			continue
+		}
+		seen[f] = true
+		files = append(files, f)
+	}
+	return files
+}
+
+// runJournalEntry distills one completed run into a journal entry via
+// analyze and persists it through m.journalFn (LEARN-TASKS.md LN-06). Kept as
+// its own method (rather than inlined in finishRun's goroutine) so tests can
+// call it synchronously with a stub analyzer.
+func (m *SessionManager) runJournalEntry(ctx context.Context, project, projectPath, taskPtr, resultText string, filesChanged []string, commit bool, analyze journalAnalyzeFn) {
+	m.mu.Lock()
+	write := m.journalFn
+	acfg := analysis.AnalysisConfig{
+		ClaudePath: m.cfg.Settings.ClaudePath,
+		Model:      m.cfg.Settings.PreflightModel,
+	}
+	m.mu.Unlock()
+	if write == nil || analyze == nil {
+		return
+	}
+
+	result, err := analyze(ctx, projectPath, analysis.JournalInput{
+		TaskPtr:      taskPtr,
+		FilesChanged: filesChanged,
+		ResultText:   resultText,
+	}, acfg)
+	if err != nil {
+		logger.L.Error("manager.journal_failed", "project", project, "error", err)
+		return
+	}
+
+	entry := JournalEntry{
+		Date:      time.Now(),
+		TaskPtr:   taskPtr,
+		Done:      result.Done,
+		Surprises: result.Surprises,
+		Avoid:     result.Avoid,
+	}
+	if err := write(projectPath, commit, entry); err != nil {
+		logger.L.Error("manager.journal_write_failed", "project", project, "error", err)
 	}
 }
 

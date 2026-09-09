@@ -191,6 +191,49 @@ const BriefJSONSchema = `{
   "required": ["task", "files"]
 }`
 
+// JournalJSONSchema is the structured-output JSON Schema for one completed
+// run's episodic-memory entry (LEARN-TASKS.md LN-06): what got done, what was
+// surprising, and what a future session should avoid repeating.
+const JournalJSONSchema = `{
+  "type": "object",
+  "properties": {
+    "done": {
+      "type": "string",
+      "description": "One or two sentences, past tense: what this run actually accomplished."
+    },
+    "surprises": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Things that genuinely did not go as a reasonable plan would have expected — a wrong assumption, an API quirk, a non-obvious failure. Empty if nothing was surprising; do not invent one."
+    },
+    "avoid": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Concrete instructions for a future session working on this project, learned from this run. Empty if there is nothing worth warning about."
+    }
+  },
+  "required": ["done"]
+}`
+
+// JournalSystemPrompt is appended to a journal-distillation CLI invocation
+// via --append-system-prompt (LEARN-TASKS.md LN-06).
+const JournalSystemPrompt = `You write a short journal entry summarizing one just-completed Claude Code
+session, for the *next* session working on the same project to read before it
+starts. This is operational memory, not a report — be concrete and specific.
+
+Rules:
+- "done": one or two sentences, past tense, naming what actually changed.
+- "surprises": only things that genuinely differed from what a reasonable
+  plan would have expected (an API behaving differently than documented, a
+  build failing for a non-obvious reason, a wrong assumption caught late).
+  Leave the array empty rather than inventing something forgettable.
+- "avoid": concrete instructions, not vague advice — "do not run
+  'go test ./...' without -short, it hangs on the network test" beats "be
+  careful with tests". Leave the array empty if there is nothing worth
+  warning about.
+- Write in the same language the input material (task pointer, files,
+  result text) is written in.`
+
 // BriefSystemPrompt is appended to a brief-generation CLI invocation via
 // `--append-system-prompt`. Ports the brief-writing rules from the lumen
 // bench (MIXED-TASKS.md "Правила из боевого опыта lumen").

@@ -117,6 +117,18 @@ type ProjectOverlay struct {
 	MixedProgramming      *bool           `toml:"mixed_programming"`
 	MixedMaxRounds        int             `toml:"mixed_max_rounds"`
 	Workers               []WorkerConfig  `toml:"worker"`
+	// Journal opts a project into the episodic-memory journal (LEARN-TASKS.md
+	// LN-06): one short distilled entry per completed task, appended to
+	// <project>/.claude-manager/journal.md. Private layer like
+	// MixedProgramming above — not because a journal entry itself leaves the
+	// machine (it doesn't, unlike a mixed-programming brief), but because
+	// enabling it means an extra haiku CLI call after every completed task,
+	// which a teammate cloning the repo should opt into themselves.
+	Journal bool `toml:"journal"`
+	// JournalCommit, when true, skips gitignoring journal.md (and any
+	// journal-archive-*.md rotated out of it) so a project that wants its
+	// journal reviewed and committed like any other doc can do so.
+	JournalCommit bool `toml:"journal_commit"`
 }
 
 type ProjectConfig struct {
@@ -141,6 +153,11 @@ type ProjectConfig struct {
 	// MixedMaxRounds caps feedback rounds per subtask before the task is marked
 	// needs-human (default 3).
 	MixedMaxRounds int `toml:"mixed_max_rounds"`
+
+	// Journal / JournalCommit — see ProjectOverlay's fields of the same name
+	// (LEARN-TASKS.md LN-06). Private-layer opt-in, default off.
+	Journal       bool `toml:"journal"`
+	JournalCommit bool `toml:"journal_commit"`
 }
 
 type SessionConfig struct {

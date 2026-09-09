@@ -50,6 +50,9 @@ claude-manager/
 │   │   │                            #   skills) from embedded per-project templates; never overwrites
 │   │   ├── brief.go                 # Mixed-programming brief generation (MP-06): self-contained
 │   │   │                            #   English ТЗ, verbatim excerpts, patch-format instructions
+│   │   ├── journal.go               # LN-06: GenerateJournalEntry — haiku distillation of one
+│   │   │                            #   completed run (task pointer, files changed, result text)
+│   │   │                            #   into {done, surprises, avoid} for the project journal
 │   │   └── schema.go                # JSON Schema for analyst structured output + brief output
 │   ├── optimization/
 │   │   ├── routing.go               # ModelRouter: auto model routing by task complexity
@@ -99,6 +102,11 @@ claude-manager/
 │   │   │                            #   files the previous run touched, gate commands), capped
 │   │   │                            #   at MaxPrimerChars; wired via session.PrimerFunc to avoid
 │   │   │                            #   the same import cycle as ActionIndexFunc (LN-03).
+│   │   ├── journal.go               # LN-06: AppendEntry/LastEntries — episodic memory in
+│   │   │                            #   <project>/.claude-manager/journal.md, one markdown
+│   │   │                            #   section per completed task, rotated into
+│   │   │                            #   journal-archive-YYYY-MM.md past MaxJournalEntries;
+│   │   │                            #   wired via session.JournalWriteFunc (same cycle reason).
 │   │   └── duration.go              # LN-18: DurationProfile — median/p90/max/fail-rate per
 │   │                                #   signature from action_signatures.dur_sec (n>=10 only);
 │   │                                #   durationSection renders the primer's "Command timing"
@@ -1372,8 +1380,10 @@ never blocks the start), files the session's previous run touched
 the project's `Gates` commands. `truncateSections` drops whole trailing
 sections — lowest priority first — rather than mid-section, so a huge gate
 list can never crowd out the current task. Sections 5 (files re-read 3+
-times, LN-08) and 6 (journal `avoid` lines, LN-06) are deferred to those
-tasks.
+times, LN-08) and 6 (journal `avoid` lines) are not wired in yet: LN-08 hasn't
+landed, and LN-06 (see "Project journal" below) deliberately doesn't touch
+this file — feeding `LastEntries` into `BuildPrimer` is left to whichever task
+explicitly takes it on.
 
 **Wired like `ActionIndexFunc`, for the same reason.** `internal/experience`
 already imports `internal/session` (for `Step`/`TokenUsage`), so
@@ -1388,6 +1398,75 @@ primed — they already have their own dedicated prompt text, and the primer
 would be redundant with (or contradict) the crash-recovery reconciliation
 step. With the flag off or no `PrimerFn` wired, `initialPromptText` is
 byte-identical to before this feature existed.
+
+**Project journal** (LN-06, `internal/experience/journal.go`,
+`internal/analysis/journal.go`). Episodic memory between sessions: one short
+distilled entry per completed task, so the next run inherits "what got done,
+what was surprising, what to avoid" instead of re-deriving it from a diff and
+a task pointer. Per-project opt-in — `ProjectOverlay.Journal`/`JournalCommit`
+(`journal`/`journal_commit`, private `config.local.toml` layer like
+`mixed_programming` — see "Config Layering" above): enabling means an extra
+haiku CLI call after every completed task, which a teammate cloning the repo
+should opt into themselves, even though (unlike a mixed-programming brief) the
+entry itself never leaves the machine.
+
+**Trigger and distillation.** `SessionManager.finishRun`, gated on
+`status == "completed"` and the project's own `Journal` flag, spawns a
+fire-and-forget goroutine (`logger.Recover`-guarded, same pattern as the LN-03
+indexer above) that calls `analysis.GenerateJournalEntry` (haiku — cheap,
+called after every task) with the run's task pointer
+(`Session.taskSourceDesc`), the Edit/Write file paths from *this run's own*
+buffered log entries (`filesChangedFromLogs` — the in-memory equivalent of
+`primer.go`'s `previousRunFilesSection`, read directly off `finishRun`'s
+`logs` slice rather than `action_signatures`, since LN-03's ingest of this
+same run is a separate async goroutine that may not have completed yet), and
+the turn's final `result` text (`managedSession.lastResultText`, set in
+`handleResult`). The distillation schema (`JournalJSONSchema`/
+`JournalSystemPrompt`) asks for `{done, surprises, avoid}` — `surprises`/
+`avoid` are meant to stay empty on an unremarkable run rather than be padded
+out, so a "nothing to report" task doesn't manufacture noise.
+
+**Format and rotation** (`AppendEntry`, `internal/experience/journal.go`):
+appends one markdown section to `<project>/.claude-manager/journal.md`,
+atomically (tmp → rename):
+```markdown
+## 2026-09-08 — ROADMAP.md:92
+**Сделано:** …
+**Неожиданно:** …
+**Не делать:** …
+```
+`surprises`/`avoid` join multiple items with `"; "` on their one line; empty
+renders as `—`, never a blank line. Past `MaxJournalEntries` (50) sections,
+the oldest overflow is rotated out into `journal-archive-<YYYY-MM>.md` —
+grouped by each archived section's own month, not the month rotation happens
+to run in, so a journal that has been rotating for a year still reads as one
+file per month of history. Gitignored via `config.EnsureGitignore` unless
+`JournalCommit` is set, mirroring the auto-saved log files' own
+gitignore-by-default convention (see "Automatic Log Saving" above) —
+`LastEntries(projectPath, n)` reads the tail back for a future consumer (the
+primer's deferred "avoid" section, LN-08's re-read signal) without needing to
+know the rotation boundary.
+
+**Wired like `ActionIndexFunc`, for the same reason.** `finishRun` cannot call
+`experience.AppendEntry` directly (same import-cycle constraint as
+`ActionIndexFunc`/`PrimerFunc` above), so `session.JournalEntry` mirrors
+`experience.Entry` field-for-field and `session.JournalWriteFunc` is the
+function type `SessionManager.journalFn` holds; `app.go` wires it to a closure
+over `experience.AppendEntry`. Unlike `indexRun`/`primerFn`, the distillation
+call itself (`journalAnalyzeFn`) defaults to the real
+`analysis.GenerateJournalEntry` in `NewSessionManager` rather than starting
+nil — gating is entirely the project's `Journal` flag plus `journalFn` being
+wired, checked in `finishRun` before the goroutine is even spawned, so a
+disabled flag means the analyst is never invoked, not just that its result is
+discarded.
+
+**Failed-gate output is a supported but currently unpopulated input.**
+`analysis.JournalInput.FailedGateOutput` exists for a caller that runs its own
+gates (see MIXED-TASKS.md's `worker.GateResult`), but a manager-driven
+`task_source` session runs its own gates *inside* the CLI conversation per
+`docs/git-workflow.md` — the manager has no structured signal of a gate
+failure to pass here, so `finishRun`'s wiring leaves it empty rather than
+scraping log text for a heuristic that would be unreliable either way.
 
 **Duration profile** (LN-18, `internal/experience/duration.go`). A fresh
 session has no idea how long this project's own slow commands take, and

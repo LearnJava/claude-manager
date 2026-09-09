@@ -146,6 +146,19 @@ func (a *App) startup(ctx context.Context) {
 		})
 	}
 
+	// Wire the project journal (LEARN-TASKS.md LN-06): finishRun only ever
+	// calls this for a completed run whose project has Journal=true, so it's
+	// safe to wire unconditionally even for projects that never opt in.
+	a.manager.SetJournalWriter(func(projectPath string, commit bool, entry session.JournalEntry) error {
+		return experience.AppendEntry(projectPath, commit, experience.Entry{
+			Date:      entry.Date,
+			TaskPtr:   entry.TaskPtr,
+			Done:      entry.Done,
+			Surprises: entry.Surprises,
+			Avoid:     entry.Avoid,
+		})
+	})
+
 	// Start the control-plane server (no-op when CM_CONTROL disables it).
 	if controlEmitter != nil {
 		srv, err := control.StartFromEnv(ctx, a.manager, a, controlEmitter)
