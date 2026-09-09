@@ -121,9 +121,11 @@ function hasGit(): boolean {
 }
 
 function buildBinary(pkg: string, outPath: string): string {
-  // Skip rebuild if binary already exists.
-  if (fs.existsSync(outPath)) return outPath;
-
+  // Always (re)build: `go build` is a no-op in well under a second when the
+  // package and its dependencies are unchanged (Go's own build cache), and
+  // skipping it whenever the binary already existed used to let a stale
+  // harness binary silently outlive weeks of source changes — every test ran
+  // green against old backend behaviour with nothing to say so.
   console.log(`[global-setup] building ${pkg} → ${path.relative(ROOT, outPath)}`);
   execSync(`go build -o "${outPath}" ${pkg}`, {
     cwd: ROOT,

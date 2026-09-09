@@ -1,3 +1,4 @@
+gates = []
 default_permission_mode = ""
 
 [[session]]
@@ -7,24 +8,26 @@ default_permission_mode = ""
   max_tasks = 0
   stop_when_no_tasks = false
   task_source = ""
-  model = "opus"
+  model = "sonnet"
   fallback_model = ""
   fallback_model_on_rate_limit = false
   effort = "high"
   permission_mode = "bypassPermissions"
+  allowed_tools = []
+  disallowed_tools = []
+  permission_rule = []
   max_budget_usd = 0.0
   use_worktree = false
   worktree_name = ""
   system_prompt_append = ""
+  add_dirs = []
   preflight = "auto"
   pre_task_hook = ""
   post_task_hook = ""
   crash_recovery_prompt = ""
+  context_primer = false
+  context_handoff = false
 
-# Слой опыта (LEARN-TASKS.md, LN-01..18). Очередь — LEARN-STATUS.md:
-# голые указатели LEARN-TASKS.md:NN, одна задача = одна сессия, файл
-# опустел -> цикл останавливается. bypassPermissions потому, что это
-# автономный auto_restart-цикл: спросить разрешение не у кого.
 [[session]]
   name = "Программист 1"
   prompt = "Ты программист 1. Читай CLAUDE.md, раздел «Roles and session start», и работай по очереди LEARN-STATUS.md."
@@ -37,11 +40,17 @@ default_permission_mode = ""
   fallback_model_on_rate_limit = false
   effort = "high"
   permission_mode = "bypassPermissions"
+  allowed_tools = []
+  disallowed_tools = []
+  permission_rule = []
   max_budget_usd = 0.0
   use_worktree = false
   worktree_name = ""
   system_prompt_append = ""
+  add_dirs = []
   preflight = "auto"
   pre_task_hook = ""
   post_task_hook = ""
   crash_recovery_prompt = ""
+  context_primer = false
+  context_handoff = false
