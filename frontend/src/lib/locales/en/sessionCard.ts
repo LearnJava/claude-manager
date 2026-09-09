@@ -1,0 +1,27 @@
+// Translation fragment: sessionCard (en). Keys are namespaced 'sessionCard.xxx' — see frontend/src/lib/i18n.ts.
+
+export default {
+    'sessionCard.statusWorking': 'Working',
+    'sessionCard.statusWaitingPermission': 'Waiting permission',
+    'sessionCard.statusWaitingForAnswer': 'Waiting for answer',
+    'sessionCard.statusRateLimited': 'Rate limited',
+    'sessionCard.statusRetrying': 'Retrying',
+    'sessionCard.statusError': 'Error',
+    'sessionCard.statusStarting': 'Starting',
+    'sessionCard.statusAnalyzing': 'Analyzing',
+    'sessionCard.statusStopping': 'Stopping',
+    'sessionCard.statusIdle': 'Idle',
+    'sessionCard.stopRequestedTooltip': 'Will stop once the current task finishes',
+    'sessionCard.stoppingAfterTask': '· stopping after task',
+    'sessionCard.runtimeTooltip': 'Runtime',
+    'sessionCard.branchLabel': 'Branch:',
+    'sessionCard.taskLabel': 'Task:',
+    'sessionCard.turnsLabel': 'Turns:',
+    'sessionCard.tokensLabel': 'Tokens:',
+    'sessionCard.tokensBreakdown': '({input} in / {output} out / {cacheRead} cached)',
+    'sessionCard.modelLabel': 'Model:',
+    'sessionCard.costLabel': 'Cost:',
+    'sessionCard.cacheHitLabel': 'Cache hit:',
+    'sessionCard.contextLabel': 'Context:',
+    'sessionCard.contextTooltip': 'Context window utilization',
+} as Record<string, string>;

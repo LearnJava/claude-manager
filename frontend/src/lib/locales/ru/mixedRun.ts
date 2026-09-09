@@ -1,0 +1,57 @@
+// Translation fragment: mixedRun (ru). Keys are namespaced 'mixedRun.xxx' — see frontend/src/lib/i18n.ts.
+
+export default {
+    'mixedRun.title': 'Смешанное программирование',
+    'mixedRun.noProjects': 'Ни у одного проекта не включено смешанное программирование. Включите',
+    'mixedRun.noProjectsSuffix': 'для проекта в Настройки → Воркеры.',
+
+    'mixedRun.dispatch.heading': 'Отправить задачу',
+    'mixedRun.dispatch.project': 'Проект',
+    'mixedRun.dispatch.worker': 'Воркер',
+    'mixedRun.dispatch.noWorkers': '(воркеры не настроены)',
+    'mixedRun.dispatch.briefId': 'ID брифа (необязательно)',
+    'mixedRun.dispatch.briefIdPlaceholder': 'сгенерируется автоматически, если пусто',
+    'mixedRun.dispatch.brief': 'Бриф / задача',
+    'mixedRun.dispatch.briefPlaceholder':
+        'Самодостаточная задача на английском: точный код, принятые решения, формат патча…',
+    'mixedRun.dispatch.running': 'Выполняется…',
+    'mixedRun.dispatch.button': 'Отправить',
+    'mixedRun.dispatch.hint': 'Код отправляется на внешний адрес воркера.',
+    'mixedRun.dispatch.selectProjectAndWorker': 'Выберите проект и воркера.',
+    'mixedRun.dispatch.enterTask': 'Введите описание задачи для брифа.',
+    'mixedRun.dispatch.finished': 'Задача {id} завершена: {status}',
+    'mixedRun.dispatch.failed': 'Ошибка отправки: {error}',
+
+    'mixedRun.activity.heading': 'Активность',
+    'mixedRun.activity.clear': 'очистить',
+
+    'mixedRun.quality.heading': 'Качество моделей',
+    'mixedRun.quality.empty': 'Пока нет завершённых задач.',
+    'mixedRun.quality.colWorker': 'Воркер',
+    'mixedRun.quality.colDoneTotal': 'Готово / всего',
+    'mixedRun.quality.colNeedsHuman': 'Нужен человек',
+    'mixedRun.quality.colAvgRounds': 'Ср. раундов→зелёный',
+    'mixedRun.quality.colAvgRoundsTitle': 'Среднее число раундов до прохождения проверок',
+    'mixedRun.quality.colCleanPatches': 'Чистые патчи',
+    'mixedRun.quality.colCleanPatchesTitle': 'применено / (применено + отклонено)',
+    'mixedRun.quality.colParseErrs': 'Ошибки разбора',
+    'mixedRun.quality.colGateFails': 'Провалы проверок',
+
+    'mixedRun.tasks.heading': 'Задачи',
+    'mixedRun.tasks.empty': 'Пока нет задач для этого проекта.',
+    'mixedRun.tasks.cancel': 'Отменить',
+    'mixedRun.tasks.cancelFailed': 'Не удалось отменить: {error}',
+    'mixedRun.tasks.branch': 'ветка: {branch}',
+    'mixedRun.tasks.error': 'ошибка: {error}',
+    'mixedRun.tasks.round': 'Раунд {number}',
+    'mixedRun.tasks.appliedRejected': 'применено {applied}, отклонено {rejected}',
+    'mixedRun.tasks.verdictParseError': 'ошибка разбора',
+    'mixedRun.tasks.verdictRejected': 'патчи отклонены',
+    'mixedRun.tasks.verdictPassed': 'пройдено',
+    'mixedRun.tasks.verdictGatesFailed': 'проверки не пройдены',
+    'mixedRun.tasks.gatesHide': 'скрыть',
+    'mixedRun.tasks.gatesShow': 'проверки',
+
+    'mixedRun.footer.worktreesNote': 'Worktree остаются на месте для проверки после каждой задачи.',
+    'mixedRun.loadFailed': 'Ошибка загрузки: {error}',
+} as Record<string, string>;

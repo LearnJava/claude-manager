@@ -1,0 +1,57 @@
+// Translation fragment: mixedRun (en). Keys are namespaced 'mixedRun.xxx' — see frontend/src/lib/i18n.ts.
+
+export default {
+    'mixedRun.title': 'Mixed programming',
+    'mixedRun.noProjects': 'No project has mixed programming enabled. Turn on',
+    'mixedRun.noProjectsSuffix': 'for a project in Settings → Workers first.',
+
+    'mixedRun.dispatch.heading': 'Dispatch a task',
+    'mixedRun.dispatch.project': 'Project',
+    'mixedRun.dispatch.worker': 'Worker',
+    'mixedRun.dispatch.noWorkers': '(no workers configured)',
+    'mixedRun.dispatch.briefId': 'Brief ID (optional)',
+    'mixedRun.dispatch.briefIdPlaceholder': 'auto-generated if empty',
+    'mixedRun.dispatch.brief': 'Brief / task',
+    'mixedRun.dispatch.briefPlaceholder':
+        "Self-contained task in English: verbatim code, accepted decisions, patch format…",
+    'mixedRun.dispatch.running': 'Running…',
+    'mixedRun.dispatch.button': 'Dispatch',
+    'mixedRun.dispatch.hint': "Code is sent to the worker's external endpoint.",
+    'mixedRun.dispatch.selectProjectAndWorker': 'Select a project and a worker.',
+    'mixedRun.dispatch.enterTask': 'Enter a task description for the brief.',
+    'mixedRun.dispatch.finished': 'Task {id} finished: {status}',
+    'mixedRun.dispatch.failed': 'Dispatch failed: {error}',
+
+    'mixedRun.activity.heading': 'Activity',
+    'mixedRun.activity.clear': 'clear',
+
+    'mixedRun.quality.heading': 'Model quality',
+    'mixedRun.quality.empty': 'No completed tasks yet.',
+    'mixedRun.quality.colWorker': 'Worker',
+    'mixedRun.quality.colDoneTotal': 'Done / total',
+    'mixedRun.quality.colNeedsHuman': 'Needs human',
+    'mixedRun.quality.colAvgRounds': 'Avg rounds→green',
+    'mixedRun.quality.colAvgRoundsTitle': 'Mean rounds until gates pass',
+    'mixedRun.quality.colCleanPatches': 'Clean patches',
+    'mixedRun.quality.colCleanPatchesTitle': 'applied / (applied + rejected)',
+    'mixedRun.quality.colParseErrs': 'Parse errs',
+    'mixedRun.quality.colGateFails': 'Gate fails',
+
+    'mixedRun.tasks.heading': 'Tasks',
+    'mixedRun.tasks.empty': 'No tasks for this project yet.',
+    'mixedRun.tasks.cancel': 'Cancel',
+    'mixedRun.tasks.cancelFailed': 'Cancel failed: {error}',
+    'mixedRun.tasks.branch': 'branch: {branch}',
+    'mixedRun.tasks.error': 'error: {error}',
+    'mixedRun.tasks.round': 'Round {number}',
+    'mixedRun.tasks.appliedRejected': '{applied} applied, {rejected} rejected',
+    'mixedRun.tasks.verdictParseError': 'parse error',
+    'mixedRun.tasks.verdictRejected': 'patches rejected',
+    'mixedRun.tasks.verdictPassed': 'passed',
+    'mixedRun.tasks.verdictGatesFailed': 'gates failed',
+    'mixedRun.tasks.gatesHide': 'hide',
+    'mixedRun.tasks.gatesShow': 'gates',
+
+    'mixedRun.footer.worktreesNote': 'Worktrees are left in place for review after each task.',
+    'mixedRun.loadFailed': 'Load failed: {error}',
+} as Record<string, string>;

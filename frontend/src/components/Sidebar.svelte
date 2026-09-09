@@ -5,6 +5,7 @@
     import ResumePrompt from './ResumePrompt.svelte';
     import AlienCrew from './AlienCrew.svelte';
     import { MODELS, normalizeModel, isKnownModel } from '../lib/models';
+    import { t } from '../lib/i18n';
 
     const dispatch = createEventDispatcher();
     import { selectedSessionId, sessions, type SessionState, type SessionStatus } from '../stores/sessions';
@@ -197,20 +198,20 @@
         }
     }
 
-    function statusLabel(s: SessionState): string {
-        const suffix = s.stop_requested ? ' · stopping after task' : '';
+    function statusLabel(s: SessionState, tr: (key: string, params?: Record<string, string | number>) => string): string {
+        const suffix = s.stop_requested ? tr('sidebar.stoppingAfterTaskSuffix') : '';
         switch (s.status) {
-            case 'working': return (s.current_task ? `Working — ${s.current_task}` : 'Working') + suffix;
-            case 'waiting_permission': return 'Waiting permission' + suffix;
-            case 'waiting_for_user': return 'Waiting for answer' + suffix;
-            case 'rate_limited': return 'Rate limited' + suffix;
-            case 'retrying': return 'Retrying' + suffix;
-            case 'error': return 'Error';
-            case 'starting': return 'Starting';
-            case 'analyzing': return 'Analyzing' + suffix;
-            case 'stopping': return 'Stopping';
+            case 'working': return (s.current_task ? tr('sidebar.statusWorkingTask', { task: s.current_task }) : tr('sidebar.statusWorking')) + suffix;
+            case 'waiting_permission': return tr('sidebar.statusWaitingPermission') + suffix;
+            case 'waiting_for_user': return tr('sidebar.statusWaitingForAnswer') + suffix;
+            case 'rate_limited': return tr('sidebar.statusRateLimited') + suffix;
+            case 'retrying': return tr('sidebar.statusRetrying') + suffix;
+            case 'error': return tr('sidebar.statusError');
+            case 'starting': return tr('sidebar.statusStarting');
+            case 'analyzing': return tr('sidebar.statusAnalyzing') + suffix;
+            case 'stopping': return tr('sidebar.statusStopping');
             case 'idle':
-            default: return 'Idle';
+            default: return tr('sidebar.statusIdle');
         }
     }
 
@@ -332,10 +333,10 @@
 
 <aside class="w-full h-full bg-bg-panel flex flex-col">
     <div class="px-3 py-2 border-b border-bg-border flex items-center justify-between">
-        <span class="text-text font-semibold text-sm">Projects</span>
+        <span class="text-text font-semibold text-sm">{$t('sidebar.projectsHeading')}</span>
         <button
             class="text-text-muted hover:text-text text-xs px-1.5 py-0.5 rounded hover:bg-bg-elevated"
-            title="Add project"
+            title={$t('sidebar.addProjectTooltip')}
             on:click={() => dispatch('openAddProject')}
             type="button">+</button>
     </div>
@@ -354,18 +355,18 @@
                     <span class="text-text font-medium ml-1 flex-1 truncate" style="font-size: 17px" title={group.path}>{group.name}</span>
                     <button
                         class="opacity-0 group-hover:opacity-100 text-text-muted hover:text-status-working px-1 text-xs"
-                        title="Just chat: start a plain session with no tasks, give Claude ad-hoc instructions"
+                        title={$t('sidebar.chatTooltip')}
                         disabled={chatBusy[group.name]}
                         on:click={(e) => onStartChat(e, group.name)}
                         type="button">{chatBusy[group.name] ? '…' : '💬'}</button>
                     <button
                         class="opacity-0 group-hover:opacity-100 text-text-muted hover:text-status-working px-1 text-xs"
-                        title="Start all"
+                        title={$t('sidebar.startAllTooltip')}
                         on:click={(e) => onStartProject(e, group.name)}
                         type="button">▶</button>
                     <button
                         class="opacity-0 group-hover:opacity-100 text-text-muted hover:text-status-error px-1 text-xs"
-                        title="Stop all"
+                        title={$t('sidebar.stopAllTooltip')}
                         on:click={(e) => onStopProject(e, group.name)}
                         type="button">■</button>
                     <button
@@ -373,22 +374,22 @@
                             {pendingDelete === group.name
                                 ? 'opacity-100 text-status-error font-bold'
                                 : 'opacity-0 group-hover:opacity-100 text-text-muted hover:text-status-error'}"
-                        title={pendingDelete === group.name ? 'Click again to confirm delete' : 'Delete project'}
+                        title={pendingDelete === group.name ? $t('sidebar.confirmDeleteTooltip') : $t('sidebar.deleteProjectTooltip')}
                         on:click={(e) => onDeleteProject(e, group.name)}
                         type="button">{pendingDelete === group.name ? '?' : '✕'}</button>
                 </div>
 
                 {#if claudeMdStatus[group.name] === false && !dismissedClaudeMd.has(group.name)}
                     <div class="mx-2 mb-1 px-2 py-1.5 rounded bg-bg-elevated border border-bg-border flex items-center gap-2">
-                        <span class="text-text-muted text-xs flex-1">No CLAUDE.md in this project — sessions start with zero context.</span>
+                        <span class="text-text-muted text-xs flex-1">{$t('sidebar.noClaudeMd')}</span>
                         <button
                             class="text-status-working hover:underline text-xs whitespace-nowrap"
                             on:click={(e) => onGenerateClaudeMd(e, group.name)}
                             disabled={claudeMdBusy[group.name]}
-                            type="button">{claudeMdBusy[group.name] ? 'Starting…' : 'Generate'}</button>
+                            type="button">{claudeMdBusy[group.name] ? $t('sidebar.generating') : $t('sidebar.generate')}</button>
                         <button
                             class="text-text-dim hover:text-text text-xs"
-                            title="Dismiss"
+                            title={$t('sidebar.dismissTooltip')}
                             on:click={(e) => onDismissClaudeMd(e, group.name)}
                             type="button">✕</button>
                     </div>
@@ -408,20 +409,22 @@
                                 <span
                                     class="w-2.5 h-2.5 rounded-full mr-2 shrink-0 {statusColor(s.status)} {isBlinking(s.status) ? 'dot-blink' : ''}
                                            {s.stop_requested ? 'ring-2 ring-amber-400' : ''}"
-                                    title={statusLabel(s)}></span>
+                                    title={statusLabel(s, $t)}></span>
                                 <span class="text-text truncate flex-1" style="font-size: 13px">{s.name}</span>
                                 {#if unfinished[s.id]}
                                     <span
                                         class="text-amber-400 mr-1 shrink-0"
                                         style="font-size: 11px"
                                         data-testid="unfinished-{s.id}"
-                                        title={`Previous run unfinished (interrupted or stopped)${unfinished[s.id].task ? ' — ' + unfinished[s.id].task : ''}. Click ▶ to continue it or begin from scratch.`}>⏸</span>
+                                        title={unfinished[s.id].task
+                                            ? $t('sidebar.unfinishedTooltipTask', { task: unfinished[s.id].task })
+                                            : $t('sidebar.unfinishedTooltip')}>⏸</span>
                                 {/if}
                                 <select
                                     value={normalizeModel(s.model)}
                                     disabled={!!modelBusy[s.id]}
                                     on:change={(e) => onModelChange(e, s)}
-                                    title={`Model: ${s.model || '—'}. Switching applies on the next task for autonomous sessions; interactive ones restart now (same conversation). The choice is remembered as this session's default.`}
+                                    title={$t('sidebar.modelTooltip', { model: s.model || '—' })}
                                     class="ml-1.5 shrink-0 bg-bg border border-bg-border rounded px-1 text-text-muted
                                            disabled:opacity-50"
                                     style="font-size: 10px; line-height: 1.4;">
@@ -445,8 +448,8 @@
                                                ? 'opacity-100 text-amber-400'
                                                : 'opacity-0 group-hover:opacity-100 text-text-muted hover:text-text'}"
                                     title={s.stop_requested
-                                        ? 'Stop requested — will stop once the current task finishes'
-                                        : isRunning(s) ? 'Stop (finishes current task first)' : 'Start'}
+                                        ? $t('sidebar.stopRequestedTooltip')
+                                        : isRunning(s) ? $t('sidebar.stopTooltip') : $t('sidebar.startTooltip')}
                                     on:click={(e) => onToggleSession(e, s)}
                                     type="button">
                                     {s.stop_requested ? '⏳' : isRunning(s) ? '■' : '▶'}
@@ -463,7 +466,7 @@
 
         {#if $projectGroups.length === 0}
             <div class="px-3 py-4 text-center text-text-muted text-xs">
-                No projects configured.
+                {$t('sidebar.noProjects')}
             </div>
         {/if}
     </div>

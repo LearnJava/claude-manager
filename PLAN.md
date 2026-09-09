@@ -168,6 +168,7 @@ default_retry_delay = 30                  # Секунд между retry при
 rate_limit_pause = 300                    # Секунд паузы при rate limit
 log_retention_days = 30                   # Сколько хранить историю в SQLite
 theme = "dark"                            # dark | light
+language = "en"                           # en | ru — только UI, промпты Claude остаются на английском
 
 # Pre-flight analysis (см. секцию 17)
 preflight_analysis = true                 # Включить анализ перед запуском
@@ -311,6 +312,7 @@ type GlobalSettings struct {
     RateLimitPause    int    `toml:"rate_limit_pause"`
     LogRetentionDays  int    `toml:"log_retention_days"`
     Theme             string `toml:"theme"`
+    Language          string `toml:"language"`  // en | ru — только UI
 
     // Pre-flight analysis
     PreflightAnalysis         bool    `toml:"preflight_analysis"`

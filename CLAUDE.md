@@ -1251,6 +1251,55 @@ fakeclaude scenario) — with the flag on, `StartSession` produces two
 fresh `--session-id`, never `--resume`) before settling at `idle`; with it
 off, exactly one.
 
+### UI Localization (EN/RU)
+
+The frontend renders in English or Russian; nothing else (prompts sent to
+Claude, log/task/git data from the CLI, model/tool names, code and comments)
+is ever translated — this is a display-only concern, unlike the "Reply
+language: Russian" rule for chat replies elsewhere in this file.
+
+**No dependency, same shape as every other reading preference.**
+`frontend/src/lib/i18n.ts` exports `locale` (a `writable<'en'|'ru'>`,
+persisted to `localStorage` under `cm.locale`, default `'en'`) and `t` — a
+`derived(locale, ...)` store holding a `(key, params?) => string` lookup
+function, used in components as `$t('namespace.key')` /
+`$t('namespace.key', { count })` (`{count}` placeholders in the dictionary
+string). A plain `.ts` module (not a Svelte component — e.g.
+`stores/sessions.ts`'s toast notifications) reads the same store via
+`get(t)('key')`. Mirrors `stores/theme.ts`'s own
+localStorage-writable-subscribe pattern exactly, deliberately — this app
+ships zero frontend dependencies (see "Markdown in the Log" above for the
+same reasoning applied to the log renderer).
+
+**Dictionaries are per-component fragments, not one giant file.**
+`frontend/src/lib/locales/en/<component>.ts` /
+`frontend/src/lib/locales/ru/<component>.ts` each export a flat
+`Record<string, string>` whose keys are namespaced `<component>.<key>` (e.g.
+`sidebar.startAll`); `frontend/src/lib/locales/en.ts` / `ru.ts` import and
+spread every fragment into the one dictionary `i18n.ts` actually reads. A key
+missing from the active locale falls back to English, then to the bare key
+itself — a missing translation renders as (at worst) English text, never a
+blank string or a crash.
+
+**English text is byte-identical to what it replaced, on purpose.** The
+default locale is English specifically so that turning this feature on
+changes nothing for `frontend/tests/*.spec.ts`, which assert on visible
+English text throughout (`Playwright`'s default browser locale is not
+pinned, so `testdata/configs/playwright.toml` sets `language = "en"`
+explicitly for determinism). Every English dictionary value must therefore
+match the string it replaced exactly — this is a mechanical extraction, not
+a rewrite — while the Russian value is a real translation with no such
+constraint.
+
+**Persisted like the theme, in the same two places.** `GlobalSettings.Language`
+(`language`, TOML, default `"en"`) round-trips through the same
+`GetConfig`→mutate→`UpdateConfig` path as `Theme`; `Settings.svelte`'s
+"Global" tab has a `Language` `<select>` next to `Theme`'s, and `load()`
+calls `setLocale(cfg.Settings.Language === 'ru' ? 'ru' : 'en')` right after
+`setTheme(...)`, so the two settings apply identically on dialog open. The
+`localStorage` copy in `i18n.ts` is what applies instantly on app boot,
+before `GetConfig()` has resolved — same rationale as `theme.ts`.
+
 ### Sidebar Resizing
 The sidebar width is controlled from `App.svelte` via a draggable 4px divider. Width is stored in a reactive variable (150–500px). The `<Sidebar>` component uses `w-full` and fills its parent container.
 

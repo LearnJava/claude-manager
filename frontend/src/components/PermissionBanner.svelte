@@ -2,6 +2,7 @@
     import { onMount, onDestroy } from 'svelte';
     import { sessions, type SessionState, type PermissionRequest } from '../stores/sessions';
     import { RespondPermission } from '../../wailsjs/go/main/App';
+    import { t } from '../lib/i18n';
 
     export let session: SessionState;
 
@@ -61,9 +62,9 @@
     }
 
     function riskLabel(r: string): string {
-        if (r === 'high') return 'high';
-        if (r === 'medium') return 'medium';
-        return 'low';
+        if (r === 'high') return $t('permissionBanner.riskHigh');
+        if (r === 'medium') return $t('permissionBanner.riskMedium');
+        return $t('permissionBanner.riskLow');
     }
 
     function formatWait(sec: number): string {
@@ -73,9 +74,18 @@
         return `${m}m ${s}s`;
     }
 
-    async function respond(decision: string, label: string) {
+    function actionLabel(decision: string): string {
+        if (decision === 'allow') return $t('permissionBanner.allow');
+        if (decision === 'deny') return $t('permissionBanner.deny');
+        if (decision === 'allow_similar') return $t('permissionBanner.allowSimilar');
+        if (decision === 'allow_always') return $t('permissionBanner.alwaysAllow');
+        if (decision === 'deny_always') return $t('permissionBanner.alwaysDeny');
+        return decision;
+    }
+
+    async function respond(decision: string) {
         if (busy || !requestId) return;
-        busy = label;
+        busy = decision;
         error = '';
         try {
             await RespondPermission(session.id, requestId, decision);
@@ -87,7 +97,10 @@
                 return { ...map, [session.id]: { ...cur, pending_permission: null } };
             });
         } catch (e: any) {
-            error = `${label} failed: ${e?.message ?? String(e)}`;
+            error = $t('permissionBanner.actionFailed', {
+                action: actionLabel(decision),
+                error: e?.message ?? String(e),
+            });
         } finally {
             busy = null;
         }
@@ -106,9 +119,9 @@
         <div class="flex items-center gap-2 text-sm">
             <span class="text-status-waiting">⚠</span>
             <span class="font-semibold text-text">
-                {session.name} is waiting for permission
+                {$t('permissionBanner.waitingForPermission', { name: session.name })}
             </span>
-            <span class="text-text-muted text-xs ml-auto tabular-nums" title="Time waited">
+            <span class="text-text-muted text-xs ml-auto tabular-nums" title={$t('permissionBanner.timeWaited')}>
                 {formatWait(waitedSec)}
             </span>
         </div>
@@ -116,7 +129,7 @@
         <!-- Body: tool / target / risk -->
         <div class="mt-1.5 text-sm flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <span class="text-text-muted">🔧</span>
-            <span class="font-mono text-text font-semibold">{tool || '(unknown)'}</span>
+            <span class="font-mono text-text font-semibold">{tool || $t('permissionBanner.unknown')}</span>
             {#if target && target !== '(no details)'}
                 <span class="text-text-muted">:</span>
                 <span class="font-mono text-text break-all">{target}</span>
@@ -128,7 +141,7 @@
         {/if}
 
         <div class="mt-1 text-xs">
-            <span class="text-text-muted">Risk:</span>
+            <span class="text-text-muted">{$t('permissionBanner.risk')}</span>
             <span class="ml-1">{riskIcon(risk)}</span>
             <span class="ml-1 {riskColorClass(risk)} font-medium">{riskLabel(risk)}</span>
         </div>
@@ -141,51 +154,51 @@
         <div class="mt-2 flex flex-wrap gap-2">
             <button
                 type="button"
-                on:click={() => respond('allow', 'Allow')}
+                on:click={() => respond('allow')}
                 disabled={!!busy}
                 class="px-2.5 py-1 text-xs rounded font-medium
                        bg-status-working/90 hover:bg-status-working text-white
                        disabled:opacity-50 disabled:cursor-not-allowed">
-                {busy === 'Allow' ? '…' : '✓ Allow'}
+                {busy === 'allow' ? '…' : `✓ ${$t('permissionBanner.allow')}`}
             </button>
             <button
                 type="button"
-                on:click={() => respond('deny', 'Deny')}
+                on:click={() => respond('deny')}
                 disabled={!!busy}
                 class="px-2.5 py-1 text-xs rounded font-medium
                        bg-status-error/90 hover:bg-status-error text-white
                        disabled:opacity-50 disabled:cursor-not-allowed">
-                {busy === 'Deny' ? '…' : '✗ Deny'}
+                {busy === 'deny' ? '…' : `✗ ${$t('permissionBanner.deny')}`}
             </button>
             <button
                 type="button"
-                on:click={() => respond('allow_similar', 'Allow similar')}
+                on:click={() => respond('allow_similar')}
                 disabled={!!busy}
-                title="Allow this and similar requests until the manager restarts"
+                title={$t('permissionBanner.allowSimilarTooltip')}
                 class="px-2.5 py-1 text-xs rounded
                        bg-bg-panel border border-bg-border text-text hover:bg-bg
                        disabled:opacity-50 disabled:cursor-not-allowed">
-                {busy === 'Allow similar' ? '…' : '✓ Allow similar'}
+                {busy === 'allow_similar' ? '…' : `✓ ${$t('permissionBanner.allowSimilar')}`}
             </button>
             <button
                 type="button"
-                on:click={() => respond('allow_always', 'Always allow')}
+                on:click={() => respond('allow_always')}
                 disabled={!!busy}
-                title="Allow + persist a rule in the config"
+                title={$t('permissionBanner.alwaysAllowTooltip')}
                 class="px-2.5 py-1 text-xs rounded
                        bg-bg-panel border border-bg-border text-text hover:bg-bg
                        disabled:opacity-50 disabled:cursor-not-allowed">
-                {busy === 'Always allow' ? '…' : '✓ Always allow'}
+                {busy === 'allow_always' ? '…' : `✓ ${$t('permissionBanner.alwaysAllow')}`}
             </button>
             <button
                 type="button"
-                on:click={() => respond('deny_always', 'Always deny')}
+                on:click={() => respond('deny_always')}
                 disabled={!!busy}
-                title="Deny + persist a rule in the config"
+                title={$t('permissionBanner.alwaysDenyTooltip')}
                 class="px-2.5 py-1 text-xs rounded
                        bg-bg-panel border border-bg-border text-text hover:bg-bg
                        disabled:opacity-50 disabled:cursor-not-allowed">
-                {busy === 'Always deny' ? '…' : '✗ Always deny'}
+                {busy === 'deny_always' ? '…' : `✗ ${$t('permissionBanner.alwaysDeny')}`}
             </button>
         </div>
     </div>

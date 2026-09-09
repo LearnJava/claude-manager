@@ -300,6 +300,7 @@ func defaults() *AppConfig {
 			RateLimitPause:               300,
 			LogRetentionDays:             30,
 			Theme:                        "dark",
+			Language:                     "en",
 			CrashRecovery:                true,
 			PreflightAnalysis:            true,
 			PreflightModel:               "haiku",
@@ -358,6 +359,9 @@ func applyDefaults(cfg *AppConfig) {
 	}
 	if s.Theme == "" {
 		s.Theme = "dark"
+	}
+	if s.Language == "" {
+		s.Language = "en"
 	}
 	if s.PreflightModel == "" {
 		s.PreflightModel = "haiku"

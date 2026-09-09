@@ -1,6 +1,7 @@
 <script lang="ts">
     import { sessionList, sessionLogs } from '../stores/sessions';
-    import { derived } from 'svelte/store';
+    import { derived, get } from 'svelte/store';
+    import { t as translate } from '../lib/i18n';
 
     type Activity =
         | 'idle' | 'reading' | 'writing' | 'searching'
@@ -20,25 +21,25 @@
 
     function toolCaption(name: string): string {
         const t = (name ?? '').toLowerCase();
-        if (t.includes('read'))   return 'Reading the charts!';
-        if (t.includes('write'))  return 'Rewriting the log!';
-        if (t.includes('edit'))   return 'Patching the hull!';
-        if (t.includes('glob'))   return 'Scanning the map!';
-        if (t.includes('grep') || t.includes('search')) return 'Spotted something!';
-        if (t.includes('find'))   return 'Searching the hold!';
-        if (t.includes('bash') || t.includes('shell'))  return 'Hard to port!';
-        if (t.includes('web') || t.includes('fetch'))   return 'Signal incoming!';
-        if (t.includes('agent') || t.includes('task'))  return 'Deploy the crew!';
-        return 'Working the sails!';
+        if (t.includes('read'))   return get(translate)('alienCrew.caption.reading');
+        if (t.includes('write'))  return get(translate)('alienCrew.caption.writing');
+        if (t.includes('edit'))   return get(translate)('alienCrew.caption.editing');
+        if (t.includes('glob'))   return get(translate)('alienCrew.caption.glob');
+        if (t.includes('grep') || t.includes('search')) return get(translate)('alienCrew.caption.search');
+        if (t.includes('find'))   return get(translate)('alienCrew.caption.find');
+        if (t.includes('bash') || t.includes('shell'))  return get(translate)('alienCrew.caption.bash');
+        if (t.includes('web') || t.includes('fetch'))   return get(translate)('alienCrew.caption.web');
+        if (t.includes('agent') || t.includes('task'))  return get(translate)('alienCrew.caption.agent');
+        return get(translate)('alienCrew.caption.default');
     }
 
     const scene = derived([sessionList, sessionLogs], ([sessions, logs]) => {
         if (sessions.some(s => s.status === 'error'))
-            return { activity: 'error' as Activity, label: 'All hands on deck!' };
+            return { activity: 'error' as Activity, label: get(translate)('alienCrew.scene.error') };
         if (sessions.some(s => s.status === 'waiting_permission' || s.status === 'waiting_for_user'))
-            return { activity: 'waiting' as Activity, label: 'Awaiting orders...' };
+            return { activity: 'waiting' as Activity, label: get(translate)('alienCrew.scene.waiting') };
         if (sessions.some(s => s.status === 'rate_limited' || s.status === 'retrying'))
-            return { activity: 'sleeping' as Activity, label: 'Off watch...' };
+            return { activity: 'sleeping' as Activity, label: get(translate)('alienCrew.scene.sleeping') };
         const working = sessions.find(s => s.status === 'working');
         if (working) {
             const sl = logs[working.id] ?? [];
@@ -47,26 +48,28 @@
                     return { activity: toolToActivity(sl[i].tool_name!), label: toolCaption(sl[i].tool_name!) };
                 }
             }
-            return { activity: 'executing' as Activity, label: 'Working the sails!' };
+            return { activity: 'executing' as Activity, label: get(translate)('alienCrew.caption.default') };
         }
         if (sessions.some(s => s.status === 'starting' || s.status === 'analyzing'))
-            return { activity: 'starting' as Activity, label: 'Raise the sails!' };
-        return { activity: 'idle' as Activity, label: 'Sailing the Etherium...' };
+            return { activity: 'starting' as Activity, label: get(translate)('alienCrew.scene.starting') };
+        return { activity: 'idle' as Activity, label: get(translate)('alienCrew.scene.idle') };
     });
 
     // ── Demo: cycle through all animation states ──
-    const DEMO_STEPS: { activity: Activity; label: string }[] = [
-        { activity: 'idle',      label: 'Sailing the Etherium...' },
-        { activity: 'starting',  label: 'Raise the sails!' },
-        { activity: 'reading',   label: 'Reading the charts!' },
-        { activity: 'writing',   label: 'Rewriting the log!' },
-        { activity: 'searching', label: 'Spotted something!' },
-        { activity: 'executing', label: 'Hard to port!' },
-        { activity: 'analyzing', label: 'Signal incoming!' },
-        { activity: 'waiting',   label: 'Awaiting orders...' },
-        { activity: 'sleeping',  label: 'Off watch...' },
-        { activity: 'error',     label: 'All hands on deck!' },
-    ];
+    function demoSteps(): { activity: Activity; label: string }[] {
+        return [
+            { activity: 'idle',      label: get(translate)('alienCrew.scene.idle') },
+            { activity: 'starting',  label: get(translate)('alienCrew.scene.starting') },
+            { activity: 'reading',   label: get(translate)('alienCrew.caption.reading') },
+            { activity: 'writing',   label: get(translate)('alienCrew.caption.writing') },
+            { activity: 'searching', label: get(translate)('alienCrew.caption.search') },
+            { activity: 'executing', label: get(translate)('alienCrew.caption.bash') },
+            { activity: 'analyzing', label: get(translate)('alienCrew.caption.web') },
+            { activity: 'waiting',   label: get(translate)('alienCrew.scene.waiting') },
+            { activity: 'sleeping',  label: get(translate)('alienCrew.scene.sleeping') },
+            { activity: 'error',     label: get(translate)('alienCrew.scene.error') },
+        ];
+    }
 
     let demoActivity: Activity | null = null;
     let demoLabel: string | null = null;
@@ -75,7 +78,7 @@
     async function runDemo() {
         if (demoRunning) return;
         demoRunning = true;
-        for (const step of DEMO_STEPS) {
+        for (const step of demoSteps()) {
             demoActivity = step.activity;
             demoLabel    = step.label;
             await new Promise<void>(r => setTimeout(r, 1800));
@@ -92,13 +95,13 @@
 
 <div class="tp-panel">
     <div class="tp-title">
-        <span>⚓ CREW STATUS LOG ⚓</span>
+        <span>{$translate('alienCrew.title')}</span>
         <button
             class="tp-demo-btn"
             class:tp-demo-running={demoRunning}
             on:click={runDemo}
             disabled={demoRunning}
-            title="Test all animations">
+            title={$translate('alienCrew.testAnimations')}>
             {demoRunning ? '◼' : '▶'}
         </button>
     </div>

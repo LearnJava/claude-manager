@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { SessionState, TodoItem } from '../stores/sessions';
     import RoadmapTree from './RoadmapTree.svelte';
+    import { t } from '../lib/i18n';
 
     export let session: SessionState;
 
@@ -11,10 +12,11 @@
     // session spends most of its life inside one roadmap task, so that is the
     // more useful default there; an ad-hoc/chat session has no roadmap at all.
     type Tab = 'task' | 'roadmap';
-    const tabs: { id: Tab; label: string }[] = [
-        { id: 'task', label: 'Task' },
-        { id: 'roadmap', label: 'Roadmap' },
-    ];
+    type TabDef = { id: Tab; label: string };
+    $: tabs = [
+        { id: 'task', label: $t('taskPanel.tabs.task') },
+        { id: 'roadmap', label: $t('taskPanel.tabs.roadmap') },
+    ] as TabDef[];
     let tab: Tab = 'task';
     // Re-pick the default when switching between sessions, but never override
     // a tab the user chose for the session they are looking at.
@@ -91,7 +93,7 @@
         {#if currentLabel}
             <div>
                 <div class="text-[10px] uppercase tracking-wide text-text-muted mb-0.5">
-                    {currentLabelFromSource ? 'Now · from task source' : 'Now'}
+                    {currentLabelFromSource ? $t('taskPanel.nowFromSource') : $t('taskPanel.now')}
                 </div>
                 <div class="text-xs text-text break-words">{currentLabel}</div>
             </div>
@@ -115,8 +117,7 @@
             </ul>
         {:else if !currentLabel}
             <div class="text-xs text-text-muted">
-                No task activity yet — the plan appears here once the session
-                starts working.
+                {$t('taskPanel.noActivity')}
             </div>
         {/if}
 
@@ -126,7 +127,7 @@
                     type="button"
                     class="text-[10px] uppercase tracking-wide text-text-muted hover:text-text"
                     on:click={() => (showPrompt = !showPrompt)}>
-                    {showPrompt ? '− ' : '+ '}Session prompt
+                    {showPrompt ? '− ' : '+ '}{$t('taskPanel.sessionPrompt')}
                 </button>
                 {#if showPrompt}
                     <div class="mt-1 text-xs text-text-muted whitespace-pre-wrap break-words">

@@ -3,6 +3,7 @@
     import { sessionLogs, type LogEntry } from '../stores/sessions';
     import { logSearch, logSearchText, logSearchFocus } from '../stores/logSearch';
     import { logMarkdown } from '../stores/logView';
+    import { t } from '../lib/i18n';
     import {
         hasMarkdown,
         hasStrongMarkdown,
@@ -245,7 +246,7 @@
         <input
             bind:this={searchInput}
             type="search"
-            placeholder="Filter log… (Ctrl+F)"
+            placeholder={$t('logStream.filterPlaceholder')}
             value={$logSearchText}
             on:input={onSearchInput}
             on:keydown={onSearchKey}
@@ -256,21 +257,21 @@
             <button
                 type="button"
                 on:click={clearSearch}
-                title="Clear filter (Esc)"
+                title={$t('logStream.clearFilterTitle')}
                 class="text-text-muted hover:text-text text-xs px-1">✕</button>
             <span class="text-text-muted text-[11px] select-none">
                 {entries.length}/{allEntries.length}
             </span>
         {/if}
         <label
-            title="Render markdown (headings, lists, tables, code) instead of raw text"
+            title={$t('logStream.renderMarkdownTitle')}
             class="flex items-center gap-1 shrink-0 text-[11px] text-text-muted
                    select-none cursor-pointer whitespace-nowrap">
             <input
                 type="checkbox"
                 bind:checked={$logMarkdown}
                 class="w-3 h-3 accent-blue-500 cursor-pointer" />
-            Markdown
+            {$t('logStream.markdownLabel')}
         </label>
     </div>
 
@@ -282,9 +283,9 @@
         {#if entries.length === 0}
             <div class="text-text-dim italic py-2">
                 {#if filter}
-                    No entries match <code>{filter}</code>.
+                    {$t('logStream.noEntriesMatch')} <code>{filter}</code>.
                 {:else}
-                    No log entries yet.
+                    {$t('logStream.noLogEntries')}
                 {/if}
             </div>
         {:else}
@@ -307,7 +308,7 @@
                         <button
                             type="button"
                             on:click={() => toggle(key, isOpen)}
-                            title={isOpen ? 'Collapse' : 'Expand'}
+                            title={isOpen ? $t('logStream.collapse') : $t('logStream.expand')}
                             class="shrink-0 select-none w-4 text-center text-text-dim
                                    hover:text-text font-bold leading-5">
                             {isOpen ? '−' : '＋'}
@@ -320,8 +321,8 @@
                             type="button"
                             on:click={() => toggleForced(key, mdSrc, isOpen)}
                             title={mdSrc
-                                ? 'Show this entry as raw text'
-                                : 'Render this entry as markdown'}
+                                ? $t('logStream.showAsRaw')
+                                : $t('logStream.renderAsMarkdown')}
                             class="shrink-0 select-none w-4 text-center leading-5 text-[10px]
                                    rounded {mdSrc
                                        ? 'text-blue-600 dark:text-blue-400 font-bold'
@@ -351,7 +352,7 @@
             on:click={jumpToBottom}
             class="absolute bottom-2 right-4 bg-bg-elevated border border-bg-border
                    text-text text-xs px-2 py-1 rounded shadow hover:bg-bg-panel">
-            ↓ Jump to latest
+            ↓ {$t('logStream.jumpToLatest')}
         </button>
     {/if}
 </div>

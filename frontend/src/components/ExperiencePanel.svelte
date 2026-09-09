@@ -2,6 +2,7 @@
     import { createEventDispatcher, onMount } from 'svelte';
     import { projects } from '../stores/projects';
     import { formatDuration, formatPercent, formatTime, formatTokens } from '../lib/formatters';
+    import { t } from '../lib/i18n';
     import SkillReview from './SkillReview.svelte';
     import {
         addPermissionRule,
@@ -29,11 +30,11 @@
 
     let project = '';
     let days = 30;
-    const dayOptions: { id: number; label: string }[] = [
-        { id: 1, label: 'Today' },
-        { id: 7, label: '7 days' },
-        { id: 30, label: '30 days' },
-        { id: 90, label: '90 days' },
+    const dayOptions: { id: number; key: string }[] = [
+        { id: 1, key: 'experiencePanel.period.today' },
+        { id: 7, key: 'experiencePanel.period.7days' },
+        { id: 30, key: 'experiencePanel.period.30days' },
+        { id: 90, key: 'experiencePanel.period.90days' },
     ];
 
     let stats: SignatureStat[] = [];
@@ -93,7 +94,7 @@
             permSafe = set.Safe ?? [];
             permNeedsReview = set.NeedsReview ?? [];
         } catch (e: any) {
-            permError = `Failed to load permission candidates: ${e?.message ?? String(e)}`;
+            permError = $t('experiencePanel.permissions.errorLoad', { error: e?.message ?? String(e) });
             permSafe = [];
             permNeedsReview = [];
         } finally {
@@ -112,7 +113,7 @@
         try {
             durations = await fetchDurationProfile(project);
         } catch (e: any) {
-            durError = `Failed to load duration profile: ${e?.message ?? String(e)}`;
+            durError = $t('experiencePanel.timing.errorLoad', { error: e?.message ?? String(e) });
             durations = [];
         } finally {
             durLoading = false;
@@ -130,7 +131,7 @@
         try {
             attribution = await fetchTokenAttribution(project, 30);
         } catch (e: any) {
-            costError = `Failed to load token attribution: ${e?.message ?? String(e)}`;
+            costError = $t('experiencePanel.cost.errorLoad', { error: e?.message ?? String(e) });
             attribution = { TotalEstTokens: 0, BySignature: [], ByTool: [] };
         } finally {
             costLoading = false;
@@ -141,7 +142,7 @@
         const key = rowKey(c);
         const sessionName = permSessionByRow[key] || projectSessions[0]?.name;
         if (!sessionName) {
-            permAddErrorByRow = { ...permAddErrorByRow, [key]: 'No session configured for this project.' };
+            permAddErrorByRow = { ...permAddErrorByRow, [key]: $t('experiencePanel.permissions.noSession') };
             return;
         }
         permAddErrorByRow = { ...permAddErrorByRow, [key]: '' };
@@ -172,7 +173,7 @@
         try {
             stats = await fetchTopActions(project, days);
         } catch (e: any) {
-            error = `Failed to load actions: ${e?.message ?? String(e)}`;
+            error = $t('experiencePanel.actions.errorLoad', { error: e?.message ?? String(e) });
             stats = [];
         } finally {
             loading = false;
@@ -288,7 +289,7 @@
         <!-- Header -->
         <div class="px-4 py-3 border-b border-bg-border flex items-center justify-between shrink-0">
             <div class="flex items-center gap-3">
-                <h2 class="text-text font-semibold text-base">Experience</h2>
+                <h2 class="text-text font-semibold text-base">{$t('experiencePanel.title')}</h2>
                 <div class="flex items-center gap-1 text-xs">
                     <button
                         type="button"
@@ -297,7 +298,7 @@
                             {tab === 'actions'
                                 ? 'bg-bg-elevated border-blue-500 text-text'
                                 : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
-                        Actions
+                        {$t('experiencePanel.tabs.actions')}
                     </button>
                     <button
                         type="button"
@@ -306,7 +307,7 @@
                             {tab === 'permissions'
                                 ? 'bg-bg-elevated border-blue-500 text-text'
                                 : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
-                        Permissions
+                        {$t('experiencePanel.tabs.permissions')}
                     </button>
                     <button
                         type="button"
@@ -315,7 +316,7 @@
                             {tab === 'timing'
                                 ? 'bg-bg-elevated border-blue-500 text-text'
                                 : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
-                        Timing
+                        {$t('experiencePanel.tabs.timing')}
                     </button>
                     <button
                         type="button"
@@ -324,7 +325,7 @@
                             {tab === 'cost'
                                 ? 'bg-bg-elevated border-blue-500 text-text'
                                 : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
-                        Cost by tool
+                        {$t('experiencePanel.tabs.cost')}
                     </button>
                     <button
                         type="button"
@@ -333,7 +334,7 @@
                             {tab === 'skills'
                                 ? 'bg-bg-elevated border-blue-500 text-text'
                                 : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
-                        Skills
+                        {$t('experiencePanel.tabs.skills')}
                     </button>
                 </div>
             </div>
@@ -348,7 +349,7 @@
                         else skillReview?.load();
                     }}
                     class="px-2 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
-                    Refresh
+                    {$t('experiencePanel.refresh')}
                 </button>
                 <button
                     class="text-text-muted hover:text-text text-sm px-2 py-0.5"
@@ -360,7 +361,7 @@
         <!-- Filters -->
         <div class="px-4 py-3 border-b border-bg-border shrink-0 flex items-end gap-2">
             <label class="flex flex-col text-xs text-text-muted gap-1">
-                Project
+                {$t('experiencePanel.filters.project')}
                 <select
                     bind:value={project}
                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
@@ -378,7 +379,7 @@
                             {days === opt.id
                                 ? 'bg-bg-elevated border-blue-500 text-text'
                                 : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
-                        {opt.label}
+                        {$t(opt.key)}
                     </button>
                 {/each}
             </div>
@@ -391,35 +392,35 @@
             {:else if tab === 'permissions'}
                 {#if !project}
                     <div class="text-text-muted text-sm italic py-10 text-center">
-                        No project configured.
+                        {$t('experiencePanel.noProject')}
                     </div>
                 {:else if permLoading}
                     <div class="text-text-muted text-sm italic py-10 text-center">
-                        Loading permission candidates…
+                        {$t('experiencePanel.permissions.loading')}
                     </div>
                 {:else if permError}
                     <div class="text-status-error text-sm py-10 text-center">{permError}</div>
                 {:else if permSafe.length === 0 && permNeedsReview.length === 0}
                     <div class="text-text-muted text-sm italic py-10 text-center">
-                        No permission candidates for this project/period. Enable
-                        <code class="font-mono">[optimization] experience_tracking</code> to start
-                        collecting them.
+                        {$t('experiencePanel.permissions.emptyPre')}
+                        <code class="font-mono">[optimization] experience_tracking</code>
+                        {$t('experiencePanel.enable.collectThemSuffix')}
                     </div>
                 {:else}
                     <div class="px-4 py-3">
                         {#if permSafe.length > 0}
                             <h3 class="text-text text-sm font-medium mb-2">
-                                Safe to auto-allow ({permSafe.length})
+                                {$t('experiencePanel.permissions.safeHeading', { count: permSafe.length })}
                             </h3>
                             <table class="w-full text-sm border-collapse mb-6">
                                 <thead class="bg-bg-elevated text-text-muted text-xs">
                                     <tr>
-                                        <th class="text-left px-3 py-2 font-medium">Tool</th>
-                                        <th class="text-left px-3 py-2 font-medium">Pattern</th>
-                                        <th class="text-right px-3 py-2 font-medium">Asked</th>
-                                        <th class="text-right px-3 py-2 font-medium">Allowed</th>
-                                        <th class="text-right px-3 py-2 font-medium">Denied</th>
-                                        <th class="text-left px-3 py-2 font-medium">Session</th>
+                                        <th class="text-left px-3 py-2 font-medium">{$t('experiencePanel.permissions.colTool')}</th>
+                                        <th class="text-left px-3 py-2 font-medium">{$t('experiencePanel.permissions.colPattern')}</th>
+                                        <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.permissions.colAsked')}</th>
+                                        <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.permissions.colAllowed')}</th>
+                                        <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.permissions.colDenied')}</th>
+                                        <th class="text-left px-3 py-2 font-medium">{$t('experiencePanel.permissions.colSession')}</th>
                                         <th class="text-left px-3 py-2 font-medium"></th>
                                     </tr>
                                 </thead>
@@ -451,13 +452,13 @@
                                             </td>
                                             <td class="px-3 py-1.5">
                                                 {#if permAddedRows.has(key)}
-                                                    <span class="text-status-working text-xs">Added</span>
+                                                    <span class="text-status-working text-xs">{$t('experiencePanel.permissions.added')}</span>
                                                 {:else}
                                                     <button
                                                         type="button"
                                                         on:click={() => addRule(c)}
                                                         class="px-2 py-0.5 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
-                                                        Add rule
+                                                        {$t('experiencePanel.permissions.addRule')}
                                                     </button>
                                                 {/if}
                                                 {#if permAddErrorByRow[key]}
@@ -474,16 +475,16 @@
 
                         {#if permNeedsReview.length > 0}
                             <h3 class="text-text text-sm font-medium mb-2">
-                                Needs manual review ({permNeedsReview.length})
+                                {$t('experiencePanel.permissions.needsReviewHeading', { count: permNeedsReview.length })}
                             </h3>
                             <table class="w-full text-sm border-collapse">
                                 <thead class="bg-bg-elevated text-text-muted text-xs">
                                     <tr>
-                                        <th class="text-left px-3 py-2 font-medium">Tool</th>
-                                        <th class="text-left px-3 py-2 font-medium">Pattern</th>
-                                        <th class="text-right px-3 py-2 font-medium">Asked</th>
-                                        <th class="text-right px-3 py-2 font-medium">Allowed</th>
-                                        <th class="text-right px-3 py-2 font-medium">Denied</th>
+                                        <th class="text-left px-3 py-2 font-medium">{$t('experiencePanel.permissions.colTool')}</th>
+                                        <th class="text-left px-3 py-2 font-medium">{$t('experiencePanel.permissions.colPattern')}</th>
+                                        <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.permissions.colAsked')}</th>
+                                        <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.permissions.colAllowed')}</th>
+                                        <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.permissions.colDenied')}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -512,32 +513,31 @@
             {:else if tab === 'timing'}
                 {#if !project}
                     <div class="text-text-muted text-sm italic py-10 text-center">
-                        No project configured.
+                        {$t('experiencePanel.noProject')}
                     </div>
                 {:else if durLoading}
                     <div class="text-text-muted text-sm italic py-10 text-center">
-                        Loading duration profile…
+                        {$t('experiencePanel.timing.loading')}
                     </div>
                 {:else if durError}
                     <div class="text-status-error text-sm py-10 text-center">{durError}</div>
                 {:else if durations.length === 0}
                     <div class="text-text-muted text-sm italic py-10 text-center">
-                        No duration profile for this project yet — needs at least 10 timed calls
-                        of the same command. Enable
-                        <code class="font-mono">[optimization] experience_tracking</code> to start
-                        collecting them.
+                        {$t('experiencePanel.timing.emptyPre')}
+                        <code class="font-mono">[optimization] experience_tracking</code>
+                        {$t('experiencePanel.enable.collectThemSuffix')}
                     </div>
                 {:else}
                     <table class="w-full text-sm border-collapse">
                         <thead class="bg-bg-elevated sticky top-0 z-10 text-text-muted text-xs">
                             <tr>
-                                <th class="text-left px-3 py-2 font-medium">Signature</th>
-                                <th class="text-right px-3 py-2 font-medium">N</th>
-                                <th class="text-right px-3 py-2 font-medium">Median</th>
-                                <th class="text-right px-3 py-2 font-medium">P90</th>
-                                <th class="text-right px-3 py-2 font-medium">Max</th>
-                                <th class="text-right px-3 py-2 font-medium">Total</th>
-                                <th class="text-right px-3 py-2 font-medium">Fail rate</th>
+                                <th class="text-left px-3 py-2 font-medium">{$t('experiencePanel.timing.colSignature')}</th>
+                                <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.timing.colN')}</th>
+                                <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.timing.colMedian')}</th>
+                                <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.timing.colP90')}</th>
+                                <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.timing.colMax')}</th>
+                                <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.timing.colTotal')}</th>
+                                <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.timing.colFailRate')}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -574,32 +574,32 @@
             {:else if tab === 'cost'}
                 {#if !project}
                     <div class="text-text-muted text-sm italic py-10 text-center">
-                        No project configured.
+                        {$t('experiencePanel.noProject')}
                     </div>
                 {:else if costLoading}
                     <div class="text-text-muted text-sm italic py-10 text-center">
-                        Loading token attribution…
+                        {$t('experiencePanel.cost.loading')}
                     </div>
                 {:else if costError}
                     <div class="text-status-error text-sm py-10 text-center">{costError}</div>
                 {:else if attribution.BySignature.length === 0}
                     <div class="text-text-muted text-sm italic py-10 text-center">
-                        No recorded tool output for this project yet. Enable
-                        <code class="font-mono">[optimization] experience_tracking</code> to start
-                        collecting it.
+                        {$t('experiencePanel.cost.emptyPre')}
+                        <code class="font-mono">[optimization] experience_tracking</code>
+                        {$t('experiencePanel.enable.collectItSuffix')}
                     </div>
                 {:else}
                     <div class="px-4 py-3">
                         <h3 class="text-text text-sm font-medium mb-2">
-                            By tool — {formatTokens(attribution.TotalEstTokens)} est. tokens total
+                            {$t('experiencePanel.cost.byToolHeading', { tokens: formatTokens(attribution.TotalEstTokens) })}
                         </h3>
                         <table class="w-full text-sm border-collapse mb-6">
                             <thead class="bg-bg-elevated text-text-muted text-xs">
                                 <tr>
-                                    <th class="text-left px-3 py-2 font-medium">Tool</th>
-                                    <th class="text-right px-3 py-2 font-medium">Calls</th>
-                                    <th class="text-right px-3 py-2 font-medium">Est. tokens</th>
-                                    <th class="text-right px-3 py-2 font-medium">Share</th>
+                                    <th class="text-left px-3 py-2 font-medium">{$t('experiencePanel.cost.colTool')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colCalls')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colEstTokens')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colShare')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -621,17 +621,17 @@
                         </table>
 
                         <h3 class="text-text text-sm font-medium mb-2">
-                            Top signatures by estimated cost
+                            {$t('experiencePanel.cost.topSignaturesHeading')}
                         </h3>
                         <table class="w-full text-sm border-collapse">
                             <thead class="bg-bg-elevated text-text-muted text-xs">
                                 <tr>
-                                    <th class="text-left px-3 py-2 font-medium">Signature</th>
-                                    <th class="text-right px-3 py-2 font-medium">Calls</th>
-                                    <th class="text-right px-3 py-2 font-medium">Est. tokens</th>
-                                    <th class="text-right px-3 py-2 font-medium">Share</th>
-                                    <th class="text-right px-3 py-2 font-medium">Avg chars</th>
-                                    <th class="text-right px-3 py-2 font-medium">Max chars</th>
+                                    <th class="text-left px-3 py-2 font-medium">{$t('experiencePanel.cost.colSignature')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colCalls')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colEstTokens')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colShare')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colAvgChars')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colMaxChars')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -663,19 +663,19 @@
                 {/if}
             {:else if !project}
                 <div class="text-text-muted text-sm italic py-10 text-center">
-                    No project configured.
+                    {$t('experiencePanel.noProject')}
                 </div>
             {:else if loading}
                 <div class="text-text-muted text-sm italic py-10 text-center">
-                    Loading actions…
+                    {$t('experiencePanel.actions.loading')}
                 </div>
             {:else if error}
                 <div class="text-status-error text-sm py-10 text-center">{error}</div>
             {:else if sorted.length === 0}
                 <div class="text-text-muted text-sm italic py-10 text-center">
-                    No recorded actions for this project/period. Enable
-                    <code class="font-mono">[optimization] experience_tracking</code> to start
-                    collecting them.
+                    {$t('experiencePanel.actions.emptyPre')}
+                    <code class="font-mono">[optimization] experience_tracking</code>
+                    {$t('experiencePanel.enable.collectThemSuffix')}
                 </div>
             {:else}
                 <table class="w-full text-sm border-collapse">
@@ -685,32 +685,32 @@
                             <th
                                 class="text-left px-3 py-2 font-medium cursor-pointer select-none hover:text-text"
                                 on:click={() => toggleSort('sig')}>
-                                Signature{sortIndicator('sig')}
+                                {$t('experiencePanel.actions.colSignature')}{sortIndicator('sig')}
                             </th>
                             <th
                                 class="text-right px-3 py-2 font-medium cursor-pointer select-none hover:text-text"
                                 on:click={() => toggleSort('count')}>
-                                N{sortIndicator('count')}
+                                {$t('experiencePanel.actions.colN')}{sortIndicator('count')}
                             </th>
                             <th
                                 class="text-right px-3 py-2 font-medium cursor-pointer select-none hover:text-text"
                                 on:click={() => toggleSort('runs')}>
-                                Runs{sortIndicator('runs')}
+                                {$t('experiencePanel.actions.colRuns')}{sortIndicator('runs')}
                             </th>
                             <th
                                 class="text-right px-3 py-2 font-medium cursor-pointer select-none hover:text-text"
                                 on:click={() => toggleSort('errors')}>
-                                Errors{sortIndicator('errors')}
+                                {$t('experiencePanel.actions.colErrors')}{sortIndicator('errors')}
                             </th>
                             <th
                                 class="text-right px-3 py-2 font-medium cursor-pointer select-none hover:text-text"
                                 on:click={() => toggleSort('tokens')}>
-                                Out tokens{sortIndicator('tokens')}
+                                {$t('experiencePanel.actions.colOutTokens')}{sortIndicator('tokens')}
                             </th>
                             <th
                                 class="text-left px-3 py-2 font-medium cursor-pointer select-none hover:text-text"
                                 on:click={() => toggleSort('last')}>
-                                Last seen{sortIndicator('last')}
+                                {$t('experiencePanel.actions.colLastSeen')}{sortIndicator('last')}
                             </th>
                         </tr>
                     </thead>
@@ -751,21 +751,21 @@
                                         <div class="px-4 py-3 border-t border-b border-bg-border">
                                             {#if (row.SampleArgs ?? []).length > 0}
                                                 <div class="text-text-dim text-xs mb-2">
-                                                    Sample args:
+                                                    {$t('experiencePanel.actions.sampleArgs')}
                                                     {#each row.SampleArgs ?? [] as a, i (i)}
                                                         <span class="font-mono text-text-muted">{a}</span>{i < (row.SampleArgs?.length ?? 0) - 1 ? ', ' : ''}
                                                     {/each}
                                                 </div>
                                             {/if}
-                                            <div class="text-text-muted text-xs mb-1">Examples</div>
+                                            <div class="text-text-muted text-xs mb-1">{$t('experiencePanel.actions.examples')}</div>
                                             {#if samplesLoadingBySig[row.Sig]}
-                                                <div class="text-text-muted italic text-xs py-2">Loading examples…</div>
+                                                <div class="text-text-muted italic text-xs py-2">{$t('experiencePanel.actions.loadingExamples')}</div>
                                             {:else if samplesErrorBySig[row.Sig]}
                                                 <div class="text-status-error text-xs py-2 font-mono break-words">
                                                     {samplesErrorBySig[row.Sig]}
                                                 </div>
                                             {:else if (samplesBySig[row.Sig] ?? []).length === 0}
-                                                <div class="text-text-dim italic text-xs py-2">No sample rows.</div>
+                                                <div class="text-text-dim italic text-xs py-2">{$t('experiencePanel.actions.noSamples')}</div>
                                             {:else}
                                                 <div class="max-h-[240px] overflow-y-auto bg-bg border border-bg-border rounded font-mono text-[12px] leading-5 px-2 py-1">
                                                     {#each samplesBySig[row.Sig] ?? [] as s (s.ID)}
@@ -775,7 +775,7 @@
                                                             </span>
                                                             <span class="text-text-muted shrink-0">{s.Session}</span>
                                                             <span class="whitespace-pre-wrap break-words">
-                                                                {s.Arg || '(no arg)'}
+                                                                {s.Arg || $t('experiencePanel.actions.noArg')}
                                                             </span>
                                                         </div>
                                                     {/each}
@@ -794,16 +794,13 @@
         <!-- Footer -->
         <div class="px-4 py-2 border-t border-bg-border text-xs text-text-muted shrink-0">
             {#if tab === 'actions'}
-                Click a signature to load its recorded examples.
+                {$t('experiencePanel.footer.actions')}
             {:else if tab === 'timing'}
-                Durations come from action_signatures.dur_sec — the tool_use→tool_result gap in each
-                logged call. A signature needs at least 10 timed calls to appear here.
+                {$t('experiencePanel.footer.timing')}
             {:else if tab === 'cost'}
-                Est. tokens are chars/4, an order-of-magnitude approximation — there is no exact
-                tokenizer without hitting the API.
+                {$t('experiencePanel.footer.cost')}
             {:else if tab === 'skills'}
-                Click a skill to review/edit its markdown. Accepting writes it to
-                &lt;project&gt;/.claude/skills/&lt;name&gt;/SKILL.md.
+                {$t('experiencePanel.footer.skills')}
             {/if}
         </div>
     </div>

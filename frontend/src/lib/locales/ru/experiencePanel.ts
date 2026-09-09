@@ -1,0 +1,85 @@
+// Translation fragment: experiencePanel (ru). Keys are namespaced 'experiencePanel.xxx' — see frontend/src/lib/i18n.ts.
+
+export default {
+    'experiencePanel.title': 'Опыт',
+    'experiencePanel.tabs.actions': 'Действия',
+    'experiencePanel.tabs.permissions': 'Разрешения',
+    'experiencePanel.tabs.timing': 'Время выполнения',
+    'experiencePanel.tabs.cost': 'Стоимость по инструментам',
+    'experiencePanel.tabs.skills': 'Навыки',
+    'experiencePanel.refresh': 'Обновить',
+
+    'experiencePanel.filters.project': 'Проект',
+    'experiencePanel.period.today': 'Сегодня',
+    'experiencePanel.period.7days': '7 дней',
+    'experiencePanel.period.30days': '30 дней',
+    'experiencePanel.period.90days': '90 дней',
+
+    'experiencePanel.noProject': 'Проект не выбран.',
+    'experiencePanel.enable.collectThemSuffix': 'чтобы начать их собирать.',
+    'experiencePanel.enable.collectItSuffix': 'чтобы начать его собирать.',
+
+    'experiencePanel.permissions.loading': 'Загрузка кандидатов на разрешения…',
+    'experiencePanel.permissions.emptyPre':
+        'Нет кандидатов на разрешения для этого проекта/периода. Включите',
+    'experiencePanel.permissions.safeHeading': 'Можно разрешать автоматически ({count})',
+    'experiencePanel.permissions.needsReviewHeading': 'Требуют ручной проверки ({count})',
+    'experiencePanel.permissions.colTool': 'Инструмент',
+    'experiencePanel.permissions.colPattern': 'Шаблон',
+    'experiencePanel.permissions.colAsked': 'Запрошено',
+    'experiencePanel.permissions.colAllowed': 'Разрешено',
+    'experiencePanel.permissions.colDenied': 'Запрещено',
+    'experiencePanel.permissions.colSession': 'Сессия',
+    'experiencePanel.permissions.added': 'Добавлено',
+    'experiencePanel.permissions.addRule': 'Добавить правило',
+    'experiencePanel.permissions.errorLoad': 'Не удалось загрузить кандидатов на разрешения: {error}',
+    'experiencePanel.permissions.noSession': 'Для этого проекта не настроена ни одна сессия.',
+
+    'experiencePanel.timing.loading': 'Загрузка профиля времени выполнения…',
+    'experiencePanel.timing.emptyPre':
+        'Пока нет профиля времени выполнения для этого проекта — нужно минимум 10 замеров одной и той же команды. Включите',
+    'experiencePanel.timing.colSignature': 'Сигнатура',
+    'experiencePanel.timing.colN': 'N',
+    'experiencePanel.timing.colMedian': 'Медиана',
+    'experiencePanel.timing.colP90': 'P90',
+    'experiencePanel.timing.colMax': 'Макс.',
+    'experiencePanel.timing.colTotal': 'Всего',
+    'experiencePanel.timing.colFailRate': 'Доля ошибок',
+    'experiencePanel.timing.errorLoad': 'Не удалось загрузить профиль времени выполнения: {error}',
+
+    'experiencePanel.cost.loading': 'Загрузка распределения токенов…',
+    'experiencePanel.cost.emptyPre': 'Пока нет записанного вывода инструментов для этого проекта. Включите',
+    'experiencePanel.cost.byToolHeading': 'По инструментам — всего оценочно {tokens} токенов',
+    'experiencePanel.cost.colTool': 'Инструмент',
+    'experiencePanel.cost.colCalls': 'Вызовы',
+    'experiencePanel.cost.colEstTokens': 'Оцен. токены',
+    'experiencePanel.cost.colShare': 'Доля',
+    'experiencePanel.cost.topSignaturesHeading': 'Топ сигнатур по оценочной стоимости',
+    'experiencePanel.cost.colSignature': 'Сигнатура',
+    'experiencePanel.cost.colAvgChars': 'Ср. символов',
+    'experiencePanel.cost.colMaxChars': 'Макс. символов',
+    'experiencePanel.cost.errorLoad': 'Не удалось загрузить распределение токенов: {error}',
+
+    'experiencePanel.actions.loading': 'Загрузка действий…',
+    'experiencePanel.actions.emptyPre': 'Нет записанных действий для этого проекта/периода. Включите',
+    'experiencePanel.actions.colSignature': 'Сигнатура',
+    'experiencePanel.actions.colN': 'N',
+    'experiencePanel.actions.colRuns': 'Запусков',
+    'experiencePanel.actions.colErrors': 'Ошибки',
+    'experiencePanel.actions.colOutTokens': 'Токены на выходе',
+    'experiencePanel.actions.colLastSeen': 'Последний раз',
+    'experiencePanel.actions.sampleArgs': 'Примеры аргументов:',
+    'experiencePanel.actions.examples': 'Примеры',
+    'experiencePanel.actions.loadingExamples': 'Загрузка примеров…',
+    'experiencePanel.actions.noSamples': 'Нет примеров.',
+    'experiencePanel.actions.noArg': '(нет аргумента)',
+    'experiencePanel.actions.errorLoad': 'Не удалось загрузить действия: {error}',
+
+    'experiencePanel.footer.actions': 'Кликните по сигнатуре, чтобы загрузить её примеры.',
+    'experiencePanel.footer.timing':
+        'Время выполнения берётся из action_signatures.dur_sec — промежутка между tool_use и tool_result для каждого записанного вызова. Сигнатуре нужно минимум 10 замеров, чтобы появиться здесь.',
+    'experiencePanel.footer.cost':
+        'Оцен. токены = символы/4, приближение по порядку величины — точного токенайзера без обращения к API нет.',
+    'experiencePanel.footer.skills':
+        'Кликните по навыку, чтобы просмотреть/отредактировать его markdown. Принятие запишет его в <project>/.claude/skills/<name>/SKILL.md.',
+} as Record<string, string>;

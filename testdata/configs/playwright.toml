@@ -8,6 +8,7 @@ log_retention_days = 1
 crash_recovery = false
 preflight_analysis = false
 session_start_delay = 0
+language = "en"
 
 [[project]]
 name = "test"

@@ -12,6 +12,7 @@
     } from '../stores/sessions';
     import { projects } from '../stores/projects';
     import { formatTime } from '../lib/formatters';
+    import { t } from '../lib/i18n';
     import {
         StopSession,
         RestartSession,
@@ -66,7 +67,7 @@
             copyConfirm = true;
             setTimeout(() => (copyConfirm = false), 1500);
         } catch (e: any) {
-            lastError = `Copy log: ${e?.message ?? String(e)}`;
+            lastError = `${$t('sessionView.copyLog.errorPrefix')}: ${e?.message ?? String(e)}`;
         }
     }
 
@@ -103,7 +104,7 @@
             clearSessionLog(session.id);
             await RestartSession(session.id);
         } catch (e: any) {
-            gitInitError = `Init git repo failed: ${e?.message ?? String(e)}`;
+            gitInitError = `${$t('sessionView.gitInit.failedPrefix')}: ${e?.message ?? String(e)}`;
         } finally {
             gitInitBusy = false;
         }
@@ -125,7 +126,7 @@
         await call(`Export log (${exportFormat})`, async () => {
             const path = await ExportLog(session.id, payload as any, exportFormat);
             if (path) {
-                exportConfirm = `Saved → ${path}`;
+                exportConfirm = `${$t('sessionView.exportLog.savedPrefix')} ${path}`;
                 setTimeout(() => (exportConfirm = ''), 3000);
             } else {
                 exportConfirm = ''; // user cancelled
@@ -160,11 +161,9 @@
                 <div class="px-3 py-2 bg-status-error/10 border-b border-status-error/30
                             flex items-center justify-between gap-3 text-xs">
                     <span class="text-text">
-                        This session needs <code class="font-mono">--worktree</code>, but
+                        {$t('sessionView.gitInitBanner.needsPrefix')} <code class="font-mono">--worktree</code>{$t('sessionView.gitInitBanner.butSuffix')}
                         <code class="font-mono">{projectPath || session.project}</code>
-                        isn't a usable git repository yet (not initialized, or has no
-                        commits — a bare <code class="font-mono">git init</code> alone
-                        isn't enough).
+                        {$t('sessionView.gitInitBanner.notUsable')} <code class="font-mono">git init</code> {$t('sessionView.gitInitBanner.aloneNotEnough')}
                     </span>
                     <button
                         type="button"
@@ -172,7 +171,7 @@
                         disabled={gitInitBusy || !projectPath}
                         class="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white
                                disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
-                        {gitInitBusy ? 'Initializing…' : 'Initialize git repo & retry'}
+                        {gitInitBusy ? $t('sessionView.gitInit.initializing') : $t('sessionView.gitInit.button')}
                     </button>
                 </div>
                 {#if gitInitError}
@@ -192,8 +191,8 @@
                    text-text hover:bg-bg-panel disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={!isRunning || !!busy}
             on:click={onStop}
-            title="Stop: terminate the process now">
-            {busyMatches('Stop') ? '…' : '⏹'} Stop
+            title={$t('sessionView.stop.title')}>
+            {busyMatches('Stop') ? '…' : '⏹'} {$t('sessionView.stop.label')}
         </button>
         <button
             type="button"
@@ -204,9 +203,9 @@
             disabled={!isRunning || !!busy || session.stop_requested}
             on:click={onStopAfterTask}
             title={session.stop_requested
-                ? 'Already requested: will stop once the current task finishes'
-                : 'Soft stop: let the current task finish, then stop'}>
-            {#if busyMatches('Stop after task')}…{:else if session.stop_requested}⏹ Stopping after task…{:else}⏹ Stop after task{/if}
+                ? $t('sessionView.stopAfterTask.titleRequested')
+                : $t('sessionView.stopAfterTask.titleDefault')}>
+            {#if busyMatches('Stop after task')}…{:else if session.stop_requested}{$t('sessionView.stopAfterTask.stopping')}{:else}{$t('sessionView.stopAfterTask.label')}{/if}
         </button>
         <button
             type="button"
@@ -214,8 +213,8 @@
                    text-text hover:bg-bg-panel disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={!!busy}
             on:click={onRestart}
-            title="Stop and start the session again">
-            {busyMatches('Restart') ? '…' : '🔄'} Restart
+            title={$t('sessionView.restart.title')}>
+            {busyMatches('Restart') ? '…' : '🔄'} {$t('sessionView.restart.label')}
         </button>
 
         <span class="w-px h-4 bg-bg-border mx-1"></span>
@@ -225,27 +224,27 @@
             class="px-2.5 py-1 text-xs rounded bg-bg-elevated border border-bg-border
                    text-text hover:bg-bg-panel"
             on:click={onCopyLog}
-            title="Copy the full visible log to clipboard">
-            {copyConfirm ? '✓ Copied' : '📋 Copy log'}
+            title={$t('sessionView.copyLog.title')}>
+            {copyConfirm ? $t('sessionView.copyLog.copied') : $t('sessionView.copyLog.label')}
         </button>
         <button
             type="button"
             class="px-2.5 py-1 text-xs rounded bg-bg-elevated border border-bg-border
                    text-text hover:bg-bg-panel"
             on:click={onClearLog}
-            title="Clear the on-screen log buffer (history is preserved in storage)">
-            🗑 Clear log
+            title={$t('sessionView.clearLog.title')}>
+            {$t('sessionView.clearLog.label')}
         </button>
 
         <span class="w-px h-4 bg-bg-border mx-1"></span>
 
         <select
             bind:value={exportFormat}
-            title="Export format"
+            title={$t('sessionView.export.formatTitle')}
             class="bg-bg-elevated border border-bg-border rounded px-1.5 py-1 text-xs text-text">
-            <option value="md">Markdown</option>
-            <option value="json">JSON</option>
-            <option value="txt">Text</option>
+            <option value="md">{$t('sessionView.export.formatMarkdown')}</option>
+            <option value="json">{$t('sessionView.export.formatJson')}</option>
+            <option value="txt">{$t('sessionView.export.formatText')}</option>
         </select>
         <button
             type="button"
@@ -253,8 +252,8 @@
                    text-text hover:bg-bg-panel disabled:opacity-40"
             disabled={!!busy}
             on:click={onExportLog}
-            title="Save the visible log to a file">
-            {busyMatches(`Export log (${exportFormat})`) ? '…' : '💾'} Export log
+            title={$t('sessionView.exportLog.title')}>
+            {busyMatches(`Export log (${exportFormat})`) ? '…' : '💾'} {$t('sessionView.exportLog.label')}
         </button>
         {#if exportConfirm}
             <span class="text-status-working text-xs ml-1">{exportConfirm}</span>

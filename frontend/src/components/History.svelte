@@ -10,6 +10,7 @@
         logEntryColor,
         logEntryIcon,
     } from '../lib/formatters';
+    import { t } from '../lib/i18n';
 
     const dispatch = createEventDispatcher();
 
@@ -83,7 +84,7 @@
             const raw = (await GetHistory('', 500)) as any[];
             runs = (raw ?? []) as SessionRun[];
         } catch (e: any) {
-            error = `Failed to load history: ${e?.message ?? String(e)}`;
+            error = `${$t('history.loadFailedPrefix')}${e?.message ?? String(e)}`;
         } finally {
             loading = false;
         }
@@ -282,9 +283,11 @@
         <!-- Header -->
         <div class="px-4 py-3 border-b border-bg-border flex items-center justify-between shrink-0">
             <div class="flex items-center gap-3">
-                <h2 class="text-text font-semibold text-base">History</h2>
+                <h2 class="text-text font-semibold text-base">{$t('history.title')}</h2>
                 <span class="text-text-muted text-xs">
-                    {filtered.length} of {runs.length} run{runs.length === 1 ? '' : 's'}
+                    {runs.length === 1
+                        ? $t('history.runCountSingular', { filtered: filtered.length, total: runs.length })
+                        : $t('history.runCountPlural', { filtered: filtered.length, total: runs.length })}
                 </span>
             </div>
             <div class="flex items-center gap-2">
@@ -292,7 +295,7 @@
                     type="button"
                     on:click={load}
                     class="px-2 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
-                    Refresh
+                    {$t('history.refresh')}
                 </button>
                 <button
                     class="text-text-muted hover:text-text text-sm px-2 py-0.5"
@@ -304,44 +307,44 @@
         <!-- Filters -->
         <div class="px-4 py-3 border-b border-bg-border shrink-0 grid grid-cols-[1.2fr_1fr_1fr_1fr_1fr_auto] gap-2 items-end">
             <label class="flex flex-col text-xs text-text-muted gap-1">
-                Project
+                {$t('history.filterProject')}
                 <select
                     bind:value={filterProject}
                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
-                    <option value="">All projects</option>
+                    <option value="">{$t('history.allProjects')}</option>
                     {#each $projects as p (p.name)}
                         <option value={p.name}>{p.name}</option>
                     {/each}
                 </select>
             </label>
             <label class="flex flex-col text-xs text-text-muted gap-1">
-                Session
+                {$t('history.filterSession')}
                 <input
                     type="text"
-                    placeholder="filter…"
+                    placeholder={$t('history.sessionFilterPlaceholder')}
                     bind:value={filterSession}
                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
             </label>
             <label class="flex flex-col text-xs text-text-muted gap-1">
-                Status
+                {$t('history.filterStatus')}
                 <select
                     bind:value={filterStatus}
                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
-                    <option value="">Any status</option>
+                    <option value="">{$t('history.anyStatus')}</option>
                     {#each statusValues as s (s)}
                         <option value={s}>{statusLabel(s)}</option>
                     {/each}
                 </select>
             </label>
             <label class="flex flex-col text-xs text-text-muted gap-1">
-                From
+                {$t('history.filterFrom')}
                 <input
                     type="date"
                     bind:value={filterFrom}
                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
             </label>
             <label class="flex flex-col text-xs text-text-muted gap-1">
-                To
+                {$t('history.filterTo')}
                 <input
                     type="date"
                     bind:value={filterTo}
@@ -351,7 +354,7 @@
                 type="button"
                 on:click={clearFilters}
                 class="h-[28px] px-2 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
-                Clear
+                {$t('history.clear')}
             </button>
         </div>
 
@@ -359,13 +362,13 @@
         <div class="flex-1 min-h-0 overflow-y-auto">
             {#if loading}
                 <div class="text-text-muted text-sm italic py-10 text-center">
-                    Loading history…
+                    {$t('history.loadingHistory')}
                 </div>
             {:else if error}
                 <div class="text-status-error text-sm py-10 text-center">{error}</div>
             {:else if filtered.length === 0}
                 <div class="text-text-muted text-sm italic py-10 text-center">
-                    No runs match the current filters.
+                    {$t('history.noRunsMatch')}
                 </div>
             {:else}
                 <table class="w-full text-sm border-collapse">
@@ -375,37 +378,37 @@
                             <th
                                 class="text-left px-3 py-2 font-medium cursor-pointer select-none hover:text-text"
                                 on:click={() => toggleSort('session')}>
-                                Session{sortIndicator('session')}
+                                {$t('history.colSession')}{sortIndicator('session')}
                             </th>
                             <th
                                 class="text-left px-3 py-2 font-medium cursor-pointer select-none hover:text-text"
                                 on:click={() => toggleSort('started')}>
-                                Started{sortIndicator('started')}
+                                {$t('history.colStarted')}{sortIndicator('started')}
                             </th>
                             <th
                                 class="text-right px-3 py-2 font-medium cursor-pointer select-none hover:text-text"
                                 on:click={() => toggleSort('duration')}>
-                                Duration{sortIndicator('duration')}
+                                {$t('history.colDuration')}{sortIndicator('duration')}
                             </th>
                             <th
                                 class="text-right px-3 py-2 font-medium cursor-pointer select-none hover:text-text"
                                 on:click={() => toggleSort('turns')}>
-                                Turns{sortIndicator('turns')}
+                                {$t('history.colTurns')}{sortIndicator('turns')}
                             </th>
                             <th
                                 class="text-right px-3 py-2 font-medium cursor-pointer select-none hover:text-text"
                                 on:click={() => toggleSort('tasks')}>
-                                Tasks{sortIndicator('tasks')}
+                                {$t('history.colTasks')}{sortIndicator('tasks')}
                             </th>
                             <th
                                 class="text-right px-3 py-2 font-medium cursor-pointer select-none hover:text-text"
                                 on:click={() => toggleSort('cost')}>
-                                Cost{sortIndicator('cost')}
+                                {$t('history.colCost')}{sortIndicator('cost')}
                             </th>
                             <th
                                 class="text-left px-3 py-2 font-medium cursor-pointer select-none hover:text-text"
                                 on:click={() => toggleSort('status')}>
-                                Status{sortIndicator('status')}
+                                {$t('history.colStatus')}{sortIndicator('status')}
                             </th>
                         </tr>
                     </thead>
@@ -451,19 +454,19 @@
                                         <div class="px-4 py-3 border-t border-b border-bg-border">
                                             <div class="grid grid-cols-4 gap-3 mb-3 text-xs">
                                                 <div>
-                                                    <div class="text-text-dim">Tokens in</div>
+                                                    <div class="text-text-dim">{$t('history.tokensIn')}</div>
                                                     <div class="text-text font-mono">{formatTokens(r.InputTokens)}</div>
                                                 </div>
                                                 <div>
-                                                    <div class="text-text-dim">Tokens out</div>
+                                                    <div class="text-text-dim">{$t('history.tokensOut')}</div>
                                                     <div class="text-text font-mono">{formatTokens(r.OutputTokens)}</div>
                                                 </div>
                                                 <div>
-                                                    <div class="text-text-dim">Cache read</div>
+                                                    <div class="text-text-dim">{$t('history.cacheRead')}</div>
                                                     <div class="text-text font-mono">{formatTokens(r.CacheReadTokens)}</div>
                                                 </div>
                                                 <div>
-                                                    <div class="text-text-dim">Cache creation</div>
+                                                    <div class="text-text-dim">{$t('history.cacheCreation')}</div>
                                                     <div class="text-text font-mono">{formatTokens(r.CacheCreationTokens)}</div>
                                                 </div>
                                             </div>
@@ -473,15 +476,15 @@
                                                 </div>
                                             {/if}
 
-                                            <div class="text-text-muted text-xs mb-1">Log entries</div>
+                                            <div class="text-text-muted text-xs mb-1">{$t('history.logEntries')}</div>
                                             {#if logsLoadingByRunID[r.ID]}
-                                                <div class="text-text-muted italic text-xs py-2">Loading logs…</div>
+                                                <div class="text-text-muted italic text-xs py-2">{$t('history.loadingLogs')}</div>
                                             {:else if logsErrorByRunID[r.ID]}
                                                 <div class="text-status-error text-xs py-2 font-mono break-words">
                                                     {logsErrorByRunID[r.ID]}
                                                 </div>
                                             {:else if (logsByRunID[r.ID] ?? []).length === 0}
-                                                <div class="text-text-dim italic text-xs py-2">No log entries stored for this run.</div>
+                                                <div class="text-text-dim italic text-xs py-2">{$t('history.noLogEntries')}</div>
                                             {:else}
                                                 <div class="max-h-[280px] overflow-y-auto bg-bg border border-bg-border rounded font-mono text-[12px] leading-5 px-2 py-1">
                                                     {#each logsByRunID[r.ID] ?? [] as l (l.ID)}
@@ -512,7 +515,7 @@
 
         <!-- Footer -->
         <div class="px-4 py-2 border-t border-bg-border text-xs text-text-muted shrink-0">
-            Click a row to expand and load the most-recent log entries for that session.
+            {$t('history.footerHint')}
         </div>
     </div>
 </div>

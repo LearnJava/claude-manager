@@ -2,6 +2,7 @@
     import { onMount, onDestroy } from 'svelte';
     import { sessions, type SessionState } from '../stores/sessions';
     import { AnswerQuestion } from '../../wailsjs/go/main/App';
+    import { t } from '../lib/i18n';
 
     export let session: SessionState;
 
@@ -48,7 +49,7 @@
             });
             freeText = '';
         } catch (e: any) {
-            error = `Answer failed: ${e?.message ?? String(e)}`;
+            error = $t('questionBanner.answerFailed', { error: e?.message ?? String(e) });
         } finally {
             busy = false;
         }
@@ -66,9 +67,9 @@
         <div class="flex items-center gap-2 text-sm">
             <span class="text-status-waiting">❓</span>
             <span class="font-semibold text-text">
-                {session.name} is asking a question
+                {$t('questionBanner.askingQuestion', { name: session.name })}
             </span>
-            <span class="text-text-muted text-xs ml-auto tabular-nums" title="Time waited (auto-answers after 5m)">
+            <span class="text-text-muted text-xs ml-auto tabular-nums" title={$t('questionBanner.timeWaitedTooltip')}>
                 {formatWait(waitedSec)}
             </span>
         </div>
@@ -102,7 +103,7 @@
                 type="text"
                 bind:value={freeText}
                 disabled={busy}
-                placeholder="Or type a custom answer…"
+                placeholder={$t('questionBanner.customAnswerPlaceholder')}
                 class="flex-1 px-2 py-1 text-xs rounded
                        bg-bg-panel border border-bg-border text-text
                        disabled:opacity-50" />
@@ -112,7 +113,7 @@
                 class="px-2.5 py-1 text-xs rounded
                        bg-bg-panel border border-bg-border text-text hover:bg-bg
                        disabled:opacity-50 disabled:cursor-not-allowed">
-                {busy ? '…' : 'Send'}
+                {busy ? '…' : $t('questionBanner.send')}
             </button>
         </form>
     </div>

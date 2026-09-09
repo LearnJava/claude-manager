@@ -7,6 +7,7 @@ default_retry_delay = 30               # seconds between retries on error
 rate_limit_pause = 300                 # seconds to pause when rate-limited
 log_retention_days = 30                # days to keep session history in SQLite
 theme = "dark"                         # dark | light
+language = "en"                        # en | ru — UI language only, prompts to Claude stay English
 
 # Crash recovery: persist session_id to ~/.claude-manager/state/ before each
 # task so an interrupted session can be resumed via --resume after a restart.

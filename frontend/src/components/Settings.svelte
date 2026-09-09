@@ -14,6 +14,7 @@
     import { initProjects } from '../stores/projects';
     import { refreshSessions } from '../stores/sessions';
     import { setTheme, type Theme } from '../stores/theme';
+    import { setLocale, t, type Locale } from '../lib/i18n';
     import { formatBytes } from '../lib/formatters';
     import { MODELS, EFFORTS, isKnownModel } from '../lib/models';
     import PlanReview from './PlanReview.svelte';
@@ -25,11 +26,11 @@
     export let initialAction: 'add' | undefined = undefined;
     let activeTab: Tab = initialTab;
 
-    const tabs: { id: Tab; label: string }[] = [
-        { id: 'global', label: 'Global' },
-        { id: 'projects', label: 'Projects' },
-        { id: 'sessions', label: 'Sessions' },
-        { id: 'workers', label: 'Workers' },
+    const tabs: { id: Tab; labelKey: string }[] = [
+        { id: 'global', labelKey: 'settings.tab.global' },
+        { id: 'projects', labelKey: 'settings.tab.projects' },
+        { id: 'sessions', labelKey: 'settings.tab.sessions' },
+        { id: 'workers', labelKey: 'settings.tab.workers' },
     ];
 
     // ---- Local config types (mirror Go structs from internal/config/types.go) ----
@@ -99,6 +100,7 @@
         RateLimitPause: number;
         LogRetentionDays: number;
         Theme: string;
+        Language: string;
         CrashRecovery: boolean;
         PreflightAnalysis: boolean;
         PreflightModel: string;
@@ -247,6 +249,7 @@
             RateLimitPause: 300,
             LogRetentionDays: 30,
             Theme: 'dark',
+            Language: 'en',
             CrashRecovery: true,
             PreflightAnalysis: true,
             PreflightModel: 'haiku',
@@ -301,10 +304,11 @@
         try {
             const raw = await GetConfig();
             cfg = normaliseConfig(raw);
-            // Apply persisted theme from config to the live theme store so the
-            // UI matches the saved value when the dialog opens.
-            const t = cfg.Settings.Theme === 'light' ? 'light' : 'dark';
-            setTheme(t as Theme);
+            // Apply persisted theme/language from config to the live stores so
+            // the UI matches the saved values when the dialog opens.
+            const themeVal = cfg.Settings.Theme === 'light' ? 'light' : 'dark';
+            setTheme(themeVal as Theme);
+            setLocale(cfg.Settings.Language === 'ru' ? 'ru' : 'en');
             clampSelections();
             if (initialAction === 'add') {
                 addProject();
@@ -312,7 +316,7 @@
             loadAllProjectLogInfo();
             loadAllRoadmapDrafts();
         } catch (e: any) {
-            error = `Load failed: ${e?.message ?? String(e)}`;
+            error = $t('settings.msg.loadFailed', { error: e?.message ?? String(e) });
         } finally {
             loading = false;
         }
@@ -389,6 +393,12 @@
         setTheme(v);
     }
 
+    function onLanguageChange(e: Event) {
+        const v = (e.currentTarget as HTMLSelectElement).value as Locale;
+        if (gs) gs.Language = v;
+        setLocale(v);
+    }
+
     // ---- Projects tab actions ----
 
     function addProject() {
@@ -406,13 +416,13 @@
 
     async function pickProjectPath(idx: number) {
         try {
-            const chosen = await PickDirectory('Select project folder');
+            const chosen = await PickDirectory($t('settings.msg.selectProjectFolder'));
             if (chosen && cfg) {
                 cfg.Projects[idx].Path = chosen;
                 cfg = cfg; // trigger reactivity
             }
         } catch (e: any) {
-            error = `Folder picker failed: ${e?.message ?? String(e)}`;
+            error = $t('settings.msg.folderPickerFailed', { error: e?.message ?? String(e) });
         }
     }
 
@@ -488,7 +498,7 @@
             delete roadmapDraft[idx];
             roadmapDraft = roadmapDraft;
         } catch (e: any) {
-            error = `Roadmap generation failed: ${e?.message ?? String(e)}`;
+            error = $t('settings.msg.roadmapGenFailed', { error: e?.message ?? String(e) });
             // The plan may still have been generated and saved server-side even
             // though this call itself failed/never resolved cleanly — re-check
             // so a paid-for run isn't silently stranded.
@@ -508,7 +518,7 @@
 
     async function onRoadmapWritten() {
         roadmapPlan = null;
-        info = 'ROADMAP.md and STATUS-P1.md written — the "P1" session is configured.';
+        info = $t('settings.msg.roadmapWritten');
         await load();
     }
 
@@ -529,12 +539,12 @@
         try {
             const files = await InstallSessionProtocol(p.Name);
             protocolResult[idx] = (files ?? []).length
-                ? `Installed: ${(files ?? []).join(', ')}`
-                : 'Already present — nothing written.';
+                ? $t('settings.msg.installedFiles', { files: (files ?? []).join(', ') })
+                : $t('settings.msg.alreadyPresent');
             protocolResult = protocolResult;
-            info = `Session protocol checked for ${p.Name}.`;
+            info = $t('settings.msg.protocolChecked', { project: p.Name });
         } catch (e: any) {
-            error = `Install protocol failed: ${e?.message ?? String(e)}`;
+            error = $t('settings.msg.installProtocolFailed', { error: e?.message ?? String(e) });
         } finally {
             protocolBusy = null;
         }
@@ -594,9 +604,9 @@
         try {
             await ClearProjectLogs(p.Name);
             await loadProjectLogInfo(idx);
-            info = `Cleared saved logs for ${p.Name}.`;
+            info = $t('settings.msg.clearedLogs', { project: p.Name });
         } catch (e: any) {
-            error = `Clear logs failed: ${e?.message ?? String(e)}`;
+            error = $t('settings.msg.clearLogsFailed', { error: e?.message ?? String(e) });
         } finally {
             logsBusy = null;
         }
@@ -661,11 +671,11 @@
             await UpdateConfig(payload as any);
             await initProjects();
             await refreshSessions();
-            info = 'Saved.';
+            info = $t('settings.msg.saved');
             // Re-pull so we see canonicalised values.
             await load();
         } catch (e: any) {
-            error = `Save failed: ${e?.message ?? String(e)}`;
+            error = $t('settings.msg.saveFailed', { error: e?.message ?? String(e) });
         } finally {
             saving = false;
         }
@@ -701,7 +711,7 @@
         on:keydown|stopPropagation>
         <!-- Header -->
         <div class="px-4 py-3 border-b border-bg-border flex items-center justify-between shrink-0">
-            <h2 class="text-text font-semibold text-base">Settings</h2>
+            <h2 class="text-text font-semibold text-base">{$t('settings.title')}</h2>
             <button
                 class="text-text-muted hover:text-text text-sm px-2 py-0.5"
                 on:click={close}
@@ -710,31 +720,31 @@
 
         <!-- Tabs -->
         <div class="px-4 pt-3 border-b border-bg-border flex gap-1 shrink-0">
-            {#each tabs as t}
+            {#each tabs as tab}
                 <button
                     type="button"
                     class="px-3 py-1.5 text-sm rounded-t border-b-2 transition-colors
-                        {activeTab === t.id
+                        {activeTab === tab.id
                             ? 'text-text border-blue-500 bg-bg-elevated'
                             : 'text-text-muted border-transparent hover:text-text hover:bg-bg-elevated/50'}"
-                    on:click={() => (activeTab = t.id)}>{t.label}</button>
+                    on:click={() => (activeTab = tab.id)}>{$t(tab.labelKey)}</button>
             {/each}
         </div>
 
         <!-- Body -->
         <div class="flex-1 min-h-0 overflow-y-auto px-4 py-4">
             {#if loading}
-                <div class="text-text-muted text-sm italic py-10 text-center">Loading config…</div>
+                <div class="text-text-muted text-sm italic py-10 text-center">{$t('settings.loadingConfig')}</div>
             {:else if !cfg || !gs}
-                <div class="text-status-error text-sm py-10 text-center">No config loaded.</div>
+                <div class="text-status-error text-sm py-10 text-center">{$t('settings.noConfigLoaded')}</div>
             {:else if activeTab === 'global'}
                 <!-- ───────── GLOBAL TAB ───────── -->
                 <div class="space-y-6">
                     <section>
-                        <h3 class="text-text font-semibold text-sm mb-2">General</h3>
+                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.general.heading')}</h3>
                         <div class="grid grid-cols-2 gap-3">
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Claude CLI path
+                                {$t('settings.general.claudePath')}
                                 <input
                                     type="text"
                                     bind:value={gs.ClaudePath}
@@ -742,7 +752,7 @@
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                             </label>
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Theme
+                                {$t('settings.general.theme')}
                                 <select
                                     value={gs.Theme}
                                     on:change={onThemeChange}
@@ -752,7 +762,17 @@
                                 </select>
                             </label>
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Retry delay (sec)
+                                {$t('settings.language')}
+                                <select
+                                    value={gs.Language}
+                                    on:change={onLanguageChange}
+                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
+                                    <option value="en">English</option>
+                                    <option value="ru">Русский</option>
+                                </select>
+                            </label>
+                            <label class="flex flex-col text-xs text-text-muted gap-1">
+                                {$t('settings.general.retryDelay')}
                                 <input
                                     type="number"
                                     bind:value={gs.DefaultRetryDelay}
@@ -760,7 +780,7 @@
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                             </label>
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Rate limit pause (sec)
+                                {$t('settings.general.rateLimitPause')}
                                 <input
                                     type="number"
                                     bind:value={gs.RateLimitPause}
@@ -768,7 +788,7 @@
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                             </label>
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Log retention (days)
+                                {$t('settings.general.logRetention')}
                                 <input
                                     type="number"
                                     bind:value={gs.LogRetentionDays}
@@ -776,49 +796,48 @@
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                             </label>
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Session start delay (sec)
+                                {$t('settings.general.sessionStartDelay')}
                                 <input
                                     type="number"
                                     bind:value={gs.SessionStartDelay}
                                     min="0"
-                                    title="Cache warming: stagger session starts by this many seconds."
+                                    title={$t('settings.general.sessionStartDelayTitle')}
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                             </label>
                         </div>
                     </section>
 
                     <section>
-                        <h3 class="text-text font-semibold text-sm mb-2">Crash recovery</h3>
+                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.crashRecoveryGlobal.heading')}</h3>
                         <div class="space-y-2">
                             <label class="flex items-center gap-2 text-sm text-text">
                                 <input type="checkbox" bind:checked={gs.CrashRecovery} />
-                                Enable crash recovery
+                                {$t('settings.crashRecoveryGlobal.enable')}
                             </label>
                             <p class="text-xs text-text-muted leading-relaxed">
-                                When enabled, the manager saves a session state file to
+                                {$t('settings.crashRecoveryGlobal.desc1')}
                                 <code class="bg-bg px-1 rounded">~/.claude-manager/state/</code>
-                                before each task. If the app is closed or crashes while a session
-                                is running, the next start will resume the interrupted conversation
-                                via <code class="bg-bg px-1 rounded">--resume</code>.
-                                Use <b>Force new</b> per session (in Sessions tab) to discard saved
-                                state and start fresh.
+                                {$t('settings.crashRecoveryGlobal.desc2')}
+                                <code class="bg-bg px-1 rounded">--resume</code>.
+                                {$t('settings.crashRecoveryGlobal.useForceNew1')} <b>{$t('settings.crashRecoveryGlobal.forceNew')}</b>
+                                {$t('settings.crashRecoveryGlobal.useForceNew2')}
                             </p>
                         </div>
                     </section>
 
                     <section>
-                        <h3 class="text-text font-semibold text-sm mb-2">Pre-flight analysis</h3>
+                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.preflight.heading')}</h3>
                         <div class="grid grid-cols-2 gap-3">
                             <label class="flex items-center gap-2 text-sm text-text">
                                 <input type="checkbox" bind:checked={gs.PreflightAnalysis} />
-                                Enable pre-flight analysis
+                                {$t('settings.preflight.enable')}
                             </label>
                             <label class="flex items-center gap-2 text-sm text-text">
                                 <input type="checkbox" bind:checked={gs.PreflightAutoApproveSingle} />
-                                Auto-approve single-session plans
+                                {$t('settings.preflight.autoApproveSingle')}
                             </label>
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Analyst model
+                                {$t('settings.preflight.analystModel')}
                                 <input
                                     type="text"
                                     bind:value={gs.PreflightModel}
@@ -826,7 +845,7 @@
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                             </label>
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Analyst max budget USD (0 = none)
+                                {$t('settings.preflight.maxBudget')}
                                 <input
                                     type="number"
                                     step="0.01"
@@ -838,10 +857,10 @@
                     </section>
 
                     <section>
-                        <h3 class="text-text font-semibold text-sm mb-2">Permission timeouts</h3>
+                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.permTimeouts.heading')}</h3>
                         <div class="grid grid-cols-2 gap-3">
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Notify after (sec)
+                                {$t('settings.permTimeouts.notifyAfter')}
                                 <input
                                     type="number"
                                     bind:value={gs.PermissionNotifyAfter}
@@ -849,7 +868,7 @@
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                             </label>
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Timeout (sec, 0 = wait forever)
+                                {$t('settings.permTimeouts.timeout')}
                                 <input
                                     type="number"
                                     bind:value={gs.PermissionTimeout}
@@ -857,7 +876,7 @@
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                             </label>
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Timeout action
+                                {$t('settings.permTimeouts.timeoutAction')}
                                 <select
                                     bind:value={gs.PermissionTimeoutAction}
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
@@ -870,42 +889,40 @@
                                     <input
                                         type="checkbox"
                                         bind:checked={gs.PermissionNativeNotification} />
-                                    Native notification (Windows toast)
+                                    {$t('settings.permTimeouts.nativeNotification')}
                                 </label>
                                 <label class="flex items-center gap-2 text-sm text-text">
                                     <input type="checkbox" bind:checked={gs.PermissionSound} />
-                                    Sound alert
+                                    {$t('settings.permTimeouts.soundAlert')}
                                 </label>
                             </div>
                         </div>
                     </section>
 
                     <section>
-                        <h3 class="text-text font-semibold text-sm mb-2">Model routing</h3>
+                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.modelRouting.heading')}</h3>
                         <label class="flex items-center gap-2 text-sm text-text">
                             <input type="checkbox" bind:checked={cfg.Optimization.AutoModelRouting} />
-                            Auto model routing (choose model by task complexity via pre-flight)
+                            {$t('settings.modelRouting.autoRouting')}
                         </label>
                     </section>
 
                     <section>
-                        <h3 class="text-text font-semibold text-sm mb-2">Experience layer</h3>
+                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.experienceLayer.heading')}</h3>
                         <label class="flex items-center gap-2 text-sm text-text">
                             <input type="checkbox" bind:checked={cfg.Optimization.ExperienceTracking} />
-                            Index finished runs into the Actions tab (LEARN-TASKS.md LN-03)
+                            {$t('settings.experienceLayer.enable')}
                         </label>
                         <p class="text-text-dim text-xs mt-1">
-                            Mines this app's own CLI transcripts into normalized tool-call
-                            signatures — no external service, nothing leaves this machine. Off by
-                            default: with it off, no transcript is ever opened.
+                            {$t('settings.experienceLayer.description')}
                         </p>
                     </section>
 
                     <section>
-                        <h3 class="text-text font-semibold text-sm mb-2">Budget alerts</h3>
+                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.budgetAlerts.heading')}</h3>
                         <div class="grid grid-cols-3 gap-3">
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Daily alert (USD, 0 = off)
+                                {$t('settings.budgetAlerts.daily')}
                                 <input
                                     type="number"
                                     step="0.01"
@@ -914,7 +931,7 @@
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                             </label>
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Weekly alert (USD, 0 = off)
+                                {$t('settings.budgetAlerts.weekly')}
                                 <input
                                     type="number"
                                     step="0.01"
@@ -923,7 +940,7 @@
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                             </label>
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Rate-limit alert threshold
+                                {$t('settings.budgetAlerts.rateLimitThreshold')}
                                 <input
                                     type="number"
                                     step="0.05"
@@ -940,37 +957,39 @@
                 <div class="space-y-3">
                     <div class="flex items-center justify-between">
                         <span class="text-text-muted text-xs">
-                            {cfg.Projects.length} project{cfg.Projects.length === 1 ? '' : 's'} configured
+                            {cfg.Projects.length === 1
+                                ? $t('settings.projects.countSingular', { count: cfg.Projects.length })
+                                : $t('settings.projects.countPlural', { count: cfg.Projects.length })}
                         </span>
                         <button
                             type="button"
                             on:click={addProject}
                             class="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white">
-                            + Add project
+                            {$t('settings.projects.addProjectButton')}
                         </button>
                     </div>
 
                     {#if cfg.Projects.length === 0}
                         <div class="text-text-muted text-sm italic py-6 text-center">
-                            No projects yet. Click <b>Add project</b> to create one.
+                            {$t('settings.projects.emptyPart1')} <b>{$t('settings.projects.addProjectLabel')}</b> {$t('settings.projects.emptyPart2')}
                         </div>
                     {:else}
                         <ul class="space-y-3">
                             {#each cfg.Projects as p, i (i)}
                                 <li class="bg-bg-elevated border border-bg-border rounded p-3 space-y-2">
                                     <div class="flex items-center justify-between">
-                                        <span class="text-text-muted text-xs">Project #{i + 1}</span>
+                                        <span class="text-text-muted text-xs">{$t('settings.projects.projectNumber', { n: i + 1 })}</span>
                                         <button
                                             type="button"
                                             on:click={() => removeProject(i)}
                                             class="px-2 py-0.5 text-xs rounded
                                                    bg-status-error/80 hover:bg-status-error text-white">
-                                            Remove
+                                            {$t('settings.common.remove')}
                                         </button>
                                     </div>
 
                                     <label class="flex flex-col text-xs text-text-muted gap-1">
-                                        Name
+                                        {$t('settings.field.name')}
                                         <input
                                             type="text"
                                             bind:value={p.Name}
@@ -978,7 +997,7 @@
                                     </label>
 
                                     <label class="flex flex-col text-xs text-text-muted gap-1">
-                                        Path
+                                        {$t('settings.projects.path')}
                                         <div class="flex gap-2">
                                             <input
                                                 type="text"
@@ -989,30 +1008,29 @@
                                                 type="button"
                                                 on:click={() => pickProjectPath(i)}
                                                 class="px-2 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
-                                                Browse…
+                                                {$t('settings.projects.browse')}
                                             </button>
                                         </div>
                                         {#if p.Path}
                                             <span class="text-[11px] text-text-muted/80 leading-snug" data-testid={`storage-note-${i}`}>
-                                                📁 Sessions &amp; gates are saved in
+                                                {$t('settings.projects.storageNote1')}
                                                 <code class="font-mono">{p.Path}\.claude-manager\config.toml</code>
-                                                (commit it to share project context). The mixed-programming
-                                                opt-in goes to <code class="font-mono">config.local.toml</code>
-                                                (gitignored, never committed).
+                                                {$t('settings.projects.storageNote2')} <code class="font-mono">config.local.toml</code>
+                                                {$t('settings.projects.storageNote3')}
                                             </span>
                                         {:else}
                                             <span class="text-[11px] text-text-muted/60 leading-snug">
-                                                Without a project folder, settings stay in the global config.
+                                                {$t('settings.projects.storageNoteNoPath')}
                                             </span>
                                         {/if}
                                     </label>
 
                                     <label class="flex flex-col text-xs text-text-muted gap-1">
-                                        Default permission mode for new sessions
+                                        {$t('settings.projects.defaultPermMode')}
                                         <select
                                             bind:value={p.DefaultPermissionMode}
                                             class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
-                                            <option value="">(inherit → bypassPermissions)</option>
+                                            <option value="">{$t('settings.projects.inheritOption')}</option>
                                             <option value="bypassPermissions">bypassPermissions</option>
                                             <option value="acceptEdits">acceptEdits</option>
                                             <option value="default">default</option>
@@ -1021,21 +1039,21 @@
                                             <option value="dontAsk">dontAsk</option>
                                         </select>
                                         <span class="text-[11px] text-text-muted/70 leading-snug">
-                                            Only seeds new sessions added to this project from now on —
-                                            existing sessions keep their own saved value (editable in the
-                                            Sessions tab).
+                                            {$t('settings.projects.defaultPermModeHint')}
                                         </span>
                                     </label>
 
                                     <div class="flex items-center justify-between">
                                         <span class="text-xs text-text-muted">
-                                            {p.Sessions.length} session{p.Sessions.length === 1 ? '' : 's'}
+                                            {p.Sessions.length === 1
+                                                ? $t('settings.projects.sessionCountSingular', { count: p.Sessions.length })
+                                                : $t('settings.projects.sessionCountPlural', { count: p.Sessions.length })}
                                         </span>
                                         <button
                                             type="button"
                                             on:click={() => { selectedProjectIdx = i; activeTab = 'sessions'; }}
                                             class="px-2 py-0.5 text-xs rounded bg-bg border border-bg-border text-text-muted hover:text-text hover:border-text-muted">
-                                            + Add session →
+                                            {$t('settings.projects.addSessionArrow')}
                                         </button>
                                     </div>
 
@@ -1046,20 +1064,17 @@
                                                 type="checkbox"
                                                 data-testid={`mixed-enable-${i}`}
                                                 bind:checked={p.MixedProgramming} />
-                                            Enable mixed programming (external workers)
+                                            {$t('settings.mixed.enable')}
                                         </label>
                                         {#if p.MixedProgramming}
                                             <p class="text-xs text-status-error/90 leading-relaxed">
-                                                ⚠ Briefs and verbatim code excerpts are sent to external
-                                                free endpoints that log requests. Only enable for projects
-                                                whose code may leave your machine.
-                                                <span class="text-text-muted">This opt-in is stored in
-                                                <code class="font-mono">config.local.toml</code> and is not
-                                                committed — each teammate opts in for themselves.</span>
+                                                {$t('settings.mixed.warning1')}
+                                                <span class="text-text-muted">{$t('settings.mixed.warning2a')}
+                                                <code class="font-mono">config.local.toml</code>
+                                                {$t('settings.mixed.warning2b')}</span>
                                             </p>
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                Gates (one command per line — blocking; a non-zero exit
-                                                rejects the round)
+                                                {$t('settings.mixed.gatesLabel')}
                                                 <textarea
                                                     rows="2"
                                                     value={joinList(p.Gates)}
@@ -1069,7 +1084,7 @@
                                                 ></textarea>
                                             </label>
                                             <label class="flex flex-col text-xs text-text-muted gap-1 w-40">
-                                                Max feedback rounds
+                                                {$t('settings.mixed.maxRounds')}
                                                 <input
                                                     type="number"
                                                     min="1"
@@ -1082,44 +1097,41 @@
                                     <!-- AI roadmap generation -->
                                     <div class="border-t border-bg-border pt-2 mt-1 space-y-2">
                                         <div class="text-xs text-text-muted">
-                                            🤖 Describe the project and let AI draft a roadmap: it decomposes
-                                            the idea into a backlog of session-sized tasks, writes
+                                            {$t('settings.roadmap.intro1')}
                                             <code class="font-mono">ROADMAP.md</code> +
-                                            <code class="font-mono">STATUS-P1.md</code> into the project, and
-                                            configures a "P1" Sonnet session to work through them one at a time.
+                                            <code class="font-mono">STATUS-P1.md</code>
+                                            {$t('settings.roadmap.intro2')}
                                         </div>
                                         {#if roadmapDraft[i] && !roadmapDraftDismissed.has(i) && roadmapBusy !== i}
                                             <div class="flex items-center justify-between gap-2 text-xs bg-amber-500/10
                                                         border border-amber-500/40 rounded px-2 py-1.5">
                                                 <span class="text-text">
-                                                    Found an unreviewed roadmap from a previous run —
-                                                    {roadmapDraft[i].subtasks?.length ?? 0} tasks,
-                                                    already generated (nothing spent re-running it).
+                                                    {$t('settings.roadmap.foundDraft', { count: roadmapDraft[i].subtasks?.length ?? 0 })}
                                                 </span>
                                                 <div class="flex items-center gap-1 shrink-0">
                                                     <button
                                                         type="button"
                                                         on:click={() => openRecoveredDraft(i)}
                                                         class="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white">
-                                                        Review
+                                                        {$t('settings.roadmap.reviewButton')}
                                                     </button>
                                                     <button
                                                         type="button"
                                                         on:click={() => dismissRoadmapDraft(i)}
                                                         class="px-2 py-0.5 rounded bg-bg border border-bg-border
                                                                text-text-muted hover:text-text">
-                                                        Dismiss
+                                                        {$t('settings.roadmap.dismissButton')}
                                                     </button>
                                                 </div>
                                             </div>
                                         {/if}
                                         <label class="flex flex-col text-xs text-text-muted gap-1">
-                                            Project idea
+                                            {$t('settings.roadmap.ideaLabel')}
                                             <textarea
                                                 rows="3"
                                                 bind:value={roadmapIdea[i]}
                                                 disabled={!p.Path}
-                                                placeholder="What do you want to build?"
+                                                placeholder={$t('settings.roadmap.ideaPlaceholder')}
                                                 class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text resize-y disabled:opacity-50"
                                             ></textarea>
                                         </label>
@@ -1131,7 +1143,7 @@
                                                 class="bg-bg border border-bg-border rounded px-2 py-1 text-xs text-text disabled:opacity-50">
                                                 {#each MODELS as m}
                                                     <option value={m.value}>
-                                                        {m.label}{m.value === 'opus' ? ' (recommended)' : ''}
+                                                        {m.label}{m.value === 'opus' ? $t('settings.roadmap.recommendedSuffix') : ''}
                                                     </option>
                                                 {/each}
                                             </select>
@@ -1141,17 +1153,17 @@
                                                 disabled={!p.Path || !(roadmapIdea[i] ?? '').trim() || roadmapBusy !== null}
                                                 class="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white
                                                        disabled:opacity-50 disabled:cursor-not-allowed">
-                                                {roadmapBusy === i ? `Generating… ${roadmapElapsedText}` : 'Generate Roadmap with AI'}
+                                                {roadmapBusy === i ? $t('settings.roadmap.generatingButton', { elapsed: roadmapElapsedText }) : $t('settings.roadmap.generateButton')}
                                             </button>
                                         </div>
                                         {#if roadmapBusy === i}
                                             <div class="text-[11px] text-text-muted font-mono truncate" title={roadmapProgress[i] ?? ''}>
-                                                {roadmapProgress[i] ? roadmapProgress[i] : 'Starting analyst session…'}
+                                                {roadmapProgress[i] ? roadmapProgress[i] : $t('settings.roadmap.startingAnalyst')}
                                             </div>
                                         {/if}
                                         {#if !p.Path}
                                             <span class="text-[11px] text-text-muted/60">
-                                                Set a project folder above first.
+                                                {$t('settings.roadmap.setPathFirst')}
                                             </span>
                                         {/if}
                                     </div>
@@ -1162,12 +1174,13 @@
                                         <div class="flex items-center justify-between gap-2">
                                             <span class="text-xs text-text-muted">
                                                 {#if !p.Path}
-                                                    Saved logs: set a project folder above first.
+                                                    {$t('settings.logs.setPathFirst')}
                                                 {:else if projectLogInfo[i]}
-                                                    Saved logs: {projectLogInfo[i]?.count ?? 0} file{(projectLogInfo[i]?.count ?? 0) === 1 ? '' : 's'},
-                                                    {formatBytes(projectLogInfo[i]?.size)}
+                                                    {(projectLogInfo[i]?.count ?? 0) === 1
+                                                        ? $t('settings.logs.countSingular', { count: projectLogInfo[i]?.count ?? 0, size: formatBytes(projectLogInfo[i]?.size) })
+                                                        : $t('settings.logs.countPlural', { count: projectLogInfo[i]?.count ?? 0, size: formatBytes(projectLogInfo[i]?.size) })}
                                                 {:else}
-                                                    Saved logs: —
+                                                    {$t('settings.logs.unknown')}
                                                 {/if}
                                             </span>
                                             <div class="flex items-center gap-1">
@@ -1175,7 +1188,7 @@
                                                     type="button"
                                                     on:click={() => loadProjectLogInfo(i)}
                                                     disabled={!p.Path}
-                                                    title="Refresh saved-log count/size"
+                                                    title={$t('settings.logs.refreshTitle')}
                                                     class="px-1.5 py-0.5 text-xs rounded bg-bg border border-bg-border
                                                            text-text-muted hover:text-text disabled:opacity-40 disabled:cursor-not-allowed">
                                                     🔄
@@ -1185,43 +1198,39 @@
                                                     on:click={() => requestClearProjectLogs(i)}
                                                     disabled={!p.Path || !projectLogInfo[i]?.count || logsBusy !== null}
                                                     title={logsPendingClear === i
-                                                        ? 'Click again to confirm deletion'
-                                                        : 'Delete every saved log file for this project'}
+                                                        ? $t('settings.logs.confirmDeleteTitle')
+                                                        : $t('settings.logs.deleteTitle')}
                                                     class="px-2 py-0.5 text-xs rounded border disabled:opacity-40 disabled:cursor-not-allowed
                                                            {logsPendingClear === i
                                                                ? 'bg-status-error/20 border-status-error/50 text-status-error font-semibold'
                                                                : 'bg-bg border-bg-border text-text-muted hover:text-status-error'}">
-                                                    {#if logsBusy === i}…{:else if logsPendingClear === i}Confirm clear?{:else}🗑 Clear project logs{/if}
+                                                    {#if logsBusy === i}…{:else if logsPendingClear === i}{$t('settings.logs.confirmClearButton')}{:else}{$t('settings.logs.clearButton')}{/if}
                                                 </button>
                                             </div>
                                         </div>
                                         <p class="text-[11px] text-text-muted/70 leading-snug">
-                                            Every finished task/run auto-saves its log as markdown here.
-                                            Clearing removes those files and their SQLite log entries —
-                                            History/Dashboard run records are kept.
+                                            {$t('settings.logs.description')}
                                         </p>
                                     </div>
                                     <div class="border-t border-bg-border pt-2 mt-1 space-y-1">
                                         <div class="flex items-center justify-between gap-2">
-                                            <span class="text-xs text-text-muted">Session protocol</span>
+                                            <span class="text-xs text-text-muted">{$t('settings.protocol.label')}</span>
                                             <button
                                                 type="button"
                                                 on:click={() => installProtocol(i)}
                                                 disabled={!p.Path || protocolBusy !== null}
-                                                title="Write docs/git-workflow.md, scripts/worktree-pool.sh and the /cm-task-start, /cm-task-finish skills into this project. Existing files are never overwritten."
+                                                title={$t('settings.protocol.installTitle')}
                                                 class="px-2 py-0.5 text-xs rounded bg-bg border border-bg-border
                                                        text-text-muted hover:text-text disabled:opacity-40 disabled:cursor-not-allowed">
-                                                {#if protocolBusy === i}…{:else}Install session protocol{/if}
+                                                {#if protocolBusy === i}…{:else}{$t('settings.protocol.installButton')}{/if}
                                             </button>
                                         </div>
                                         {#if protocolResult[i]}
                                             <p class="text-[11px] text-status-ok/90 leading-snug">{protocolResult[i]}</p>
                                         {/if}
                                         <p class="text-[11px] text-text-muted/70 leading-snug">
-                                            Rules a queue-driven session follows: reserve a task with a branch,
-                                            work in a persistent worktree slot, merge <code>--no-ff</code> after
-                                            every commit. Without them an interrupted session silently starts its
-                                            task over. Roadmap-generated projects get this automatically.
+                                            {$t('settings.protocol.description1')} <code>--no-ff</code>
+                                            {$t('settings.protocol.description2')}
                                         </p>
                                     </div>
                                 </li>
@@ -1233,37 +1242,37 @@
                 <!-- ───────── SESSIONS TAB ───────── -->
                 {#if cfg.Projects.length === 0}
                     <div class="text-text-muted text-sm italic py-6 text-center">
-                        Add a project first (Projects tab).
+                        {$t('settings.sessions.addProjectFirst')}
                     </div>
                 {:else}
                     <div class="grid grid-cols-[200px_1fr] gap-4 h-full">
                         <!-- Left rail: project + session pickers -->
                         <div class="flex flex-col gap-3 min-h-0">
                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                Project
+                                {$t('settings.sessions.projectLabel')}
                                 <select
                                     bind:value={selectedProjectIdx}
                                     on:change={() => (selectedSessionIdx = 0)}
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
                                     {#each cfg.Projects as p, i}
-                                        <option value={i}>{p.Name || `(project ${i + 1})`}</option>
+                                        <option value={i}>{p.Name || $t('settings.sessions.projectFallback', { n: i + 1 })}</option>
                                     {/each}
                                 </select>
                             </label>
 
                             <div class="flex items-center justify-between">
-                                <span class="text-text-muted text-xs">Sessions</span>
+                                <span class="text-text-muted text-xs">{$t('settings.sessions.listHeading')}</span>
                                 <button
                                     type="button"
                                     on:click={addSession}
                                     class="px-2 py-0.5 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white">
-                                    + Add
+                                    {$t('settings.sessions.addButton')}
                                 </button>
                             </div>
 
                             <ul class="border border-bg-border rounded divide-y divide-bg-border bg-bg-elevated overflow-y-auto">
                                 {#if proj && proj.Sessions.length === 0}
-                                    <li class="px-2 py-2 text-xs text-text-muted italic">No sessions.</li>
+                                    <li class="px-2 py-2 text-xs text-text-muted italic">{$t('settings.sessions.noSessions')}</li>
                                 {/if}
                                 {#each proj?.Sessions ?? [] as s, i (i)}
                                     <li class="flex items-center">
@@ -1274,12 +1283,12 @@
                                                 {selectedSessionIdx === i
                                                     ? 'bg-bg text-text'
                                                     : 'text-text-muted hover:text-text hover:bg-bg/50'}">
-                                            {s.Name || `(session ${i + 1})`}
+                                            {s.Name || $t('settings.sessions.sessionFallback', { n: i + 1 })}
                                         </button>
                                         <button
                                             type="button"
                                             on:click={() => removeSession(i)}
-                                            title="Remove"
+                                            title={$t('settings.common.remove')}
                                             class="px-1.5 py-1 text-xs text-text-muted hover:text-status-error">✕</button>
                                     </li>
                                 {/each}
@@ -1290,22 +1299,22 @@
                         <div class="min-h-0 overflow-y-auto pr-1">
                             {#if !sess}
                                 <div class="text-text-muted text-sm italic py-6 text-center">
-                                    Select or add a session.
+                                    {$t('settings.sessions.selectOrAdd')}
                                 </div>
                             {:else}
                                 <div class="space-y-5">
                                     <section>
-                                        <h3 class="text-text font-semibold text-sm mb-2">Identity</h3>
+                                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.sessions.identityHeading')}</h3>
                                         <div class="grid grid-cols-2 gap-3">
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                Name
+                                                {$t('settings.field.name')}
                                                 <input
                                                     type="text"
                                                     bind:value={sess.Name}
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                                             </label>
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                Task source file
+                                                {$t('settings.sessions.taskSourceFile')}
                                                 <input
                                                     type="text"
                                                     bind:value={sess.TaskSource}
@@ -1314,7 +1323,7 @@
                                             </label>
                                         </div>
                                         <label class="flex flex-col text-xs text-text-muted gap-1 mt-3">
-                                            Prompt
+                                            {$t('settings.sessions.promptLabel')}
                                             <textarea
                                                 bind:value={sess.Prompt}
                                                 rows="6"
@@ -1324,10 +1333,10 @@
                                     </section>
 
                                     <section>
-                                        <h3 class="text-text font-semibold text-sm mb-2">Model</h3>
+                                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.sessions.modelHeading')}</h3>
                                         <div class="grid grid-cols-3 gap-3">
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                Model
+                                                {$t('settings.field.model')}
                                                 <select
                                                     bind:value={sess.Model}
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
@@ -1341,7 +1350,7 @@
                                                 </select>
                                             </label>
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                Effort
+                                                {$t('settings.sessions.effort')}
                                                 <select
                                                     bind:value={sess.Effort}
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
@@ -1351,26 +1360,26 @@
                                                 </select>
                                             </label>
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                Fallback model
+                                                {$t('settings.sessions.fallbackModel')}
                                                 <input
                                                     type="text"
                                                     bind:value={sess.FallbackModel}
                                                     placeholder="haiku"
-                                                    title="Model used when the primary model is rate-limited or overloaded."
+                                                    title={$t('settings.sessions.fallbackModelTitle')}
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                                             </label>
                                         </div>
                                         <label class="flex items-center gap-2 text-sm text-text mt-3"
-                                               title="When rate-limited: switch to fallback_model immediately and restart without waiting. Mirrors orchestrator.py fallback behaviour.">
+                                               title={$t('settings.sessions.fallbackToggleTitle')}>
                                             <input type="checkbox" bind:checked={sess.FallbackModelOnRateLimit} />
-                                            Switch to fallback model on rate limit (no wait)
+                                            {$t('settings.sessions.fallbackToggleLabel')}
                                         </label>
                                     </section>
 
                                     <section>
-                                        <h3 class="text-text font-semibold text-sm mb-2">Permissions</h3>
+                                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.sessions.permissionsHeading')}</h3>
                                         <label class="flex flex-col text-xs text-text-muted gap-1 mb-3">
-                                            Permission mode
+                                            {$t('settings.sessions.permissionMode')}
                                             <select
                                                 bind:value={sess.PermissionMode}
                                                 class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
@@ -1385,7 +1394,7 @@
 
                                         <div class="grid grid-cols-2 gap-3">
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                Allowed tools (one per line)
+                                                {$t('settings.sessions.allowedTools')}
                                                 <textarea
                                                     rows="3"
                                                     value={joinList(sess.AllowedTools)}
@@ -1395,7 +1404,7 @@
                                                 ></textarea>
                                             </label>
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                Disallowed tools (one per line)
+                                                {$t('settings.sessions.disallowedTools')}
                                                 <textarea
                                                     rows="3"
                                                     value={joinList(sess.DisallowedTools)}
@@ -1408,16 +1417,16 @@
 
                                         <div class="mt-4">
                                             <div class="flex items-center justify-between mb-1">
-                                                <span class="text-text-muted text-xs">Auto-approve rules</span>
+                                                <span class="text-text-muted text-xs">{$t('settings.sessions.autoApproveRules')}</span>
                                                 <button
                                                     type="button"
                                                     on:click={addPermissionRule}
                                                     class="px-2 py-0.5 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white">
-                                                    + Add rule
+                                                    {$t('settings.sessions.addRule')}
                                                 </button>
                                             </div>
                                             {#if sess.PermissionRules.length === 0}
-                                                <div class="text-xs text-text-muted italic py-1">No rules.</div>
+                                                <div class="text-xs text-text-muted italic py-1">{$t('settings.sessions.noRules')}</div>
                                             {:else}
                                                 <ul class="space-y-1">
                                                     {#each sess.PermissionRules as r, ri (ri)}
@@ -1451,10 +1460,10 @@
                                     </section>
 
                                     <section>
-                                        <h3 class="text-text font-semibold text-sm mb-2">Lifecycle</h3>
+                                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.sessions.lifecycleHeading')}</h3>
                                         <div class="grid grid-cols-2 gap-3">
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                Max budget USD (0 = unlimited)
+                                                {$t('settings.sessions.maxBudget')}
                                                 <input
                                                     type="number"
                                                     step="0.01"
@@ -1463,7 +1472,7 @@
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                                             </label>
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                Max tasks (0 = unlimited)
+                                                {$t('settings.sessions.maxTasks')}
                                                 <input
                                                     type="number"
                                                     min="0"
@@ -1473,19 +1482,19 @@
                                             <div class="flex flex-col gap-2">
                                                 <label class="flex items-center gap-2 text-sm text-text">
                                                     <input type="checkbox" bind:checked={sess.AutoRestart} />
-                                                    Auto-restart after task
+                                                    {$t('settings.sessions.autoRestart')}
                                                 </label>
                                                 <label class="flex items-center gap-2 text-sm text-text">
                                                     <input type="checkbox" bind:checked={sess.StopWhenNoTasks} />
-                                                    Stop when no tasks
+                                                    {$t('settings.sessions.stopWhenNoTasks')}
                                                 </label>
                                                 <label class="flex items-center gap-2 text-sm text-text">
                                                     <input type="checkbox" bind:checked={sess.UseWorktree} />
-                                                    Use git worktree
+                                                    {$t('settings.sessions.useWorktree')}
                                                 </label>
                                             </div>
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                Pre-flight
+                                                {$t('settings.sessions.preflightLabel')}
                                                 <select
                                                     bind:value={sess.Preflight}
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
@@ -1498,10 +1507,10 @@
                                     </section>
 
                                     <section>
-                                        <h3 class="text-text font-semibold text-sm mb-2">Hooks</h3>
+                                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.sessions.hooksHeading')}</h3>
                                         <div class="grid grid-cols-2 gap-3">
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                Pre-task hook
+                                                {$t('settings.sessions.preTaskHook')}
                                                 <input
                                                     type="text"
                                                     bind:value={sess.PreTaskHook}
@@ -1509,7 +1518,7 @@
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono" />
                                             </label>
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                Post-task hook
+                                                {$t('settings.sessions.postTaskHook')}
                                                 <input
                                                     type="text"
                                                     bind:value={sess.PostTaskHook}
@@ -1520,23 +1529,23 @@
                                     </section>
 
                                     <section>
-                                        <h3 class="text-text font-semibold text-sm mb-2">Crash recovery</h3>
+                                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.sessions.crashRecoveryHeading')}</h3>
                                         <label class="flex flex-col text-xs text-text-muted gap-1 mb-3">
-                                            Recovery prompt
+                                            {$t('settings.sessions.recoveryPrompt')}
                                             <textarea
                                                 bind:value={sess.CrashRecoveryPrompt}
                                                 rows="3"
-                                                placeholder="(default: check git status and continue the interrupted task)"
-                                                title="Message sent to Claude when resuming an interrupted session. Leave empty to use the built-in default."
+                                                placeholder={$t('settings.sessions.recoveryPromptPlaceholder')}
+                                                title={$t('settings.sessions.recoveryPromptTitle')}
                                                 class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono resize-y"
                                             ></textarea>
                                         </label>
                                     </section>
 
                                     <section>
-                                        <h3 class="text-text font-semibold text-sm mb-2">Context</h3>
+                                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.sessions.contextHeading')}</h3>
                                         <label class="flex flex-col text-xs text-text-muted gap-1 mb-3">
-                                            Append to system prompt
+                                            {$t('settings.sessions.appendSystemPrompt')}
                                             <textarea
                                                 bind:value={sess.SystemPromptAppend}
                                                 rows="2"
@@ -1544,7 +1553,7 @@
                                             ></textarea>
                                         </label>
                                         <label class="flex flex-col text-xs text-text-muted gap-1">
-                                            Additional dirs (one per line)
+                                            {$t('settings.sessions.additionalDirs')}
                                             <textarea
                                                 rows="2"
                                                 value={joinList(sess.AddDirs)}
@@ -1564,19 +1573,19 @@
                     <!-- Left rail: worker list -->
                     <div class="flex flex-col gap-3 min-h-0">
                         <div class="flex items-center justify-between">
-                            <span class="text-text-muted text-xs">Workers</span>
+                            <span class="text-text-muted text-xs">{$t('settings.workers.listHeading')}</span>
                             <button
                                 type="button"
                                 data-testid="add-worker"
                                 on:click={addWorker}
                                 class="px-2 py-0.5 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white">
-                                + Add
+                                {$t('settings.workers.addButton')}
                             </button>
                         </div>
 
                         <ul class="border border-bg-border rounded divide-y divide-bg-border bg-bg-elevated overflow-y-auto">
                             {#if cfg.Workers.length === 0}
-                                <li class="px-2 py-2 text-xs text-text-muted italic">No workers.</li>
+                                <li class="px-2 py-2 text-xs text-text-muted italic">{$t('settings.workers.noWorkers')}</li>
                             {/if}
                             {#each cfg.Workers as w, i (i)}
                                 <li class="flex items-center">
@@ -1587,20 +1596,20 @@
                                             {selectedWorkerIdx === i
                                                 ? 'bg-bg text-text'
                                                 : 'text-text-muted hover:text-text hover:bg-bg/50'}">
-                                        {w.Name || `(worker ${i + 1})`}
+                                        {w.Name || $t('settings.workers.fallback', { n: i + 1 })}
                                         <span class="text-text-dim text-xs">· {w.Role}</span>
                                     </button>
                                     <button
                                         type="button"
                                         on:click={() => removeWorker(i)}
-                                        title="Remove"
+                                        title={$t('settings.common.remove')}
                                         class="px-1.5 py-1 text-xs text-text-muted hover:text-status-error">✕</button>
                                 </li>
                             {/each}
                         </ul>
 
                         <div class="flex flex-col gap-1">
-                            <span class="text-text-muted text-xs">Add from preset</span>
+                            <span class="text-text-muted text-xs">{$t('settings.workers.addFromPreset')}</span>
                             {#each workerPresets as preset, pi}
                                 <button
                                     type="button"
@@ -1616,20 +1625,20 @@
                     <div class="min-h-0 overflow-y-auto pr-1">
                         {#if !wrk}
                             <div class="text-text-muted text-sm italic py-6 text-center">
-                                Select or add a worker.
+                                {$t('settings.workers.selectOrAdd')}
                             </div>
                         {:else}
                             <div class="space-y-4" data-testid="worker-editor">
                                 <div class="grid grid-cols-2 gap-3">
                                     <label class="flex flex-col text-xs text-text-muted gap-1">
-                                        Name
+                                        {$t('settings.field.name')}
                                         <input
                                             type="text"
                                             bind:value={wrk.Name}
                                             class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono" />
                                     </label>
                                     <label class="flex flex-col text-xs text-text-muted gap-1">
-                                        Role
+                                        {$t('settings.workers.role')}
                                         <select
                                             bind:value={wrk.Role}
                                             class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
@@ -1640,7 +1649,7 @@
                                     </label>
                                 </div>
                                 <label class="flex flex-col text-xs text-text-muted gap-1">
-                                    Base URL (OpenAI-compatible gateway)
+                                    {$t('settings.workers.baseUrl')}
                                     <input
                                         type="text"
                                         bind:value={wrk.BaseURL}
@@ -1649,7 +1658,7 @@
                                 </label>
                                 <div class="grid grid-cols-2 gap-3">
                                     <label class="flex flex-col text-xs text-text-muted gap-1">
-                                        Model id
+                                        {$t('settings.workers.modelId')}
                                         <input
                                             type="text"
                                             bind:value={wrk.Model}
@@ -1657,18 +1666,18 @@
                                             class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono" />
                                     </label>
                                     <label class="flex flex-col text-xs text-text-muted gap-1">
-                                        API key env var
+                                        {$t('settings.workers.apiKeyEnv')}
                                         <input
                                             type="text"
                                             bind:value={wrk.KeyEnv}
                                             placeholder="KILO_API_KEY"
-                                            title="The API key is read from this environment variable — never stored in config."
+                                            title={$t('settings.workers.apiKeyEnvTitle')}
                                             class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono" />
                                     </label>
                                 </div>
                                 <div class="grid grid-cols-3 gap-3">
                                     <label class="flex flex-col text-xs text-text-muted gap-1">
-                                        Reasoning effort
+                                        {$t('settings.workers.reasoningEffort')}
                                         <select
                                             bind:value={wrk.ReasoningEffort}
                                             class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
@@ -1679,7 +1688,7 @@
                                         </select>
                                     </label>
                                     <label class="flex flex-col text-xs text-text-muted gap-1">
-                                        Max output tokens
+                                        {$t('settings.workers.maxOutputTokens')}
                                         <input
                                             type="number"
                                             min="0"
@@ -1687,18 +1696,18 @@
                                             class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                                     </label>
                                     <label class="flex flex-col text-xs text-text-muted gap-1">
-                                        Continuation cap
+                                        {$t('settings.workers.continuationCap')}
                                         <input
                                             type="number"
                                             min="0"
                                             bind:value={wrk.ContinuationCap}
-                                            title="Max finish_reason=length continuations before giving up (loop guard)."
+                                            title={$t('settings.workers.continuationCapTitle')}
                                             class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                                     </label>
                                 </div>
                                 <div class="grid grid-cols-2 gap-3 items-end">
                                     <label class="flex flex-col text-xs text-text-muted gap-1">
-                                        Request timeout (sec)
+                                        {$t('settings.workers.requestTimeout')}
                                         <input
                                             type="number"
                                             min="0"
@@ -1706,9 +1715,9 @@
                                             class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                                     </label>
                                     <label class="flex items-center gap-2 text-sm text-text mb-1"
-                                           title="Warn when generating a brief that its FIND anchors must be pure ASCII (Cyrillic anchors break some models).">
+                                           title={$t('settings.workers.asciiAnchorsTitle')}>
                                         <input type="checkbox" bind:checked={wrk.ASCIIAnchorsOnly} />
-                                        ASCII-only FIND anchors
+                                        {$t('settings.workers.asciiAnchorsLabel')}
                                     </label>
                                 </div>
                             </div>
@@ -1726,7 +1735,7 @@
                 {:else if info}
                     <span class="text-status-working">{info}</span>
                 {:else}
-                    <span class="text-text-muted">Changes are written to TOML on Save.</span>
+                    <span class="text-text-muted">{$t('settings.footer.changesNote')}</span>
                 {/if}
             </div>
             <div class="flex gap-2">
@@ -1734,7 +1743,7 @@
                     type="button"
                     on:click={close}
                     class="px-3 py-1 text-sm rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
-                    Close
+                    {$t('common.close')}
                 </button>
                 <button
                     type="button"
@@ -1742,7 +1751,7 @@
                     disabled={saving || loading || !cfg}
                     class="px-3 py-1 text-sm rounded font-medium bg-blue-600 hover:bg-blue-500 text-white
                            disabled:opacity-50 disabled:cursor-not-allowed">
-                    {saving ? 'Saving…' : 'Save'}
+                    {saving ? $t('settings.footer.saving') : $t('common.save')}
                 </button>
             </div>
         </div>

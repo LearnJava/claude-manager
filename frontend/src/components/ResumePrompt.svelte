@@ -5,6 +5,7 @@
     // Without this the manager silently resumed, so "continue" vs "start over"
     // was never the user's call; see CLAUDE.md "Crash Recovery".
     import { createEventDispatcher } from 'svelte';
+    import { t } from '../lib/i18n';
 
     export let project: string;
     export let sessionName: string;
@@ -20,17 +21,17 @@
     function startedAtLabel(v: any): string {
         if (!v) return '';
         const d = new Date(v);
-        const t = d.getTime();
-        if (!t || isNaN(t)) return '';
+        const ts = d.getTime();
+        if (!ts || isNaN(ts)) return '';
         const abs = d.toLocaleString();
-        const ms = Date.now() - t;
+        const ms = Date.now() - ts;
         if (ms < 0) return abs;
         const m = Math.floor(ms / 60000);
-        if (m < 1) return `${abs} (just now)`;
-        if (m < 60) return `${abs} (${m}m ago)`;
+        if (m < 1) return $t('resumePrompt.startedJustNow', { abs });
+        if (m < 60) return $t('resumePrompt.startedMinutesAgo', { abs, m });
         const h = Math.floor(m / 60);
-        if (h < 24) return `${abs} (${h}h ${m % 60}m ago)`;
-        return `${abs} (${Math.floor(h / 24)}d ago)`;
+        if (h < 24) return $t('resumePrompt.startedHoursAgo', { abs, h, m: m % 60 });
+        return $t('resumePrompt.startedDaysAgo', { abs, d: Math.floor(h / 24) });
     }
 </script>
 
@@ -52,36 +53,35 @@
         <!-- Header -->
         <div class="flex items-center justify-between">
             <div>
-                <span class="text-text font-semibold">Unfinished session</span>
+                <span class="text-text font-semibold">{$t('resumePrompt.title')}</span>
                 <span class="text-text-muted ml-2" style="font-size:13px">{project}/{sessionName}</span>
             </div>
             <button
                 class="text-text-muted hover:text-text"
-                title="Cancel"
+                title={$t('common.cancel')}
                 on:click={() => dispatch('cancel')}
                 type="button">✕</button>
         </div>
 
         <div class="text-text-muted" style="font-size:13px">
-            The previous run of this session never reported a finished task — it was
-            interrupted, stopped, or crashed.
+            {$t('resumePrompt.description')}
         </div>
 
         <div class="bg-bg-elevated border border-bg-border rounded p-3 space-y-1" style="font-size:13px">
             {#if state.task}
                 <div class="flex gap-2">
-                    <span class="text-text-muted shrink-0">Task:</span>
+                    <span class="text-text-muted shrink-0">{$t('resumePrompt.task')}</span>
                     <span class="text-text break-words" data-testid="resume-task">{state.task}</span>
                 </div>
             {/if}
             {#if startedAtLabel(state.started_at)}
                 <div class="flex gap-2">
-                    <span class="text-text-muted shrink-0">Started:</span>
+                    <span class="text-text-muted shrink-0">{$t('resumePrompt.started')}</span>
                     <span class="text-text">{startedAtLabel(state.started_at)}</span>
                 </div>
             {/if}
             <div class="flex gap-2">
-                <span class="text-text-muted shrink-0">CLI session:</span>
+                <span class="text-text-muted shrink-0">{$t('resumePrompt.cliSession')}</span>
                 <span class="text-text font-mono break-all" style="font-size:11px">{state.session_id}</span>
             </div>
         </div>
@@ -93,23 +93,23 @@
                 on:click={() => dispatch('cancel')}
                 class="px-3 py-1 rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg"
                 style="font-size:13px">
-                Cancel
+                {$t('common.cancel')}
             </button>
             <button
                 type="button"
-                title="Discard the saved conversation and start this session from scratch"
+                title={$t('resumePrompt.startFreshTooltip')}
                 on:click={() => dispatch('fresh')}
                 class="px-3 py-1 rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg"
                 style="font-size:13px">
-                Start fresh
+                {$t('resumePrompt.startFresh')}
             </button>
             <button
                 type="button"
-                title="Resume the saved CLI conversation (--resume) and pick the task back up"
+                title={$t('resumePrompt.continueTooltip')}
                 on:click={() => dispatch('continue')}
                 class="px-4 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium"
                 style="font-size:13px">
-                Continue
+                {$t('resumePrompt.continue')}
             </button>
         </div>
     </div>

@@ -12,6 +12,7 @@
     import RoadmapNodeView from './RoadmapNode.svelte';
     import { containsCurrent, type RoadmapView } from './roadmap';
     import type { SessionState } from '../stores/sessions';
+    import { t } from '../lib/i18n';
 
     export let session: SessionState;
 
@@ -52,14 +53,13 @@
 
 <div class="space-y-3">
     {#if loading && !view}
-        <div class="text-xs text-text-muted">Loading roadmap…</div>
+        <div class="text-xs text-text-muted">{$t('roadmapTree.loadingRoadmap')}</div>
     {:else if error}
         <div class="text-xs text-status-error break-words">{error}</div>
     {:else if !view}
         <div class="text-xs text-text-muted">
-            No roadmap for this session. A roadmap appears here once the project
-            has a <code class="font-mono">ROADMAP.md</code> and the session points at a
-            task source (Settings → Projects → Generate Roadmap with AI).
+            {$t('roadmapTree.noRoadmapBefore')}
+            <code class="font-mono">ROADMAP.md</code> {$t('roadmapTree.noRoadmapAfter')}
         </div>
     {:else}
         <div>
@@ -70,14 +70,14 @@
                 <button
                     type="button"
                     on:click={load}
-                    title="Reload roadmap"
+                    title={$t('roadmapTree.reloadRoadmapTitle')}
                     class="shrink-0 text-xs text-text-muted hover:text-text">🔄</button>
             </div>
             <div class="mt-1 flex items-center justify-between gap-2">
                 <span class="text-[10px] text-text-muted">
-                    {view.done}/{view.total} done · {percent}%
+                    {$t('roadmapTree.progressSummary', { done: view.done, total: view.total, percent })}
                     {#if view.status_model !== 'pointer'}
-                        <span title="Status comes from the roadmap's own status column; pointers mark this session's queue">
+                        <span title={$t('roadmapTree.statusModelTitle')}>
                             · {view.status_model}
                         </span>
                     {/if}
@@ -86,7 +86,7 @@
                     type="button"
                     on:click={() => (hideDone = !hideDone)}
                     class="shrink-0 text-[10px] text-text-muted hover:text-text">
-                    {hideDone ? 'show done' : 'hide done'}
+                    {hideDone ? $t('roadmapTree.showDone') : $t('roadmapTree.hideDone')}
                 </button>
             </div>
             <div class="mt-1 h-1.5 rounded bg-bg-elevated overflow-hidden">
@@ -102,7 +102,7 @@
                     type="button"
                     class="text-[10px] uppercase tracking-wide text-text-muted hover:text-text"
                     on:click={() => (showContext = !showContext)}>
-                    {showContext ? '− ' : '+ '}Project context
+                    {showContext ? '− ' : '+ '}{$t('roadmapTree.projectContext')}
                 </button>
                 {#if showContext}
                     <div class="mt-1 text-[11px] text-text-muted whitespace-pre-wrap break-words">
@@ -113,7 +113,7 @@
         {/if}
 
         {#if roots.length === 0}
-            <div class="text-xs text-text-muted">Everything here is done. 🎉</div>
+            <div class="text-xs text-text-muted">{$t('roadmapTree.everythingDone')}</div>
         {:else}
             <ul class="space-y-0.5">
                 {#each roots as node (node.id + ':' + node.line)}

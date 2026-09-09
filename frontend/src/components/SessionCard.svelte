@@ -12,6 +12,7 @@
         tokenSplitLabel,
     } from '../lib/formatters';
     import { costUnit } from '../stores/units';
+    import { t } from '../lib/i18n';
 
     export let session: SessionState;
 
@@ -57,18 +58,18 @@
         }
     }
 
-    function statusLabel(status: SessionStatus): string {
+    function statusLabel(status: SessionStatus, tr: (key: string, params?: Record<string, string | number>) => string): string {
         switch (status) {
-            case 'working': return 'Working';
-            case 'waiting_permission': return 'Waiting permission';
-            case 'waiting_for_user': return 'Waiting for answer';
-            case 'rate_limited': return 'Rate limited';
-            case 'retrying': return 'Retrying';
-            case 'error': return 'Error';
-            case 'starting': return 'Starting';
-            case 'analyzing': return 'Analyzing';
-            case 'stopping': return 'Stopping';
-            case 'idle': return 'Idle';
+            case 'working': return tr('sessionCard.statusWorking');
+            case 'waiting_permission': return tr('sessionCard.statusWaitingPermission');
+            case 'waiting_for_user': return tr('sessionCard.statusWaitingForAnswer');
+            case 'rate_limited': return tr('sessionCard.statusRateLimited');
+            case 'retrying': return tr('sessionCard.statusRetrying');
+            case 'error': return tr('sessionCard.statusError');
+            case 'starting': return tr('sessionCard.statusStarting');
+            case 'analyzing': return tr('sessionCard.statusAnalyzing');
+            case 'stopping': return tr('sessionCard.statusStopping');
+            case 'idle': return tr('sessionCard.statusIdle');
             default: return status;
         }
     }
@@ -87,20 +88,20 @@
         <span
             class="w-2.5 h-2.5 rounded-full shrink-0 {statusDot(session.status)}
                    {blink ? 'dot-blink' : ''}"
-            title={statusLabel(session.status)}></span>
+            title={statusLabel(session.status, $t)}></span>
         <div class="flex items-baseline gap-2 min-w-0">
             <h2 class="text-text font-semibold truncate">{session.name}</h2>
             <span class="text-text-muted text-xs truncate">— {session.project}</span>
         </div>
         <span class="text-text-muted text-xs ml-auto whitespace-nowrap">
-            {statusLabel(session.status)}
+            {statusLabel(session.status, $t)}
             {#if session.stop_requested}
-                <span class="text-amber-400" title="Will stop once the current task finishes">
-                    · stopping after task
+                <span class="text-amber-400" title={$t('sessionCard.stopRequestedTooltip')}>
+                    {$t('sessionCard.stoppingAfterTask')}
                 </span>
             {/if}
         </span>
-        <span class="text-text-muted text-xs whitespace-nowrap" title="Runtime">
+        <span class="text-text-muted text-xs whitespace-nowrap" title={$t('sessionCard.runtimeTooltip')}>
             {runtime}
         </span>
     </div>
@@ -108,22 +109,21 @@
     <!-- Row 2: branch / task / turns / tokens -->
     <div class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted">
         {#if session.branch}
-            <span>Branch: <span class="text-text">{session.branch}</span></span>
+            <span>{$t('sessionCard.branchLabel')} <span class="text-text">{session.branch}</span></span>
         {/if}
         {#if session.current_task}
-            <span>Task: <span class="text-text">{session.current_task}</span></span>
+            <span>{$t('sessionCard.taskLabel')} <span class="text-text">{session.current_task}</span></span>
         {/if}
-        <span>Turns: <span class="text-text">{session.num_turns ?? 0}</span></span>
+        <span>{$t('sessionCard.turnsLabel')} <span class="text-text">{session.num_turns ?? 0}</span></span>
         <span title={tokenSplitLabel(session)}>
-            Tokens:
+            {$t('sessionCard.tokensLabel')}
             <span class="text-text">{formatTokens(split.total)}</span>
             <span class="opacity-70">
-                ({formatTokens(split.input)} in / {formatTokens(split.output)} out /
-                {formatTokens(split.cacheRead)} cached)
+                {$t('sessionCard.tokensBreakdown', { input: formatTokens(split.input), output: formatTokens(split.output), cacheRead: formatTokens(split.cacheRead) })}
             </span>
         </span>
         {#if session.model}
-            <span>Model: <span class="text-text">{session.model}</span></span>
+            <span>{$t('sessionCard.modelLabel')} <span class="text-text">{session.model}</span></span>
         {/if}
     </div>
 
@@ -131,18 +131,18 @@
     <div class="mt-1 flex items-center gap-x-4 text-xs text-text-muted">
         <!-- Dollars stay on screen but step back when tokens are the chosen unit. -->
         <span>
-            Cost:
+            {$t('sessionCard.costLabel')}
             <span class={$costUnit === 'usd' ? 'text-text' : 'opacity-70'}>
                 {formatCost(session.total_cost_usd)}
             </span>
         </span>
-        <span>Cache hit: <span class="text-text">{formatPercent(hit)}</span></span>
+        <span>{$t('sessionCard.cacheHitLabel')} <span class="text-text">{formatPercent(hit)}</span></span>
 
         <div class="flex items-center gap-2 ml-auto min-w-[160px]">
-            <span class="whitespace-nowrap">Context:</span>
+            <span class="whitespace-nowrap">{$t('sessionCard.contextLabel')}</span>
             <div
                 class="relative flex-1 h-2 bg-bg-elevated rounded overflow-hidden"
-                title="Context window utilization">
+                title={$t('sessionCard.contextTooltip')}>
                 <div
                     class="h-full {contextBarColor(util)} transition-all"
                     style="width: {utilPct}%"></div>

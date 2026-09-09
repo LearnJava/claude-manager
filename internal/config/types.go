@@ -73,6 +73,10 @@ type GlobalSettings struct {
 	LogRetentionDays  int    `toml:"log_retention_days"`
 	Theme             string `toml:"theme"`
 
+	// UI language: "en" or "ru". Frontend-only (no effect on prompts sent to
+	// Claude, which stay English) — see "UI Localization" in CLAUDE.md.
+	Language string `toml:"language"`
+
 	// Crash recovery: persist session_id to disk so interrupted sessions can be
 	// resumed with --resume after an app restart (mirrors orchestrator.py behaviour).
 	CrashRecovery bool `toml:"crash_recovery"`

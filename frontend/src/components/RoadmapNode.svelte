@@ -5,6 +5,7 @@
     // state.
     import { GetRoadmapTaskDetail, GetRoadmapRowDetail } from '../../wailsjs/go/main/App';
     import type { RoadmapNode } from './roadmap';
+    import { t } from '../lib/i18n';
 
     export let node: RoadmapNode;
     export let project: string;
@@ -69,7 +70,7 @@
             <button
                 type="button"
                 on:click={() => (open = !open)}
-                title={open ? 'Collapse' : 'Expand'}
+                title={open ? $t('roadmapNode.collapse') : $t('roadmapNode.expand')}
                 class="shrink-0 w-3 text-center text-text-muted hover:text-text">
                 {open ? '▾' : '▸'}
             </button>
@@ -93,7 +94,7 @@
                 <button
                     type="button"
                     on:click={toggleDetail}
-                    title={node.detail_path || 'Show the roadmap description'}
+                    title={node.detail_path || $t('roadmapNode.showDescriptionTitle')}
                     class="shrink-0 w-3 text-center text-text-muted hover:text-text">
                     {showDetail ? '−' : '+'}
                 </button>
@@ -107,8 +108,8 @@
                        {node.current ? 'font-semibold' : ''}">
                 {#if node.number > 0}{node.number}. {/if}{node.name || node.summary}
                 {#if node.name && node.summary}<span class="text-text-muted"> — {node.summary}</span>{/if}
-                {#if node.current}<span class="ml-1 text-[10px] text-status-working">← now</span>
-                {:else if node.in_queue}<span class="ml-1 text-[10px] text-text-muted">queued</span>{/if}
+                {#if node.current}<span class="ml-1 text-[10px] text-status-working">← {$t('roadmapNode.nowMarker')}</span>
+                {:else if node.in_queue}<span class="ml-1 text-[10px] text-text-muted">{$t('roadmapNode.queued')}</span>{/if}
                 {#if hasChildren}<span class="ml-1 text-[10px] text-text-muted">{node.done}/{node.total}</span>{/if}
             </button>
         {/if}
@@ -117,18 +118,18 @@
     {#if showDetail && node.kind !== 'phase'}
         <div class="ml-7 mt-1 mb-2 pl-2 border-l border-bg-border">
             {#if node.depends_on && node.depends_on !== '-'}
-                <div class="text-[10px] text-text-muted">Depends on: {node.depends_on}</div>
+                <div class="text-[10px] text-text-muted">{$t('roadmapNode.dependsOn', { value: node.depends_on })}</div>
             {/if}
             {#if node.bugs}
-                <div class="text-[10px] text-text-muted">Bugs: {node.bugs}</div>
+                <div class="text-[10px] text-text-muted">{$t('roadmapNode.bugs', { value: node.bugs })}</div>
             {/if}
             {#if node.status_raw}
-                <div class="text-[10px] text-text-muted">Status: {node.status_raw}{node.size ? ` · size ${node.size}` : ''}</div>
+                <div class="text-[10px] text-text-muted">{$t('roadmapNode.status', { status: node.status_raw })}{node.size ? $t('roadmapNode.sizeSuffix', { size: node.size }) : ''}</div>
             {/if}
             {#if detailError}
                 <div class="text-[11px] text-status-error break-words">{detailError}</div>
             {:else if loading}
-                <div class="text-[11px] text-text-muted">Loading…</div>
+                <div class="text-[11px] text-text-muted">{$t('common.loading')}</div>
             {:else if detail}
                 <pre class="mt-1 text-[11px] text-text-muted whitespace-pre-wrap break-words font-sans">{detail}</pre>
             {/if}

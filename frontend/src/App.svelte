@@ -15,6 +15,7 @@
     // and applying the persisted theme to <html> on app boot.
     import './stores/theme';
     import { logSearch } from './stores/logSearch';
+    import { t } from './lib/i18n';
 
     let showPermissionQueue = false;
     let showSettings = false;
@@ -109,23 +110,23 @@
             <button
                 class="text-text-muted hover:text-text text-xs px-2 py-0.5 rounded hover:bg-bg-elevated"
                 on:click={() => (showExperience = true)}
-                type="button">Experience</button>
+                type="button">{$t('app.navExperience')}</button>
             <button
                 class="text-text-muted hover:text-text text-xs px-2 py-0.5 rounded hover:bg-bg-elevated"
                 on:click={() => (showMixedRun = true)}
-                type="button">Mixed</button>
+                type="button">{$t('app.navMixed')}</button>
             <button
                 class="text-text-muted hover:text-text text-xs px-2 py-0.5 rounded hover:bg-bg-elevated"
                 on:click={() => (showDashboard = true)}
-                type="button">Dashboard</button>
+                type="button">{$t('app.navDashboard')}</button>
             <button
                 class="text-text-muted hover:text-text text-xs px-2 py-0.5 rounded hover:bg-bg-elevated"
                 on:click={() => (showHistory = true)}
-                type="button">History</button>
+                type="button">{$t('app.navHistory')}</button>
             <button
                 class="text-text-muted hover:text-text text-xs px-2 py-0.5 rounded hover:bg-bg-elevated"
                 on:click={openSettings}
-                type="button">Settings</button>
+                type="button">{$t('app.navSettings')}</button>
         </div>
     </header>
 
@@ -142,7 +143,7 @@
             on:mousedown={onDividerMouseDown}
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize sidebar"
+            aria-label={$t('app.resizeSidebar')}
             tabindex="-1"
         ></div>
 
@@ -151,7 +152,7 @@
                 <SessionView session={selected} />
             {:else}
                 <div class="flex-1 flex items-center justify-center text-text-muted text-sm">
-                    Select a session from the sidebar.
+                    {$t('app.noSessionSelected')}
                 </div>
             {/if}
         </main>
@@ -173,9 +174,9 @@
                 on:keydown|stopPropagation>
                 <div class="flex items-center justify-between mb-3 shrink-0">
                     <h3 class="text-text font-semibold">
-                        Permission Queue
+                        {$t('app.permissionQueueTitle')}
                         <span class="text-text-muted text-xs font-normal ml-1">
-                            ({$waitingSessions.length} pending)
+                            {$t('app.permissionQueuePending', { count: $waitingSessions.length })}
                         </span>
                     </h3>
                     <button

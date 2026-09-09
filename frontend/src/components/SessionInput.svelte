@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { SessionState } from '../stores/sessions';
+    import { t } from '../lib/i18n';
     import { SendMessage, SendMessageWithImages } from '../../wailsjs/go/main/App';
 
     export let session: SessionState;
@@ -24,7 +25,8 @@
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => resolve(reader.result as string);
-            reader.onerror = () => reject(reader.error ?? new Error('failed to read pasted image'));
+            reader.onerror = () =>
+                reject(reader.error ?? new Error($t('sessionInput.pasteReadError')));
             reader.readAsDataURL(file);
         });
     }
@@ -93,7 +95,7 @@
 
 <div class="bg-bg-panel border-t border-bg-border px-3 py-2">
     {#if error}
-        <div class="text-status-error text-xs mb-1">Send failed: {error}</div>
+        <div class="text-status-error text-xs mb-1">{$t('sessionInput.sendFailed')} {error}</div>
     {/if}
     {#if pendingImages.length > 0}
         <div class="flex flex-wrap gap-2 mb-2">
@@ -101,12 +103,12 @@
                 <div class="relative group">
                     <img
                         src={img.previewUrl}
-                        alt="pasted"
+                        alt={$t('sessionInput.pastedImageAlt')}
                         class="h-14 w-14 object-cover rounded border border-bg-border" />
                     <button
                         type="button"
                         on:click={() => removeImage(idx)}
-                        title="Remove image"
+                        title={$t('sessionInput.removeImage')}
                         class="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-status-error
                                text-white text-[10px] leading-4 text-center
                                opacity-80 hover:opacity-100">
@@ -125,8 +127,8 @@
             disabled={!canSend || sending}
             rows="2"
             placeholder={canSend
-                ? 'Type a message — Enter to send, Shift+Enter for newline (paste an image to attach it)'
-                : 'Session is not active'}
+                ? $t('sessionInput.placeholder.active')
+                : $t('sessionInput.placeholder.inactive')}
             class="flex-1 resize-none bg-bg border border-bg-border rounded px-2 py-1
                    text-sm text-text placeholder:text-text-dim
                    focus:outline-none focus:border-status-starting
@@ -139,7 +141,7 @@
             class="bg-status-starting hover:bg-blue-500 text-white text-sm font-medium
                    px-3 py-1.5 rounded shrink-0
                    disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-status-starting">
-            {sending ? 'Sending…' : 'Send ▶'}
+            {sending ? $t('sessionInput.sending') : $t('sessionInput.send')}
         </button>
     </div>
 </div>

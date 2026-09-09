@@ -4,8 +4,10 @@
     // (mounted as <SkillReview {project} />) so the review/edit surface — which
     // is meaningfully bigger than the Actions/Permissions/Timing tabs' plain
     // tables — doesn't balloon that file.
+    import { get } from 'svelte/store';
     import { formatPercent, formatTime, formatTokens } from '../lib/formatters';
     import { renderMarkdown } from '../lib/markdown';
+    import { t } from '../lib/i18n';
     import {
         approveSkill,
         archiveSkill,
@@ -50,7 +52,7 @@
         try {
             skills = await fetchSkills(project);
         } catch (e: any) {
-            error = `Failed to load skills: ${e?.message ?? String(e)}`;
+            error = get(t)('skillReview.failedToLoadSkills', { message: e?.message ?? String(e) });
             skills = [];
         } finally {
             loading = false;
@@ -59,7 +61,7 @@
         try {
             quality = await fetchSkillQuality(project);
         } catch (e: any) {
-            qualityError = `Failed to load skill quality: ${e?.message ?? String(e)}`;
+            qualityError = get(t)('skillReview.failedToLoadSkillQuality', { message: e?.message ?? String(e) });
             quality = [];
         }
     }
@@ -115,14 +117,14 @@
         }
     }
 
-    function statusLabel(status: string): string {
+    function statusLabel(status: string, tr: (key: string, params?: Record<string, string | number>) => string): string {
         switch (status) {
             case 'draft':
-                return 'Draft';
+                return tr('skillReview.statusDraft');
             case 'approved':
-                return 'Approved';
+                return tr('skillReview.statusApproved');
             case 'archived':
-                return 'Archived';
+                return tr('skillReview.statusArchived');
             default:
                 return status;
         }
@@ -144,9 +146,9 @@
 </script>
 
 {#if !project}
-    <div class="text-text-muted text-sm italic py-10 text-center">No project configured.</div>
+    <div class="text-text-muted text-sm italic py-10 text-center">{$t('skillReview.noProjectConfigured')}</div>
 {:else if loading}
-    <div class="text-text-muted text-sm italic py-10 text-center">Loading skills…</div>
+    <div class="text-text-muted text-sm italic py-10 text-center">{$t('skillReview.loadingSkills')}</div>
 {:else if error}
     <div class="text-status-error text-sm py-10 text-center">{error}</div>
 {:else}
@@ -155,15 +157,15 @@
     {:else if quality.length > 0}
         <div class="border-b border-bg-border">
             <div class="px-3 pt-2 pb-1 text-xs font-medium text-text-muted">
-                Effect (before vs. after approval — LEARN-TASKS.md LN-11)
+                {$t('skillReview.effectHeading')}
             </div>
             <table class="w-full text-xs border-collapse mb-2">
                 <thead class="text-text-muted">
                     <tr>
-                        <th class="text-left px-3 py-1 font-medium">Skill</th>
-                        <th class="text-right px-3 py-1 font-medium">Before (runs / tokens / turns)</th>
-                        <th class="text-right px-3 py-1 font-medium">After (runs / tokens / turns)</th>
-                        <th class="text-left px-3 py-1 font-medium">Verdict</th>
+                        <th class="text-left px-3 py-1 font-medium">{$t('skillReview.colSkill')}</th>
+                        <th class="text-right px-3 py-1 font-medium">{$t('skillReview.colBefore')}</th>
+                        <th class="text-right px-3 py-1 font-medium">{$t('skillReview.colAfter')}</th>
+                        <th class="text-left px-3 py-1 font-medium">{$t('skillReview.colVerdict')}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -180,14 +182,13 @@
                             </td>
                             <td class="px-3 py-1">
                                 {#if q.insufficient_data}
-                                    <span class="text-text-muted italic">Not enough data</span>
+                                    <span class="text-text-muted italic">{$t('skillReview.notEnoughData')}</span>
                                 {:else if q.stale}
                                     <span class="text-status-waiting">
-                                        Suggest archiving
-                                        {q.stale_reason === 'unused' ? '(unused)' : '(no token improvement)'}
+                                        {q.stale_reason === 'unused' ? $t('skillReview.suggestArchivingUnused') : $t('skillReview.suggestArchivingNoImprovement')}
                                     </span>
                                 {:else}
-                                    <span class="text-status-working">OK</span>
+                                    <span class="text-status-working">{$t('skillReview.verdictOk')}</span>
                                 {/if}
                             </td>
                         </tr>
@@ -199,18 +200,17 @@
 {/if}
 {#if project && !loading && !error && activeSkills.length === 0}
     <div class="text-text-muted text-sm italic py-10 text-center">
-        No distilled skills for this project yet — skills come from LEARN-TASKS.md LN-09
-        (candidate mining + distillation), not from this tab.
+        {$t('skillReview.noSkillsYet')}
     </div>
 {:else if project && !loading && !error}
     <table class="w-full text-sm border-collapse">
         <thead class="bg-bg-elevated sticky top-0 z-10 text-text-muted text-xs">
             <tr>
                 <th class="w-6"></th>
-                <th class="text-left px-3 py-2 font-medium">Name</th>
-                <th class="text-left px-3 py-2 font-medium">Description</th>
-                <th class="text-left px-3 py-2 font-medium">Status</th>
-                <th class="text-left px-3 py-2 font-medium">Created</th>
+                <th class="text-left px-3 py-2 font-medium">{$t('skillReview.colName')}</th>
+                <th class="text-left px-3 py-2 font-medium">{$t('skillReview.colDescription')}</th>
+                <th class="text-left px-3 py-2 font-medium">{$t('skillReview.colStatus')}</th>
+                <th class="text-left px-3 py-2 font-medium">{$t('skillReview.colCreated')}</th>
             </tr>
         </thead>
         <tbody>
@@ -229,7 +229,7 @@
                         {draft?.description ?? ''}
                     </td>
                     <td class="px-3 py-1.5 text-xs font-medium {statusClass(sk.Status)}">
-                        {statusLabel(sk.Status)}
+                        {statusLabel(sk.Status, $t)}
                     </td>
                     <td class="px-3 py-1.5 text-text-muted font-mono text-xs">
                         {formatTime(sk.CreatedAt)}
@@ -249,7 +249,7 @@
                                                 {!previewById[sk.ID]
                                                     ? 'bg-bg-elevated border-blue-500 text-text'
                                                     : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
-                                            Edit
+                                            {$t('skillReview.editButton')}
                                         </button>
                                         <button
                                             type="button"
@@ -259,7 +259,7 @@
                                                 {previewById[sk.ID]
                                                     ? 'bg-bg-elevated border-blue-500 text-text'
                                                     : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
-                                            Preview
+                                            {$t('skillReview.previewButton')}
                                         </button>
                                     </div>
                                     {#if sk.Status === 'draft'}
@@ -269,14 +269,14 @@
                                                 disabled={busyId === sk.ID}
                                                 on:click|stopPropagation={() => onArchive(sk)}
                                                 class="px-2 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg disabled:opacity-50">
-                                                Archive
+                                                {$t('skillReview.archiveButton')}
                                             </button>
                                             <button
                                                 type="button"
                                                 disabled={busyId === sk.ID}
                                                 on:click|stopPropagation={() => onApprove(sk)}
                                                 class="px-2 py-1 text-xs rounded bg-status-working/80 hover:bg-status-working text-white disabled:opacity-50">
-                                                Accept
+                                                {$t('skillReview.acceptButton')}
                                             </button>
                                         </div>
                                     {:else if sk.Status === 'approved'}
@@ -285,7 +285,7 @@
                                             disabled={busyId === sk.ID}
                                             on:click|stopPropagation={() => onArchive(sk)}
                                             class="px-2 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg disabled:opacity-50">
-                                            Archive
+                                            {$t('skillReview.archiveButton')}
                                         </button>
                                     {/if}
                                 </div>
@@ -307,14 +307,14 @@
                                 {#if conflictId === sk.ID}
                                     <div class="mt-2 text-xs">
                                         <span class="text-status-waiting">
-                                            {sk.Name}/SKILL.md already exists in this project.
+                                            {$t('skillReview.skillFileExists', { name: sk.Name })}
                                         </span>
                                         <button
                                             type="button"
                                             on:click|stopPropagation={() => onApprove(sk, true)}
                                             disabled={busyId === sk.ID}
                                             class="ml-2 px-2 py-0.5 rounded bg-status-error/80 hover:bg-status-error text-white disabled:opacity-50">
-                                            Yes, overwrite
+                                            {$t('skillReview.yesOverwrite')}
                                         </button>
                                     </div>
                                 {:else if errorById[sk.ID]}

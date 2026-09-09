@@ -1,10 +1,14 @@
 <script lang="ts">
     import { createEventDispatcher } from 'svelte';
+    import { get } from 'svelte/store';
     import { ApprovePlan, ExecutePlan, ApproveRoadmap } from '../../wailsjs/go/main/App';
     import { analysis } from '../../wailsjs/go/models';
     import { formatCost, formatTokens, formatDuration } from '../lib/formatters';
     import { MODELS, EFFORTS, modelLabel, isKnownModel } from '../lib/models';
     import { renderMarkdown } from '../lib/markdown';
+    import { t } from '../lib/i18n';
+
+    type Tr = (key: string, params?: Record<string, string | number>) => string;
 
     // ---- Local types (mirror internal/analysis/plan.go JSON tags) ----
 
@@ -161,10 +165,23 @@
         const i = complexityLevels.indexOf((c ?? '').toLowerCase());
         return i < 0 ? 2 : i;
     }
-    function complexityLabel(c: string): string {
+    function complexityLabel(c: string, tr: Tr): string {
         const v = (c ?? '').toLowerCase();
-        if (!v) return 'Unknown';
-        return v.charAt(0).toUpperCase() + v.slice(1);
+        if (!v) return tr('planReview.complexityUnknown');
+        switch (v) {
+            case 'trivial':
+                return tr('planReview.complexityTrivial');
+            case 'small':
+                return tr('planReview.complexitySmall');
+            case 'medium':
+                return tr('planReview.complexityMedium');
+            case 'large':
+                return tr('planReview.complexityLarge');
+            case 'epic':
+                return tr('planReview.complexityEpic');
+            default:
+                return v.charAt(0).toUpperCase() + v.slice(1);
+        }
     }
     function complexityColor(idx: number): string {
         if (idx <= 0) return 'bg-status-working';
@@ -175,16 +192,16 @@
     }
 
     // ---- Approach label / banner ----
-    function approachLabel(a: string): string {
+    function approachLabel(a: string, tr: Tr): string {
         switch (a) {
             case 'single_session':
-                return 'Single session';
+                return tr('planReview.approachSingle');
             case 'sequential_sessions':
-                return 'Sequential sessions';
+                return tr('planReview.approachSequential');
             case 'parallel_sessions':
-                return 'Parallel sessions';
+                return tr('planReview.approachParallel');
             case 'mixed':
-                return 'Mixed (sequential + parallel)';
+                return tr('planReview.approachMixed');
             default:
                 return a || '—';
         }
@@ -261,7 +278,7 @@
             await ExecutePlan(saved.id);
             dispatch('executed', { plan: working });
         } catch (e: any) {
-            error = `Execute failed: ${e?.message ?? String(e)}`;
+            error = get(t)('planReview.executeFailed', { message: e?.message ?? String(e) });
         } finally {
             busy = '';
         }
@@ -277,7 +294,7 @@
             editMode = false;
             dispatch('approved', { plan: working });
         } catch (e: any) {
-            error = `Approve failed: ${e?.message ?? String(e)}`;
+            error = get(t)('planReview.approveFailed', { message: e?.message ?? String(e) });
         } finally {
             busy = '';
         }
@@ -298,7 +315,7 @@
             if (!overwrite && /already exists/i.test(msg)) {
                 conflict = true;
             } else {
-                error = `Write failed: ${msg}`;
+                error = get(t)('planReview.writeFailed', { message: msg });
             }
         } finally {
             busy = '';
@@ -354,7 +371,7 @@
         <div class="px-4 py-3 border-b border-bg-border flex items-center justify-between shrink-0">
             <div>
                 <h2 class="text-text font-semibold text-base">
-                    {mode === 'roadmap' ? 'Project Roadmap' : 'Task Analysis'}
+                    {mode === 'roadmap' ? $t('planReview.titleRoadmap') : $t('planReview.titleTaskAnalysis')}
                 </h2>
                 {#if working.original_task}
                     <div class="text-text-muted text-xs mt-0.5 truncate max-w-[660px]"
@@ -369,7 +386,7 @@
                         type="button"
                         on:click={onReanalyze}
                         class="px-2.5 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
-                        Re-analyze
+                        {$t('planReview.reanalyze')}
                     </button>
                 {/if}
                 <button
@@ -385,7 +402,7 @@
                 <!-- ───── Project summary (roadmap mode) ───── -->
                 {#if working.shared_context}
                     <section>
-                        <h3 class="text-text font-semibold text-sm mb-2">Project summary</h3>
+                        <h3 class="text-text font-semibold text-sm mb-2">{$t('planReview.projectSummary')}</h3>
                         <div class="md-body text-text text-sm">{@html renderMarkdown(working.shared_context)}</div>
                     </section>
                 {/if}
@@ -397,18 +414,18 @@
                 {#if feas.single_session}
                     <div class="flex items-center gap-2 text-sm font-semibold text-status-working mb-3">
                         <span>✓</span>
-                        <span>Task fits in a single session.</span>
+                        <span>{$t('planReview.fitsSingleSession')}</span>
                     </div>
                 {:else}
                     <div class="flex items-center gap-2 text-sm font-semibold text-status-waiting mb-3">
                         <span>⚠</span>
-                        <span>Task does NOT fit in a single session.</span>
+                        <span>{$t('planReview.doesNotFitSingleSession')}</span>
                     </div>
                 {/if}
 
                 <div class="grid grid-cols-3 gap-4">
                     <div>
-                        <div class="text-text-muted text-xs mb-1">Complexity</div>
+                        <div class="text-text-muted text-xs mb-1">{$t('planReview.complexityLabel')}</div>
                         <div class="flex items-center gap-2">
                             <div class="flex-1 flex gap-0.5">
                                 {#each complexityLevels as _, i}
@@ -421,20 +438,20 @@
                                 {/each}
                             </div>
                             <span class="text-text text-xs whitespace-nowrap">
-                                {complexityLabel(feas.estimated_complexity)}
+                                {complexityLabel(feas.estimated_complexity, $t)}
                             </span>
                         </div>
                     </div>
 
                     <div>
-                        <div class="text-text-muted text-xs mb-1">Files affected</div>
+                        <div class="text-text-muted text-xs mb-1">{$t('planReview.filesAffectedLabel')}</div>
                         <div class="text-text text-sm font-mono">
                             ~{feas.estimated_files_affected ?? 0}
                         </div>
                     </div>
 
                     <div>
-                        <div class="text-text-muted text-xs mb-1">Tokens</div>
+                        <div class="text-text-muted text-xs mb-1">{$t('planReview.tokensColumnLabel')}</div>
                         <div class="text-text text-sm font-mono">
                             ~{formatTokens(feas.estimated_tokens)}
                         </div>
@@ -442,7 +459,7 @@
                 </div>
 
                 <div class="mt-3 text-xs text-text-muted">
-                    Confidence:
+                    {$t('planReview.confidenceLabel')}
                     <span class="text-text font-semibold ml-1">
                         {Math.round((feas.confidence ?? 0) * 100)}%
                     </span>
@@ -450,7 +467,7 @@
 
                 {#if feas.reasoning}
                     <div class="mt-2 text-xs text-text-muted">
-                        <span class="text-text-muted">Reasoning:</span>
+                        <span class="text-text-muted">{$t('planReview.reasoningLabel')}</span>
                         <span class="text-text ml-1">{feas.reasoning}</span>
                     </div>
                 {/if}
@@ -459,7 +476,7 @@
             <!-- ───── Risks ───── -->
             {#if feas.risks && feas.risks.length > 0}
                 <section>
-                    <h3 class="text-text font-semibold text-sm mb-2">Risks</h3>
+                    <h3 class="text-text font-semibold text-sm mb-2">{$t('planReview.risksHeading')}</h3>
                     <ul class="space-y-1">
                         {#each feas.risks as r}
                             <li class="text-text text-sm flex gap-2">
@@ -473,22 +490,22 @@
 
             <!-- ───── Recommended approach ───── -->
             <section>
-                <h3 class="text-text font-semibold text-sm mb-2">Recommended approach</h3>
+                <h3 class="text-text font-semibold text-sm mb-2">{$t('planReview.recommendedApproachHeading')}</h3>
                 <div class="grid grid-cols-3 gap-4 text-xs">
                     <div>
-                        <div class="text-text-muted mb-0.5">Approach</div>
+                        <div class="text-text-muted mb-0.5">{$t('planReview.approachLabel')}</div>
                         <div class="text-text font-medium">
-                            {approachLabel(working.analysis?.recommended_approach)}
+                            {approachLabel(working.analysis?.recommended_approach, $t)}
                         </div>
                     </div>
                     <div>
-                        <div class="text-text-muted mb-0.5">Default model</div>
+                        <div class="text-text-muted mb-0.5">{$t('planReview.defaultModelLabel')}</div>
                         <div class="text-text font-mono">
                             {working.analysis?.recommended_model || '—'}
                         </div>
                     </div>
                     <div>
-                        <div class="text-text-muted mb-0.5">Effort</div>
+                        <div class="text-text-muted mb-0.5">{$t('planReview.effortLabel')}</div>
                         <div class="text-text font-mono">
                             {working.analysis?.recommended_effort || '—'}
                         </div>
@@ -501,10 +518,10 @@
             <section>
                 <div class="flex items-center justify-between mb-2">
                     <h3 class="text-text font-semibold text-sm">
-                        Proposed plan
+                        {$t('planReview.proposedPlanHeading')}
                         <span class="text-text-muted font-normal ml-1">
-                            ({working.subtasks.length} subtask{working.subtasks.length === 1 ? '' : 's'},
-                            {groups.length} group{groups.length === 1 ? '' : 's'})
+                            ({working.subtasks.length} {working.subtasks.length === 1 ? $t('planReview.subtaskSingular') : $t('planReview.subtaskPlural')},
+                            {groups.length} {groups.length === 1 ? $t('planReview.groupSingular') : $t('planReview.groupPlural')})
                         </span>
                     </h3>
                     {#if editMode}
@@ -512,14 +529,14 @@
                             type="button"
                             on:click={addStep}
                             class="px-2 py-0.5 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white">
-                            + Add step
+                            {$t('planReview.addStepButton')}
                         </button>
                     {/if}
                 </div>
 
                 {#if working.subtasks.length === 0}
                     <div class="text-text-muted text-sm italic py-4 text-center">
-                        No subtasks defined.
+                        {$t('planReview.noSubtasksDefined')}
                     </div>
                 {:else if !isMultiSession && working.subtasks.length === 1}
                     <!-- Single-session card -->
@@ -535,8 +552,8 @@
                             <div class="text-text text-xs mt-1 line-clamp-2">{only.prompt}</div>
                         {/if}
                         <div class="text-text-muted text-xs mt-2 flex gap-4">
-                            <span>~{formatTokens(only.estimated_tokens)} tokens</span>
-                            <span>{(only.files_to_touch ?? []).length} files</span>
+                            <span>{$t('planReview.approxTokensCount', { amount: formatTokens(only.estimated_tokens) })}</span>
+                            <span>{$t('planReview.filesCount', { count: (only.files_to_touch ?? []).length })}</span>
                         </div>
                     </div>
                 {:else}
@@ -553,11 +570,11 @@
                                     role="listitem">
                                     <div class="flex items-center justify-between mb-2">
                                         <div class="text-text-muted text-xs">
-                                            Step {gi + 1}
+                                            {$t('planReview.stepLabel', { n: gi + 1 })}
                                             {#if group.length > 1}
                                                 <span class="ml-2 px-1.5 py-0.5 rounded
                                                     bg-status-starting/20 text-status-starting text-[10px] uppercase">
-                                                    parallel × {group.length}
+                                                    {$t('planReview.parallelBadge', { count: group.length })}
                                                 </span>
                                             {/if}
                                         </div>
@@ -565,7 +582,7 @@
                                             <div class="flex items-center gap-1">
                                                 <button
                                                     type="button"
-                                                    title="Move up"
+                                                    title={$t('planReview.moveUpTitle')}
                                                     on:click={() => moveGroup(gi, -1)}
                                                     disabled={gi === 0}
                                                     class="px-1.5 py-0.5 text-xs rounded
@@ -575,7 +592,7 @@
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    title="Move down"
+                                                    title={$t('planReview.moveDownTitle')}
                                                     on:click={() => moveGroup(gi, 1)}
                                                     disabled={gi === groups.length - 1}
                                                     class="px-1.5 py-0.5 text-xs rounded
@@ -596,7 +613,7 @@
                                                         <!-- Edit form -->
                                                         <div class="space-y-2">
                                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                                Name
+                                                                {$t('planReview.nameFieldLabel')}
                                                                 <input
                                                                     type="text"
                                                                     bind:value={working.subtasks[sIdx].name}
@@ -604,7 +621,7 @@
                                                             </label>
                                                             <div class="grid grid-cols-2 gap-2">
                                                                 <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                                    Model
+                                                                    {$t('planReview.modelFieldLabel')}
                                                                     <select
                                                                         bind:value={working.subtasks[sIdx].model}
                                                                         class="bg-bg-elevated border border-bg-border rounded px-2 py-1 text-sm text-text">
@@ -617,7 +634,7 @@
                                                                     </select>
                                                                 </label>
                                                                 <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                                    Effort
+                                                                    {$t('planReview.effortLabel')}
                                                                     <select
                                                                         bind:value={working.subtasks[sIdx].effort}
                                                                         class="bg-bg-elevated border border-bg-border rounded px-2 py-1 text-sm text-text">
@@ -628,7 +645,7 @@
                                                                 </label>
                                                             </div>
                                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                                Estimated tokens
+                                                                {$t('planReview.estimatedTokensFieldLabel')}
                                                                 <input
                                                                     type="number"
                                                                     min="0"
@@ -637,7 +654,7 @@
                                                                     class="bg-bg-elevated border border-bg-border rounded px-2 py-1 text-sm text-text" />
                                                             </label>
                                                             <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                                Prompt
+                                                                {$t('planReview.promptFieldLabel')}
                                                                 <textarea
                                                                     bind:value={working.subtasks[sIdx].prompt}
                                                                     rows="4"
@@ -649,7 +666,7 @@
                                                                     type="button"
                                                                     on:click={() => (editingSubtaskId = null)}
                                                                     class="px-2 py-0.5 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white">
-                                                                    Done
+                                                                    {$t('planReview.doneButton')}
                                                                 </button>
                                                             </div>
                                                         </div>
@@ -675,14 +692,14 @@
                                                             </div>
                                                         {/if}
                                                         <div class="text-text-muted text-xs mt-2 flex flex-wrap gap-3">
-                                                            <span title="Estimated tokens">
-                                                                ~{formatTokens(s.estimated_tokens)} tokens
+                                                            <span title={$t('planReview.estimatedTokensFieldLabel')}>
+                                                                {$t('planReview.approxTokensCount', { amount: formatTokens(s.estimated_tokens) })}
                                                             </span>
-                                                            <span title="Files to touch">
-                                                                {(s.files_to_touch ?? []).length} file{(s.files_to_touch ?? []).length === 1 ? '' : 's'}
+                                                            <span title={$t('planReview.filesToTouchTitle')}>
+                                                                {(s.files_to_touch ?? []).length} {(s.files_to_touch ?? []).length === 1 ? $t('planReview.fileWordSingular') : $t('planReview.fileWordPlural')}
                                                             </span>
                                                             {#if s.depends_on && s.depends_on.length > 0}
-                                                                <span title="Depends on" class="font-mono">
+                                                                <span title={$t('planReview.dependsOnTitle')} class="font-mono">
                                                                     ← {s.depends_on.join(', ')}
                                                                 </span>
                                                             {/if}
@@ -693,12 +710,12 @@
                                                                     type="button"
                                                                     on:click={() => toggleEdit(s.id)}
                                                                     class="px-2 py-0.5 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg-panel">
-                                                                    Edit
+                                                                    {$t('planReview.editButton')}
                                                                 </button>
                                                                 <button
                                                                     type="button"
                                                                     on:click={() => removeSubtask(s.id)}
-                                                                    title="Remove step"
+                                                                    title={$t('planReview.removeStepTitle')}
                                                                     class="px-2 py-0.5 text-xs rounded bg-status-error/80 hover:bg-status-error text-white">
                                                                     ✕
                                                                 </button>
@@ -708,7 +725,7 @@
                                                 </div>
                                             {:else}
                                                 <div class="bg-bg border border-bg-border rounded p-2.5 text-text-muted text-xs italic">
-                                                    Missing subtask: {subId}
+                                                    {$t('planReview.missingSubtask', { id: subId })}
                                                 </div>
                                             {/if}
                                         {/each}
@@ -726,7 +743,7 @@
 
                     {#if editMode}
                         <div class="mt-3 text-text-muted text-xs italic">
-                            Drag steps to reorder, or use the ↑/↓ buttons.
+                            {$t('planReview.dragToReorderHint')}
                         </div>
                     {/if}
                 {/if}
@@ -736,15 +753,15 @@
             <section class="bg-bg-elevated border border-bg-border rounded px-3 py-2">
                 <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
                     <div>
-                        <span class="text-text-muted text-xs mr-1">Estimated cost:</span>
+                        <span class="text-text-muted text-xs mr-1">{$t('planReview.estimatedCostLabel')}</span>
                         <span class="text-text font-semibold tabular-nums">{formatCost(estTotalCost)}</span>
                     </div>
                     <div>
-                        <span class="text-text-muted text-xs mr-1">Estimated time:</span>
+                        <span class="text-text-muted text-xs mr-1">{$t('planReview.estimatedTimeLabel')}</span>
                         <span class="text-text font-semibold tabular-nums">~{formatDuration(estTotalMs)}</span>
                     </div>
                     <div>
-                        <span class="text-text-muted text-xs mr-1">Total tokens:</span>
+                        <span class="text-text-muted text-xs mr-1">{$t('planReview.totalTokensLabel')}</span>
                         <span class="text-text font-semibold tabular-nums">~{formatTokens(estTotalTokens)}</span>
                     </div>
                 </div>
@@ -756,7 +773,7 @@
             <div class="text-xs">
                 {#if conflict}
                     <span class="text-status-waiting">
-                        ROADMAP.md/STATUS-P1.md already exist in this project.
+                        {$t('planReview.roadmapFilesExist')}
                     </span>
                     <button
                         type="button"
@@ -764,17 +781,17 @@
                         disabled={busy !== ''}
                         class="ml-2 px-2 py-0.5 rounded bg-status-error/80 hover:bg-status-error text-white
                                disabled:opacity-50 disabled:cursor-not-allowed">
-                        Yes, overwrite
+                        {$t('planReview.yesOverwrite')}
                     </button>
                 {:else if error}
                     <span class="text-status-error">{error}</span>
                 {:else if editMode}
                     <span class="text-text-muted">
-                        Editing — changes apply on Execute or Save.
+                        {$t('planReview.editingHint')}
                     </span>
                 {:else}
                     <span class="text-text-muted">
-                        Plan status: <span class="text-text font-medium">{working.status || 'draft'}</span>
+                        {$t('planReview.planStatusLabel')} <span class="text-text font-medium">{working.status || 'draft'}</span>
                     </span>
                 {/if}
             </div>
@@ -785,7 +802,7 @@
                     disabled={busy !== ''}
                     class="px-3 py-1 text-sm rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg
                            disabled:opacity-50 disabled:cursor-not-allowed">
-                    Cancel
+                    {$t('common.cancel')}
                 </button>
                 {#if editMode}
                     <button
@@ -794,20 +811,20 @@
                         disabled={busy !== ''}
                         class="px-3 py-1 text-sm rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg
                                disabled:opacity-50 disabled:cursor-not-allowed">
-                        {busy === 'approve' ? 'Saving…' : 'Save plan'}
+                        {busy === 'approve' ? $t('planReview.savingEllipsis') : $t('planReview.savePlanButton')}
                     </button>
                     <button
                         type="button"
                         on:click={() => (editMode = false)}
                         class="px-3 py-1 text-sm rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
-                        Done editing
+                        {$t('planReview.doneEditingButton')}
                     </button>
                 {:else}
                     <button
                         type="button"
                         on:click={() => (editMode = true)}
                         class="px-3 py-1 text-sm rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
-                        Edit plan
+                        {$t('planReview.editPlanButton')}
                     </button>
                 {/if}
                 {#if mode === 'roadmap'}
@@ -817,7 +834,7 @@
                         disabled={busy !== '' || working.subtasks.length === 0}
                         class="px-3 py-1 text-sm rounded font-medium bg-blue-600 hover:bg-blue-500 text-white
                                disabled:opacity-50 disabled:cursor-not-allowed">
-                        {busy === 'execute' ? 'Writing…' : 'Write ROADMAP.md + STATUS-P1.md'}
+                        {busy === 'execute' ? $t('planReview.writingEllipsis') : $t('planReview.writeRoadmapButton')}
                     </button>
                 {:else}
                     <button
@@ -826,7 +843,7 @@
                         disabled={busy !== '' || working.subtasks.length === 0}
                         class="px-3 py-1 text-sm rounded font-medium bg-blue-600 hover:bg-blue-500 text-white
                                disabled:opacity-50 disabled:cursor-not-allowed">
-                        {busy === 'execute' ? 'Starting…' : 'Execute plan'}
+                        {busy === 'execute' ? $t('planReview.startingEllipsis') : $t('planReview.executePlanButton')}
                     </button>
                 {/if}
             </div>

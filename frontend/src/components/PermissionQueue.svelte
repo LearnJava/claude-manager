@@ -6,6 +6,7 @@
         type PermissionRequest,
     } from '../stores/sessions';
     import { RespondPermission } from '../../wailsjs/go/main/App';
+    import { t } from '../lib/i18n';
 
     // 1s ticker so per-row "waited" labels stay live.
     let now = Date.now();
@@ -105,15 +106,15 @@
             await RespondPermission(entry.session.id, entry.requestId, decision);
             clearLocal(entry.session.id);
         } catch (e: any) {
-            error = `Respond failed: ${e?.message ?? String(e)}`;
+            error = $t('permissionQueue.respondFailed', { error: e?.message ?? String(e) });
         } finally {
             busyId = null;
         }
     }
 
-    async function bulk(filter: (e: QueueEntry) => boolean, decision: string, label: string) {
+    async function bulk(filter: (e: QueueEntry) => boolean, decision: string, busyKey: string, label: string) {
         if (busyId || bulkBusy) return;
-        bulkBusy = label;
+        bulkBusy = busyKey;
         error = '';
         const targets = entries.filter(filter);
         try {
@@ -123,7 +124,10 @@
                     await RespondPermission(e.session.id, e.requestId, decision);
                     clearLocal(e.session.id);
                 } catch (err: any) {
-                    error = `${label}: ${err?.message ?? String(err)}`;
+                    error = $t('permissionQueue.bulkActionError', {
+                        action: label,
+                        error: err?.message ?? String(err),
+                    });
                 }
             }
         } finally {
@@ -132,11 +136,11 @@
     }
 
     function allowAllSafe() {
-        bulk((e) => e.risk !== 'high', 'allow', 'Allow all safe');
+        bulk((e) => e.risk !== 'high', 'allow', 'allow_safe', $t('permissionQueue.allowAllSafe'));
     }
 
     function denyAll() {
-        bulk(() => true, 'deny', 'Deny all');
+        bulk(() => true, 'deny', 'deny_all', $t('permissionQueue.denyAll'));
     }
 
     $: safeCount = entries.filter((e) => e.risk !== 'high').length;
@@ -147,30 +151,30 @@
     <div class="flex-1 min-h-0 overflow-y-auto">
         {#if entries.length === 0}
             <div class="text-text-muted text-sm italic py-6 text-center">
-                No pending permissions.
+                {$t('permissionQueue.noPending')}
             </div>
         {:else}
             <ul class="divide-y divide-bg-border">
                 {#each entries as e (e.session.id + ':' + e.requestId)}
                     <li class="py-2 px-1">
                         <div class="flex items-baseline gap-2 text-sm">
-                            <span title={`Risk: ${e.risk}`}>{riskIcon(e.risk)}</span>
+                            <span title={`${$t('permissionQueue.risk')} ${e.risk}`}>{riskIcon(e.risk)}</span>
                             <span class="font-semibold text-text">{e.session.name}</span>
                             <span class="text-text-muted text-xs">— {e.session.project}</span>
                             <span class="text-text-muted text-xs ml-auto tabular-nums whitespace-nowrap"
-                                title="Time waited">
+                                title={$t('permissionQueue.timeWaited')}>
                                 {formatWait(e.waitingMs)}
                             </span>
                         </div>
 
                         <div class="mt-1 text-sm flex flex-wrap items-baseline gap-x-2">
-                            <span class="font-mono text-text font-semibold">{e.tool || '(unknown)'}</span>
+                            <span class="font-mono text-text font-semibold">{e.tool || $t('permissionQueue.unknown')}</span>
                             <span class="text-text-muted">:</span>
                             <span class="font-mono text-text break-all">{e.target}</span>
                         </div>
 
                         <div class="mt-1 text-xs">
-                            <span class="text-text-muted">Risk:</span>
+                            <span class="text-text-muted">{$t('permissionQueue.risk')}</span>
                             <span class="ml-1 {riskColorClass(e.risk)} font-medium">{e.risk}</span>
                         </div>
 
@@ -182,7 +186,7 @@
                                 class="px-2.5 py-1 text-xs rounded font-medium
                                        bg-status-working/90 hover:bg-status-working text-white
                                        disabled:opacity-50 disabled:cursor-not-allowed">
-                                {busyId === `${e.session.id}:allow` ? '…' : '✓ Allow'}
+                                {busyId === `${e.session.id}:allow` ? '…' : `✓ ${$t('permissionQueue.allow')}`}
                             </button>
                             <button
                                 type="button"
@@ -191,17 +195,17 @@
                                 class="px-2.5 py-1 text-xs rounded font-medium
                                        bg-status-error/90 hover:bg-status-error text-white
                                        disabled:opacity-50 disabled:cursor-not-allowed">
-                                {busyId === `${e.session.id}:deny` ? '…' : '✗ Deny'}
+                                {busyId === `${e.session.id}:deny` ? '…' : `✗ ${$t('permissionQueue.deny')}`}
                             </button>
                             <button
                                 type="button"
                                 on:click={() => respond(e, 'allow_similar')}
                                 disabled={!!busyId || !!bulkBusy}
-                                title="Allow and remember the pattern for this session"
+                                title={$t('permissionQueue.allowSimilarTooltip')}
                                 class="px-2.5 py-1 text-xs rounded
                                        bg-bg-elevated border border-bg-border text-text hover:bg-bg
                                        disabled:opacity-50 disabled:cursor-not-allowed">
-                                {busyId === `${e.session.id}:allow_similar` ? '…' : '✓ Allow similar'}
+                                {busyId === `${e.session.id}:allow_similar` ? '…' : `✓ ${$t('permissionQueue.allowSimilar')}`}
                             </button>
                         </div>
                     </li>
@@ -217,7 +221,7 @@
     <!-- Footer: quick actions -->
     {#if entries.length > 0}
         <div class="mt-3 pt-3 border-t border-bg-border flex flex-wrap items-center gap-2">
-            <span class="text-text-muted text-xs mr-1">Quick actions:</span>
+            <span class="text-text-muted text-xs mr-1">{$t('permissionQueue.quickActions')}</span>
             <button
                 type="button"
                 on:click={allowAllSafe}
@@ -225,7 +229,7 @@
                 class="px-2.5 py-1 text-xs rounded font-medium
                        bg-status-working/90 hover:bg-status-working text-white
                        disabled:opacity-50 disabled:cursor-not-allowed">
-                {bulkBusy === 'Allow all safe' ? '…' : `✓ Allow all safe (${safeCount})`}
+                {bulkBusy === 'allow_safe' ? '…' : `✓ ${$t('permissionQueue.allowAllSafe')} (${safeCount})`}
             </button>
             <button
                 type="button"
@@ -234,7 +238,7 @@
                 class="px-2.5 py-1 text-xs rounded font-medium
                        bg-status-error/90 hover:bg-status-error text-white
                        disabled:opacity-50 disabled:cursor-not-allowed">
-                {bulkBusy === 'Deny all' ? '…' : `✗ Deny all (${entries.length})`}
+                {bulkBusy === 'deny_all' ? '…' : `✗ ${$t('permissionQueue.denyAll')} (${entries.length})`}
             </button>
         </div>
     {/if}

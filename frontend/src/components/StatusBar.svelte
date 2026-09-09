@@ -14,6 +14,7 @@
     } from '../stores/sessions';
     import { costUnit, toggleCostUnit } from '../stores/units';
     import { formatTokens, tokenSplitLabel } from '../lib/formatters';
+    import { t } from '../lib/i18n';
 
     const dispatch = createEventDispatcher();
 
@@ -73,7 +74,7 @@
 
 <footer class="h-7 bg-bg-panel border-t border-bg-border px-3 flex items-center text-xs text-text-muted gap-4 select-none">
     <span>
-        Active:
+        {$t('statusBar.activeLabel')}
         <span class="text-text font-medium">{active}/{total}</span>
     </span>
 
@@ -81,29 +82,29 @@
         <button
             class="text-status-waiting hover:underline focus:outline-none flex items-center gap-1"
             on:click={openQueue}
-            title="Open permission queue"
+            title={$t('statusBar.openQueueTooltip')}
             type="button">
             <span>⚠</span>
-            <span>Waiting: {waiting}</span>
+            <span>{$t('statusBar.waitingLabel', { count: waiting })}</span>
         </button>
     {/if}
 
     <span class={rateLimited > 0 ? 'text-status-ratelimit' : ''}>
-        Rate limited: {rateLimited}
+        {$t('statusBar.rateLimitedLabel', { count: rateLimited })}
     </span>
 
     <span class={errors > 0 ? 'text-status-error' : ''}>
-        Errors: {errors}
+        {$t('statusBar.errorsLabel', { count: errors })}
     </span>
 
     {#if regressions > 0}
         <button
             class="text-status-error hover:underline focus:outline-none flex items-center gap-1"
             on:click={openRegressions}
-            title="Open cost dashboard"
+            title={$t('statusBar.openDashboardTooltip')}
             type="button">
             <span>⚠</span>
-            <span>Regressions: {regressions}</span>
+            <span>{$t('statusBar.regressionsLabel', { count: regressions })}</span>
         </button>
     {/if}
 
@@ -117,23 +118,23 @@
         class="hover:underline focus:outline-none"
         on:click={toggleCostUnit}
         type="button"
-        title="Today: {tokenSplitLabel($todayTokens)} — click to switch units">
+        title={$t('statusBar.todayTooltip', { split: tokenSplitLabel($todayTokens) })}>
         {#if $costUnit === 'tokens'}
-            Today: <span class="text-text">{formatTokens($todayTokens.total)}</span> tok
+            {$t('statusBar.todayLabel')} <span class="text-text">{formatTokens($todayTokens.total)}</span> {$t('statusBar.tokUnit')}
             <span class="opacity-60">({fmtCost($todayCost)})</span>
         {:else}
-            Today: <span class="text-text">{fmtCost($todayCost)}</span>
-            <span class="opacity-60">({formatTokens($todayTokens.total)} tok)</span>
+            {$t('statusBar.todayLabel')} <span class="text-text">{fmtCost($todayCost)}</span>
+            <span class="opacity-60">({formatTokens($todayTokens.total)} {$t('statusBar.tokUnit')})</span>
         {/if}
     </button>
 
     {#if rlUtil !== undefined}
-        <span title="Global rate-limit utilization">
-            RL: <span class={rlUtil >= 0.85 ? 'text-status-ratelimit' : 'text-text'}>{fmtUtil(rlUtil)}</span>
+        <span title={$t('statusBar.rlTooltip')}>
+            {$t('statusBar.rlLabel')} <span class={rlUtil >= 0.85 ? 'text-status-ratelimit' : 'text-text'}>{fmtUtil(rlUtil)}</span>
         </span>
     {/if}
 
     <span class="ml-auto">
-        Uptime: <span class="text-text">{uptimeStr}</span>
+        {$t('statusBar.uptimeLabel')} <span class="text-text">{uptimeStr}</span>
     </span>
 </footer>

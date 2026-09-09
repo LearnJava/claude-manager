@@ -1,5 +1,6 @@
 <script lang="ts">
     import { createEventDispatcher } from 'svelte';
+    import { t } from '../lib/i18n';
 
     export let project: string;
     export let sessionName: string;
@@ -52,12 +53,12 @@
         dispatch('cancel');
     }
 
-    const complexityLabel: Record<string, string> = {
-        trivial:       'Trivial',
-        standard:      'Standard',
-        complex:       'Complex',
-        architectural: 'Architectural',
-    };
+    $: complexityLabel = {
+        trivial:       $t('modelPicker.complexityTrivial'),
+        standard:      $t('modelPicker.complexityStandard'),
+        complex:       $t('modelPicker.complexityComplex'),
+        architectural: $t('modelPicker.complexityArchitectural'),
+    } as Record<string, string>;
     const complexityColor: Record<string, string> = {
         trivial:       'text-status-working',
         standard:      'text-blue-400',
@@ -84,7 +85,7 @@
         <!-- Header -->
         <div class="flex items-center justify-between">
             <div>
-                <span class="text-text font-semibold">Start session</span>
+                <span class="text-text font-semibold">{$t('modelPicker.title')}</span>
                 <span class="text-text-muted ml-2" style="font-size:13px">{project}/{sessionName}</span>
             </div>
             <button class="text-text-muted hover:text-text" on:click={cancel} type="button">✕</button>
@@ -93,7 +94,7 @@
         <!-- Body -->
         {#if loading}
             <div class="text-text-muted text-sm py-4 text-center">
-                Analyzing task complexity…
+                {$t('modelPicker.analyzing')}
             </div>
         {:else if error}
             <div class="text-status-error text-sm py-2">{error}</div>
@@ -101,21 +102,21 @@
             <!-- Recommendation -->
             <div class="bg-bg-elevated border border-bg-border rounded p-3 space-y-1">
                 <div class="flex items-center gap-2" style="font-size:13px">
-                    <span class="text-text-muted">Complexity:</span>
+                    <span class="text-text-muted">{$t('modelPicker.complexity')}</span>
                     <span class="font-semibold {complexityColor[rec.complexity] ?? 'text-text'}">
                         {complexityLabel[rec.complexity] ?? rec.complexity}
                     </span>
                 </div>
                 <div style="font-size:13px" class="text-text-muted">{rec.reason}</div>
                 <div class="flex items-center gap-3 mt-1">
-                    <span class="text-text-muted" style="font-size:13px">Recommended:</span>
+                    <span class="text-text-muted" style="font-size:13px">{$t('modelPicker.recommended')}</span>
                     <span class="font-mono font-semibold text-blue-400" title={rec.model}>{modelLabel(rec.model)}</span>
-                    <span class="text-text-muted" style="font-size:13px">effort:</span>
+                    <span class="text-text-muted" style="font-size:13px">{$t('modelPicker.effortColon')}</span>
                     <span class="font-mono font-semibold text-blue-400">{rec.effort}</span>
                 </div>
             </div>
         {:else}
-            <div class="text-text-muted text-sm">No recommendation (no prompt configured).</div>
+            <div class="text-text-muted text-sm">{$t('modelPicker.noRecommendation')}</div>
         {/if}
 
         <!-- Override toggle -->
@@ -126,13 +127,13 @@
                 style="font-size:13px"
                 on:click={() => (overriding = !overriding)}>
                 <span>{overriding ? '▼' : '▶'}</span>
-                <span>Override model / effort</span>
+                <span>{$t('modelPicker.override')}</span>
             </button>
 
             {#if overriding}
                 <div class="grid grid-cols-2 gap-3">
                     <label class="flex flex-col gap-1" style="font-size:13px">
-                        <span class="text-text-muted">Model</span>
+                        <span class="text-text-muted">{$t('modelPicker.model')}</span>
                         <select
                             bind:value={chosenModel}
                             class="bg-bg border border-bg-border rounded px-2 py-1 text-text">
@@ -142,7 +143,7 @@
                         </select>
                     </label>
                     <label class="flex flex-col gap-1" style="font-size:13px">
-                        <span class="text-text-muted">Effort</span>
+                        <span class="text-text-muted">{$t('modelPicker.effortField')}</span>
                         <select
                             bind:value={chosenEffort}
                             class="bg-bg border border-bg-border rounded px-2 py-1 text-text">
@@ -162,7 +163,7 @@
                 on:click={cancel}
                 class="px-3 py-1 rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg"
                 style="font-size:13px">
-                Cancel
+                {$t('common.cancel')}
             </button>
             <button
                 type="button"
@@ -172,11 +173,11 @@
                        disabled:opacity-50 disabled:cursor-not-allowed"
                 style="font-size:13px">
                 {#if overriding}
-                    Start with {modelLabel(chosenModel)}/{chosenEffort}
+                    {$t('modelPicker.startWith', { model: modelLabel(chosenModel), effort: chosenEffort })}
                 {:else if rec}
-                    Start with {modelLabel(rec.model)}/{rec.effort}
+                    {$t('modelPicker.startWith', { model: modelLabel(rec.model), effort: rec.effort })}
                 {:else}
-                    Start
+                    {$t('modelPicker.start')}
                 {/if}
             </button>
         </div>

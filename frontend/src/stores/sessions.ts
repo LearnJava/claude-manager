@@ -7,6 +7,7 @@ import {
     GetDailyTokens,
     Notify,
 } from '../../wailsjs/go/main/App';
+import { t } from '../lib/i18n';
 
 // ---- Types mirroring Go SessionState / event payloads ----
 
@@ -357,7 +358,7 @@ export async function initSessions(): Promise<void> {
         setSession(evt.id, (s) => ({ ...s, tasks_done: evt.tasks_done }));
         // Refresh cost on task completion since each result event finalizes cost.
         refreshTodayCost();
-        notify('Task complete', `${evt.id} — ${evt.tasks_done} task(s) done`);
+        notify(get(t)('notify.taskComplete.title'), get(t)('notify.taskComplete.body', { id: evt.id, count: evt.tasks_done }));
     });
 
     EventsOn('session:rate_limit', (evt: { id: string; info: RateLimitInfo; until: string }) => {
@@ -366,20 +367,26 @@ export async function initSessions(): Promise<void> {
         if (evt.id) {
             setSession(evt.id, (s) => ({ ...s, rate_limit_until: evt.until }));
         }
-        notify('Rate limited', `${evt.id ?? 'session'} — paused until ${evt.until ?? 'reset'}`);
+        notify(get(t)('notify.rateLimited.title'), get(t)('notify.rateLimited.body', {
+            id: evt.id ?? get(t)('notify.fallbackSession'),
+            until: evt.until ?? get(t)('notify.fallbackReset'),
+        }));
     });
 
     EventsOn('session:permission', (evt: { id: string; request: PermissionRequest }) => {
         if (!evt || !evt.id) return;
         setSession(evt.id, (s) => ({ ...s, pending_permission: evt.request }));
-        const tool = evt.request?.tool ?? evt.request?.Tool ?? 'tool';
-        notify('Permission needed', `${evt.id}: ${tool}`);
+        const tool = evt.request?.tool ?? evt.request?.Tool ?? get(t)('notify.fallbackTool');
+        notify(get(t)('notify.permissionNeeded.title'), get(t)('notify.permissionNeeded.body', { id: evt.id, tool }));
     });
 
     EventsOn('session:question', (evt: { id: string; question: PendingQuestion }) => {
         if (!evt || !evt.id) return;
         setSession(evt.id, (s) => ({ ...s, pending_question: evt.question }));
-        notify('Question needs an answer', `${evt.id}: ${evt.question?.question ?? ''}`);
+        notify(get(t)('notify.questionNeedsAnswer.title'), get(t)('notify.questionNeedsAnswer.body', {
+            id: evt.id,
+            question: evt.question?.question ?? '',
+        }));
     });
 
     EventsOn('session:context', (evt: {
@@ -437,7 +444,10 @@ export async function initSessions(): Promise<void> {
 
     EventsOn('session:error', (evt: { id: string; message: string }) => {
         if (evt?.id) {
-            notify('Session error', `${evt.id}: ${evt.message ?? 'unknown error'}`);
+            notify(get(t)('notify.sessionError.title'), get(t)('notify.sessionError.body', {
+                id: evt.id,
+                message: evt.message ?? get(t)('notify.unknownError'),
+            }));
         }
     });
 
@@ -450,7 +460,10 @@ export async function initSessions(): Promise<void> {
     }) => {
         if (!evt || !evt.project || !evt.session) return;
         regressionAlerts.update((list) => [...list, { ...evt, seq: ++regressionSeq }]);
-        notify('Cost regression', `${evt.project}/${evt.session} — ${evt.factor?.toFixed(1)}x recent median`);
+        notify(get(t)('notify.costRegression.title'), get(t)('notify.costRegression.body', {
+            id: `${evt.project}/${evt.session}`,
+            factor: evt.factor?.toFixed(1) ?? '?',
+        }));
     });
 }
 

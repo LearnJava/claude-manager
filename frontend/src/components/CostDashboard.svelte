@@ -17,6 +17,7 @@
     } from '../lib/formatters';
     import { costUnit, setCostUnit } from '../stores/units';
     import { regressionAlerts, dismissRegression } from '../stores/sessions';
+    import { t } from '../lib/i18n';
 
     const dispatch = createEventDispatcher();
 
@@ -52,10 +53,10 @@
 
     let period: Period = 'week';
 
-    const periodOptions: { id: Period; label: string }[] = [
-        { id: 'today', label: 'Today' },
-        { id: 'week', label: 'This week' },
-        { id: 'month', label: 'This month' },
+    $: periodOptions = [
+        { id: 'today' as Period, label: $t('costDashboard.periodToday') },
+        { id: 'week' as Period, label: $t('costDashboard.periodWeek') },
+        { id: 'month' as Period, label: $t('costDashboard.periodMonth') },
     ];
 
     // Every aggregate carries both units side by side and the view picks one
@@ -77,10 +78,10 @@
     }
 
     function fmtAmount(v: number): string {
-        return $costUnit === 'tokens' ? `${formatTokens(v)} tok` : formatCost(v);
+        return $costUnit === 'tokens' ? `${formatTokens(v)} ${$t('costDashboard.tokUnit')}` : formatCost(v);
     }
 
-    $: unitLabel = $costUnit === 'tokens' ? 'tokens' : 'cost';
+    $: unitLabel = $costUnit === 'tokens' ? $t('costDashboard.unitWordTokens') : $t('costDashboard.unitWordCost');
 
     let loading = true;
     let error = '';
@@ -198,7 +199,7 @@
                 rateLimit = null;
             }
         } catch (e: any) {
-            error = `Failed to load dashboard: ${e?.message ?? String(e)}`;
+            error = `${$t('costDashboard.loadFailedPrefix')}${e?.message ?? String(e)}`;
         } finally {
             loading = false;
         }
@@ -315,7 +316,7 @@
         on:keydown|stopPropagation>
         <!-- Header -->
         <div class="px-4 py-3 border-b border-bg-border flex items-center justify-between shrink-0">
-            <h2 class="text-text font-semibold text-base">Usage Dashboard</h2>
+            <h2 class="text-text font-semibold text-base">{$t('costDashboard.title')}</h2>
             <div class="flex items-center gap-3">
                 <!--
                     Unit switch. Tokens are the default: on a subscription the
@@ -328,22 +329,22 @@
                     <button
                         type="button"
                         on:click={() => setCostUnit('tokens')}
-                        title="Show token volume — what the rate limit meters"
+                        title={$t('costDashboard.unitTokensTooltip')}
                         class="px-2 py-1 rounded border
                             {$costUnit === 'tokens'
                                 ? 'bg-bg-elevated border-blue-500 text-text'
                                 : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
-                        Tokens
+                        {$t('costDashboard.unitTokens')}
                     </button>
                     <button
                         type="button"
                         on:click={() => setCostUnit('usd')}
-                        title="Show US dollars — API price-list value"
+                        title={$t('costDashboard.unitUsdTooltip')}
                         class="px-2 py-1 rounded border
                             {$costUnit === 'usd'
                                 ? 'bg-bg-elevated border-blue-500 text-text'
                                 : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
-                        USD
+                        {$t('costDashboard.unitUsd')}
                     </button>
                 </div>
                 <div class="flex items-center gap-1 text-xs">
@@ -363,7 +364,7 @@
                     type="button"
                     on:click={load}
                     class="px-2 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
-                    Refresh
+                    {$t('costDashboard.refresh')}
                 </button>
                 <button
                     class="text-text-muted hover:text-text text-sm px-2 py-0.5"
@@ -376,7 +377,7 @@
         <div class="flex-1 min-h-0 overflow-y-auto px-5 py-5">
             {#if loading && runs.length === 0}
                 <div class="text-text-muted text-sm italic py-10 text-center">
-                    Loading dashboard…
+                    {$t('costDashboard.loadingDashboard')}
                 </div>
             {:else if error}
                 <div class="text-status-error text-sm py-10 text-center">{error}</div>
@@ -396,7 +397,7 @@
                                         {alert.project}/{alert.session}
                                     </span>
                                     <span class="text-text">
-                                        — run {alert.run_id} came out {alert.factor.toFixed(1)}x its recent median
+                                        {$t('costDashboard.regressionMessage', { runId: alert.run_id, factor: alert.factor.toFixed(1) })}
                                     </span>
                                     {#if alert.hint}
                                         <div class="text-text-muted mt-1">{alert.hint}</div>
@@ -414,47 +415,49 @@
                 <!-- Total + KPI row -->
                 <section class="mb-6 grid grid-cols-4 gap-3">
                     <div class="bg-bg-elevated border border-bg-border rounded p-3">
-                        <div class="text-text-muted text-xs">Total {unitLabel}</div>
+                        <div class="text-text-muted text-xs">{$t('costDashboard.totalAmount', { unit: unitLabel })}</div>
                         <div class="text-text text-2xl font-semibold mt-1">{fmtAmount(dailyTotal)}</div>
                         <div class="text-text-dim text-xs mt-1">
-                            {period === 'today' ? 'Today' : period === 'week' ? 'Last 7 days' : 'Last 30 days'}
+                            {period === 'today' ? $t('costDashboard.rangeToday') : period === 'week' ? $t('costDashboard.rangeWeek') : $t('costDashboard.rangeMonth')}
                         </div>
                     </div>
                     <div class="bg-bg-elevated border border-bg-border rounded p-3">
-                        <div class="text-text-muted text-xs">Cache efficiency</div>
+                        <div class="text-text-muted text-xs">{$t('costDashboard.cacheEfficiency')}</div>
                         <div class="text-text text-2xl font-semibold mt-1">
                             {formatPercent(cacheStats.ratio)}
                         </div>
                         <div class="text-text-dim text-xs mt-1">
-                            reads / (reads + creation)
+                            {$t('costDashboard.cacheEfficiencyHint')}
                         </div>
                     </div>
                     <div class="bg-bg-elevated border border-bg-border rounded p-3">
-                        <div class="text-text-muted text-xs">Avg per task</div>
+                        <div class="text-text-muted text-xs">{$t('costDashboard.avgPerTask')}</div>
                         <div class="text-text text-2xl font-semibold mt-1">
                             {fmtAmount(avgPerTask)}
                         </div>
                         <div class="text-text-dim text-xs mt-1">
-                            {periodRuns.length} run{periodRuns.length === 1 ? '' : 's'} in period
+                            {periodRuns.length === 1
+                                ? $t('costDashboard.runsInPeriodSingular', { count: periodRuns.length })
+                                : $t('costDashboard.runsInPeriodPlural', { count: periodRuns.length })}
                         </div>
                     </div>
                     <div class="bg-bg-elevated border border-bg-border rounded p-3">
-                        <div class="text-text-muted text-xs">Rate limit</div>
+                        <div class="text-text-muted text-xs">{$t('costDashboard.rateLimit')}</div>
                         <div class="text-text text-2xl font-semibold mt-1
                             {rlUtil >= 0.85 ? 'text-status-error' : rlUtil >= 0.6 ? 'text-status-ratelimit' : ''}">
                             {rateLimit ? formatPercent(rlUtil) : '—'}
                         </div>
                         <div class="text-text-dim text-xs mt-1">
-                            {rlType ? `${rlType.replace(/_/g, '-')} window` : 'no active window'}
+                            {rlType ? $t('costDashboard.rateLimitWindowSuffix', { type: rlType.replace(/_/g, '-') }) : $t('costDashboard.noActiveWindow')}
                         </div>
                     </div>
                 </section>
 
                 <!-- Cost by model -->
                 <section class="mb-6">
-                    <h3 class="text-text font-semibold text-sm mb-2">By model — {unitLabel}</h3>
+                    <h3 class="text-text font-semibold text-sm mb-2">{$t('costDashboard.byModel', { unit: unitLabel })}</h3>
                     {#if byModel.length === 0}
-                        <div class="text-text-dim text-xs italic">No runs in selected period.</div>
+                        <div class="text-text-dim text-xs italic">{$t('costDashboard.noRunsInPeriod')}</div>
                     {:else}
                         <div class="space-y-2">
                             {#each byModel as row (row.model)}
@@ -465,7 +468,7 @@
                                         <span class="text-text">{row.model}</span>
                                         <span
                                             class="text-text-muted font-mono"
-                                            title="{formatTokens(row.tokens)} tok · {formatCost(row.cost)}">
+                                            title="{formatTokens(row.tokens)} {$t('costDashboard.tokUnit')} · {formatCost(row.cost)}">
                                             {fmtAmount(val)}
                                         </span>
                                     </div>
@@ -482,9 +485,9 @@
 
                 <!-- Cost by project -->
                 <section class="mb-6">
-                    <h3 class="text-text font-semibold text-sm mb-2">By project — {unitLabel}</h3>
+                    <h3 class="text-text font-semibold text-sm mb-2">{$t('costDashboard.byProject', { unit: unitLabel })}</h3>
                     {#if projectRows.length === 0}
-                        <div class="text-text-dim text-xs italic">No projects configured.</div>
+                        <div class="text-text-dim text-xs italic">{$t('costDashboard.noProjectsConfigured')}</div>
                     {:else}
                         <div class="space-y-2">
                             {#each projectRows as row (row.project)}
@@ -496,13 +499,13 @@
                                         <span class="text-text">{row.project}</span>
                                         <span
                                             class="text-text-muted font-mono"
-                                            title="{formatTokens(row.tokens)} tok · {formatCost(row.cost)}">
+                                            title="{formatTokens(row.tokens)} {$t('costDashboard.tokUnit')} · {formatCost(row.cost)}">
                                             {fmtAmount(val)}
                                             <span class="text-text-dim ml-2">({share.toFixed(0)}%)</span>
                                             <span
                                                 class="text-text-dim ml-2"
-                                                title="Cache-read share for this project — reads / (input + reads + creation). Compare across periods to see the effect of cache-affinity launch ordering (LEARN-TASKS.md LN-14).">
-                                                cache {formatPercent(row.cacheRatio)}
+                                                title={$t('costDashboard.cacheShareTooltip')}>
+                                                {$t('costDashboard.cacheLabel')} {formatPercent(row.cacheRatio)}
                                             </span>
                                         </span>
                                     </div>
@@ -519,9 +522,9 @@
 
                 <!-- Daily breakdown -->
                 <section class="mb-2">
-                    <h3 class="text-text font-semibold text-sm mb-2">Daily breakdown</h3>
+                    <h3 class="text-text font-semibold text-sm mb-2">{$t('costDashboard.dailyBreakdown')}</h3>
                     {#if dailyByDate.length === 0}
-                        <div class="text-text-dim text-xs italic">No data.</div>
+                        <div class="text-text-dim text-xs italic">{$t('costDashboard.noData')}</div>
                     {:else}
                         <div class="flex items-end gap-2 h-32 bg-bg-elevated border border-bg-border rounded p-3">
                             {#each dailyByDate as d (d.date)}
@@ -534,7 +537,7 @@
                                     <div
                                         class="w-full bg-blue-500 rounded-sm"
                                         style="height: {heightPct.toFixed(1)}%; min-height: {val > 0 ? '2px' : '0'}"
-                                        title="{d.date}: {formatTokens(d.tokens)} tok · {formatCost(d.cost)}"></div>
+                                        title="{d.date}: {formatTokens(d.tokens)} {$t('costDashboard.tokUnit')} · {formatCost(d.cost)}"></div>
                                     <span class="text-text-muted text-[10px] leading-none">
                                         {dayLabel(d.date)}
                                     </span>
@@ -548,9 +551,9 @@
 
         <!-- Footer -->
         <div class="px-4 py-2 border-t border-bg-border text-xs text-text-muted shrink-0 flex justify-between">
-            <span>Aggregated from completed session runs.</span>
+            <span>{$t('costDashboard.footerAggregated')}</span>
             {#if loading && runs.length > 0}
-                <span class="italic">Refreshing…</span>
+                <span class="italic">{$t('costDashboard.refreshing')}</span>
             {/if}
         </div>
     </div>
