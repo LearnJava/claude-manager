@@ -179,6 +179,7 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | CD-09 | Unit switch flips every chart | Click "Tokens" / "USD" | Headings read "By model — tokens"/"— cost"; KPI + bars reformat, bar order re-sorts by the active unit | ○ |
 | CD-10 | Unit choice persists | Pick USD, reload | "USD" still active (localStorage `cm.costUnit`) | ○ |
 | CD-11 | Bar tooltip always shows both units | Hover a project bar | `title` has `<N> tok · $<X>` regardless of active unit | ○ |
+| CD-12 | Cost-regression banner appears and dismisses | Emit `experience:regression` | Banner with project/session/factor/hint shown; ✕ removes it, no re-fetch | ✓ |
 
 ---
 
@@ -364,6 +365,7 @@ a no-op success), so every case below overrides the stubs via `page.evaluate`
 | STB-05b | Clicking the total switches units | Click the "Today:" readout | Dollars become the headline, tokens move to parentheses; choice persists | ○ |
 | STB-06 | Rate limit shown red >85% | RL utilization >85% | "RL:" value in red | ○ |
 | STB-07 | Uptime increments | Wait 2 seconds | Uptime increases by ~2s | ○ |
+| STB-08 | Regression counter opens dashboard | Emit `experience:regression`, click "Regressions: N" | CostDashboard modal opens | ✓ |
 
 ---
 

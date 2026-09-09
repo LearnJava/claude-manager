@@ -16,6 +16,7 @@
         tokenSplit,
     } from '../lib/formatters';
     import { costUnit, setCostUnit } from '../stores/units';
+    import { regressionAlerts, dismissRegression } from '../stores/sessions';
 
     const dispatch = createEventDispatcher();
 
@@ -380,6 +381,36 @@
             {:else if error}
                 <div class="text-status-error text-sm py-10 text-center">{error}</div>
             {:else}
+                <!--
+                    Cost-regression alerts (LEARN-TASKS.md LN-16): a run 2x its
+                    own session's recent median cost/input-tokens. Transient —
+                    dismissing a banner just filters it out of the store, it is
+                    never re-fetched or persisted (see stores/sessions.ts).
+                -->
+                {#if $regressionAlerts.length > 0}
+                    <section class="mb-4 space-y-2">
+                        {#each $regressionAlerts as alert (alert.seq)}
+                            <div class="bg-status-error/10 border border-status-error/40 rounded p-2 flex items-start justify-between gap-3 text-xs">
+                                <div>
+                                    <span class="text-status-error font-semibold">
+                                        {alert.project}/{alert.session}
+                                    </span>
+                                    <span class="text-text">
+                                        — run {alert.run_id} came out {alert.factor.toFixed(1)}x its recent median
+                                    </span>
+                                    {#if alert.hint}
+                                        <div class="text-text-muted mt-1">{alert.hint}</div>
+                                    {/if}
+                                </div>
+                                <button
+                                    class="text-text-muted hover:text-text shrink-0"
+                                    on:click={() => dismissRegression(alert.seq)}
+                                    type="button">✕</button>
+                            </div>
+                        {/each}
+                    </section>
+                {/if}
+
                 <!-- Total + KPI row -->
                 <section class="mb-6 grid grid-cols-4 gap-3">
                     <div class="bg-bg-elevated border border-bg-border rounded p-3">

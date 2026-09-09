@@ -57,6 +57,28 @@ type JournalWriteFunc func(projectPath string, commit bool, entry JournalEntry) 
 // set.
 type journalAnalyzeFn func(ctx context.Context, projectPath string, in analysis.JournalInput, cfg analysis.AnalysisConfig) (*analysis.JournalResult, error)
 
+// RegressionResult is a positive cost-regression check's outcome —
+// RegressionFunc returns nil when nothing crossed the threshold.
+type RegressionResult struct {
+	// Factor is how many times the trailing median of its session's own
+	// recent runs the just-finished run's cost or input tokens came out to.
+	Factor float64
+	// Hint is a best-effort explanation of what grew in the manager's own
+	// prompt overhead since it was last measured for this session (primer,
+	// skill descriptions, journal tail) — "" when nothing grew, or nothing
+	// could be measured.
+	Hint string
+}
+
+// RegressionFunc checks a just-finished run's cost/input-tokens against its
+// own session's recent trend (LEARN-TASKS.md LN-16). Declared as a function
+// type here, consumed by finishRun, and wired from app.go to
+// internal/experience.DetectRegression — a direct import would cycle, same
+// as ActionIndexFunc above. runID is the just-persisted session_runs row;
+// taskDesc/gates feed only the Hint component, mirroring PrimerFunc's own
+// arguments.
+type RegressionFunc func(project, sessionName, projectPath, taskDesc string, gates []string, runID int64) (*RegressionResult, error)
+
 // Event names emitted to the Wails frontend (see PLAN.md section 8).
 const (
 	EventNameStatus     = "session:status"
@@ -287,6 +309,12 @@ type SessionManager struct {
 	// ContextHandoff flag is on — see SetHandoffBuilder.
 	handoffFn HandoffFunc
 
+	// regressionFn is nil unless app.go has wired the cost-regression
+	// detector (LEARN-TASKS.md LN-16); even then, finishRun only calls it
+	// when cfg.Optimization.ExperienceTracking is on — see
+	// SetRegressionDetector.
+	regressionFn RegressionFunc
+
 	runtimeRules *permission.RuntimeRuleSet
 	queue        *permission.PendingQueue
 
@@ -390,6 +418,17 @@ func (m *SessionManager) SetJournalWriter(fn JournalWriteFunc) {
 func (m *SessionManager) SetHandoffBuilder(fn HandoffFunc) {
 	m.mu.Lock()
 	m.handoffFn = fn
+	m.mu.Unlock()
+}
+
+// SetRegressionDetector wires the experience-layer cost-regression detector
+// (LEARN-TASKS.md LN-16). Pass nil to disable it entirely (the zero value —
+// no app.go wiring means finishRun never checks for a regression at all).
+// Even wired, finishRun still gates every call on the live
+// experience_tracking config flag — same reasoning as SetActionIndexer.
+func (m *SessionManager) SetRegressionDetector(fn RegressionFunc) {
+	m.mu.Lock()
+	m.regressionFn = fn
 	m.mu.Unlock()
 }
 
@@ -1576,6 +1615,20 @@ func (m *SessionManager) handleResult(ms *managedSession, res *SessionResult) {
 
 // finishRun finalizes the in-flight run record with the given status / error
 // and flushes buffered logs.
+// EventNameRegression notifies the frontend that a just-finished run broke
+// out of its session's own recent cost/token trend (LEARN-TASKS.md LN-16) —
+// CostDashboard shows it as a dismissible banner, StatusBar as a counter.
+const EventNameRegression = "experience:regression"
+
+// RegressionEvent is the payload of EventNameRegression.
+type RegressionEvent struct {
+	Project string  `json:"project"`
+	Session string  `json:"session"`
+	RunID   int64   `json:"run_id"`
+	Factor  float64 `json:"factor"`
+	Hint    string  `json:"hint"`
+}
+
 func (m *SessionManager) finishRun(ms *managedSession, status, errMsg string) {
 	if m.store == nil {
 		return
@@ -1680,6 +1733,43 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg string) {
 			if err := indexRun(project, sessionName, runID, cliSessionID, projectPath, taskPtr); err != nil {
 				logger.L.Error("session.index_run_failed", "id", sessID, "error", err)
 			}
+		}()
+	}
+
+	// Check whether this run broke out of its session's own recent cost/
+	// token trend (LEARN-TASKS.md LN-16) — same fire-and-forget goroutine
+	// pattern as the transcript indexer above. Gated on the same
+	// experience_tracking flag: session_runs itself is always collected,
+	// but the detector's Hint component reads skills/journal data the same
+	// privacy gate already covers, and reusing the flag needed no new
+	// config surface (same reasoning as LN-04/12/18).
+	m.mu.Lock()
+	regressionFn := m.regressionFn
+	m.mu.Unlock()
+	if regressionFn != nil && tracking {
+		sessID := ms.session.ID
+		projectPath := ms.session.ProjectPath
+		taskPtr := ms.session.taskSourceDesc
+		gates := ms.session.gates
+		sessionName := ms.name
+		go func() {
+			defer logger.Recover("manager.regression_check", "id", sessID)
+			res, err := regressionFn(project, sessionName, projectPath, taskPtr, gates, runID)
+			if err != nil {
+				logger.L.Error("session.regression_check_failed", "id", sessID, "error", err)
+				return
+			}
+			if res == nil {
+				return
+			}
+			logger.L.Warn("session.regression", "id", sessID, "factor", res.Factor, "hint", res.Hint)
+			m.emit(EventNameRegression, RegressionEvent{
+				Project: project,
+				Session: sessionName,
+				RunID:   runID,
+				Factor:  res.Factor,
+				Hint:    res.Hint,
+			})
 		}()
 	}
 

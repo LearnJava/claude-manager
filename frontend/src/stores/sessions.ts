@@ -143,6 +143,29 @@ export const todayTokens = writable<DailyTokenTotals>({
 // Track when the manager started (for uptime in the status bar)
 export const appStartedAt = writable<Date>(new Date());
 
+// Cost-regression alerts (LEARN-TASKS.md LN-16): a run that came out 2x its
+// own session's recent median cost/input-tokens. Transient by design — a
+// dismiss just filters seq out of the array, nothing is persisted, matching
+// every other "closes on click" banner in this app (see CLAUDE.md
+// "Conventions" — no window.confirm(), and per LN-16's own "Готово когда"
+// the banner is UI-only, not a stored record).
+export interface RegressionAlert {
+    project: string;
+    session: string;
+    run_id: number;
+    factor: number;
+    hint: string;
+    seq: number; // client-assigned dismiss key
+}
+
+export const regressionAlerts = writable<RegressionAlert[]>([]);
+
+let regressionSeq = 0;
+
+export function dismissRegression(seq: number): void {
+    regressionAlerts.update((list) => list.filter((r) => r.seq !== seq));
+}
+
 // Per-session log buffers (in-memory tail). Persisted logs come from store via Wails.
 export const sessionLogs = writable<Record<string, LogEntry[]>>({});
 
@@ -416,6 +439,18 @@ export async function initSessions(): Promise<void> {
         if (evt?.id) {
             notify('Session error', `${evt.id}: ${evt.message ?? 'unknown error'}`);
         }
+    });
+
+    EventsOn('experience:regression', (evt: {
+        project: string;
+        session: string;
+        run_id: number;
+        factor: number;
+        hint: string;
+    }) => {
+        if (!evt || !evt.project || !evt.session) return;
+        regressionAlerts.update((list) => [...list, { ...evt, seq: ++regressionSeq }]);
+        notify('Cost regression', `${evt.project}/${evt.session} — ${evt.factor?.toFixed(1)}x recent median`);
     });
 }
 
