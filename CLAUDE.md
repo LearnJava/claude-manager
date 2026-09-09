@@ -107,6 +107,11 @@ claude-manager/
 │   │   │                            #   section per completed task, rotated into
 │   │   │                            #   journal-archive-YYYY-MM.md past MaxJournalEntries;
 │   │   │                            #   wired via session.JournalWriteFunc (same cycle reason).
+│   │   ├── failures.go              # LN-07: FailureCluster/FixPair — mines "failed → the next
+│   │   │                            #   attempt fixed it" pairs from worker.MixedTask gate/round
+│   │   │                            #   transitions and action_signatures error→success retries,
+│   │   │                            #   normalizes the failure text (ErrorKey) into a cluster key;
+│   │   │                            #   feeds LN-08/09 and the read-only "Failures" tab.
 │   │   └── duration.go              # LN-18: DurationProfile — median/p90/max/fail-rate per
 │   │                                #   signature from action_signatures.dur_sec (n>=10 only);
 │   │                                #   durationSection renders the primer's "Command timing"
@@ -1459,6 +1464,37 @@ nil — gating is entirely the project's `Journal` flag plus `journalFn` being
 wired, checked in `finishRun` before the goroutine is even spawned, so a
 disabled flag means the analyst is never invoked, not just that its result is
 discarded.
+
+**Failure clusters** (LN-07, `internal/experience/failures.go`). The
+highest-quality signal in the whole experience layer: a documented "it failed
+→ the very next attempt fixed it" pair is exactly the knowledge a fresh
+session is missing, ranked above any frequency count. Two sources feed the
+same `[]FixPair`: source A (`ExtractFromMixedTasks`) reads
+`worker.MixedTask.Rounds` — a round whose gate failed followed by one that
+passed, pairing the gate's own captured output (`GateResult.FailedCommand()`,
+never the model's own claim) with the files the very next round's patches
+touched; source B (`ExtractFromActionRows`/`ExtractFromRun`) reads
+`action_signatures`, grouped by run (`COALESCE(run_id, cli_session_id)`, the
+same fallback `TopSignatures.DistinctRuns` uses) and scanned for a row with
+`IsError` followed within `FailurePairWindow` (5) steps by a row sharing the
+same `Sig` with no error — evidence the agent adjusted a flag or environment,
+with both verbatim `arg` strings kept since their diff *is* the rule. Source B
+has no raw output text (`action_signatures` stores only the normalized
+signature and arg), so `Cluster` falls back to keying on `FailedArg` whenever
+a pair's `Output` is empty.
+
+`ErrorKey` normalizes one line of failure text into a comparable cluster key:
+first line only, absolute paths masked (`<PATH>`, both Windows drive-letter
+and POSIX forms), digit runs masked to `N`, capped at 80 runes — without this
+the same `fatal:` reported from two machines/worktrees/files never merges
+(measured on the corpus: `File content (N tokens) exceeds maximum allowed
+tokens` collapses 197+42 raw occurrences into one cluster). `Cluster` groups
+`FixPair`s by `ErrorKey`, ranked by `DistinctRuns` (not raw `Count` — a
+cluster hit many times in one run is not corroborated the way one hit across
+three runs is), capped at `maxClusterExamples` (5) samples per cluster. Output
+feeds LN-09's distillation prompt (a high-priority input: "fact in CLAUDE.md"
+beats a skill for a one-line remedy) and the planned read-only "Failures" tab
+in `ExperiencePanel` — this task does not wire either consumer.
 
 **Failed-gate output is a supported but currently unpopulated input.**
 `analysis.JournalInput.FailedGateOutput` exists for a caller that runs its own
