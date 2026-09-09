@@ -341,6 +341,27 @@ key_env = "KILO_API_KEY"
 	// Validation runs post-merge: gates (committed) + worker (local) satisfy opt-in.
 }
 
+func TestOverlayJournalOptInIsPrivateLayer(t *testing.T) {
+	proj := t.TempDir()
+	writeProjectOverlay(t, proj, "config.toml", `
+gates = ["go test ./..."]
+`)
+	writeProjectOverlay(t, proj, "config.local.toml", `
+journal = true
+journal_commit = true
+`)
+	cfg, err := Load(writeGlobalWithProject(t, proj))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Projects[0].Journal {
+		t.Error("journal opt-in from local layer not applied")
+	}
+	if !cfg.Projects[0].JournalCommit {
+		t.Error("journal_commit from local layer not applied")
+	}
+}
+
 func TestOverlayMissingLeavesGlobalInlineUntouched(t *testing.T) {
 	// No overlay files → project uses whatever the global config declared inline.
 	proj := t.TempDir() // exists but has no .claude-manager
@@ -418,6 +439,43 @@ func TestSaveProjectOverlaySplitAndGitignore(t *testing.T) {
 	}
 	if len(cfg.Workers) != 1 {
 		t.Errorf("workers round-trip = %d, want 1", len(cfg.Workers))
+	}
+}
+
+func TestSaveProjectOverlayJournalRoundTrip(t *testing.T) {
+	proj := t.TempDir()
+	p := ProjectConfig{
+		Name:          "demo",
+		Path:          proj,
+		Journal:       true,
+		JournalCommit: true,
+	}
+	if err := SaveProjectOverlay(proj, p, nil); err != nil {
+		t.Fatalf("SaveProjectOverlay: %v", err)
+	}
+
+	shared, err := os.ReadFile(ProjectConfigPath(proj))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(shared), "journal") {
+		t.Errorf("committed config leaks the private journal opt-in:\n%s", shared)
+	}
+	local, err := os.ReadFile(ProjectLocalConfigPath(proj))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(local), "journal = true") || !strings.Contains(string(local), "journal_commit = true") {
+		t.Errorf("local config missing journal fields:\n%s", local)
+	}
+
+	cfg, err := Load(writeGlobalWithProject(t, proj))
+	if err != nil {
+		t.Fatalf("Load after save: %v", err)
+	}
+	got := cfg.Projects[0]
+	if !got.Journal || !got.JournalCommit {
+		t.Errorf("journal settings round-trip mismatch: %+v", got)
 	}
 }
 
