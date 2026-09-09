@@ -169,12 +169,32 @@ CREATE TABLE IF NOT EXISTS permission_events (
     ts       DATETIME NOT NULL
 )`
 
+	// skills backs the experience layer's skill distillation pipeline
+	// (LEARN-TASKS.md LN-09/10/11): one row per distilled procedure, from
+	// draft (just distilled by LN-09) through approved (written into the
+	// project by LN-10) to archived (rejected, or proposed stale by LN-11).
+	// draft_json/md/source_json are documented on store.Skill.
+	sqlCreateSkills = `
+CREATE TABLE IF NOT EXISTS skills (
+    id          INTEGER PRIMARY KEY,
+    project     TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    draft_json  TEXT NOT NULL,
+    md          TEXT NOT NULL,
+    source_json TEXT NOT NULL,
+    created_at  DATETIME NOT NULL,
+    approved_at DATETIME,
+    archived_at DATETIME
+)`
+
 	sqlIdxLogsRun        = `CREATE INDEX IF NOT EXISTS idx_logs_run ON session_logs(run_id)`
 	sqlIdxRunsProject    = `CREATE INDEX IF NOT EXISTS idx_runs_project ON session_runs(project, session)`
 	sqlIdxBriefsProject  = `CREATE INDEX IF NOT EXISTS idx_briefs_project ON mixed_briefs(project)`
 	sqlIdxSigProject     = `CREATE INDEX IF NOT EXISTS idx_sig_project ON action_signatures(project, sig)`
 	sqlIdxSigRun         = `CREATE INDEX IF NOT EXISTS idx_sig_run ON action_signatures(run_id)`
 	sqlIdxPermEvtProject = `CREATE INDEX IF NOT EXISTS idx_perm_evt_project ON permission_events(project, tool, pattern)`
+	sqlIdxSkillsProject  = `CREATE INDEX IF NOT EXISTS idx_skills_project ON skills(project, status)`
 )
 
 func migrate(db *sql.DB) error {
@@ -189,12 +209,14 @@ func migrate(db *sql.DB) error {
 		sqlCreateIngestState,
 		sqlCreateImportedLogfiles,
 		sqlCreatePermissionEvents,
+		sqlCreateSkills,
 		sqlIdxLogsRun,
 		sqlIdxRunsProject,
 		sqlIdxBriefsProject,
 		sqlIdxSigProject,
 		sqlIdxSigRun,
 		sqlIdxPermEvtProject,
+		sqlIdxSkillsProject,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {

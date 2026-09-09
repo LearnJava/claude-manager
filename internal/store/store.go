@@ -97,6 +97,29 @@ type MixedBrief struct {
 	CreatedAt time.Time
 }
 
+// Skill represents a row in `skills` — a distilled procedure candidate
+// (LEARN-TASKS.md LN-09/10/11). Status is draft (just distilled, not yet
+// written into the project), approved (written to
+// <project>/.claude/skills/<name>/SKILL.md by LN-10) or archived (rejected or
+// protuhla per LN-11). DraftJSON is the SkillDraft the distiller produced; MD
+// is its rendered form (analysis.RenderSkillMarkdown) — kept alongside the
+// JSON so LN-10 can offer the exact text for review/edit without re-rendering.
+// SourceJSON is the candidate's signature sequence (LN-08's
+// SkillCandidate.Sig) — LN-11 uses it to check whether this skill's pattern
+// still occurs in later runs.
+type Skill struct {
+	ID         int64
+	Project    string
+	Name       string
+	Status     string // draft | approved | archived
+	DraftJSON  string
+	MD         string
+	SourceJSON string
+	CreatedAt  time.Time
+	ApprovedAt *time.Time
+	ArchivedAt *time.Time
+}
+
 // ActionRow represents a row in action_signatures — one normalized tool call
 // mined from a CLI transcript (LEARN-TASKS.md LN-01/LN-02). RunID is nil when
 // the row was ingested from a transcript with no matching session_runs row
@@ -701,6 +724,51 @@ func (s *Store) ListBriefs(project string, limit int) ([]*MixedBrief, error) {
 		briefs = append(briefs, b)
 	}
 	return briefs, rows.Err()
+}
+
+// --- skills (LEARN-TASKS.md LN-09/10/11) ---
+
+func scanSkill(row rowScanner) (*Skill, error) {
+	var sk Skill
+	var approvedAt, archivedAt sql.NullTime
+	err := row.Scan(&sk.ID, &sk.Project, &sk.Name, &sk.Status,
+		&sk.DraftJSON, &sk.MD, &sk.SourceJSON, &sk.CreatedAt, &approvedAt, &archivedAt)
+	if err != nil {
+		return nil, err
+	}
+	if approvedAt.Valid {
+		sk.ApprovedAt = &approvedAt.Time
+	}
+	if archivedAt.Valid {
+		sk.ArchivedAt = &archivedAt.Time
+	}
+	return &sk, nil
+}
+
+// InsertSkill inserts a Skill draft and sets sk.ID to the generated row ID.
+// Status is expected to be "draft" — the distiller (LEARN-TASKS.md LN-09)
+// never writes anything else; approval/archival (LN-10/11) update the row in
+// place instead of inserting a new one.
+func (s *Store) InsertSkill(sk *Skill) error {
+	const q = `INSERT INTO skills (project, name, status, draft_json, md, source_json, created_at)
+	    VALUES (?, ?, ?, ?, ?, ?, ?)`
+	res, err := s.db.Exec(q, sk.Project, sk.Name, sk.Status, sk.DraftJSON, sk.MD, sk.SourceJSON, sk.CreatedAt)
+	if err != nil {
+		return err
+	}
+	sk.ID, err = res.LastInsertId()
+	return err
+}
+
+// GetSkill returns a Skill by ID, or nil if not found.
+func (s *Store) GetSkill(id int64) (*Skill, error) {
+	const q = `SELECT id, project, name, status, draft_json, md, source_json, created_at, approved_at, archived_at
+	    FROM skills WHERE id=?`
+	sk, err := scanSkill(s.db.QueryRow(q, id))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return sk, err
 }
 
 // --- action_signatures / ingest_state (LEARN-TASKS.md LN-02) ---

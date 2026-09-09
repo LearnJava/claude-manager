@@ -9,6 +9,7 @@ import (
 
 	"claude-manager/internal/analysis"
 	"claude-manager/internal/config"
+	"claude-manager/internal/experience"
 	"claude-manager/internal/store"
 )
 
@@ -672,5 +673,72 @@ func TestUpsertP1Session_ClearsStaleWorktreeFlagOnExisting(t *testing.T) {
 	}
 	if got.TaskSource != "STATUS-P1.md" {
 		t.Errorf("TaskSource = %q, want STATUS-P1.md", got.TaskSource)
+	}
+}
+
+func TestSkillDistillInputFromCandidate(t *testing.T) {
+	cand := experience.SkillCandidate{
+		Sig: []string{"Bash:git status", "Bash:git branch -a"},
+		Samples: []store.ActionRow{
+			{Arg: "git status --short --branch"},
+			{Arg: "git branch -a"},
+		},
+		RelatedFailures: []experience.FailureCluster{
+			{
+				ErrorKey: "fatal: not a git repository",
+				Examples: []experience.FixPair{
+					{FailedArg: "git status", FixedArg: "cd repo && git status"},
+					{FailedArg: "git status (again)", FixedArg: "cd repo && git status (again)"},
+				},
+			},
+			{ErrorKey: "empty cluster, no examples"}, // must not panic / must be skipped
+		},
+	}
+
+	in, sourceJSON, err := skillDistillInputFromCandidate(cand, []string{"go build ./...", "go test ./..."})
+	if err != nil {
+		t.Fatalf("skillDistillInputFromCandidate: %v", err)
+	}
+
+	if len(in.Sig) != 2 || in.Sig[0] != "Bash:git status" {
+		t.Errorf("Sig: got %v", in.Sig)
+	}
+	if len(in.Samples) != 2 || in.Samples[0].Command != "git status --short --branch" {
+		t.Errorf("Samples: got %+v", in.Samples)
+	}
+	if len(in.Gates) != 2 || in.Gates[1] != "go test ./..." {
+		t.Errorf("Gates: got %v", in.Gates)
+	}
+	// Only the empty-examples cluster is skipped; the real cluster contributes
+	// exactly one representative example (its first).
+	if len(in.RelatedFailures) != 1 {
+		t.Fatalf("RelatedFailures: got %+v", in.RelatedFailures)
+	}
+	rf := in.RelatedFailures[0]
+	if rf.ErrorKey != "fatal: not a git repository" || rf.FailedArg != "git status" || rf.FixedArg != "cd repo && git status" {
+		t.Errorf("unexpected RelatedFailures[0]: %+v", rf)
+	}
+
+	if sourceJSON != `["Bash:git status","Bash:git branch -a"]` {
+		t.Errorf("sourceJSON = %q", sourceJSON)
+	}
+}
+
+func TestSkillDistillInputFromCandidate_DoesNotMutateCandidateSlices(t *testing.T) {
+	sig := []string{"Bash:git status"}
+	cand := experience.SkillCandidate{Sig: sig}
+	gates := []string{"go build ./..."}
+
+	in, _, err := skillDistillInputFromCandidate(cand, gates)
+	if err != nil {
+		t.Fatalf("skillDistillInputFromCandidate: %v", err)
+	}
+	in.Sig[0] = "mutated"
+	in.Gates[0] = "mutated"
+	if sig[0] != "Bash:git status" {
+		t.Error("caller's Sig slice was mutated")
+	}
+	if gates[0] != "go build ./..." {
+		t.Error("caller's gates slice was mutated")
 	}
 }

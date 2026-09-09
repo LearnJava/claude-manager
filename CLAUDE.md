@@ -53,6 +53,9 @@ claude-manager/
 │   │   ├── journal.go               # LN-06: GenerateJournalEntry — haiku distillation of one
 │   │   │                            #   completed run (task pointer, files changed, result text)
 │   │   │                            #   into {done, surprises, avoid} for the project journal
+│   │   ├── skill.go                 # LN-09: DistillSkill — sonnet distillation of one LN-08
+│   │   │                            #   SkillCandidate (+ related failures, gates) into a
+│   │   │                            #   SkillDraft; RenderSkillMarkdown renders the SKILL.md body
 │   │   └── schema.go                # JSON Schema for analyst structured output + brief output
 │   ├── optimization/
 │   │   ├── routing.go               # ModelRouter: auto model routing by task complexity
@@ -122,7 +125,7 @@ claude-manager/
 │   │                                #   durationSection renders the primer's "Command timing"
 │   │                                #   block (LN-05) and the sleep anti-pattern line.
 │   ├── store/
-│   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs
+│   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs/skills
 │   │   ├── migrations.go            # CREATE TABLE statements, indexes
 │   │   └── logfiles.go              # Auto-saved per-run log files in <project>/.claude-manager/logs/,
 │   │                                #   shared RenderExport (md/json/txt) for auto-save + manual export
@@ -1570,6 +1573,65 @@ full per-cluster run set, so a large cluster whose one overlapping example got
 capped away is silently missed. Acceptable for a "here's a related failure"
 pointer in LN-09's prompt, not a correctness requirement.
 
+**Skill distillation** (LN-09, `internal/analysis/skill.go`). Turns one LN-08
+`SkillCandidate` into a draft `SKILL.md` — the payoff the whole mining chain
+(LN-02 → LN-07/08) has been building toward: a recurring pattern becomes a
+procedure a future session loads on demand instead of rediscovering.
+
+**Decoupled from `internal/experience` by construction, not by convention.**
+`internal/experience` already imports `internal/session` (for `Step`/
+`TokenUsage`), so `SessionManager.DistillSkill` — which must exist to stream
+`skill:progress` the same way `GenerateRoadmap` streams
+`plan:roadmap_progress` — cannot take `experience.SkillCandidate`/
+`FailureCluster` as parameters: naming those types in `internal/session`
+would import `internal/experience` back, a straight cycle.
+`analysis.SkillDistillInput`/`SkillSample`/`SkillFailureSummary` are `internal/
+analysis`'s own plain shapes instead; `app.go` (which already imports both
+`analysis` and `experience`) is the only place that translates a
+`SkillCandidate` into one (`skillDistillInputFromCandidate`), and its own
+`App.DistillSkill(project, candidate experience.SkillCandidate, gates
+[]string, model string, minScore float64)` is the actual Wails entry point.
+
+**`SkillSample.Output` is a documented gap, not an oversight.** LN-09's spec
+asks for "up to 5 real examples (command + first 20 lines of output)", but
+`action_signatures` (LN-02) stores only the normalized signature and the
+verbatim `arg` — never raw tool output, by design, to avoid duplicating a
+transcript's full result text into SQLite. Every sample built from an
+`ActionRow` therefore carries only its command; `Output` stays as a distinct
+field so a future caller with real output text (e.g. a source that re-reads
+the original transcript for its samples) can populate it without a schema
+change, and `buildSkillTaskText` already renders it, truncated to 20 lines,
+whenever it is non-empty.
+
+**Threshold, not a heuristic score.** `DistillSkill` refuses to invoke the CLI
+at all — not just skip acting on a low result — when `SkillCandidate.Score`
+is below `minScore` (`analysis.ErrBelowThreshold`, `<= 0` falls back to
+`DefaultSkillMinScore`): distillation is a paid sonnet call, and LN-08's score
+distribution has no real-corpus calibration yet (unlike `DefaultMinRunShare`),
+so the default is a conservative starting point, always overridable per call.
+
+**Persistence** (`skills` table, `internal/store/migrations.go`): one row per
+distillation, `status="draft"` — `internal/store.Skill` holds `DraftJSON` (the
+`SkillDraft`), `MD` (`RenderSkillMarkdown`'s rendered body, kept alongside the
+JSON so LN-10 can offer the exact review text without re-rendering) and
+`SourceJSON` (the candidate's own `Sig` sequence — what LN-11 checks against
+later runs to tell whether the skill actually got used). LN-09 only ever
+inserts; approving/archiving a row (writing it into
+`<project>/.claude/skills/<name>/SKILL.md`, updating `status`) is LN-10's job.
+
+**Rendering** (`RenderSkillMarkdown`) follows the same minimal frontmatter
+convention this app's own `.claude/skills/*/SKILL.md` files use — `name` +
+`description` only, since `description` is the one line that stays
+permanently in context and everything else loads on demand — with each body
+section (`When to use`, `Gotchas`, `Files touched`) omitted entirely when the
+draft left it empty, rather than rendered as an empty heading. A hard
+`maxSkillBodyLines` (120) cap on the rendered output enforces the "≤120 lines"
+invariant regardless of whether the model actually honored
+`SkillSystemPrompt`'s instruction to stay under it, always preserving the
+frontmatter block even if the truncation point would otherwise land inside it
+— a truncated frontmatter is a broken skill file, a truncated body is merely
+an incomplete one.
+
 **Duration profile** (LN-18, `internal/experience/duration.go`). A fresh
 session has no idea how long this project's own slow commands take, and
 finds out the only way it can — by hitting a timeout. The manager already
@@ -1667,6 +1729,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetDurationProfile(project)` | Median/p90/max/fail-rate duration profile per signature — the "Timing" tab (LEARN-TASKS.md LN-18) |
 | `GetPermissionCandidates(project, days)` | Suggested auto-allow permission rules, split into safe/needs-review — the "Permissions" tab (LEARN-TASKS.md LN-04) |
 | `AddPermissionRule(project, session, tool, pattern, decision)` | Append a `PermissionRule` to one session's config — the Permissions tab's "Add rule" button |
+| `DistillSkill(project, candidate, gates, model, minScore)` | Distill one LN-08 skill candidate into a draft `SKILL.md`, persisted to the `skills` table (status=draft); streams `skill:progress`; returns `analysis.ErrBelowThreshold` below `minScore` (LEARN-TASKS.md LN-09) |
 | `GetRateLimitStatus()` | Current rate limit info |
 | `ExportLog(id, entries, format)` | Save log as MD/JSON/TXT via native dialog |
 | `CleanOldLogs(days)` | Delete logs older than N days from SQLite |
@@ -1799,6 +1862,7 @@ claude_path = "build/fakeclaude.exe"
 - `ingest_state` — per-CLI-session transcript byte offset, so re-indexing never re-inserts rows (LN-02)
 - `imported_logfiles` — bulk-import dedup for `IngestDir`, keyed by (project, name, size, mtime) (LN-17)
 - `permission_events` — one row per resolved permission_request (auto-decided or human), source for the Permissions tab's rule suggestions (LN-04)
+- `skills` — one row per distilled procedure (draft/approved/archived), source_json holds the candidate signatures LN-11 checks against later runs (LN-09/10/11)
 
 ## File Logging
 
