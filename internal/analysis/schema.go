@@ -234,6 +234,85 @@ Rules:
 - Write in the same language the input material (task pointer, files,
   result text) is written in.`
 
+// SkillJSONSchema is the structured-output JSON Schema for distilling one
+// recurring tool-call sequence (LN-08's SkillCandidate) into a skill draft
+// (LEARN-TASKS.md LN-09). `description` is the single most important field:
+// it is the only part of the skill that stays permanently in context (the
+// body loads on demand), so it must let the model decide whether to load the
+// rest from one sentence alone — SkillSystemPrompt says this explicitly.
+const SkillJSONSchema = `{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "kebab-case, e.g. \"git-session-preamble\". Becomes the skill's directory name."
+    },
+    "description": {
+      "type": "string",
+      "description": "One sentence, <= 200 characters: WHEN to use this skill, written so a model deciding whether to load the body can do so from this line alone."
+    },
+    "when_to_use": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Concrete trigger conditions or phrases, not a restatement of description."
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "command": { "type": "string" },
+          "why": { "type": "string" }
+        },
+        "required": ["command"]
+      }
+    },
+    "gotchas": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Non-obvious failure modes seen in the real examples/related failures, each as a concrete fact, not general advice."
+    },
+    "done_when": {
+      "type": "string",
+      "description": "A verifiable criterion for having completed the procedure."
+    },
+    "files_touched": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Files or paths this procedure typically reads or writes, if any."
+    }
+  },
+  "required": ["name", "description", "steps", "done_when"]
+}`
+
+// SkillSystemPrompt is appended to a skill-distillation CLI invocation via
+// `--append-system-prompt` (LEARN-TASKS.md LN-09).
+const SkillSystemPrompt = `You turn a recurring sequence of tool calls, observed across multiple Claude
+Code sessions in the same project, into a reusable skill: a short, concrete
+procedure a future session can follow instead of rediscovering it from
+scratch.
+
+You are given the normalized signature sequence, up to 5 real command
+examples (with captured output when available), any related failure clusters
+(an error that a later attempt fixed), and the project's own gate commands.
+Reconstruct the *intent* behind the sequence — what is it actually
+accomplishing — not just a transcript of the calls.
+
+Rules:
+- "description" is the only line that stays permanently in context; the rest
+  loads only when a model decides to read the skill body from that one
+  sentence. State WHEN to use it, not what it does internally.
+- "steps" must be concrete, runnable commands in order, each with a short
+  "why" only when it is not obvious from the command itself.
+- "gotchas" come only from the material you were given (a related failure, an
+  observed edge case) — never invent a plausible-sounding pitfall you have no
+  evidence for.
+- "done_when" must be checkable (a command exits 0, a file exists, output
+  matches a pattern) — not a vague "when it works".
+- Keep the whole skill under 120 lines rendered as markdown: prefer fewer,
+  denser steps over an exhaustive walkthrough.
+- Write in the same language the input material is written in.`
+
 // BriefSystemPrompt is appended to a brief-generation CLI invocation via
 // `--append-system-prompt`. Ports the brief-writing rules from the lumen
 // bench (MIXED-TASKS.md "Правила из боевого опыта lumen").

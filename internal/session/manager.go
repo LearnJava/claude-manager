@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -1944,6 +1945,79 @@ func (m *SessionManager) GetLatestDraftRoadmap(project string) (*analysis.TaskPl
 		}
 	}
 	return nil, nil
+}
+
+// EventNameSkillProgress notifies the frontend of activity while
+// DistillSkill's analyst CLI run is in flight (LEARN-TASKS.md LN-09) — mirrors
+// EventNameRoadmapProgress above for the same reason: a distillation run has
+// no other visible sign of being alive rather than hung.
+const EventNameSkillProgress = "skill:progress"
+
+// SkillProgressEvent is the payload of EventNameSkillProgress.
+type SkillProgressEvent struct {
+	Project string `json:"project"`
+	Text    string `json:"text"`
+}
+
+// skillDistillFn abstracts analysis.DistillSkill so tests can stub the
+// analyst CLI, mirroring roadmapAnalyzeFn above.
+type skillDistillFn func(ctx context.Context, projectPath string, in analysis.SkillDistillInput, score, minScore float64, cfg analysis.AnalysisConfig, onProgress analysis.ProgressFunc) (*analysis.SkillDraft, error)
+
+// DistillSkill turns one recurring tool-call sequence into a skill draft and
+// persists it to the `skills` table as status=draft (LEARN-TASKS.md LN-09).
+// in is built by the caller (app.go) from an internal/experience
+// SkillCandidate — see analysis.SkillDistillInput's doc comment for why this
+// package cannot take that type directly. Returns analysis.ErrBelowThreshold
+// when score does not clear minScore (<=0 uses analysis.DefaultSkillMinScore)
+// — the caller should treat that as "skip this candidate", not a failure.
+func (m *SessionManager) DistillSkill(project string, in analysis.SkillDistillInput, sourceJSON string, score, minScore float64, model string) (*store.Skill, error) {
+	return m.distillSkill(context.Background(), project, in, sourceJSON, score, minScore, model, analysis.DistillSkill)
+}
+
+func (m *SessionManager) distillSkill(ctx context.Context, project string, in analysis.SkillDistillInput, sourceJSON string, score, minScore float64, model string, distill skillDistillFn) (*store.Skill, error) {
+	if m.store == nil {
+		return nil, fmt.Errorf("manager: no store configured")
+	}
+	path, err := m.projectPath(project)
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	acfg := analysis.AnalysisConfig{
+		ClaudePath:   m.cfg.Settings.ClaudePath,
+		Model:        model,
+		MaxBudgetUSD: m.cfg.Settings.PreflightMaxBudget,
+	}
+	m.mu.Unlock()
+
+	onProgress := func(text string) {
+		m.emit(EventNameSkillProgress, SkillProgressEvent{Project: project, Text: text})
+	}
+	draft, err := distill(ctx, path, in, score, minScore, acfg, onProgress)
+	if err != nil {
+		return nil, err
+	}
+
+	draftJSON, err := json.Marshal(draft)
+	if err != nil {
+		return nil, fmt.Errorf("manager: encode skill draft: %w", err)
+	}
+
+	sk := &store.Skill{
+		Project:    project,
+		Name:       draft.Name,
+		Status:     "draft",
+		DraftJSON:  string(draftJSON),
+		MD:         analysis.RenderSkillMarkdown(*draft),
+		SourceJSON: sourceJSON,
+		CreatedAt:  time.Now(),
+	}
+	if err := m.store.InsertSkill(sk); err != nil {
+		return nil, err
+	}
+	logger.L.Info("manager.skill_distilled",
+		"project", project, "skill", sk.Name, "id", sk.ID, "cost_usd", draft.CostUSD)
+	return sk, nil
 }
 
 // ApproveRoadmapFiles materializes an approved roadmap plan into

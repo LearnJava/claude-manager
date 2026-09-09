@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -1132,6 +1133,62 @@ func addPermissionRuleInConfig(cfg *config.AppConfig, project, sessionName, tool
 		return false
 	}
 	return false
+}
+
+// DistillSkill turns one LN-08 skill candidate into a skill draft and
+// persists it as a status=draft row (LEARN-TASKS.md LN-09), streaming
+// skill:progress while the distillation CLI run is in flight. gates is
+// normally the project's own config.ProjectConfig.Gates. minScore <= 0 falls
+// back to analysis.DefaultSkillMinScore; when candidate.Score does not clear
+// it, the CLI is never invoked and the error is analysis.ErrBelowThreshold —
+// callers driving a batch of candidates should treat that as "skip this one",
+// not surface it as a failure.
+//
+// SessionManager.DistillSkill takes analysis.SkillDistillInput, not
+// experience.SkillCandidate/FailureCluster directly — see
+// analysis.SkillDistillInput's doc comment for why (internal/session cannot
+// import internal/experience without cycling back through it). This method
+// does the translation, since app.go already imports both packages.
+func (a *App) DistillSkill(project string, candidate experience.SkillCandidate, gates []string, model string, minScore float64) (*store.Skill, error) {
+	in, sourceJSON, err := skillDistillInputFromCandidate(candidate, gates)
+	if err != nil {
+		return nil, err
+	}
+	return a.manager.DistillSkill(project, in, sourceJSON, candidate.Score, minScore, model)
+}
+
+// skillDistillInputFromCandidate translates one LN-08 SkillCandidate (plus
+// the project's gates) into analysis.SkillDistillInput, and encodes the
+// candidate's own signature sequence as source_json (LEARN-TASKS.md LN-09:
+// "source_json — сигнатуры кандидата; по ним LN-11 определяет, сработал ли
+// скилл"). Takes one representative example per related failure cluster —
+// enough context for the distillation prompt without re-exporting
+// FailureCluster's full shape.
+func skillDistillInputFromCandidate(c experience.SkillCandidate, gates []string) (analysis.SkillDistillInput, string, error) {
+	in := analysis.SkillDistillInput{
+		Sig:   append([]string(nil), c.Sig...),
+		Gates: append([]string(nil), gates...),
+	}
+	for _, s := range c.Samples {
+		in.Samples = append(in.Samples, analysis.SkillSample{Command: s.Arg})
+	}
+	for _, f := range c.RelatedFailures {
+		if len(f.Examples) == 0 {
+			continue
+		}
+		ex := f.Examples[0]
+		in.RelatedFailures = append(in.RelatedFailures, analysis.SkillFailureSummary{
+			ErrorKey:  f.ErrorKey,
+			FailedArg: ex.FailedArg,
+			FixedArg:  ex.FixedArg,
+		})
+	}
+
+	srcJSON, err := json.Marshal(c.Sig)
+	if err != nil {
+		return in, "", fmt.Errorf("distill skill: encode source signatures: %w", err)
+	}
+	return in, string(srcJSON), nil
 }
 
 // GetProjectLogFiles lists the auto-saved session-log files in

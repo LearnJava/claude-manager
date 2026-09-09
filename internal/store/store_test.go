@@ -1132,3 +1132,57 @@ func TestIsMarkLogFileImported(t *testing.T) {
 		t.Fatalf("MarkLogFileImported (re-mark): %v", err)
 	}
 }
+
+// --- skills (LEARN-TASKS.md LN-09) ---
+
+func TestInsertGetSkill(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	sk := &Skill{
+		Project:    "proj",
+		Name:       "git-session-preamble",
+		Status:     "draft",
+		DraftJSON:  `{"name":"git-session-preamble"}`,
+		MD:         "---\nname: git-session-preamble\n---\n",
+		SourceJSON: `["Bash:git status","Bash:git branch -a"]`,
+		CreatedAt:  now,
+	}
+	if err := s.InsertSkill(sk); err != nil {
+		t.Fatalf("InsertSkill: %v", err)
+	}
+	if sk.ID == 0 {
+		t.Fatal("expected non-zero ID")
+	}
+
+	got, err := s.GetSkill(sk.ID)
+	if err != nil {
+		t.Fatalf("GetSkill: %v", err)
+	}
+	if got == nil {
+		t.Fatal("GetSkill returned nil")
+	}
+	if got.Project != sk.Project || got.Name != sk.Name || got.Status != sk.Status {
+		t.Errorf("unexpected skill: %+v", got)
+	}
+	if got.DraftJSON != sk.DraftJSON || got.MD != sk.MD || got.SourceJSON != sk.SourceJSON {
+		t.Errorf("unexpected skill content: %+v", got)
+	}
+	if !got.CreatedAt.Equal(now) {
+		t.Errorf("CreatedAt: got %v want %v", got.CreatedAt, now)
+	}
+	if got.ApprovedAt != nil || got.ArchivedAt != nil {
+		t.Errorf("expected nil ApprovedAt/ArchivedAt on a fresh draft, got %+v / %+v", got.ApprovedAt, got.ArchivedAt)
+	}
+}
+
+func TestGetSkillNotFound(t *testing.T) {
+	s := newTestStore(t)
+	got, err := s.GetSkill(999)
+	if err != nil {
+		t.Fatalf("GetSkill(missing): %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil, got %+v", got)
+	}
+}
