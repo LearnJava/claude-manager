@@ -1,0 +1,12 @@
+[[project]]
+name = "lumen"
+path = "."
+
+[[project.session]]
+name = "P1"
+prompt = "Investigate context-grow behavior for LN-15."
+auto_restart = false
+model = "claude-sonnet-4-6"
+# context_handoff intentionally left unset (default false) — proves the
+# context-growth scenario behaves exactly as it did before LN-15 existed:
+# one CLI invocation, no restart, plain completion.

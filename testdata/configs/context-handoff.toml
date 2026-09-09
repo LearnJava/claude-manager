@@ -1,0 +1,10 @@
+[[project]]
+name = "lumen"
+path = "."
+
+[[project.session]]
+name = "P1"
+prompt = "Investigate context-grow behavior for LN-15."
+auto_restart = false
+model = "claude-sonnet-4-6"
+context_handoff = true
