@@ -155,13 +155,20 @@ claude-manager/
 │   │   │                            #   Read/Edit/Write file overlap with the previous pick);
 │   │   │                            #   LastRunFiles reads the file list from
 │   │   │                            #   action_signatures. Wired from app.go:StartProject.
-│   │   └── handoff.go               # LN-15: BuildHandoffInput — reads the tail of an
-│   │                                #   interrupted CLI session's own transcript (LN-01,
-│   │                                #   best-effort) + the live TodoWrite state into
-│   │                                #   analysis.HandoffInput; RenderHandoffPrompt formats
-│   │                                #   the distilled result into the first user turn of the
-│   │                                #   fresh, non-resumed process. Wired via
-│   │                                #   session.HandoffFunc (same cycle reason as PrimerFunc).
+│   │   ├── handoff.go               # LN-15: BuildHandoffInput — reads the tail of an
+│   │   │                            #   interrupted CLI session's own transcript (LN-01,
+│   │   │                            #   best-effort) + the live TodoWrite state into
+│   │   │                            #   analysis.HandoffInput; RenderHandoffPrompt formats
+│   │   │                            #   the distilled result into the first user turn of the
+│   │   │                            #   fresh, non-resumed process. Wired via
+│   │   │                            #   session.HandoffFunc (same cycle reason as PrimerFunc).
+│   │   └── regression.go            # LN-16: DetectRegression — a session's own trailing
+│   │                                #   median cost/input-tokens (last RegressionWindow runs)
+│   │                                #   vs. the just-finished run, 2x = regression; Hint names
+│   │                                #   what grew in the manager's own prompt overhead
+│   │                                #   (primer/skill descriptions/journal tail) since the last
+│   │                                #   measurement (OverheadTracker, in-memory only). Wired via
+│   │                                #   session.RegressionFunc (same cycle reason as PrimerFunc).
 │   ├── store/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs/skills
 │   │   ├── migrations.go            # CREATE TABLE statements, indexes
@@ -2029,6 +2036,65 @@ to wait out the sleep). `App.GetDurationProfile` exposes the same data to
 primer section, gated on the same `[optimization] experience_tracking` flag
 LN-03/04 use (no new config surface needed: `dur_sec` is derived from
 timestamps ingestion already collects when that flag is on).
+
+**Cost-regression alerts** (LN-16, `internal/experience/regression.go`).
+Invariant 5 ("any feature that changes the prompt must be measurable") is
+only honored if a regression is actually surfaced somewhere — otherwise a
+protuhla'd skill (LN-11), a bloated primer (LN-05) or a growing journal tail
+(LN-06) just quietly taxes every future run.
+
+`DetectRegression(st, tracker, project, sessionName, projectPath, taskDesc,
+gates, runID)` compares a just-finished run's `total_cost_usd`/`input_tokens`
+against the trailing median of the *same session's* last `RegressionWindow`
+(10) finished runs (any status — the baseline is cost history, not just
+completed runs). `RegressionFactor` (2.0) crossed by either metric — "или
+входной контекст на старте вырос вдвое" is the input-tokens leg of the same
+check, not a separate rule — fires a regression; fewer than
+`MinRegressionHistory` (3) prior runs never fires, however large the jump
+(LEARN-TASKS.md LN-16's own "мало данных" case) — a median over one or two
+runs is noise, not a trend, same reasoning as `MinSkillEffectRuns` (LN-11) and
+`MinDurationSamples` (LN-18).
+
+**The hint is a diff against the manager's own last measurement, not a
+recomputation from scratch.** `measureOverhead` reads `PromptOverhead`: the
+rendered length of `BuildPrimer`'s output (LN-05), the count and total
+character length of every *approved* skill's description (LN-10 — a skill's
+description is what stays permanently in a session's context, per
+`RenderSkillMarkdown`'s own doc comment), and the length of the project
+journal's last `journalTailEntries` (3) sections (LN-06). `OverheadTracker`
+keeps the last measurement per `project/session` key **in memory only** — no
+new SQLite column, no state file, since the hint only needs to survive
+within one running app instance — and `Hint` names which of the three grew
+since that prior observation. Computing this is deliberately lazy: only a
+detected regression pays for a `BuildPrimer` call (a git exec), so a project
+that never regresses never pays for it at all; the tradeoff is that the
+"since the previous run" comparison is really "since the last time a
+regression fired here", not every run — acceptable for explanatory text on a
+dismissible banner, not a correctness-critical measurement.
+
+**Wired like `PrimerFunc`, for the same reason.** `internal/experience`
+already imports `internal/session` (for `Step`/`TokenUsage`), so
+`finishRun` cannot call `experience.DetectRegression` directly.
+`session.RegressionFunc` is the indirection (`SessionManager.regressionFn`,
+`SetRegressionDetector`); `app.go` wires it to a closure over
+`experience.DetectRegression` plus one `experience.NewOverheadTracker()`
+instance shared across the app's lifetime. Called from `finishRun` in its
+own fire-and-forget goroutine (same pattern as the LN-03 indexer and LN-06
+journal above) and gated on the same `[optimization] experience_tracking`
+flag LN-03/04/12/18 reuse: `session_runs` itself is always collected, but
+the Hint component reads skill/journal data the same privacy gate already
+covers, and reusing the flag needed no new config surface.
+
+**Emitted, not persisted.** A detected regression fires `session:*`-style
+event `experience:regression` (`{project, session, run_id, factor, hint}`)
+through the same `Emitter` every other session event uses — there is no new
+Wails-bound getter, and nothing is written to SQLite. `StatusBar.svelte`
+shows a "⚠ Regressions: N" counter (click opens the dashboard);
+`CostDashboard.svelte` renders one dismissible banner per alert above the
+KPI row. Both read `stores/sessions.ts`'s `regressionAlerts` array, appended
+to on the event and filtered by `dismissRegression(seq)` on click — client-side
+only, matching every other "closes on click, not persisted" convention in
+this app (no `window.confirm()`, no re-fetch).
 
 ## Wails Bindings (app.go)
 

@@ -157,7 +157,7 @@
         </main>
     </div>
 
-    <StatusBar on:openQueue={openQueue} />
+    <StatusBar on:openQueue={openQueue} on:openDashboard={() => (showDashboard = true)} />
 
     {#if showPermissionQueue}
         <div

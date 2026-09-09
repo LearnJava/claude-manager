@@ -176,6 +176,24 @@ func (a *App) startup(ctx context.Context) {
 		return experience.RenderHandoffPrompt(res), nil
 	})
 
+	// Wire the cost-regression detector (LEARN-TASKS.md LN-16): finishRun
+	// calls this after every run, but only actually reads anything when
+	// [optimization] experience_tracking is on (same reasoning as the
+	// action indexer above). overheadTracker is one in-memory instance for
+	// the app's lifetime — its "grew since last time" comparison only needs
+	// to survive within one running process, not across restarts.
+	if a.store != nil {
+		st := a.store
+		overheadTracker := experience.NewOverheadTracker()
+		a.manager.SetRegressionDetector(func(project, sessionName, projectPath, taskDesc string, gates []string, runID int64) (*session.RegressionResult, error) {
+			res, err := experience.DetectRegression(st, overheadTracker, project, sessionName, projectPath, taskDesc, gates, runID)
+			if err != nil || res == nil {
+				return nil, err
+			}
+			return &session.RegressionResult{Factor: res.Factor, Hint: res.Hint}, nil
+		})
+	}
+
 	// Start the control-plane server (no-op when CM_CONTROL disables it).
 	if controlEmitter != nil {
 		srv, err := control.StartFromEnv(ctx, a.manager, a, controlEmitter)

@@ -10,6 +10,7 @@
         todayTokens,
         appStartedAt,
         rateLimitStatus,
+        regressionAlerts,
     } from '../stores/sessions';
     import { costUnit, toggleCostUnit } from '../stores/units';
     import { formatTokens, tokenSplitLabel } from '../lib/formatters';
@@ -59,9 +60,14 @@
     $: uptimeStr = fmtUptime($appStartedAt.getTime(), now);
     $: rlInfo = $rateLimitStatus;
     $: rlUtil = rlInfo ? (rlInfo.utilization ?? rlInfo.Utilization) : undefined;
+    $: regressions = $regressionAlerts.length;
 
     function openQueue() {
         dispatch('openQueue');
+    }
+
+    function openRegressions() {
+        dispatch('openDashboard');
     }
 </script>
 
@@ -89,6 +95,17 @@
     <span class={errors > 0 ? 'text-status-error' : ''}>
         Errors: {errors}
     </span>
+
+    {#if regressions > 0}
+        <button
+            class="text-status-error hover:underline focus:outline-none flex items-center gap-1"
+            on:click={openRegressions}
+            title="Open cost dashboard"
+            type="button">
+            <span>⚠</span>
+            <span>Regressions: {regressions}</span>
+        </button>
+    {/if}
 
     <!--
         Tokens lead, dollars follow. Click switches which one is the headline;
