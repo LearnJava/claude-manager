@@ -154,6 +154,34 @@ func (t *CacheTracker) StartProjectOptimized(ctx context.Context, starts []func(
 	return nil
 }
 
+// CacheAffinityStart pairs one session's start callback with its launch ID.
+// StartProjectOptimized's plain []func() error carries no identity for a
+// callback, which is fine for staggering alone but not for reporting which
+// session actually started in which position once the batch is ordered.
+type CacheAffinityStart struct {
+	ID    string
+	Start func() error
+}
+
+// StartProjectOptimizedOrdered is StartProjectOptimized's ID-aware sibling
+// (LEARN-TASKS.md LN-14): starts run in the given slice order, staggered by
+// the same SessionStartDelay as StartProjectOptimized. The cache-affinity
+// ordering itself — group by launch model, then by descending file overlap
+// with the previous pick — is computed by the caller via
+// experience.OrderByCacheAffinity (internal/experience/affinity.go): this
+// package cannot import internal/experience, since internal/store already
+// imports this package (for OutcomeProvider, LEARN-TASKS.md LN-13) and
+// internal/experience imports internal/store, so the reverse import would
+// cycle. With no reordering applied (starts given in plain config order),
+// this is byte-for-byte StartProjectOptimized (LEARN-TASKS.md invariant 6).
+func (t *CacheTracker) StartProjectOptimizedOrdered(ctx context.Context, starts []CacheAffinityStart) error {
+	fns := make([]func() error, len(starts))
+	for i, s := range starts {
+		fns[i] = s.Start
+	}
+	return t.StartProjectOptimized(ctx, fns)
+}
+
 // startDelay returns the configured per-session stagger delay.
 func (t *CacheTracker) startDelay() time.Duration {
 	if t.cfg == nil || t.cfg.SessionStartDelay <= 0 {

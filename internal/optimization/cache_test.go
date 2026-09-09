@@ -161,6 +161,54 @@ func TestCacheTracker_StartProjectOptimized_PropagatesError(t *testing.T) {
 	}
 }
 
+// TestCacheTracker_StartProjectOptimizedOrdered_RunsInGivenOrder checks the
+// LN-14 sibling: starts run in the given slice order (the actual
+// cache-affinity ordering is computed by the caller — see
+// internal/experience/affinity_test.go), staggered like plain
+// StartProjectOptimized.
+func TestCacheTracker_StartProjectOptimizedOrdered_RunsInGivenOrder(t *testing.T) {
+	tr := NewCacheTracker(&config.OptimizationSettings{SessionStartDelay: 0})
+	var order []string
+	starts := []CacheAffinityStart{
+		{ID: "S3", Start: func() error { order = append(order, "S3"); return nil }},
+		{ID: "S1", Start: func() error { order = append(order, "S1"); return nil }},
+		{ID: "S2", Start: func() error { order = append(order, "S2"); return nil }},
+	}
+	if err := tr.StartProjectOptimizedOrdered(context.Background(), starts); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	want := []string{"S3", "S1", "S2"}
+	if len(order) != len(want) {
+		t.Fatalf("order = %v, want %v", order, want)
+	}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("order = %v, want %v", order, want)
+		}
+	}
+}
+
+// TestCacheTracker_StartProjectOptimizedOrdered_PropagatesError mirrors
+// StartProjectOptimized's own error-propagation test: an error from one
+// start aborts the rest of the batch.
+func TestCacheTracker_StartProjectOptimizedOrdered_PropagatesError(t *testing.T) {
+	tr := NewCacheTracker(&config.OptimizationSettings{SessionStartDelay: 0})
+	boom := errors.New("boom")
+	var calls int32
+	starts := []CacheAffinityStart{
+		{ID: "S1", Start: func() error { atomic.AddInt32(&calls, 1); return nil }},
+		{ID: "S2", Start: func() error { atomic.AddInt32(&calls, 1); return boom }},
+		{ID: "S3", Start: func() error { atomic.AddInt32(&calls, 1); return nil }},
+	}
+	err := tr.StartProjectOptimizedOrdered(context.Background(), starts)
+	if !errors.Is(err, boom) {
+		t.Fatalf("want boom, got %v", err)
+	}
+	if atomic.LoadInt32(&calls) != 2 {
+		t.Fatalf("should stop after error: want 2 calls, got %d", calls)
+	}
+}
+
 func approxEq(a, b float64) bool {
 	d := a - b
 	if d < 0 {

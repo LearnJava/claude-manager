@@ -67,7 +67,7 @@
 
     let runs: SessionRun[] = [];
     let dailyByDate: ({ date: string } & Amount)[] = [];
-    let projectCosts: ({ project: string } & Amount)[] = [];
+    let projectCosts: ({ project: string; cacheRatio: number } & Amount)[] = [];
     let rateLimit: RateLimit | null = null;
 
     // Unit-aware readers, so each chart body stays free of if/else.
@@ -158,21 +158,35 @@
 
             // 3. Per-project totals across the period.
             const projList = $projects;
-            const perProj: ({ project: string } & Amount)[] = [];
+            const perProj: ({ project: string; cacheRatio: number } & Amount)[] = [];
             for (const p of projList) {
                 let cost = 0;
                 let tokens = 0;
+                // Cache-read share for this project/period — LEARN-TASKS.md
+                // LN-14's "before/after" measurement for cache-affinity launch
+                // ordering: same formula as the global "Cache efficiency" tile
+                // (CacheStats.Efficiency, internal/optimization/cache.go),
+                // scoped to one project so its own trend is visible next to
+                // the all-projects figure. Switching the period picker above
+                // is the "before vs. after" comparison — no separate toggle.
+                let cacheRatio = 0;
                 try {
                     cost = Number(await GetProjectCost(p.name, days)) || 0;
                 } catch {
                     /* keep 0 */
                 }
                 try {
-                    tokens = Number(((await GetProjectTokens(p.name, days)) as any)?.total) || 0;
+                    const pt = (await GetProjectTokens(p.name, days)) as any;
+                    tokens = Number(pt?.total) || 0;
+                    const read = Number(pt?.cache_read) || 0;
+                    const creation = Number(pt?.cache_creation) || 0;
+                    const input = Number(pt?.input_tokens) || 0;
+                    const denom = read + creation + input;
+                    cacheRatio = denom > 0 ? read / denom : 0;
                 } catch {
                     /* keep 0 */
                 }
-                perProj.push({ project: p.name, cost, tokens });
+                perProj.push({ project: p.name, cost, tokens, cacheRatio });
             }
             projectCosts = perProj;
 
@@ -454,6 +468,11 @@
                                             title="{formatTokens(row.tokens)} tok · {formatCost(row.cost)}">
                                             {fmtAmount(val)}
                                             <span class="text-text-dim ml-2">({share.toFixed(0)}%)</span>
+                                            <span
+                                                class="text-text-dim ml-2"
+                                                title="Cache-read share for this project — reads / (input + reads + creation). Compare across periods to see the effect of cache-affinity launch ordering (LEARN-TASKS.md LN-14).">
+                                                cache {formatPercent(row.cacheRatio)}
+                                            </span>
                                         </span>
                                     </div>
                                     <div class="h-3 bg-bg-elevated rounded overflow-hidden">
