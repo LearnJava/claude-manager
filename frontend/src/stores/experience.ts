@@ -6,9 +6,12 @@
 
 import {
     AddPermissionRule,
+    ApproveSkill,
+    ArchiveSkill,
     GetActionSamples,
     GetDurationProfile,
     GetPermissionCandidates,
+    GetSkills,
     GetTopActions,
 } from '../../wailsjs/go/main/App';
 
@@ -125,4 +128,75 @@ export async function addPermissionRule(
     decision: string,
 ): Promise<void> {
     await AddPermissionRule(project, session, tool, pattern, decision);
+}
+
+// Skill mirrors store.Skill — one distilled procedure, draft through
+// approved/archived (LEARN-TASKS.md LN-09/10/11). Same PascalCase-from-Go
+// convention as SignatureStat/ActionRow above. ApprovedAt/ArchivedAt are Go
+// *time.Time — null until the corresponding transition happens, so Status is
+// still the cheaper thing to branch on, but these are here for display
+// ("Approved 2026-09-09").
+export interface Skill {
+    ID: number;
+    Project: string;
+    Name: string;
+    Status: string; // draft | approved | archived
+    DraftJSON: string;
+    MD: string;
+    SourceJSON: string;
+    CreatedAt: string;
+    ApprovedAt: string | null;
+    ArchivedAt: string | null;
+}
+
+// SkillDraftStep/SkillDraft mirror analysis.SkillStep/SkillDraft — decoded
+// from Skill.DraftJSON for display (description, when-to-use) without a
+// second round-trip through the CLI.
+export interface SkillDraftStep {
+    command: string;
+    why?: string;
+}
+
+export interface SkillDraft {
+    name: string;
+    description: string;
+    when_to_use?: string[];
+    steps: SkillDraftStep[];
+    gotchas?: string[];
+    done_when: string;
+    files_touched?: string[];
+}
+
+// parseSkillDraft decodes Skill.DraftJSON, returning null on malformed JSON
+// rather than throwing — a display helper must never crash the Skills tab
+// over one bad row.
+export function parseSkillDraft(draftJSON: string): SkillDraft | null {
+    try {
+        return JSON.parse(draftJSON) as SkillDraft;
+    } catch {
+        return null;
+    }
+}
+
+// fetchSkills lists every skill row for a project, newest first — the
+// "Skills" tab's source of truth (LEARN-TASKS.md LN-10).
+export async function fetchSkills(project: string): Promise<Skill[]> {
+    const raw = (await GetSkills(project)) as Skill[] | null;
+    return raw ?? [];
+}
+
+// approveSkill writes md to <project>/.claude/skills/<name>/SKILL.md and
+// marks the row approved, returning the written path. Throws with a message
+// matching /already exists/i (experience.ErrSkillFileExists) when the file
+// is already there and overwrite is false — the caller's cue for the inline
+// "already exists — overwrite?" banner (same convention as
+// PlanReview.svelte's onWriteRoadmap/ErrRoadmapFilesExist).
+export async function approveSkill(id: number, md: string, overwrite: boolean): Promise<string> {
+    return await ApproveSkill(id, md, overwrite);
+}
+
+// archiveSkill marks a skill row archived — never touches any file already
+// written into the project.
+export async function archiveSkill(id: number): Promise<void> {
+    await ArchiveSkill(id);
 }

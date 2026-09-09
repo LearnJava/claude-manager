@@ -120,6 +120,10 @@ claude-manager/
 │   │   │                            #   scored distinctRuns*log(1+rediscoveryChars)*outcomeWeight,
 │   │   │                            #   loop-flagged (ContextLossSuspect) rather than inflated,
 │   │   │                            #   nested-n-gram deduped; feeds LN-09's distiller.
+│   │   ├── skillfiles.go            # LN-10: WriteSkillFile — atomic, never-gitignored write
+│   │   │                            #   of an approved skill to <project>/.claude/skills/
+│   │   │                            #   <name>/SKILL.md; ValidSkillName + a confinedPath-style
+│   │   │                            #   check reject any unsafe name before it touches disk.
 │   │   └── duration.go              # LN-18: DurationProfile — median/p90/max/fail-rate per
 │   │                                #   signature from action_signatures.dur_sec (n>=10 only);
 │   │                                #   durationSection renders the primer's "Command timing"
@@ -144,7 +148,9 @@ claude-manager/
 │   │   └── experience.ts            # LN-03: fetchTopActions/fetchActionSamples wrappers +
 │   │                                #   SignatureStat/ActionRow row types for ExperiencePanel;
 │   │                                #   LN-04: fetchPermissionCandidates/addPermissionRule +
-│   │                                #   PermissionCandidate/CandidateSet types
+│   │                                #   PermissionCandidate/CandidateSet types; LN-10:
+│   │                                #   fetchSkills/approveSkill/archiveSkill + Skill/
+│   │                                #   SkillDraft types for SkillReview.svelte
 │   ├── components/
 │   │   ├── Sidebar.svelte           # Project tree, session indicators, start/stop/delete,
 │   │   │                            #   auto-routing trigger, resizable via drag handle
@@ -177,7 +183,11 @@ claude-manager/
 │   │   ├── ExperiencePanel.svelte   # LN-03: "Experience" modal, "Actions" tab — sortable
 │   │   │                            #   signature table, click a row to load sample calls;
 │   │   │                            #   LN-04: "Permissions" tab — safe/needs-review suggestion
-│   │   │                            #   tables, per-row session picker + "Add rule" button
+│   │   │                            #   tables, per-row session picker + "Add rule" button;
+│   │   │                            #   LN-10: "Skills" tab — mounts SkillReview.svelte
+│   │   ├── SkillReview.svelte       # LN-10: review/edit/accept/archive one project's
+│   │   │                            #   distilled skills — markdown Edit/Preview split
+│   │   │                            #   (PlanReview.svelte style), overwrite-conflict banner
 │   │   └── RateLimitBanner.svelte   # Rate limit countdown banner
 │   └── lib/
 │       ├── formatters.ts            # Log formatting, time, cost, tokens, percent;
@@ -1632,6 +1642,40 @@ frontmatter block even if the truncation point would otherwise land inside it
 — a truncated frontmatter is a broken skill file, a truncated body is merely
 an incomplete one.
 
+**Skill review/approval** (LN-10, `internal/experience/skillfiles.go`,
+`SkillReview.svelte`). Closes the loop LN-09 leaves open: a `status="draft"`
+row sits in SQLite until a human reviews it — nothing between distillation
+and disk is automatic. The "Skills" tab in `ExperiencePanel.svelte`
+(`GetSkills(project)`) lists every row for a project; clicking one opens
+`SkillReview.svelte`'s review/edit panel — a markdown textarea (the same
+Edit/Preview split as `PlanReview.svelte`, rendered through the shared
+`renderMarkdown` + `.md-body`) seeded from the row's own `MD`, since a
+reviewer may fix something before accepting.
+
+**Writing the file** (`experience.WriteSkillFile`) is the mirror of
+`analysis.WriteRoadmapFiles`: atomic (tmp → rename) write to
+`<project>/.claude/skills/<name>/SKILL.md`, never gitignored — unlike the
+auto-saved logs/journal, a skill is meant to be committed and shared. `name`
+is not a parameter of `App.ApproveSkill(id, md, overwrite)` — it is always
+the row's own `Skill.Name`, so an unsafe name (however a draft got one) can
+never be smuggled in through the caller. `experience.ValidSkillName` enforces
+`[a-z0-9-]` and `WriteSkillFile` additionally runs the resolved path through
+a `confinedPath`-style check (mirroring `internal/analysis/roadmapview.go`'s),
+defense in depth even though the name charset alone already excludes `.`/`/`.
+Refuses to overwrite an existing file unless `overwrite` is true
+(`experience.ErrSkillFileExists`), surfaced in `SkillReview.svelte` as the
+same inline "already exists — overwrite?" banner `PlanReview.svelte` uses for
+`ErrRoadmapFilesExist` — never `window.confirm()`.
+
+**Archiving is metadata-only.** `App.ArchiveSkill(id)` sets `status=archived`
+and never touches a file already written into the project — "В архив"
+(LEARN-TASKS.md's own wording) removes the row from the Skills tab's active
+list (`SkillReview.svelte` filters `Status !== 'archived'` client-side over
+the same `ListSkills` rows the tab already fetches, rather than a second
+query shape), it does not delete anything on disk. This is also the landing
+spot for LN-11's later "protuhla" suggestion — proposing archival, never
+auto-archiving.
+
 **Duration profile** (LN-18, `internal/experience/duration.go`). A fresh
 session has no idea how long this project's own slow commands take, and
 finds out the only way it can — by hitting a timeout. The manager already
@@ -1730,6 +1774,9 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetPermissionCandidates(project, days)` | Suggested auto-allow permission rules, split into safe/needs-review — the "Permissions" tab (LEARN-TASKS.md LN-04) |
 | `AddPermissionRule(project, session, tool, pattern, decision)` | Append a `PermissionRule` to one session's config — the Permissions tab's "Add rule" button |
 | `DistillSkill(project, candidate, gates, model, minScore)` | Distill one LN-08 skill candidate into a draft `SKILL.md`, persisted to the `skills` table (status=draft); streams `skill:progress`; returns `analysis.ErrBelowThreshold` below `minScore` (LEARN-TASKS.md LN-09) |
+| `GetSkills(project)` | List every skill row (draft/approved/archived) for a project — the "Skills" tab (LEARN-TASKS.md LN-10) |
+| `ApproveSkill(id, md, overwrite)` | Write a (possibly edited) draft's markdown to `<project>/.claude/skills/<name>/SKILL.md`, mark it approved; returns `experience.ErrSkillFileExists` when the file is already there and `overwrite` is false |
+| `ArchiveSkill(id)` | Mark a skill row archived — never touches any file already written into the project |
 | `GetRateLimitStatus()` | Current rate limit info |
 | `ExportLog(id, entries, format)` | Save log as MD/JSON/TXT via native dialog |
 | `CleanOldLogs(days)` | Delete logs older than N days from SQLite |

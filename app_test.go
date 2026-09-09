@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -509,6 +510,165 @@ func TestClearProjectLogs_RemovesFilesAndDBRows(t *testing.T) {
 
 	if runAfter, err := st.GetRun(run.ID); err != nil || runAfter == nil {
 		t.Errorf("expected session_runs row to survive ClearProjectLogs, err=%v", err)
+	}
+}
+
+// ---- Skills tab bindings (LEARN-TASKS.md LN-10) ----
+
+func newSkillApp(t *testing.T) (*App, *store.Store, string) {
+	t.Helper()
+	dir := t.TempDir()
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	a := &App{
+		cfg: &config.AppConfig{
+			Projects: []config.ProjectConfig{{Name: "lumen", Path: dir}},
+		},
+		store: st,
+	}
+	return a, st, dir
+}
+
+func insertDraftSkill(t *testing.T, st *store.Store, name string) *store.Skill {
+	t.Helper()
+	sk := &store.Skill{
+		Project:    "lumen",
+		Name:       name,
+		Status:     "draft",
+		DraftJSON:  `{"name":"` + name + `"}`,
+		MD:         "---\nname: " + name + "\n---\ndraft body",
+		SourceJSON: `["Bash:git status"]`,
+		CreatedAt:  time.Now().UTC(),
+	}
+	if err := st.InsertSkill(sk); err != nil {
+		t.Fatalf("InsertSkill: %v", err)
+	}
+	return sk
+}
+
+func TestGetSkills(t *testing.T) {
+	a, st, _ := newSkillApp(t)
+	insertDraftSkill(t, st, "git-session-preamble")
+
+	got, err := a.GetSkills("lumen")
+	if err != nil {
+		t.Fatalf("GetSkills: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "git-session-preamble" {
+		t.Fatalf("GetSkills = %+v, want one row named git-session-preamble", got)
+	}
+}
+
+// TestApproveSkill_WritesFileAndMarksApproved is the LN-10 "Готово когда"
+// happy path: accept a draft → the file lands under
+// <project>/.claude/skills/<name>/SKILL.md → the row reflects approved.
+func TestApproveSkill_WritesFileAndMarksApproved(t *testing.T) {
+	a, st, dir := newSkillApp(t)
+	sk := insertDraftSkill(t, st, "git-session-preamble")
+
+	path, err := a.ApproveSkill(sk.ID, "edited body", false)
+	if err != nil {
+		t.Fatalf("ApproveSkill: %v", err)
+	}
+	want := filepath.Join(dir, ".claude", "skills", "git-session-preamble", "SKILL.md")
+	if wantAbs, _ := filepath.Abs(want); path != wantAbs {
+		t.Errorf("path = %q, want %q", path, wantAbs)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != "edited body" {
+		t.Errorf("file content = %q, want the edited body", data)
+	}
+
+	got, err := st.GetSkill(sk.ID)
+	if err != nil {
+		t.Fatalf("GetSkill: %v", err)
+	}
+	if got.Status != "approved" {
+		t.Errorf("Status = %q, want approved", got.Status)
+	}
+	if got.ApprovedAt == nil {
+		t.Error("ApprovedAt is nil after approval")
+	}
+}
+
+// TestApproveSkill_SecondApprovalNeedsOverwrite: re-approving the same skill
+// without overwrite=true must fail and leave the file untouched — the
+// caller's cue to show the inline "already exists — overwrite?" banner.
+func TestApproveSkill_SecondApprovalNeedsOverwrite(t *testing.T) {
+	a, st, _ := newSkillApp(t)
+	sk := insertDraftSkill(t, st, "git-session-preamble")
+
+	if _, err := a.ApproveSkill(sk.ID, "v1", false); err != nil {
+		t.Fatalf("first ApproveSkill: %v", err)
+	}
+	if _, err := a.ApproveSkill(sk.ID, "v2", false); !errors.Is(err, experience.ErrSkillFileExists) {
+		t.Fatalf("second ApproveSkill: err = %v, want ErrSkillFileExists", err)
+	}
+	if _, err := a.ApproveSkill(sk.ID, "v2", true); err != nil {
+		t.Fatalf("ApproveSkill with overwrite=true: %v", err)
+	}
+}
+
+// TestApproveSkill_RejectsUnsafeName is the LN-10 unit test the task calls
+// out explicitly: a row whose Name is not [a-z0-9-] (however it got that
+// way) must never be written to disk.
+func TestApproveSkill_RejectsUnsafeName(t *testing.T) {
+	a, st, _ := newSkillApp(t)
+	sk := insertDraftSkill(t, st, "../evil")
+
+	if _, err := a.ApproveSkill(sk.ID, "body", false); err == nil {
+		t.Fatal("ApproveSkill with unsafe name succeeded, want error")
+	}
+
+	got, err := st.GetSkill(sk.ID)
+	if err != nil {
+		t.Fatalf("GetSkill: %v", err)
+	}
+	if got.Status != "draft" {
+		t.Errorf("Status = %q, want draft (approval must not have taken effect)", got.Status)
+	}
+}
+
+func TestApproveSkill_UnknownID(t *testing.T) {
+	a, _, _ := newSkillApp(t)
+	if _, err := a.ApproveSkill(999, "body", false); err == nil {
+		t.Fatal("ApproveSkill(unknown id) succeeded, want error")
+	}
+}
+
+// TestArchiveSkill_RemovesFromActiveListButKeepsAnyWrittenFile: archiving is
+// metadata-only — it must not touch a file already approved onto disk.
+func TestArchiveSkill_RemovesFromActiveListButKeepsAnyWrittenFile(t *testing.T) {
+	a, st, _ := newSkillApp(t)
+	sk := insertDraftSkill(t, st, "git-session-preamble")
+
+	path, err := a.ApproveSkill(sk.ID, "approved body", false)
+	if err != nil {
+		t.Fatalf("ApproveSkill: %v", err)
+	}
+
+	if err := a.ArchiveSkill(sk.ID); err != nil {
+		t.Fatalf("ArchiveSkill: %v", err)
+	}
+
+	got, err := st.GetSkill(sk.ID)
+	if err != nil {
+		t.Fatalf("GetSkill: %v", err)
+	}
+	if got.Status != "archived" {
+		t.Errorf("Status = %q, want archived", got.Status)
+	}
+	if got.ArchivedAt == nil {
+		t.Error("ArchivedAt is nil after archiving")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("archiving removed the approved file: %v", err)
 	}
 }
 

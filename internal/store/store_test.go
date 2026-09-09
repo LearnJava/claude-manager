@@ -1186,3 +1186,112 @@ func TestGetSkillNotFound(t *testing.T) {
 		t.Errorf("expected nil, got %+v", got)
 	}
 }
+
+// --- skills (LEARN-TASKS.md LN-10) ---
+
+func TestListSkills(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	mk := func(project, name string, at time.Time) *Skill {
+		sk := &Skill{
+			Project: project, Name: name, Status: "draft",
+			DraftJSON: "{}", MD: "body", SourceJSON: "[]", CreatedAt: at,
+		}
+		if err := s.InsertSkill(sk); err != nil {
+			t.Fatalf("InsertSkill: %v", err)
+		}
+		return sk
+	}
+	older := mk("proj", "older-skill", now.Add(-time.Hour))
+	newer := mk("proj", "newer-skill", now)
+	mk("other-proj", "other-skill", now)
+
+	got, err := s.ListSkills("proj")
+	if err != nil {
+		t.Fatalf("ListSkills: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListSkills(proj) = %d rows, want 2: %+v", len(got), got)
+	}
+	// Newest first.
+	if got[0].ID != newer.ID || got[1].ID != older.ID {
+		t.Errorf("ListSkills order = [%d,%d], want [%d,%d]", got[0].ID, got[1].ID, newer.ID, older.ID)
+	}
+
+	empty, err := s.ListSkills("no-such-project")
+	if err != nil {
+		t.Fatalf("ListSkills(missing project): %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("ListSkills(missing project) = %+v, want empty", empty)
+	}
+}
+
+func TestUpdateSkillApproved(t *testing.T) {
+	s := newTestStore(t)
+	sk := &Skill{
+		Project: "proj", Name: "my-skill", Status: "draft",
+		DraftJSON: "{}", MD: "draft body", SourceJSON: "[]", CreatedAt: time.Now().UTC(),
+	}
+	if err := s.InsertSkill(sk); err != nil {
+		t.Fatalf("InsertSkill: %v", err)
+	}
+
+	approvedAt := time.Now().UTC().Truncate(time.Second)
+	if err := s.UpdateSkillApproved(sk.ID, "edited body", approvedAt); err != nil {
+		t.Fatalf("UpdateSkillApproved: %v", err)
+	}
+
+	got, err := s.GetSkill(sk.ID)
+	if err != nil {
+		t.Fatalf("GetSkill: %v", err)
+	}
+	if got.Status != "approved" {
+		t.Errorf("Status = %q, want approved", got.Status)
+	}
+	if got.MD != "edited body" {
+		t.Errorf("MD = %q, want %q", got.MD, "edited body")
+	}
+	if got.ApprovedAt == nil || !got.ApprovedAt.Equal(approvedAt) {
+		t.Errorf("ApprovedAt = %v, want %v", got.ApprovedAt, approvedAt)
+	}
+	if got.ArchivedAt != nil {
+		t.Errorf("ArchivedAt = %v, want nil", got.ArchivedAt)
+	}
+	// DraftJSON is untouched by approval — it stays the original distillation.
+	if got.DraftJSON != "{}" {
+		t.Errorf("DraftJSON was modified: %q", got.DraftJSON)
+	}
+}
+
+func TestUpdateSkillArchived(t *testing.T) {
+	s := newTestStore(t)
+	sk := &Skill{
+		Project: "proj", Name: "my-skill", Status: "draft",
+		DraftJSON: "{}", MD: "body", SourceJSON: "[]", CreatedAt: time.Now().UTC(),
+	}
+	if err := s.InsertSkill(sk); err != nil {
+		t.Fatalf("InsertSkill: %v", err)
+	}
+
+	archivedAt := time.Now().UTC().Truncate(time.Second)
+	if err := s.UpdateSkillArchived(sk.ID, archivedAt); err != nil {
+		t.Fatalf("UpdateSkillArchived: %v", err)
+	}
+
+	got, err := s.GetSkill(sk.ID)
+	if err != nil {
+		t.Fatalf("GetSkill: %v", err)
+	}
+	if got.Status != "archived" {
+		t.Errorf("Status = %q, want archived", got.Status)
+	}
+	if got.ArchivedAt == nil || !got.ArchivedAt.Equal(archivedAt) {
+		t.Errorf("ArchivedAt = %v, want %v", got.ArchivedAt, archivedAt)
+	}
+	// MD is left as whatever it was (archiving a draft never approved).
+	if got.MD != "body" {
+		t.Errorf("MD was modified: %q", got.MD)
+	}
+}

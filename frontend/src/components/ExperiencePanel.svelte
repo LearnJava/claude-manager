@@ -2,6 +2,7 @@
     import { createEventDispatcher, onMount } from 'svelte';
     import { projects } from '../stores/projects';
     import { formatDuration, formatPercent, formatTime, formatTokens } from '../lib/formatters';
+    import SkillReview from './SkillReview.svelte';
     import {
         addPermissionRule,
         fetchActionSamples,
@@ -16,10 +17,11 @@
 
     const dispatch = createEventDispatcher();
 
-    // This modal gains more tabs as later LN items land (LN-06 Journal, ...) —
-    // one modal, not a new one per tab (see LEARN-TASKS.md LN-03 "UI").
-    type Tab = 'actions' | 'permissions' | 'timing';
+    // This modal gains more tabs as later LN items land — one modal, not a
+    // new one per tab (see LEARN-TASKS.md LN-03 "UI").
+    type Tab = 'actions' | 'permissions' | 'timing' | 'skills';
     let tab: Tab = 'actions';
+    let skillReview: SkillReview;
 
     type SortKey = 'sig' | 'count' | 'runs' | 'errors' | 'tokens' | 'last';
 
@@ -288,12 +290,26 @@
                                 : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
                         Timing
                     </button>
+                    <button
+                        type="button"
+                        on:click={() => (tab = 'skills')}
+                        class="px-2 py-1 rounded border
+                            {tab === 'skills'
+                                ? 'bg-bg-elevated border-blue-500 text-text'
+                                : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
+                        Skills
+                    </button>
                 </div>
             </div>
             <div class="flex items-center gap-2">
                 <button
                     type="button"
-                    on:click={() => (tab === 'actions' ? load() : tab === 'permissions' ? loadPermissions() : loadDurations())}
+                    on:click={() => {
+                        if (tab === 'actions') load();
+                        else if (tab === 'permissions') loadPermissions();
+                        else if (tab === 'timing') loadDurations();
+                        else skillReview?.load();
+                    }}
                     class="px-2 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
                     Refresh
                 </button>
@@ -333,7 +349,9 @@
 
         <!-- Body -->
         <div class="flex-1 min-h-0 overflow-y-auto">
-            {#if tab === 'permissions'}
+            {#if tab === 'skills'}
+                <SkillReview bind:this={skillReview} {project} />
+            {:else if tab === 'permissions'}
                 {#if !project}
                     <div class="text-text-muted text-sm italic py-10 text-center">
                         No project configured.
@@ -653,6 +671,9 @@
             {:else if tab === 'timing'}
                 Durations come from action_signatures.dur_sec — the tool_use→tool_result gap in each
                 logged call. A signature needs at least 10 timed calls to appear here.
+            {:else if tab === 'skills'}
+                Click a skill to review/edit its markdown. Accepting writes it to
+                &lt;project&gt;/.claude/skills/&lt;name&gt;/SKILL.md.
             {/if}
         </div>
     </div>
