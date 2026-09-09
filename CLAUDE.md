@@ -131,6 +131,10 @@ claude-manager/
 │   │   │                            #   (unused in the last 20 runs, or no token drop after
 │   │   │                            #   >=5 post-approval runs) as a suggestion, never an
 │   │   │                            #   auto-archive.
+│   │   ├── attribution.go           # LN-12: EstimateTokens (chars/4) + BuildAttributionReport —
+│   │   │                            #   per-signature/per-tool estimated-token cut of
+│   │   │                            #   action_signatures.result_chars, most expensive first;
+│   │   │                            #   the "Cost by tool" tab.
 │   │   └── duration.go              # LN-18: DurationProfile — median/p90/max/fail-rate per
 │   │                                #   signature from action_signatures.dur_sec (n>=10 only);
 │   │                                #   durationSection renders the primer's "Command timing"
@@ -1734,6 +1738,44 @@ a verdict cell ("OK", "Suggest archiving (unused)"/"(no token improvement)",
 or "Not enough data" — which always wins over a stale flag, mirroring the
 backend's "no conclusion" rule).
 
+**Token attribution by tool** (LN-12, `internal/experience/attribution.go`).
+"How much did the session cost" is visible; "which call ate the context" was
+not. Measured against the lumen/tbank corpora: `Read` alone accounts for
+52-62% of all tool-output volume (lumen: 64.7M of 124.4M chars, 11 136 calls,
+~5809 chars ≈ 1450 est. tokens per call on average), with `sed -n` and `grep`
+next — and 197 times in the corpus the model reads a file whole, gets "File
+content exceeds maximum allowed tokens. Use offset and limit", and reads it
+again, which is the first candidate this report makes obvious enough to turn
+into a skill.
+
+`EstimateTokens(chars int) int` is `chars/CharsPerToken` (4) — a documented
+order-of-magnitude approximation, not a precise count (there is no tokenizer
+without hitting the API); `chars<=0` returns 0 so a call whose
+`result_chars` was never captured contributes nothing rather than a garbage
+value. `store.ActionResultChars(project, days)` returns every
+`action_signatures` row's `(sig, tool, result_chars)` for the window,
+*including* the zero-result rows — unlike `ActionDurations`, they still
+happened and must count toward `Count`, they simply add 0 to the token sum
+(the explicit "zero must not break Share" test case LEARN-TASKS.md LN-12
+calls out).
+
+`BuildAttributionReport(st, project, topN)` aggregates those rows into two
+cuts: `BySignature` (most expensive first, capped at `topN`) and `ByTool`
+(never capped — a project only ever uses a handful of tools).
+`TotalEstTokens` — and therefore every row's `Share` — is computed from
+*all* signatures seen in the window before `topN` truncates the reported
+list, so a truncated report's percentages still describe the whole
+project's volume, not just what's shown. Surfaced as
+`App.GetTokenAttribution(project, topN)` → `experience.AttributionReport`,
+rendered by `ExperiencePanel.svelte`'s "Cost by tool" tab (a by-tool summary
+table above the by-signature list), same fixed 90-day window and empty-state
+convention as the "Timing" tab (LN-18) next to it.
+
+Feeds LN-08's `rediscoveryChars` (a candidate's evidence is weighted by how
+many result chars a session would read through to rediscover the pattern on
+its own) and is raw material for LN-16's cost-regression alerts — this task
+does not wire either consumer.
+
 **Duration profile** (LN-18, `internal/experience/duration.go`). A fresh
 session has no idea how long this project's own slow commands take, and
 finds out the only way it can — by hitting a timeout. The manager already
@@ -1829,6 +1871,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetTopActions(project, days)` | Aggregated tool-call signatures for the "Actions" tab (LEARN-TASKS.md LN-03) |
 | `GetActionSamples(project, sig, limit)` | Concrete example rows for one signature — the "Actions" tab's click-through |
 | `GetDurationProfile(project)` | Median/p90/max/fail-rate duration profile per signature — the "Timing" tab (LEARN-TASKS.md LN-18) |
+| `GetTokenAttribution(project, topN)` | Estimated-token attribution by signature (top-N) and by tool — the "Cost by tool" tab (LEARN-TASKS.md LN-12) |
 | `GetPermissionCandidates(project, days)` | Suggested auto-allow permission rules, split into safe/needs-review — the "Permissions" tab (LEARN-TASKS.md LN-04) |
 | `AddPermissionRule(project, session, tool, pattern, decision)` | Append a `PermissionRule` to one session's config — the Permissions tab's "Add rule" button |
 | `DistillSkill(project, candidate, gates, model, minScore)` | Distill one LN-08 skill candidate into a draft `SKILL.md`, persisted to the `skills` table (status=draft); streams `skill:progress`; returns `analysis.ErrBelowThreshold` below `minScore` (LEARN-TASKS.md LN-09) |

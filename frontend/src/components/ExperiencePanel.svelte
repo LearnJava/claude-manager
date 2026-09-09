@@ -8,8 +8,10 @@
         fetchActionSamples,
         fetchDurationProfile,
         fetchPermissionCandidates,
+        fetchTokenAttribution,
         fetchTopActions,
         type ActionRow,
+        type AttributionReport,
         type PermissionCandidate,
         type SignatureDuration,
         type SignatureStat,
@@ -19,7 +21,7 @@
 
     // This modal gains more tabs as later LN items land — one modal, not a
     // new one per tab (see LEARN-TASKS.md LN-03 "UI").
-    type Tab = 'actions' | 'permissions' | 'timing' | 'skills';
+    type Tab = 'actions' | 'permissions' | 'timing' | 'cost' | 'skills';
     let tab: Tab = 'actions';
     let skillReview: SkillReview;
 
@@ -65,6 +67,12 @@
     let durLoading = true;
     let durError = '';
 
+    // Cost by tool tab (LEARN-TASKS.md LN-12) — same fixed-window aggregation
+    // as Timing, no day-range picker.
+    let attribution: AttributionReport = { TotalEstTokens: 0, BySignature: [], ByTool: [] };
+    let costLoading = true;
+    let costError = '';
+
     function rowKey(c: PermissionCandidate): string {
         return `${c.Tool}\0${c.Pattern}`;
     }
@@ -108,6 +116,24 @@
             durations = [];
         } finally {
             durLoading = false;
+        }
+    }
+
+    async function loadAttribution() {
+        if (!project) {
+            attribution = { TotalEstTokens: 0, BySignature: [], ByTool: [] };
+            costLoading = false;
+            return;
+        }
+        costLoading = true;
+        costError = '';
+        try {
+            attribution = await fetchTokenAttribution(project, 30);
+        } catch (e: any) {
+            costError = `Failed to load token attribution: ${e?.message ?? String(e)}`;
+            attribution = { TotalEstTokens: 0, BySignature: [], ByTool: [] };
+        } finally {
+            costLoading = false;
         }
     }
 
@@ -167,6 +193,7 @@
         load();
         loadPermissions();
         loadDurations();
+        loadAttribution();
     }
 
     function compareStats(a: SignatureStat, b: SignatureStat): number {
@@ -292,6 +319,15 @@
                     </button>
                     <button
                         type="button"
+                        on:click={() => (tab = 'cost')}
+                        class="px-2 py-1 rounded border
+                            {tab === 'cost'
+                                ? 'bg-bg-elevated border-blue-500 text-text'
+                                : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
+                        Cost by tool
+                    </button>
+                    <button
+                        type="button"
                         on:click={() => (tab = 'skills')}
                         class="px-2 py-1 rounded border
                             {tab === 'skills'
@@ -308,6 +344,7 @@
                         if (tab === 'actions') load();
                         else if (tab === 'permissions') loadPermissions();
                         else if (tab === 'timing') loadDurations();
+                        else if (tab === 'cost') loadAttribution();
                         else skillReview?.load();
                     }}
                     class="px-2 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
@@ -534,6 +571,96 @@
                         </tbody>
                     </table>
                 {/if}
+            {:else if tab === 'cost'}
+                {#if !project}
+                    <div class="text-text-muted text-sm italic py-10 text-center">
+                        No project configured.
+                    </div>
+                {:else if costLoading}
+                    <div class="text-text-muted text-sm italic py-10 text-center">
+                        Loading token attribution…
+                    </div>
+                {:else if costError}
+                    <div class="text-status-error text-sm py-10 text-center">{costError}</div>
+                {:else if attribution.BySignature.length === 0}
+                    <div class="text-text-muted text-sm italic py-10 text-center">
+                        No recorded tool output for this project yet. Enable
+                        <code class="font-mono">[optimization] experience_tracking</code> to start
+                        collecting it.
+                    </div>
+                {:else}
+                    <div class="px-4 py-3">
+                        <h3 class="text-text text-sm font-medium mb-2">
+                            By tool — {formatTokens(attribution.TotalEstTokens)} est. tokens total
+                        </h3>
+                        <table class="w-full text-sm border-collapse mb-6">
+                            <thead class="bg-bg-elevated text-text-muted text-xs">
+                                <tr>
+                                    <th class="text-left px-3 py-2 font-medium">Tool</th>
+                                    <th class="text-right px-3 py-2 font-medium">Calls</th>
+                                    <th class="text-right px-3 py-2 font-medium">Est. tokens</th>
+                                    <th class="text-right px-3 py-2 font-medium">Share</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {#each attribution.ByTool as t (t.Tool)}
+                                    <tr class="border-t border-bg-border">
+                                        <td class="px-3 py-1.5 text-text font-mono text-xs">{t.Tool}</td>
+                                        <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                            {t.Count}
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                            {formatTokens(t.EstTokens)}
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                            {formatPercent(t.Share)}
+                                        </td>
+                                    </tr>
+                                {/each}
+                            </tbody>
+                        </table>
+
+                        <h3 class="text-text text-sm font-medium mb-2">
+                            Top signatures by estimated cost
+                        </h3>
+                        <table class="w-full text-sm border-collapse">
+                            <thead class="bg-bg-elevated text-text-muted text-xs">
+                                <tr>
+                                    <th class="text-left px-3 py-2 font-medium">Signature</th>
+                                    <th class="text-right px-3 py-2 font-medium">Calls</th>
+                                    <th class="text-right px-3 py-2 font-medium">Est. tokens</th>
+                                    <th class="text-right px-3 py-2 font-medium">Share</th>
+                                    <th class="text-right px-3 py-2 font-medium">Avg chars</th>
+                                    <th class="text-right px-3 py-2 font-medium">Max chars</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {#each attribution.BySignature as row (row.Sig)}
+                                    <tr class="border-t border-bg-border">
+                                        <td class="px-3 py-1.5 text-text font-mono text-xs break-all">
+                                            {row.Sig}
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                            {row.Count}
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                            {formatTokens(row.EstTokens)}
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                            {formatPercent(row.Share)}
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                            {Math.round(row.AvgResultChars)}
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                            {row.MaxResultChars}
+                                        </td>
+                                    </tr>
+                                {/each}
+                            </tbody>
+                        </table>
+                    </div>
+                {/if}
             {:else if !project}
                 <div class="text-text-muted text-sm italic py-10 text-center">
                     No project configured.
@@ -671,6 +798,9 @@
             {:else if tab === 'timing'}
                 Durations come from action_signatures.dur_sec — the tool_use→tool_result gap in each
                 logged call. A signature needs at least 10 timed calls to appear here.
+            {:else if tab === 'cost'}
+                Est. tokens are chars/4, an order-of-magnitude approximation — there is no exact
+                tokenizer without hitting the API.
             {:else if tab === 'skills'}
                 Click a skill to review/edit its markdown. Accepting writes it to
                 &lt;project&gt;/.claude/skills/&lt;name&gt;/SKILL.md.

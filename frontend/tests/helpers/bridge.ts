@@ -169,6 +169,9 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         // GetSkillQuality (LEARN-TASKS.md LN-11) reads from the same store as
         // GetSkills above — same reason, same empty stub.
         GetSkillQuality: () => Promise.resolve([]),
+        // GetTokenAttribution (LEARN-TASKS.md LN-12) reads from the same store
+        // as GetTopActions above — same reason, same empty stub shape.
+        GetTokenAttribution: () => Promise.resolve({ TotalEstTokens: 0, BySignature: [], ByTool: [] }),
       };
 
       (window as typeof window & { go: unknown }).go = { main: { App } };

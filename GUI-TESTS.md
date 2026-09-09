@@ -321,6 +321,20 @@ of relying on a real store.
 
 ---
 
+## ExperiencePanel.svelte — Cost by Tool Tab (LEARN-TASKS.md LN-12)
+
+Same `store=nil` limitation as the Actions tab above: `GetTokenAttribution` is
+stubbed empty in `helpers/bridge.ts` by default, so EXP-23's populated-report
+case overrides the stub via `page.evaluate` (same pattern as EXP-15).
+
+| ID | Title | Steps | Assert | Status |
+|----|-------|-------|--------|--------|
+| EXP-22 | Tab switches, empty state | Click "Cost by tool" tab | Tab highlighted; "No recorded tool output…" names the flag | **✓** |
+| EXP-23 | Attribution report renders | Override `GetTokenAttribution` to return one signature/tool, click Refresh | By-tool summary shows total est. tokens; by-signature row renders with signature, calls, est. tokens (`formatTokens`), share, avg/max chars | **✓** |
+| EXP-24 | Truncated top-N still reflects whole-project Share | Project with more signatures than the reported top-N | `TotalEstTokens`/Share come from every signature seen, not just the reported rows | ○ |
+
+---
+
 ## ExperiencePanel.svelte — Skills Tab (LEARN-TASKS.md LN-10)
 
 Same `store=nil` limitation as the Actions tab above: `GetSkills` is stubbed

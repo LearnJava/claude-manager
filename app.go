@@ -1066,6 +1066,19 @@ func (a *App) GetDurationProfile(project string) ([]experience.SignatureDuration
 	return experience.DurationProfile(a.store, project)
 }
 
+// GetTokenAttribution aggregates action_signatures result sizes for a
+// project into per-signature and per-tool estimated-token attribution — the
+// "Cost by tool" tab of the Experience panel (LEARN-TASKS.md LN-12). Requires
+// [optimization] experience_tracking to have been on for some runs; with it
+// off, the report is simply empty. topN<=0 means no limit on the
+// per-signature cut.
+func (a *App) GetTokenAttribution(project string, topN int) (experience.AttributionReport, error) {
+	if a.store == nil {
+		return experience.AttributionReport{}, fmt.Errorf("no store")
+	}
+	return experience.BuildAttributionReport(a.store, project, topN)
+}
+
 // GetPermissionCandidates aggregates permission_events for a project into
 // suggested auto-allow rules (LEARN-TASKS.md LN-04) — the "Permissions" tab
 // of the Experience panel. Safe are (tool, pattern) pairs that keep asking,

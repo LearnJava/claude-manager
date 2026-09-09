@@ -83,7 +83,7 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-09 | ✓ DONE (2026-09-09) | internal/analysis/skill.go, schema.go, internal/store (skills) |
 | LN-10 | ✓ DONE (2026-09-09) | internal/experience/skillfiles.go, internal/store (ListSkills/UpdateSkillApproved/UpdateSkillArchived), app.go, frontend SkillReview.svelte, ExperiencePanel.svelte |
 | LN-11 | ✓ DONE (2026-09-09) | internal/experience/skillquality.go, internal/store (RunsWithSignature), app.go, frontend SkillReview.svelte |
-| LN-12 | ● IN PROGRESS | internal/experience/attribution.go |
+| LN-12 | ✓ DONE (2026-09-09) | internal/experience/attribution.go |
 | LN-13 | ○ TODO | internal/optimization/routing.go, outcomes.go |
 | LN-14 | ○ TODO | internal/optimization/cache.go, internal/experience/affinity.go |
 | LN-15 | ○ TODO | internal/experience/handoff.go, internal/optimization/context.go |
