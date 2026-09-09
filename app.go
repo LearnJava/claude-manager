@@ -1250,6 +1250,18 @@ func (a *App) ArchiveSkill(id int64) error {
 	return a.store.UpdateSkillArchived(id, time.Now())
 }
 
+// GetSkillQuality measures the before/after-approval effect of every
+// approved skill in project — the "Skills" tab's quality table
+// (LEARN-TASKS.md LN-11). See experience.BuildSkillQualityReport for the
+// comparison and staleness rules; this is a thin store-backed wrapper, same
+// pattern as GetDurationProfile.
+func (a *App) GetSkillQuality(project string) ([]experience.SkillEffect, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no store")
+	}
+	return experience.BuildSkillQualityReport(a.store, project)
+}
+
 // GetProjectLogFiles lists the auto-saved session-log files in
 // <project>/.claude-manager/logs (see "Automatic Log Saving" in CLAUDE.md),
 // newest first — the Settings project-logs panel uses this to show file

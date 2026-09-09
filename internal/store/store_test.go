@@ -770,6 +770,52 @@ func TestInsertActionsEmpty(t *testing.T) {
 	}
 }
 
+func TestRunsWithSignature(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	runA := &SessionRun{Project: "p", Session: "S1", Model: "sonnet", StartedAt: now, Status: "completed"}
+	runB := &SessionRun{Project: "p", Session: "S1", Model: "sonnet", StartedAt: now, Status: "completed"}
+	for _, r := range []*SessionRun{runA, runB} {
+		if err := s.InsertRun(r); err != nil {
+			t.Fatalf("InsertRun: %v", err)
+		}
+	}
+
+	rows := []ActionRow{
+		{Project: "p", Session: "S1", RunID: &runA.ID, StepIndex: 0, Tool: "Bash", Sig: "Bash:git status", Timestamp: now},
+		{Project: "p", Session: "S1", RunID: &runB.ID, StepIndex: 0, Tool: "Read", Sig: "Read:internal/*.go", Timestamp: now},
+		// An imported row (LN-17) has no run_id — it must never be counted,
+		// even though its sig matches.
+		{Project: "p", Session: "S1", RunID: nil, CLISessionID: "cli-x", StepIndex: 0, Tool: "Bash", Sig: "Bash:git status", Timestamp: now},
+	}
+	if err := s.InsertActions(rows); err != nil {
+		t.Fatalf("InsertActions: %v", err)
+	}
+
+	got, err := s.RunsWithSignature("p", []string{"Bash:git status"})
+	if err != nil {
+		t.Fatalf("RunsWithSignature: %v", err)
+	}
+	if !got[runA.ID] {
+		t.Errorf("expected runA in result: %+v", got)
+	}
+	if got[runB.ID] {
+		t.Errorf("runB should not match: %+v", got)
+	}
+	if len(got) != 1 {
+		t.Errorf("expected exactly 1 matching run, got %d: %+v", len(got), got)
+	}
+
+	empty, err := s.RunsWithSignature("p", nil)
+	if err != nil {
+		t.Fatalf("RunsWithSignature(nil sigs): %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("expected empty map for nil sigs, got %+v", empty)
+	}
+}
+
 func TestTopSignatures(t *testing.T) {
 	s := newTestStore(t)
 	now := time.Now().UTC()

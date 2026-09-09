@@ -334,6 +334,7 @@ a no-op success), so every case below overrides the stubs via `page.evaluate`
 | EXP-18 | Draft → edit → Accept | Override `GetSkills` with one draft, expand it, edit the textarea, click Accept | `ApproveSkill(id, editedMd, false)` called; row reloads as "Approved" | **✓** |
 | EXP-19 | Overwrite conflict banner | Accept a skill whose `ApproveSkill` rejects with "already exists", click "Yes, overwrite" | Banner shown first; second call is `ApproveSkill(id, md, true)` | **✓** |
 | EXP-20 | Archive removes from list | Expand a draft, click Archive | `ArchiveSkill(id)` called; row disappears (list re-filters to `Status !== 'archived'`) | **✓** |
+| EXP-21 | Effect table renders verdicts (LN-11) | Override `GetSkillQuality` with an OK row, a stale/no_improvement row and an insufficient-data row, click Refresh | Each row's before/after runs+tokens+turns render; verdict cell shows "OK", "Suggest archiving …" or "Not enough data" respectively — insufficient-data always wins over a stale flag | **✓** |
 
 ---
 

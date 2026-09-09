@@ -1051,6 +1051,47 @@ func (s *Store) ActionDurations(project string, sinceDays int) ([]DurationRow, e
 	return out, rows.Err()
 }
 
+// RunsWithSignature returns the set of session_runs IDs (as a membership
+// map) that have at least one action_signatures row in project whose sig is
+// one of sigs — the "comparable run" filter for skill-effect measurement
+// (LEARN-TASKS.md LN-11: "среди шагов которых есть хотя бы одна сигнатура из
+// source_json"). Rows with a NULL run_id (a bulk-imported log, LN-17) are
+// excluded by the run_id IS NOT NULL filter alone: they have no session_runs
+// row to key into this map by, which is exactly right — LN-11 measures
+// token/turn/status effect from session_runs, and an imported row has none of
+// those to contribute either way. Empty sigs returns an empty map rather than
+// matching everything.
+func (s *Store) RunsWithSignature(project string, sigs []string) (map[int64]bool, error) {
+	out := make(map[int64]bool)
+	if len(sigs) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(sigs))
+	placeholders = placeholders[:len(placeholders)-1]
+	q := fmt.Sprintf(`SELECT DISTINCT run_id FROM action_signatures
+    WHERE project=? AND run_id IS NOT NULL AND sig IN (%s)`, placeholders)
+	args := make([]any, 0, len(sigs)+1)
+	args = append(args, project)
+	for _, sig := range sigs {
+		args = append(args, sig)
+	}
+
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
 // InsertPermissionEvent records one resolved permission request. Unlike
 // InsertActions (batched per ingest pass), permission decisions arrive one at
 // a time from SessionManager.handlePermission/RespondPermission, so this is a

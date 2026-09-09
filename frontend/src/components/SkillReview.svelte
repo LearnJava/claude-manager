@@ -4,14 +4,16 @@
     // (mounted as <SkillReview {project} />) so the review/edit surface — which
     // is meaningfully bigger than the Actions/Permissions/Timing tabs' plain
     // tables — doesn't balloon that file.
-    import { formatTime } from '../lib/formatters';
+    import { formatPercent, formatTime, formatTokens } from '../lib/formatters';
     import { renderMarkdown } from '../lib/markdown';
     import {
         approveSkill,
         archiveSkill,
+        fetchSkillQuality,
         fetchSkills,
         parseSkillDraft,
         type Skill,
+        type SkillEffect,
     } from '../stores/experience';
 
     export let project = '';
@@ -19,6 +21,12 @@
     let skills: Skill[] = [];
     let loading = true;
     let error = '';
+
+    // Before/after-approval effect table (LEARN-TASKS.md LN-11). Loaded
+    // alongside the draft/approved list; a failure here must not hide the
+    // skills list itself, so it gets its own error slot.
+    let quality: SkillEffect[] = [];
+    let qualityError = '';
 
     // Row expansion: clicking a skill opens its review/edit panel. Working
     // copies of the markdown body are kept separately from the loaded row so
@@ -33,6 +41,7 @@
     export async function load() {
         if (!project) {
             skills = [];
+            quality = [];
             loading = false;
             return;
         }
@@ -45,6 +54,13 @@
             skills = [];
         } finally {
             loading = false;
+        }
+        qualityError = '';
+        try {
+            quality = await fetchSkillQuality(project);
+        } catch (e: any) {
+            qualityError = `Failed to load skill quality: ${e?.message ?? String(e)}`;
+            quality = [];
         }
     }
 
@@ -133,12 +149,60 @@
     <div class="text-text-muted text-sm italic py-10 text-center">Loading skills…</div>
 {:else if error}
     <div class="text-status-error text-sm py-10 text-center">{error}</div>
-{:else if activeSkills.length === 0}
+{:else}
+    {#if qualityError}
+        <div class="px-3 py-2 text-status-error text-xs">{qualityError}</div>
+    {:else if quality.length > 0}
+        <div class="border-b border-bg-border">
+            <div class="px-3 pt-2 pb-1 text-xs font-medium text-text-muted">
+                Effect (before vs. after approval — LEARN-TASKS.md LN-11)
+            </div>
+            <table class="w-full text-xs border-collapse mb-2">
+                <thead class="text-text-muted">
+                    <tr>
+                        <th class="text-left px-3 py-1 font-medium">Skill</th>
+                        <th class="text-right px-3 py-1 font-medium">Before (runs / tokens / turns)</th>
+                        <th class="text-right px-3 py-1 font-medium">After (runs / tokens / turns)</th>
+                        <th class="text-left px-3 py-1 font-medium">Verdict</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {#each quality as q (q.skill_id)}
+                        <tr class="border-t border-bg-border">
+                            <td class="px-3 py-1 text-text font-mono">{q.skill_name}</td>
+                            <td class="px-3 py-1 text-right text-text-muted font-mono">
+                                {q.before.runs} / {formatTokens(q.before.median_input_tokens)} / {q.before.median_num_turns}
+                                ({formatPercent(q.before.completed_rate)})
+                            </td>
+                            <td class="px-3 py-1 text-right text-text-muted font-mono">
+                                {q.after.runs} / {formatTokens(q.after.median_input_tokens)} / {q.after.median_num_turns}
+                                ({formatPercent(q.after.completed_rate)})
+                            </td>
+                            <td class="px-3 py-1">
+                                {#if q.insufficient_data}
+                                    <span class="text-text-muted italic">Not enough data</span>
+                                {:else if q.stale}
+                                    <span class="text-status-waiting">
+                                        Suggest archiving
+                                        {q.stale_reason === 'unused' ? '(unused)' : '(no token improvement)'}
+                                    </span>
+                                {:else}
+                                    <span class="text-status-working">OK</span>
+                                {/if}
+                            </td>
+                        </tr>
+                    {/each}
+                </tbody>
+            </table>
+        </div>
+    {/if}
+{/if}
+{#if project && !loading && !error && activeSkills.length === 0}
     <div class="text-text-muted text-sm italic py-10 text-center">
         No distilled skills for this project yet — skills come from LEARN-TASKS.md LN-09
         (candidate mining + distillation), not from this tab.
     </div>
-{:else}
+{:else if project && !loading && !error}
     <table class="w-full text-sm border-collapse">
         <thead class="bg-bg-elevated sticky top-0 z-10 text-text-muted text-xs">
             <tr>

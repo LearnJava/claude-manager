@@ -11,6 +11,7 @@ import {
     GetActionSamples,
     GetDurationProfile,
     GetPermissionCandidates,
+    GetSkillQuality,
     GetSkills,
     GetTopActions,
 } from '../../wailsjs/go/main/App';
@@ -199,4 +200,35 @@ export async function approveSkill(id: number, md: string, overwrite: boolean): 
 // written into the project.
 export async function archiveSkill(id: number): Promise<void> {
     await ArchiveSkill(id);
+}
+
+// SkillStats/SkillEffect mirror experience.SkillStats/SkillEffect — the
+// before/after-approval quality table (LEARN-TASKS.md LN-11). Unlike
+// Skill/SignatureStat above, these Go structs carry explicit json tags (same
+// convention as worker.ModelQuality in stores/workers.ts), so field names
+// arrive snake_case.
+export interface SkillStats {
+    runs: number;
+    median_input_tokens: number;
+    median_num_turns: number;
+    completed_rate: number;
+}
+
+export interface SkillEffect {
+    skill_id: number;
+    skill_name: string;
+    approved_at: string;
+    before: SkillStats;
+    after: SkillStats;
+    insufficient_data: boolean;
+    stale: boolean;
+    stale_reason?: string; // "unused" | "no_improvement"
+}
+
+// fetchSkillQuality measures the before/after-approval effect of every
+// approved skill in a project — the "Skills" tab's quality table
+// (LEARN-TASKS.md LN-11).
+export async function fetchSkillQuality(project: string): Promise<SkillEffect[]> {
+    const raw = (await GetSkillQuality(project)) as SkillEffect[] | null;
+    return raw ?? [];
 }
