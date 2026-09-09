@@ -159,6 +159,13 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         // GetDurationProfile (LEARN-TASKS.md LN-18) reads from the same store
         // as GetTopActions above — same reason, same stub shape.
         GetDurationProfile: () => Promise.resolve([]),
+        // GetSkills/ApproveSkill/ArchiveSkill (LEARN-TASKS.md LN-10) read/write
+        // the same store as GetTopActions above — same reason, same empty stub.
+        // Tests that need a populated Skills tab override GetSkills per-test
+        // (see skills.spec.ts), same pattern as the Permissions/Timing tabs.
+        GetSkills: () => Promise.resolve([]),
+        ApproveSkill: () => Promise.resolve(''),
+        ArchiveSkill: () => Promise.resolve(undefined),
       };
 
       (window as typeof window & { go: unknown }).go = { main: { App } };

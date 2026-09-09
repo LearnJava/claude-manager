@@ -1191,6 +1191,65 @@ func skillDistillInputFromCandidate(c experience.SkillCandidate, gates []string)
 	return in, string(srcJSON), nil
 }
 
+// GetSkills lists every distilled skill for a project — draft, approved and
+// archived alike, newest first — the "Skills" tab's source of truth
+// (LEARN-TASKS.md LN-10). The tab itself decides what to show for each
+// status (a draft gets review buttons, an approved/archived row is
+// read-only).
+func (a *App) GetSkills(project string) ([]store.Skill, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no store")
+	}
+	return a.store.ListSkills(project)
+}
+
+// ApproveSkill writes a draft's (possibly reviewer-edited) markdown to
+// <project>/.claude/skills/<name>/SKILL.md and marks the row approved
+// (LEARN-TASKS.md LN-10). md need not be byte-identical to the skill's
+// stored draft — the reviewer may have fixed something in
+// SkillReview.svelte before accepting. name is fixed to the row's own
+// Skill.Name (not a parameter): the invariant is "an unsafe name can never
+// be written", regardless of what a caller passes, and experience.WriteSkillFile
+// enforces that by construction. Refuses to overwrite an existing file
+// unless overwrite is true (experience.ErrSkillFileExists), so the UI has
+// something to catch for its inline "already exists — overwrite?" banner —
+// window.confirm() is disabled in Wails WebView2.
+func (a *App) ApproveSkill(id int64, md string, overwrite bool) (string, error) {
+	if a.store == nil {
+		return "", fmt.Errorf("no store")
+	}
+	sk, err := a.store.GetSkill(id)
+	if err != nil {
+		return "", err
+	}
+	if sk == nil {
+		return "", fmt.Errorf("skill %d not found", id)
+	}
+	path, err := a.projectPath(sk.Project)
+	if err != nil {
+		return "", err
+	}
+	written, err := experience.WriteSkillFile(path, sk.Name, md, overwrite)
+	if err != nil {
+		return "", err
+	}
+	if err := a.store.UpdateSkillApproved(id, md, time.Now()); err != nil {
+		return "", err
+	}
+	return written, nil
+}
+
+// ArchiveSkill marks a skill row archived — a rejected draft, or later a
+// skill LN-11 proposes as stale (LEARN-TASKS.md LN-10/11). Never touches a
+// file already written into the project; archiving only removes the row
+// from the "Skills" tab's active list.
+func (a *App) ArchiveSkill(id int64) error {
+	if a.store == nil {
+		return fmt.Errorf("no store")
+	}
+	return a.store.UpdateSkillArchived(id, time.Now())
+}
+
 // GetProjectLogFiles lists the auto-saved session-log files in
 // <project>/.claude-manager/logs (see "Automatic Log Saving" in CLAUDE.md),
 // newest first — the Settings project-logs panel uses this to show file

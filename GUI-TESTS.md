@@ -321,6 +321,22 @@ of relying on a real store.
 
 ---
 
+## ExperiencePanel.svelte — Skills Tab (LEARN-TASKS.md LN-10)
+
+Same `store=nil` limitation as the Actions tab above: `GetSkills` is stubbed
+empty in `helpers/bridge.ts` by default (`ApproveSkill`/`ArchiveSkill` stub to
+a no-op success), so every case below overrides the stubs via `page.evaluate`
+(same pattern as EXP-11/EXP-15) — see `frontend/tests/skills.spec.ts`.
+
+| ID | Title | Steps | Assert | Status |
+|----|-------|-------|--------|--------|
+| EXP-17 | Empty state | Click "Skills" tab | "No distilled skills…" points at LN-09 | **✓** |
+| EXP-18 | Draft → edit → Accept | Override `GetSkills` with one draft, expand it, edit the textarea, click Accept | `ApproveSkill(id, editedMd, false)` called; row reloads as "Approved" | **✓** |
+| EXP-19 | Overwrite conflict banner | Accept a skill whose `ApproveSkill` rejects with "already exists", click "Yes, overwrite" | Banner shown first; second call is `ApproveSkill(id, md, true)` | **✓** |
+| EXP-20 | Archive removes from list | Expand a draft, click Archive | `ArchiveSkill(id)` called; row disappears (list re-filters to `Status !== 'archived'`) | **✓** |
+
+---
+
 ## StatusBar.svelte — Footer Metrics
 
 | ID | Title | Steps | Assert | Status |

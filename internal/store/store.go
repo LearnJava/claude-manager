@@ -771,6 +771,51 @@ func (s *Store) GetSkill(id int64) (*Skill, error) {
 	return sk, err
 }
 
+// ListSkills returns every skill row for a project — draft, approved and
+// archived alike, newest first — so the "Skills" tab (LEARN-TASKS.md LN-10)
+// can filter by status client-side (e.g. show an "already approved —
+// overwrite?" banner for a draft whose name collides with an approved one).
+func (s *Store) ListSkills(project string) ([]Skill, error) {
+	const q = `SELECT id, project, name, status, draft_json, md, source_json, created_at, approved_at, archived_at
+	    FROM skills WHERE project=? ORDER BY created_at DESC`
+	rows, err := s.db.Query(q, project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Skill
+	for rows.Next() {
+		sk, err := scanSkill(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *sk)
+	}
+	return out, rows.Err()
+}
+
+// UpdateSkillApproved marks a skill row approved (LEARN-TASKS.md LN-10): md
+// is the reviewed/possibly-edited body actually written to
+// <project>/.claude/skills/<name>/SKILL.md, kept alongside draft_json so a
+// later view of the row shows what was really approved, not the original
+// distillation.
+func (s *Store) UpdateSkillApproved(id int64, md string, approvedAt time.Time) error {
+	const q = `UPDATE skills SET status='approved', md=?, approved_at=? WHERE id=?`
+	_, err := s.db.Exec(q, md, approvedAt, id)
+	return err
+}
+
+// UpdateSkillArchived marks a skill row archived (LEARN-TASKS.md LN-10/11) —
+// a rejected draft or a skill LN-11 later proposes as stale. Does not touch
+// any file already written into the project; archiving only removes the row
+// from the active list.
+func (s *Store) UpdateSkillArchived(id int64, archivedAt time.Time) error {
+	const q = `UPDATE skills SET status='archived', archived_at=? WHERE id=?`
+	_, err := s.db.Exec(q, archivedAt, id)
+	return err
+}
+
 // --- action_signatures / ingest_state (LEARN-TASKS.md LN-02) ---
 
 // InsertActions batch-inserts action rows in a single transaction, mirroring
