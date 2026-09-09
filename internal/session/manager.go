@@ -281,6 +281,12 @@ type SessionManager struct {
 	// defaults to analysis.GenerateJournalEntry (see NewSessionManager).
 	journalAnalyze journalAnalyzeFn
 
+	// handoffFn is nil unless app.go has wired the context-handoff distiller
+	// (LEARN-TASKS.md LN-15); passed through to every new Session's
+	// HandoffFn field, which only calls it when that session's own
+	// ContextHandoff flag is on — see SetHandoffBuilder.
+	handoffFn HandoffFunc
+
 	runtimeRules *permission.RuntimeRuleSet
 	queue        *permission.PendingQueue
 
@@ -372,6 +378,18 @@ func (m *SessionManager) SetPrimerBuilder(fn PrimerFunc) {
 func (m *SessionManager) SetJournalWriter(fn JournalWriteFunc) {
 	m.mu.Lock()
 	m.journalFn = fn
+	m.mu.Unlock()
+}
+
+// SetHandoffBuilder wires the experience-layer context-handoff distiller
+// (LEARN-TASKS.md LN-15). Pass nil to disable it entirely (the zero value —
+// no app.go wiring means a context restart still fires and closes the
+// process, just without a distilled recap). Each Session gets this same
+// function; it only actually runs it when that session's own
+// Config.ContextHandoff flag is on — see checkContextRestart.
+func (m *SessionManager) SetHandoffBuilder(fn HandoffFunc) {
+	m.mu.Lock()
+	m.handoffFn = fn
 	m.mu.Unlock()
 }
 
@@ -494,6 +512,7 @@ func (m *SessionManager) StartSession(project, name string) error {
 	}
 	m.mu.Lock()
 	primerFn := m.primerFn
+	handoffFn := m.handoffFn
 	m.mu.Unlock()
 	sess := New(Params{
 		ID:                id,
@@ -507,6 +526,8 @@ func (m *SessionManager) StartSession(project, name string) error {
 		CrashRecovery:     m.cfg.Settings.CrashRecovery,
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
+		Optimization:      &m.cfg.Optimization,
+		HandoffFn:         handoffFn,
 		OnEvent: func(sid string, ev SessionEvent) {
 			m.onSessionEvent(sid, ev)
 		},
@@ -566,6 +587,7 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 	ms := &managedSession{project: project, name: name}
 	m.mu.Lock()
 	primerFn := m.primerFn
+	handoffFn := m.handoffFn
 	m.mu.Unlock()
 	sess := New(Params{
 		ID:                id,
@@ -579,6 +601,8 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 		CrashRecovery:     m.cfg.Settings.CrashRecovery,
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
+		Optimization:      &m.cfg.Optimization,
+		HandoffFn:         handoffFn,
 		OnEvent:           func(sid string, ev SessionEvent) { m.onSessionEvent(sid, ev) },
 	})
 	ms.session = sess
@@ -772,6 +796,7 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 	ms := &managedSession{project: project, name: name}
 	m.mu.Lock()
 	primerFn := m.primerFn
+	handoffFn := m.handoffFn
 	m.mu.Unlock()
 	sess := New(Params{
 		ID:                id,
@@ -785,6 +810,8 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 		CrashRecovery:     m.cfg.Settings.CrashRecovery,
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
+		Optimization:      &m.cfg.Optimization,
+		HandoffFn:         handoffFn,
 		ResumeSessionID:   resumeID,
 		OnEvent:           func(sid string, ev SessionEvent) { m.onSessionEvent(sid, ev) },
 	})

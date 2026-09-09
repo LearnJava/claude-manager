@@ -210,6 +210,13 @@ type SessionConfig struct {
 	// what the manager already knows (LEARN-TASKS.md LN-05). Off by default;
 	// with it false the prompt is byte-identical to before this flag existed.
 	ContextPrimer bool `toml:"context_primer"`
+
+	// ContextHandoff replaces a context-triggered auto-restart's normal
+	// --resume (which would re-send the very expensive prefix that caused
+	// the restart) with a compact distilled recap sent as the first user
+	// turn of a fresh, non-resumed process (LEARN-TASKS.md LN-15). Off by
+	// default; crash recovery is unaffected — it still always uses --resume.
+	ContextHandoff bool `toml:"context_handoff"`
 }
 
 type PermissionRule struct {

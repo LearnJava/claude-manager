@@ -21,6 +21,7 @@ import (
 	"claude-manager/internal/config"
 	"claude-manager/internal/hooks"
 	"claude-manager/internal/logger"
+	"claude-manager/internal/optimization"
 	"claude-manager/internal/proc"
 
 	"github.com/google/uuid"
@@ -192,6 +193,19 @@ type Params struct {
 	// disables it regardless of Config.ContextPrimer (e.g. app.go wires it
 	// only when a store is open).
 	PrimerFn PrimerFunc
+
+	// Optimization carries the global context-restart thresholds/mode
+	// ([optimization] in config.toml) that drive the mid-run context
+	// monitor (LEARN-TASKS.md LN-15). nil disables the monitor entirely
+	// (Observe always returns ContextEventNone), matching a session started
+	// without a SessionManager behind it (e.g. in unit tests).
+	Optimization *config.OptimizationSettings
+
+	// HandoffFn distills a compact recap of an in-flight task interrupted by
+	// a context restart (LEARN-TASKS.md LN-15); nil disables the handoff
+	// restart path regardless of Config.ContextHandoff (e.g. before app.go
+	// has wired it).
+	HandoffFn HandoffFunc
 }
 
 // PrimerFunc builds the context-primer text prepended to a fresh run's
@@ -201,6 +215,17 @@ type Params struct {
 // internal/experience already imports internal/session for Step/TokenUsage
 // (same reasoning as ActionIndexFunc in manager.go).
 type PrimerFunc func(project, sessionName, projectPath, taskDesc string, gates []string) string
+
+// HandoffFunc distills a compact recap of an in-flight task interrupted by a
+// context-triggered restart (LEARN-TASKS.md LN-15): given the project/session
+// identity, the about-to-be-killed CLI session id (to locate its transcript),
+// the current task pointer and the live TodoWrite state (rendered as plain
+// lines), it returns the text to send as the first user turn of the fresh,
+// non-resumed process. Declared here and consumed by checkContextRestart,
+// wired from app.go to a closure over experience.BuildHandoffInput +
+// analysis.GenerateHandoff — a direct import would cycle, same reasoning as
+// PrimerFunc/JournalWriteFunc.
+type HandoffFunc func(project, sessionName, projectPath, cliSessionID, taskDesc string, todos []string) (string, error)
 
 // Session is a single Claude CLI process managed by a goroutine.
 // All fields are guarded by mu except where noted.
@@ -218,6 +243,8 @@ type Session struct {
 	onEvent           EventCallback
 	gates             []string
 	primerFn          PrimerFunc
+	handoffFn         HandoffFunc
+	contextMonitor    *optimization.ContextMonitor
 
 	mu              sync.Mutex
 	status          config.SessionStatus
@@ -234,12 +261,19 @@ type Session struct {
 	questionTimer   *time.Timer
 
 	// Per-run state.
-	cmd          *exec.Cmd
-	stdinPipe    io.WriteCloser
-	cancelRun    context.CancelFunc
-	rateLimited  atomic.Bool
-	rateLimitInf atomic.Pointer[RateLimitInfo]
-	authErrorHit atomic.Bool
+	cmd               *exec.Cmd
+	stdinPipe         io.WriteCloser
+	cancelRun         context.CancelFunc
+	rateLimited       atomic.Bool
+	rateLimitInf      atomic.Pointer[RateLimitInfo]
+	authErrorHit      atomic.Bool
+	contextRestartHit atomic.Bool
+
+	// pendingHandoff is the distilled recap text (LEARN-TASKS.md LN-15) to
+	// send as the first user turn of the next runOnce call, set by
+	// checkContextRestart just before it kills the current process. Cleared
+	// by initialPromptText once consumed.
+	pendingHandoff string
 
 	// inputCh carries already-marshalled JSON lines that the inputWriter
 	// goroutine writes to stdin. A nil value is a sentinel to flush/exit.
@@ -274,6 +308,15 @@ var errPreHookFailed = errors.New("session: pre_task_hook failed")
 // in stderr. The Run loop pauses for 60 seconds before retrying.
 var errAuthError = errors.New("session: auth error (403)")
 
+// errContextRestart is the internal sentinel signalling that runOnce ended
+// because checkContextRestart deliberately closed stdin (forcing a clean
+// process exit) after a context-restart threshold crossing (LEARN-TASKS.md
+// LN-15, only armed when Config.ContextHandoff is set). The Run loop treats
+// this as neither a completed task nor a retryable error: it rotates the
+// CLI session id and loops again immediately, sending the distilled handoff
+// instead of the session's normal prompt.
+var errContextRestart = errors.New("session: context restart (handoff)")
+
 // New constructs a Session and assigns it a fresh CLI session UUID.
 func New(p Params) *Session {
 	if p.ClaudePath == "" {
@@ -301,6 +344,8 @@ func New(p Params) *Session {
 		onEvent:           p.OnEvent,
 		gates:             p.Gates,
 		primerFn:          p.PrimerFn,
+		handoffFn:         p.HandoffFn,
+		contextMonitor:    optimization.NewContextMonitor(p.Optimization, 0),
 		status:            config.StatusIdle,
 		stateStore:        p.StateStore,
 		crashRecovery:     p.CrashRecovery,
@@ -697,7 +742,8 @@ func (s *Session) Run(ctx context.Context) {
 				s.mu.Lock()
 				s.resumeSessionID = ""
 				s.mu.Unlock()
-				if err != nil && !errors.Is(err, errRateLimited) && !errors.Is(err, errAuthError) {
+				if err != nil && !errors.Is(err, errRateLimited) && !errors.Is(err, errAuthError) &&
+					!errors.Is(err, errContextRestart) {
 					s.emitErr(err)
 				}
 				if s.crashRecovery && s.stateStore != nil {
@@ -761,6 +807,23 @@ func (s *Session) Run(ctx context.Context) {
 				s.setStatus(config.StatusIdle)
 				return
 			}
+		case errors.Is(err, errContextRestart):
+			// The previous process ended cleanly at a turn boundary whose
+			// own context utilization crossed the restart threshold
+			// (LEARN-TASKS.md LN-15, checkContextRestart) — neither a
+			// completed task nor a retryable error. Loop back immediately
+			// (no sleep, no tasksDone bump, no post-task hook): the next
+			// runOnce sends the distilled handoff (initialPromptText) as a
+			// fresh, non-resumed process instead of continuing/resuming the
+			// now-oversized conversation.
+			logger.L.Info("session.run.context_restart", "id", s.ID)
+			if s.crashRecovery && s.stateStore != nil {
+				s.stateStore.Clear(s.ProjectName, s.Config.Name)
+			}
+			s.mu.Lock()
+			s.CLISessionID = uuid.NewString()
+			s.mu.Unlock()
+			continue
 		case err != nil:
 			logger.L.Error("session.run.error", "id", s.ID, "error", err, "retry_delay_sec", s.retryDelay)
 			s.setStatus(config.StatusRetrying)
@@ -1043,6 +1106,7 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	s.rateLimited.Store(false)
 	s.rateLimitInf.Store(nil)
 	s.authErrorHit.Store(false)
+	s.contextRestartHit.Store(false)
 
 	writerDone := make(chan struct{})
 	go func() {
@@ -1077,7 +1141,12 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
-		if s.handleLine(scanner.Text(), autonomous) && autonomous {
+		finished := s.handleLine(scanner.Text(), autonomous)
+		// A context-restart (LEARN-TASKS.md LN-15) must close stdin even for
+		// an interactive session (autonomous==false), which otherwise keeps
+		// the process — and its now-oversized conversation — open waiting
+		// for the next human turn.
+		if (finished && autonomous) || s.contextRestartHit.Load() {
 			closeInput()
 		}
 	}
@@ -1111,6 +1180,10 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	if s.rateLimited.Load() {
 		return errRateLimited
 	}
+	if s.contextRestartHit.Load() {
+		logger.L.Info("session.process_exit.context_restart", "id", s.ID)
+		return errContextRestart
+	}
 	if waitErr != nil {
 		logger.L.Error("session.process_exit", "id", s.ID, "error", waitErr)
 		return fmt.Errorf("claude exited: %w", waitErr)
@@ -1131,6 +1204,8 @@ func (s *Session) initialPromptText(forceInteractive bool) string {
 	s.mu.Lock()
 	recovering := s.resumeSessionID != ""
 	taskDesc := s.taskSourceDesc
+	handoff := s.pendingHandoff
+	s.pendingHandoff = ""
 	s.mu.Unlock()
 
 	if recovering {
@@ -1153,6 +1228,14 @@ func (s *Session) initialPromptText(forceInteractive bool) string {
 			fmt.Fprintf(&b, " The interrupted task was: %s", taskDesc)
 		}
 		return b.String()
+	}
+	// Context handoff (LEARN-TASKS.md LN-15) takes over next: a compact
+	// distilled recap set by checkContextRestart just before the previous
+	// process was closed. Sent as-is, in place of the normal prompt, so the
+	// fresh (non-resumed) process picks the task back up instead of starting
+	// from scratch or blindly repeating the session's own configured prompt.
+	if handoff != "" {
+		return handoff
 	}
 	if forceInteractive {
 		return fmt.Sprintf(
@@ -1289,6 +1372,7 @@ func (s *Session) handleLine(line string, autonomous bool) bool {
 					return false
 				}
 			}
+			s.checkContextRestart(ev.Result)
 			s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
 		}
 		return true
@@ -1315,6 +1399,103 @@ func (s *Session) handleLine(line string, autonomous bool) bool {
 		}
 	}
 	return false
+}
+
+// checkContextRestart evaluates a just-finished turn's own context
+// utilization against the configured restart threshold (LEARN-TASKS.md
+// LN-15). A no-op unless Config.ContextHandoff is set — with it off this
+// never touches contextMonitor/pendingHandoff/contextRestartHit, matching
+// the "flag off -> byte-identical behaviour" invariant.
+//
+// contextWindow is only ever known from a result event's own modelUsage
+// (see CLAUDE.md "Stream-JSON Events" — no per-turn assistant usage carries
+// it), so this can only fire at a turn boundary, never truly mid-turn: the
+// turn that pushes utilization over the threshold still completes normally,
+// and it is the *next* turn (the next human message for an interactive
+// session, or the next task-source attempt for an autonomous one) that gets
+// diverted through a handoff instead of continuing/repeating blind.
+//
+// When the threshold is crossed, it synchronously distills a compact
+// handoff (via handoffFn, if wired — a plain restart with no distilled
+// recap otherwise) and arms contextRestartHit so runOnce's scanner loop
+// closes stdin even for an interactive session that would otherwise keep
+// the now-oversized conversation open waiting for the next human turn.
+func (s *Session) checkContextRestart(res *SessionResult) {
+	if !s.Config.ContextHandoff || res == nil || s.contextMonitor == nil {
+		return
+	}
+	var window int
+	for _, mu := range res.ModelUsage {
+		if mu.ContextWindow > 0 {
+			window = mu.ContextWindow
+			break
+		}
+	}
+	if window <= 0 {
+		return
+	}
+	s.contextMonitor.SetContextWindow(window)
+	ev := s.contextMonitor.Observe(optimization.TokenUsageAdapter{
+		InputTokens:              res.Usage.InputTokens,
+		CacheCreationInputTokens: res.Usage.CacheCreationInputTokens,
+		CacheReadInputTokens:     res.Usage.CacheReadInputTokens,
+	})
+	if ev.Type != optimization.ContextEventRestart {
+		return
+	}
+
+	s.mu.Lock()
+	cliSessionID := s.CLISessionID
+	taskDesc := s.taskSourceDesc
+	todos := formatTodoLines(s.todos)
+	s.mu.Unlock()
+
+	logger.L.Info("session.context_restart.triggered", "id", s.ID, "utilization", ev.Utilization)
+	s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+		Time:   time.Now(),
+		Level:  "system",
+		Source: "manager",
+		Message: fmt.Sprintf(
+			"Context usage reached %.0f%% — restarting with a compact handoff instead of --resume-ing this conversation.",
+			ev.Utilization*100,
+		),
+	}})
+
+	var handoff string
+	if s.handoffFn != nil {
+		h, err := s.handoffFn(s.ProjectName, s.Config.Name, s.ProjectPath, cliSessionID, taskDesc, todos)
+		if err != nil {
+			logger.L.Warn("session.context_restart.handoff_failed", "id", s.ID, "error", err)
+		} else {
+			handoff = h
+		}
+	}
+
+	s.mu.Lock()
+	s.pendingHandoff = handoff
+	s.mu.Unlock()
+	s.contextRestartHit.Store(true)
+}
+
+// formatTodoLines renders the live TodoWrite state as plain checklist lines
+// for the handoff distillation input (LEARN-TASKS.md LN-15) — mirrors
+// currentTaskFromTodos' reading of the same slice.
+func formatTodoLines(todos []TodoItem) []string {
+	if len(todos) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, len(todos))
+	for _, t := range todos {
+		marker := "[ ]"
+		switch t.Status {
+		case "in_progress":
+			marker = "[~]"
+		case "completed":
+			marker = "[x]"
+		}
+		lines = append(lines, marker+" "+t.Content)
+	}
+	return lines
 }
 
 // updateTodos stores Claude's latest TodoWrite list, derives the current task

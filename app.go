@@ -160,6 +160,22 @@ func (a *App) startup(ctx context.Context) {
 		})
 	})
 
+	// Wire the context-handoff distiller (LEARN-TASKS.md LN-15): only ever
+	// called for a session with ContextHandoff=true whose own context
+	// utilization just crossed the restart threshold (checked in
+	// Session.checkContextRestart), so this is safe to wire unconditionally
+	// even for sessions that never opt in.
+	a.manager.SetHandoffBuilder(func(project, sessionName, projectPath, cliSessionID, taskDesc string, todos []string) (string, error) {
+		in := experience.BuildHandoffInput(experience.TranscriptsRoot(), projectPath, cliSessionID, taskDesc, todos)
+		res, err := analysis.GenerateHandoff(context.Background(), projectPath, in, analysis.AnalysisConfig{
+			ClaudePath: a.cfg.Settings.ClaudePath,
+		})
+		if err != nil {
+			return "", err
+		}
+		return experience.RenderHandoffPrompt(res), nil
+	})
+
 	// Start the control-plane server (no-op when CM_CONTROL disables it).
 	if controlEmitter != nil {
 		srv, err := control.StartFromEnv(ctx, a.manager, a, controlEmitter)

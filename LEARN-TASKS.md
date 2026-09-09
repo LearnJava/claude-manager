@@ -86,7 +86,7 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-12 | ✓ DONE (2026-09-09) | internal/experience/attribution.go |
 | LN-13 | ✓ DONE (2026-09-09) | internal/optimization/routing.go, outcomes.go, internal/store/store.go |
 | LN-14 | ✓ DONE (2026-09-09) | internal/optimization/cache.go, internal/experience/affinity.go |
-| LN-15 | ○ TODO | internal/experience/handoff.go, internal/optimization/context.go |
+| LN-15 | ✓ DONE (2026-09-09) | internal/experience/handoff.go, internal/optimization/context.go |
 | LN-16 | ○ TODO | internal/experience/regression.go, CostDashboard.svelte |
 | LN-17 | ✓ DONE (2026-09-08) | internal/experience/mdlog.go, indexer.go (IngestDir), testdata/logfiles/ |
 | LN-18 | ✓ DONE (2026-09-09) | internal/experience/duration.go, primer.go, ExperiencePanel.svelte |

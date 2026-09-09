@@ -29,7 +29,8 @@ claude-manager/
 │   │   │                            #   + ClearSessionState/GetSessionState (crash recovery)
 │   │   ├── session.go               # Session goroutine: bidirectional streaming, CLI args builder,
 │   │   │                            #   task source check (hasTasks), crash recovery (--resume),
-│   │   │                            #   rate-limit fallback restart, auth error (403) handling
+│   │   │                            #   rate-limit fallback restart, auth error (403) handling,
+│   │   │                            #   context-triggered handoff restart (checkContextRestart, LN-15)
 │   │   ├── state.go                 # StateStore: persist session_id to ~/.claude-manager/state/
 │   │   │                            #   for crash recovery; atomic write (tmp → rename)
 │   │   ├── parser.go                # Parse stream-json: assistant, tool_use, result,
@@ -53,6 +54,10 @@ claude-manager/
 │   │   ├── journal.go               # LN-06: GenerateJournalEntry — haiku distillation of one
 │   │   │                            #   completed run (task pointer, files changed, result text)
 │   │   │                            #   into {done, surprises, avoid} for the project journal
+│   │   ├── handoff.go               # LN-15: GenerateHandoff — haiku distillation of an
+│   │   │                            #   in-flight task interrupted by a context restart
+│   │   │                            #   (task pointer, TodoWrite state, recent transcript
+│   │   │                            #   steps) into {done, remaining, decisions, files_changed}
 │   │   ├── skill.go                 # LN-09: DistillSkill — sonnet distillation of one LN-08
 │   │   │                            #   SkillCandidate (+ related failures, gates) into a
 │   │   │                            #   SkillDraft; RenderSkillMarkdown renders the SKILL.md body
@@ -64,7 +69,8 @@ claude-manager/
 │   │   │                            #   tier-ordering/min-runs/cost-threshold rules that decide
 │   │   │                            #   whether a project's own history justifies downgrading
 │   │   │                            #   Route()'s recommendation to a cheaper model
-│   │   ├── context.go               # Context utilization monitor, auto-restart at threshold
+│   │   ├── context.go               # Context utilization monitor, auto-restart at threshold;
+│   │   │                            #   wired into internal/session's run loop by LN-15
 │   │   ├── cache.go                 # Cache efficiency tracking, warming delay between session starts
 │   │   ├── loop.go                  # Loop detection (repeated tool calls, ring buffer)
 │   │   └── reporter.go              # Reporter: aggregates ContextMonitor+CacheTracker+LoopDetector
@@ -144,11 +150,18 @@ claude-manager/
 │   │   │                            #   signature from action_signatures.dur_sec (n>=10 only);
 │   │   │                            #   durationSection renders the primer's "Command timing"
 │   │   │                            #   block (LN-05) and the sleep anti-pattern line.
-│   │   └── affinity.go              # LN-14: OrderByCacheAffinity — cache-friendly session
-│   │                                #   launch order (group by model, then by descending
-│   │                                #   Read/Edit/Write file overlap with the previous pick);
-│   │                                #   LastRunFiles reads the file list from
-│   │                                #   action_signatures. Wired from app.go:StartProject.
+│   │   ├── affinity.go              # LN-14: OrderByCacheAffinity — cache-friendly session
+│   │   │                            #   launch order (group by model, then by descending
+│   │   │                            #   Read/Edit/Write file overlap with the previous pick);
+│   │   │                            #   LastRunFiles reads the file list from
+│   │   │                            #   action_signatures. Wired from app.go:StartProject.
+│   │   └── handoff.go               # LN-15: BuildHandoffInput — reads the tail of an
+│   │                                #   interrupted CLI session's own transcript (LN-01,
+│   │                                #   best-effort) + the live TodoWrite state into
+│   │                                #   analysis.HandoffInput; RenderHandoffPrompt formats
+│   │                                #   the distilled result into the first user turn of the
+│   │                                #   fresh, non-resumed process. Wired via
+│   │                                #   session.HandoffFunc (same cycle reason as PrimerFunc).
 │   ├── store/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs/skills
 │   │   ├── migrations.go            # CREATE TABLE statements, indexes
@@ -1047,7 +1060,7 @@ The crash-recovery state file is cleared on auth errors (not resumable).
 
 ### Token Optimization
 - Context grows with every turn (all messages re-sent). Monitor `usage` in each `assistant` event.
-- Auto-restart session when context > 75% of `contextWindow` (from init event).
+- Auto-restart session when context > 75% of `contextWindow` — opt-in per session via `context_handoff`, since `contextWindow` is only ever known from a `result` event's `modelUsage`, not the init event (see "Context Handoff on Restart" LN-15 below for exactly how/when this fires).
 - Use `--exclude-dynamic-system-prompt-sections` to share system prompt cache across sessions.
 - Stagger session starts by `session_start_delay` seconds for cache warming.
 - Loop detection: if same tool+input appears 3+ times in last 20 calls, alert/hint/restart.
@@ -1126,6 +1139,110 @@ fields it previously discarded — next to the existing (all-projects) "Cache
 efficiency" KPI tile. There is no separate before/after toggle: switching the
 dashboard's existing period picker (today/week/this month) is the comparison,
 the same way it already is for cost and token totals.
+
+### Context Handoff on Restart (LEARN-TASKS.md LN-15)
+
+The "Token Optimization" bullet above ("Auto-restart session when context >
+75% of `contextWindow`") described intended behavior that had never actually
+been wired into the run loop — `optimization.ContextMonitor` existed only as
+a standalone, unit-tested utility. LN-15 is the first thing to actually act
+on a context-restart threshold crossing, and it does so with a **handoff**
+instead of the `--resume` a naive implementation would reach for: `--resume`
+reloads the CLI's full conversation history server-side, which re-inflates
+exactly the expensive prefix that caused the restart in the first place. A
+handoff is a ~paragraph distilled recap (done / remaining / decisions /
+files touched) sent as the first user turn of a fresh, non-resumed process
+instead.
+
+**Flag:** `SessionConfig.ContextHandoff` (`context_handoff`, default false).
+With it off, `checkContextRestart` never touches `contextMonitor`/
+`pendingHandoff`/`contextRestartHit` at all — byte-identical to before this
+feature existed, for every session that hasn't opted in.
+
+**Why detection can only happen at a turn boundary, never truly mid-turn.**
+`ModelUsage.ContextWindow` (the model's actual context size) is only ever
+present on a `result` event's `modelUsage` map — no per-turn `assistant`
+message usage carries it (see "Stream-JSON Events" above), so there is no
+signal to check against *during* a turn, only once it has already finished.
+`Session.checkContextRestart` (`internal/session/session.go`) therefore runs
+in `handleLine`'s `EventResult` case, right before the turn is reported
+finished: it feeds the turn's own usage into a per-`Session` (not
+per-run — it must survive to the *next* process) `optimization.ContextMonitor`
+via `Params.Optimization` (`&AppConfig.Optimization`, threaded through
+`SessionManager`'s three session constructors), and reacts only to
+`ContextEventRestart`. The turn that pushed utilization over the threshold
+still completes normally; it is the *next* turn — the next human message for
+an interactive session, or the next task-source attempt for an autonomous
+one — that gets diverted through a handoff instead of continuing/repeating
+blind.
+
+**Forcing the restart, for both session shapes.** An autonomous session
+(`task_source`/`auto_restart`) already closes stdin on every finished turn
+and starts a fresh process for the next task, so nothing extra is needed
+there. An **interactive** session does not — stdin stays open indefinitely
+for the next human message, which is exactly the case a growing, never-reset
+conversation needs this most. `runOnce`'s scanner loop therefore closes
+stdin on `s.contextRestartHit.Load()` in addition to the existing
+`finished && autonomous` condition, so a context-restart forces the same
+clean-EOF process exit either way — no hard kill, no `cancelRun()`, just the
+same `closeInput()` real Claude CLI already treats as "end this process
+cleanly" (see "Bidirectional Streaming").
+
+**`errContextRestart` is its own `runOnce` outcome**, checked before
+`waitErr` (same precedence as `authErrorHit`/`rateLimited`). `Run()`'s switch
+treats it as neither a completed task (no `tasksDone++`, no post-task hook,
+no `EvtTaskDone`) nor a retryable error (no sleep): it clears any
+crash-recovery state file (a handoff-driven restart must never accidentally
+`--resume` on a later app restart either), rotates `CLISessionID` to a fresh
+UUID, and `continue`s the loop immediately — bypassing the trailing
+`if !s.Config.AutoRestart { return }` check that would otherwise end an
+interactive session's run loop right there, discarding the handoff before it
+could ever be sent.
+
+**Distillation** (`internal/analysis/handoff.go`, `GenerateHandoff` — haiku,
+mirrors `GenerateJournalEntry`/LN-06's shape exactly: `HandoffInput`/
+`HandoffResult`, `BuildHandoffArgs`, `ParseHandoffOutput`,
+`HandoffJSONSchema`/`HandoffSystemPrompt` in `internal/analysis/schema.go`).
+Input is the task pointer, the live TodoWrite state (`formatTodoLines`,
+`[x]`/`[~]`/`[ ]` checklist lines) and the tail of the *interrupted* CLI
+session's own transcript — `internal/experience/handoff.go`'s
+`BuildHandoffInput` locates it via `FindTranscript`/`Read` (LN-01) and keeps
+the last `MaxHandoffSteps` (40) steps via `recentStepLines`. Best-effort: a
+transcript that can't be found (fakeclaude in tests never writes one) simply
+yields no `RecentSteps` rather than failing the whole restart —
+`RenderHandoffPrompt` still produces a usable recap from `done`/`remaining`
+alone, and even with no `HandoffFn` wired at all the restart still happens,
+just without a distilled recap (`initialPromptText` falls through to the
+session's normal prompt).
+
+**Wired like `PrimerFunc`/`JournalWriteFunc`, for the same reason.**
+`internal/experience` already imports `internal/session` (for `Step`), so
+`session.go` cannot call `experience.BuildHandoffInput` directly.
+`session.HandoffFunc` is the indirection (`SessionManager.handoffFn`,
+`SetHandoffBuilder`, threaded into every `New(Params{...})` call site);
+`app.go` wires it to a closure over `experience.BuildHandoffInput` +
+`analysis.GenerateHandoff` + `experience.RenderHandoffPrompt`, called
+synchronously inside `checkContextRestart` (unlike LN-06's fire-and-forget
+journal goroutine, the very next prompt depends on this result, so it must
+block).
+
+**`initialPromptText` priority order:** crash recovery (`resumeSessionID`,
+unchanged — LN-15's invariant is that this path never uses a handoff) →
+pending handoff (consumed and cleared on read) → the "no pending tasks"
+interactive fallback → the normal prompt (+ context primer, LN-05). A
+handoff and crash recovery never actually coincide in practice (the
+context-restart path never sets `resumeSessionID`), but the ordering is
+still enforced explicitly.
+
+Covered by `internal/session/session_contexthandoff_test.go` (the trigger
+logic, the priority ordering, the flag-off no-op), `internal/analysis/
+handoff_test.go` and `internal/experience/handoff_test.go` (the distillation
+pipeline pieces), and the `context-handoff`/`context-handoff-off` e2e
+scenarios (`testdata/e2e/`, reusing the existing `context-growth.json`
+fakeclaude scenario) — with the flag on, `StartSession` produces two
+`session:init` events (a genuine second CLI invocation, each with its own
+fresh `--session-id`, never `--resume`) before settling at `idle`; with it
+off, exactly one.
 
 ### Sidebar Resizing
 The sidebar width is controlled from `App.svelte` via a draggable 4px divider. Width is stored in a reactive variable (150–500px). The `<Sidebar>` component uses `w-full` and fills its parent container.

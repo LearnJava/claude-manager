@@ -158,6 +158,14 @@ path = 'D:\RustProjects\lumen-browser'
   # Off by default.
   context_primer = false
 
+  # Context handoff (LEARN-TASKS.md LN-15): when this session's context usage
+  # crosses optimization.context_restart_threshold (global setting, default
+  # 0.75), send a compact distilled recap as the first user turn of the
+  # fresh process instead of --resume-ing the full (expensive) conversation
+  # history. Off by default; crash recovery is unaffected — it always still
+  # uses --resume.
+  context_handoff = false
+
   # Auto-approve rules evaluated in order; first match wins
   [[project.session.permission_rule]]
   tool = "Bash"

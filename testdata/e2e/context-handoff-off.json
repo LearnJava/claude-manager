@@ -1,0 +1,26 @@
+{
+  "name": "context-handoff-off",
+  "fakeclaude_dir": "testdata/scenarios",
+  "config": "testdata/configs/context-handoff-off.toml",
+  "steps": [
+    {
+      "do": "StartSession",
+      "with": {"project": "lumen", "session": "P1"}
+    },
+    {
+      "wait": "session:init",
+      "match": {"id": "lumen/P1"},
+      "timeout_ms": 8000
+    },
+    {
+      "wait": "session:status",
+      "match": {"id": "lumen/P1", "status": "idle"},
+      "timeout_ms": 8000
+    },
+    {
+      "assert": "GetSession",
+      "with": {"id": "lumen/P1"},
+      "expect": {"tasks_done": 1}
+    }
+  ]
+}

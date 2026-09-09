@@ -234,6 +234,55 @@ Rules:
 - Write in the same language the input material (task pointer, files,
   result text) is written in.`
 
+// HandoffJSONSchema is the structured-output JSON Schema for distilling an
+// in-flight task interrupted by a context restart into a compact recap
+// (LEARN-TASKS.md LN-15): what is already done, what remains, decisions
+// already made (so the fresh session doesn't re-litigate them) and files
+// already touched.
+const HandoffJSONSchema = `{
+  "type": "object",
+  "properties": {
+    "done": {
+      "type": "string",
+      "description": "One or two sentences, past tense: what this run already accomplished before it was interrupted."
+    },
+    "remaining": {
+      "type": "string",
+      "description": "One or two sentences: what is still left to do to finish the task."
+    },
+    "decisions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Concrete choices already made (an approach picked over an alternative, a naming/structure decision) so the fresh session does not re-litigate them. Empty if none were made yet."
+    },
+    "files_changed": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Paths of files already created or modified in this run. Empty if none yet."
+    }
+  },
+  "required": ["done", "remaining"]
+}`
+
+// HandoffSystemPrompt is appended to a handoff-distillation CLI invocation
+// via --append-system-prompt (LEARN-TASKS.md LN-15).
+const HandoffSystemPrompt = `You write a compact handoff for an in-flight Claude Code task that was just
+interrupted because its conversation grew too large for the model's context
+window. A fresh process is about to start on the SAME task with none of the
+interrupted conversation's history — this handoff is the only thing it will
+see instead of that history, so it must be self-contained and short.
+
+Rules:
+- "done": one or two sentences, past tense, naming what already changed.
+- "remaining": one or two sentences naming what is left to finish the task.
+- "decisions": concrete choices already made, so the fresh session does not
+  waste time or tokens re-deciding them ("using sync.Mutex, not channels, for
+  this field" beats "made some design choices"). Empty if none were made yet.
+- "files_changed": exact paths already created or modified. Empty if none yet.
+- Write in the same language the input material (task pointer, TodoWrite
+  state, recent actions) is written in.
+- Never invent progress that is not evidenced by the input material.`
+
 // SkillJSONSchema is the structured-output JSON Schema for distilling one
 // recurring tool-call sequence (LN-08's SkillCandidate) into a skill draft
 // (LEARN-TASKS.md LN-09). `description` is the single most important field:

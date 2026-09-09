@@ -107,6 +107,15 @@ Exercises the auto-restart-on-context-growth path:
 
 Validates `TokenUsage.InputTokens` and `ModelUsage.ContextWindow` extraction.
 
+Also drives the `context-handoff`/`context-handoff-off` e2e scenarios
+(`testdata/e2e/`, LEARN-TASKS.md LN-15): with `context_handoff = true`
+(`testdata/configs/context-handoff.toml`), this same scenario matching the
+session's prompt fires the restart-with-handoff path — `StartSession`
+produces two `session:init` events (a genuine second CLI invocation, each
+with a fresh `--session-id`, never `--resume`) before settling at `idle`;
+with the flag off (`context-handoff-off.toml`), exactly one, matching
+pre-LN-15 behavior.
+
 ---
 
 ### multi-turn.json
