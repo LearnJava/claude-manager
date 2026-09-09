@@ -140,10 +140,15 @@ claude-manager/
 │   │   │                            #   per-signature/per-tool estimated-token cut of
 │   │   │                            #   action_signatures.result_chars, most expensive first;
 │   │   │                            #   the "Cost by tool" tab.
-│   │   └── duration.go              # LN-18: DurationProfile — median/p90/max/fail-rate per
-│   │                                #   signature from action_signatures.dur_sec (n>=10 only);
-│   │                                #   durationSection renders the primer's "Command timing"
-│   │                                #   block (LN-05) and the sleep anti-pattern line.
+│   │   ├── duration.go              # LN-18: DurationProfile — median/p90/max/fail-rate per
+│   │   │                            #   signature from action_signatures.dur_sec (n>=10 only);
+│   │   │                            #   durationSection renders the primer's "Command timing"
+│   │   │                            #   block (LN-05) and the sleep anti-pattern line.
+│   │   └── affinity.go              # LN-14: OrderByCacheAffinity — cache-friendly session
+│   │                                #   launch order (group by model, then by descending
+│   │                                #   Read/Edit/Write file overlap with the previous pick);
+│   │                                #   LastRunFiles reads the file list from
+│   │                                #   action_signatures. Wired from app.go:StartProject.
 │   ├── store/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs/skills
 │   │   ├── migrations.go            # CREATE TABLE statements, indexes
@@ -1069,6 +1074,59 @@ g := r.GlobalReport()
 
 `Snapshot` reads from `ContextMonitor.Utilization()`, `CacheTracker.SessionStats()`, and the internal loop map — all under their respective locks, no extra state.
 
+### Cache-Affinity Launch Order (LEARN-TASKS.md LN-14)
+
+`StartProject`'s plain-config-order start (the bullet above, "stagger session
+starts... for cache warming") staggers *when* sessions start but says nothing
+about *which order* — and order matters for two independent reasons: a model
+switch resets the shared system-prompt cache
+(`--exclude-dynamic-system-prompt-sections` only helps across starts of the
+*same* model), and two sessions about to re-read/edit the same files benefit
+more from starting back to back than staggered apart by an unrelated session.
+
+**Ordering** (`internal/experience/affinity.go`, `OrderByCacheAffinity`):
+groups a project's sessions by launch model, preserving each model's
+first-appearance order in config; within a group, a greedy chain starts at
+the group's first session (input order) and repeatedly appends whichever
+remaining session shares the most files with the one just picked (ties go to
+input order). `LastRunFiles(store, project, session)` supplies the per-session
+file list — Read/Edit/Write args from that session's most recent completed
+run (`action_signatures`, the same table LN-02/LN-03 populate) — unlike
+`primer.go`'s `previousRunFilesSection`, Read counts too: cache affinity cares
+about what a session is likely to touch again, not just what changed.
+
+**No history → unchanged order.** A session with no previous run has an empty
+file list, which has zero overlap with everything; the greedy tie-break then
+always falls back to input order, so a fresh project (or one with
+`experience_tracking` just turned on) reproduces plain config order
+byte-for-byte within each model group — the LN-14 "Готово когда" invariant.
+
+**Wiring** (`app.go:StartProject`/`projectStartOrder`): computes the order
+and, when non-empty, starts sessions one by one via `SessionManager.
+StartSession` (each call already staggered by `reserveStartSlot`/
+`session_start_delay`) instead of delegating to `SessionManager.StartProject`.
+`projectStartOrder` returns `nil` — falling back to the unordered delegate —
+whenever there's nothing to order by: `[optimization] experience_tracking`
+off (default), no store configured (e.g. `cmd/playwright-server`), or an
+unknown project. `internal/optimization/cache.go` gained the analogous
+`CacheAffinityStart`/`StartProjectOptimizedOrdered` (an ID-aware sibling of
+the existing `StartProjectOptimized`) for a caller with an already-computed
+order; `internal/optimization` cannot import `internal/experience` itself
+(`internal/store` already imports `internal/optimization` for
+`OutcomeProvider`, LN-13, so the reverse import would cycle), which is why
+the actual grouping/chaining algorithm lives in `internal/experience` and
+`app.go` is the seam between the two, same pattern as `ActionIndexFunc`/
+`PrimerFunc`.
+
+**Measurement** (LEARN-TASKS.md invariant 5): `CostDashboard.svelte`'s
+per-project row now shows a `cache NN%` figure — `cache_read / (input +
+cache_read + cache_creation)` from the same `GetProjectTokens` call the row
+already made, just reading the `cache_read`/`cache_creation`/`input_tokens`
+fields it previously discarded — next to the existing (all-projects) "Cache
+efficiency" KPI tile. There is no separate before/after toggle: switching the
+dashboard's existing period picker (today/week/this month) is the comparison,
+the same way it already is for cost and token totals.
+
 ### Sidebar Resizing
 The sidebar width is controlled from `App.svelte` via a draggable 4px divider. Width is stored in a reactive variable (150–500px). The `<Sidebar>` component uses `w-full` and fills its parent container.
 
@@ -1891,7 +1949,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `StopSession(id, soft)` | Stop (soft=true finishes current task first) |
 | `RestartSession(id)` | Hard stop + restart |
 | `ResumeSession(id)` | Resume from saved CLI session ID |
-| `StartProject(project)` | Start all sessions in a project |
+| `StartProject(project)` | Start all sessions in a project — in cache-affinity order when `experience_tracking` + a store are on (see "Cache-Affinity Launch Order" LN-14), else plain config order |
 | `StopProject(project)` | Stop all sessions in a project |
 | `StopAll()` | Stop every session |
 | `SendMessage(id, message)` | Write user_message to stdin |

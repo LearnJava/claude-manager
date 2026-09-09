@@ -622,8 +622,55 @@ func (a *App) InitGitRepo(projectPath string) error {
 	return gitutil.EnsureRepoWithCommit(context.Background(), projectPath)
 }
 
+// StartProject launches every configured session in project. When
+// experience tracking is on and a store is configured, sessions launch in
+// cache-affinity order (LEARN-TASKS.md LN-14) instead of plain config order:
+// grouped by launch model first (a model switch resets the shared
+// system-prompt cache, see "Token Optimization" above), then within a group
+// by descending overlap of the files the session's last run touched. With
+// tracking off, no store, or a project with no run history yet,
+// projectStartOrder returns nil and this falls back to plain
+// SessionManager.StartProject unchanged (LEARN-TASKS.md invariant 6).
 func (a *App) StartProject(project string) error {
-	return a.manager.StartProject(project)
+	order := a.projectStartOrder(project)
+	if len(order) == 0 {
+		return a.manager.StartProject(project)
+	}
+	for _, name := range order {
+		if err := a.manager.StartSession(project, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// projectStartOrder computes the LN-14 cache-affinity launch order for
+// project's sessions — see StartProject above. Returns nil when there is
+// nothing to reorder by (tracking off, no store) so the caller's fallback
+// path runs instead.
+func (a *App) projectStartOrder(project string) []string {
+	if a.cfg == nil || !a.cfg.Optimization.ExperienceTracking || a.store == nil {
+		return nil
+	}
+	var sessions []config.SessionConfig
+	for i := range a.cfg.Projects {
+		if a.cfg.Projects[i].Name == project {
+			sessions = a.cfg.Projects[i].Sessions
+			break
+		}
+	}
+	if len(sessions) == 0 {
+		return nil
+	}
+	inputs := make([]experience.SessionAffinityInput, len(sessions))
+	for i, s := range sessions {
+		inputs[i] = experience.SessionAffinityInput{
+			ID:    s.Name,
+			Model: s.Model,
+			Files: experience.LastRunFiles(a.store, project, s.Name),
+		}
+	}
+	return experience.OrderByCacheAffinity(inputs)
 }
 
 func (a *App) StopProject(project string) error {

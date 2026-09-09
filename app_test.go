@@ -431,6 +431,148 @@ func TestGetTopActions_IncludesBulkImportedRows(t *testing.T) {
 	}
 }
 
+// TestProjectStartOrder_TrackingOff: with experience_tracking off (the
+// default), projectStartOrder must return nil regardless of a configured
+// store, so StartProject falls back to plain SessionManager.StartProject
+// unchanged (LEARN-TASKS.md LN-14, invariant 6).
+func TestProjectStartOrder_TrackingOff(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	a := &App{
+		store: st,
+		cfg: &config.AppConfig{
+			Projects: []config.ProjectConfig{{Name: "lumen", Sessions: []config.SessionConfig{
+				{Name: "S1", Model: "sonnet"}, {Name: "S2", Model: "sonnet"},
+			}}},
+		},
+	}
+	if got := a.projectStartOrder("lumen"); got != nil {
+		t.Fatalf("want nil with tracking off, got %v", got)
+	}
+}
+
+// TestProjectStartOrder_NoStore mirrors TrackingOff for the other half of
+// the gate: tracking on but no store configured (e.g. cmd/playwright-server).
+func TestProjectStartOrder_NoStore(t *testing.T) {
+	a := &App{
+		cfg: &config.AppConfig{
+			Optimization: config.OptimizationSettings{ExperienceTracking: true},
+			Projects: []config.ProjectConfig{{Name: "lumen", Sessions: []config.SessionConfig{
+				{Name: "S1", Model: "sonnet"},
+			}}},
+		},
+	}
+	if got := a.projectStartOrder("lumen"); got != nil {
+		t.Fatalf("want nil with no store, got %v", got)
+	}
+}
+
+// TestProjectStartOrder_NoHistoryPreservesConfigOrder: tracking on, store
+// configured, but no run history for any session yet — order must match
+// plain config order byte-for-byte (LEARN-TASKS.md invariant 6).
+func TestProjectStartOrder_NoHistoryPreservesConfigOrder(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	a := &App{
+		store: st,
+		cfg: &config.AppConfig{
+			Optimization: config.OptimizationSettings{ExperienceTracking: true},
+			Projects: []config.ProjectConfig{{Name: "lumen", Sessions: []config.SessionConfig{
+				{Name: "S1", Model: "sonnet"}, {Name: "S2", Model: "sonnet"}, {Name: "S3", Model: "sonnet"},
+			}}},
+		},
+	}
+	got := a.projectStartOrder("lumen")
+	want := []string{"S1", "S2", "S3"}
+	if len(got) != len(want) {
+		t.Fatalf("projectStartOrder = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("projectStartOrder = %v, want %v", got, want)
+		}
+	}
+}
+
+// TestProjectStartOrder_GroupsByModelUsingHistory: with run history recorded
+// for each session, the order groups by model (sonnet before haiku, matching
+// first appearance in config) and orders the sonnet group by descending
+// file overlap with S1.
+func TestProjectStartOrder_GroupsByModelUsingHistory(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	seedRun := func(session string, files []string) {
+		run := &store.SessionRun{Project: "lumen", Session: session, Model: "sonnet", StartedAt: time.Now().UTC(), Status: "completed"}
+		if err := st.InsertRun(run); err != nil {
+			t.Fatalf("InsertRun: %v", err)
+		}
+		var rows []store.ActionRow
+		for i, f := range files {
+			rows = append(rows, store.ActionRow{
+				Project: "lumen", Session: session, RunID: &run.ID, StepIndex: i,
+				Tool: "Edit", Sig: "Edit:*.go", Arg: f, Timestamp: time.Now().UTC(),
+			})
+		}
+		if err := st.InsertActions(rows); err != nil {
+			t.Fatalf("InsertActions: %v", err)
+		}
+	}
+	seedRun("S1", []string{"a.go", "b.go"})
+	seedRun("S2", []string{"a.go", "b.go", "c.go"}) // heavy overlap with S1
+	seedRun("S3", []string{"z.go"})                 // no overlap with S1
+
+	a := &App{
+		store: st,
+		cfg: &config.AppConfig{
+			Optimization: config.OptimizationSettings{ExperienceTracking: true},
+			Projects: []config.ProjectConfig{{Name: "lumen", Sessions: []config.SessionConfig{
+				{Name: "S1", Model: "sonnet"},
+				{Name: "S3", Model: "sonnet"},
+				{Name: "Haiku", Model: "haiku"},
+				{Name: "S2", Model: "sonnet"},
+			}}},
+		},
+	}
+	got := a.projectStartOrder("lumen")
+	want := []string{"S1", "S2", "S3", "Haiku"}
+	if len(got) != len(want) {
+		t.Fatalf("projectStartOrder = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("projectStartOrder = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestProjectStartOrder_UnknownProject(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	a := &App{
+		store: st,
+		cfg: &config.AppConfig{
+			Optimization: config.OptimizationSettings{ExperienceTracking: true},
+			Projects:     []config.ProjectConfig{{Name: "lumen", Sessions: []config.SessionConfig{{Name: "S1"}}}},
+		},
+	}
+	if got := a.projectStartOrder("other"); got != nil {
+		t.Fatalf("want nil for unknown project, got %v", got)
+	}
+}
+
 func TestGetProjectLogFiles(t *testing.T) {
 	dir := t.TempDir()
 	a := &App{cfg: &config.AppConfig{
