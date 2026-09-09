@@ -1051,6 +1051,40 @@ func (s *Store) ActionDurations(project string, sinceDays int) ([]DurationRow, e
 	return out, rows.Err()
 }
 
+// ResultCharsRow is one action_signatures row's result size — the raw sample
+// experience.BuildAttributionReport (LEARN-TASKS.md LN-12) aggregates into
+// per-signature/per-tool token-attribution stats.
+type ResultCharsRow struct {
+	Sig         string
+	Tool        string
+	ResultChars int
+}
+
+// ActionResultChars returns every action_signatures row's (sig, tool,
+// result_chars) for project over the last sinceDays days — including rows
+// with result_chars==0 (no result ever captured), unlike ActionDurations:
+// those calls still happened and must count toward Count, they simply
+// contribute nothing to the token estimate (LEARN-TASKS.md LN-12).
+func (s *Store) ActionResultChars(project string, sinceDays int) ([]ResultCharsRow, error) {
+	const q = `SELECT sig, tool, result_chars FROM action_signatures
+    WHERE project=? AND ts >= datetime('now', ?)`
+	rows, err := s.db.Query(q, project, fmt.Sprintf("-%d days", sinceDays))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []ResultCharsRow
+	for rows.Next() {
+		var r ResultCharsRow
+		if err := rows.Scan(&r.Sig, &r.Tool, &r.ResultChars); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // RunsWithSignature returns the set of session_runs IDs (as a membership
 // map) that have at least one action_signatures row in project whose sig is
 // one of sigs — the "comparable run" filter for skill-effect measurement

@@ -159,6 +159,54 @@ test.describe('Experience panel', () => {
     await expect(modal).not.toBeVisible({ timeout: 3_000 });
   });
 
+  test('Cost by tool tab: empty state, then a populated attribution report', async ({
+    page,
+  }) => {
+    await page.goto('/');
+
+    const experienceBtn = page.getByRole('button', { name: 'Experience' });
+    await expect(experienceBtn).toBeVisible({ timeout: 5_000 });
+    await experienceBtn.click();
+
+    const modal = page.getByRole('dialog');
+    await expect(modal).toBeVisible({ timeout: 3_000 });
+
+    await modal.getByRole('button', { name: 'Cost by tool' }).click();
+
+    // GetTokenAttribution is stubbed empty by default — the tab's own empty
+    // state renders instead of an error.
+    await expect(modal.getByText(/No recorded tool output/i)).toBeVisible({ timeout: 5_000 });
+
+    // Override the stub to return one signature/tool, then reload via Refresh.
+    await page.evaluate(() => {
+      const w = window as any;
+      w.go.main.App.GetTokenAttribution = () =>
+        Promise.resolve({
+          TotalEstTokens: 1000,
+          BySignature: [
+            {
+              Sig: 'Read:src/*.go',
+              Tool: 'Read',
+              Count: 10,
+              EstTokens: 1000,
+              Share: 1,
+              AvgResultChars: 4000,
+              MaxResultChars: 4000,
+            },
+          ],
+          ByTool: [{ Tool: 'Read', Count: 10, EstTokens: 1000, Share: 1 }],
+        });
+    });
+    await modal.getByRole('button', { name: 'Refresh' }).click();
+
+    await expect(modal.getByText('Read:src/*.go')).toBeVisible({ timeout: 5_000 });
+    // formatTokens(1000) -> "1.0k".
+    await expect(modal.getByText(/1\.0k est\. tokens total/i)).toBeVisible();
+
+    await modal.getByRole('button', { name: '✕' }).click();
+    await expect(modal).not.toBeVisible({ timeout: 3_000 });
+  });
+
   test('Settings → Global: toggling Experience layer persists through Save', async ({
     page,
     ctrl,

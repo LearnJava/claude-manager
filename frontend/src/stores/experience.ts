@@ -13,6 +13,7 @@ import {
     GetPermissionCandidates,
     GetSkillQuality,
     GetSkills,
+    GetTokenAttribution,
     GetTopActions,
 } from '../../wailsjs/go/main/App';
 
@@ -85,6 +86,41 @@ export interface SignatureDuration {
 export async function fetchDurationProfile(project: string): Promise<SignatureDuration[]> {
     const raw = (await GetDurationProfile(project)) as SignatureDuration[] | null;
     return raw ?? [];
+}
+
+// SignatureAttribution/ToolAttribution/AttributionReport mirror
+// experience.SignatureAttribution/ToolAttribution/AttributionReport — the
+// "Cost by tool" tab's row shapes (LEARN-TASKS.md LN-12): which normalized
+// call, and which tool, is actually burning a project's context.
+export interface SignatureAttribution {
+    Sig: string;
+    Tool: string;
+    Count: number;
+    EstTokens: number;
+    Share: number;
+    AvgResultChars: number;
+    MaxResultChars: number;
+}
+
+export interface ToolAttribution {
+    Tool: string;
+    Count: number;
+    EstTokens: number;
+    Share: number;
+}
+
+export interface AttributionReport {
+    TotalEstTokens: number;
+    BySignature: SignatureAttribution[];
+    ByTool: ToolAttribution[];
+}
+
+// fetchTokenAttribution aggregates a project's action_signatures result
+// sizes into estimated-token attribution by signature and by tool. topN<=0
+// means no limit on the per-signature cut.
+export async function fetchTokenAttribution(project: string, topN = 0): Promise<AttributionReport> {
+    const raw = (await GetTokenAttribution(project, topN)) as AttributionReport | null;
+    return raw ?? { TotalEstTokens: 0, BySignature: [], ByTool: [] };
 }
 
 // PermissionCandidate is a suggested permission rule mined from repeated
