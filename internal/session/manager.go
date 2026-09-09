@@ -1446,6 +1446,7 @@ func (m *SessionManager) beginRun(ms *managedSession) {
 	ms.pendingLogs = ms.pendingLogs[:0]
 	project, name := ms.project, ms.name
 	model := ms.session.Config.Model
+	effort := ms.session.Config.Effort
 	cliSessionID := ms.session.CLISessionID
 	startedAt := ms.runStartedAt
 	ms.mu.Unlock()
@@ -1455,6 +1456,7 @@ func (m *SessionManager) beginRun(ms *managedSession) {
 		Session:      name,
 		CLISessionID: cliSessionID,
 		Model:        model,
+		Effort:       effort,
 		StartedAt:    startedAt,
 		Status:       "running",
 	}
@@ -1580,6 +1582,7 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg string) {
 	if run.Model == "" {
 		run.Model = ms.session.Config.Model
 	}
+	run.Effort = ms.session.Config.Effort
 	logs := ms.pendingLogs
 	ms.pendingLogs = nil
 	totalCost := ms.totalCostUSD

@@ -279,7 +279,10 @@ func (a *App) GetModelRecommendation(project, name string) (*optimization.ModelR
 		return nil, fmt.Errorf("model routing analysis: %w", err)
 	}
 	router := optimization.NewModelRouter(&a.cfg.Optimization)
-	rec := router.Route(result.RecommendedModel, result.RecommendedEffort,
+	if a.store != nil {
+		router.SetOutcomeProvider(a.store)
+	}
+	rec := router.Route(project, result.RecommendedModel, result.RecommendedEffort,
 		result.Feasibility.EstimatedComplexity)
 	return &rec, nil
 }

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"claude-manager/internal/optimization"
 )
 
 // newTestStore opens a temporary in-memory SQLite store and registers a cleanup
@@ -32,6 +34,7 @@ func TestInsertGetRun(t *testing.T) {
 		Project:   "proj",
 		Session:   "S1",
 		Model:     "sonnet",
+		Effort:    "medium",
 		StartedAt: now,
 		Status:    "completed",
 	}
@@ -49,7 +52,7 @@ func TestInsertGetRun(t *testing.T) {
 	if got == nil {
 		t.Fatal("GetRun returned nil")
 	}
-	if got.Project != "proj" || got.Session != "S1" || got.Model != "sonnet" {
+	if got.Project != "proj" || got.Session != "S1" || got.Model != "sonnet" || got.Effort != "medium" {
 		t.Errorf("unexpected run fields: %+v", got)
 	}
 	if !got.StartedAt.Equal(now) {
@@ -170,6 +173,68 @@ func TestListRuns(t *testing.T) {
 			t.Errorf("ListRuns(%q,%q,%d): got %d runs, want %d",
 				tc.project, tc.session, tc.limit, len(runs), tc.wantCount)
 		}
+	}
+}
+
+func TestOutcomeStats(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC()
+
+	mk := func(project, model, effort, status string, cost float64, turns int) *SessionRun {
+		return &SessionRun{
+			Project: project, Session: "S1", Model: model, Effort: effort,
+			StartedAt: now, FinishedAt: &now, Status: status,
+			TotalCostUSD: cost, NumTurns: turns,
+		}
+	}
+	runs := []*SessionRun{
+		mk("proj", "sonnet", "medium", "completed", 0.05, 10),
+		mk("proj", "sonnet", "medium", "completed", 0.07, 12),
+		mk("proj", "sonnet", "medium", "error", 0.02, 4),
+		mk("proj", "haiku", "low", "completed", 0.01, 3),
+		mk("proj", "other", "", "completed", 0.10, 20), // still running, no finished_at
+	}
+	runs[4].FinishedAt = nil
+	for _, r := range runs {
+		if err := s.InsertRun(r); err != nil {
+			t.Fatalf("InsertRun: %v", err)
+		}
+	}
+
+	stats, err := s.OutcomeStats("proj", optimization.ComplexityStandard)
+	if err != nil {
+		t.Fatalf("OutcomeStats: %v", err)
+	}
+	if len(stats) != 2 {
+		t.Fatalf("len(stats)=%d, want 2 (sonnet/medium, haiku/low) — got %+v", len(stats), stats)
+	}
+
+	var sonnet, haiku *optimization.OutcomeStats
+	for i := range stats {
+		switch stats[i].Model {
+		case "sonnet":
+			sonnet = &stats[i]
+		case "haiku":
+			haiku = &stats[i]
+		}
+	}
+	if sonnet == nil || haiku == nil {
+		t.Fatalf("missing sonnet/haiku in %+v", stats)
+	}
+	if sonnet.Complexity != optimization.ComplexityStandard {
+		t.Errorf("Complexity=%q, want echoed %q", sonnet.Complexity, optimization.ComplexityStandard)
+	}
+	if sonnet.Effort != "medium" || sonnet.Runs != 3 || sonnet.Completed != 2 {
+		t.Errorf("sonnet=%+v, want Effort=medium Runs=3 Completed=2", sonnet)
+	}
+	if haiku.Runs != 1 || haiku.Completed != 1 || haiku.AvgCostUSD != 0.01 {
+		t.Errorf("haiku=%+v, want Runs=1 Completed=1 AvgCostUSD=0.01", haiku)
+	}
+
+	// A project with no finished runs at all reports nothing.
+	empty, err := s.OutcomeStats("nonexistent", optimization.ComplexityStandard)
+	if err != nil || len(empty) != 0 {
+		t.Errorf("OutcomeStats(nonexistent)=%+v, err=%v, want empty/nil", empty, err)
 	}
 }
 

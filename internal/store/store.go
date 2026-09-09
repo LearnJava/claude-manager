@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"claude-manager/internal/optimization"
+
 	// Pure-Go SQLite driver (registers driver name "sqlite"). Unlike
 	// github.com/mattn/go-sqlite3 it needs no cgo/C toolchain, so history and
 	// logs work in a CGO_ENABLED=0 build too.
@@ -32,6 +34,7 @@ type SessionRun struct {
 	CacheCreationTokens int64
 	NumTurns            int
 	DurationMs          int64
+	Effort              string // LEARN-TASKS.md LN-13: set from SessionConfig.Effort at run start
 }
 
 // LogEntry represents a row in session_logs.
@@ -219,7 +222,7 @@ func (s *Store) Close() error {
 
 const selectRunCols = `id, project, session, cli_session_id, model, started_at, finished_at, status,
     tasks_done, exit_code, error_msg, total_cost_usd, input_tokens, output_tokens,
-    cache_read_tokens, cache_creation_tokens, num_turns, duration_ms`
+    cache_read_tokens, cache_creation_tokens, num_turns, duration_ms, effort`
 
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
 type rowScanner interface {
@@ -230,12 +233,14 @@ func scanRun(row rowScanner) (*SessionRun, error) {
 	var r SessionRun
 	var finishedAt sql.NullTime
 	var exitCode sql.NullInt64
+	var effort sql.NullString
 	err := row.Scan(
 		&r.ID, &r.Project, &r.Session, &r.CLISessionID, &r.Model,
 		&r.StartedAt, &finishedAt, &r.Status,
 		&r.TasksDone, &exitCode, &r.ErrorMsg,
 		&r.TotalCostUSD, &r.InputTokens, &r.OutputTokens,
 		&r.CacheReadTokens, &r.CacheCreationTokens, &r.NumTurns, &r.DurationMs,
+		&effort,
 	)
 	if err != nil {
 		return nil, err
@@ -248,6 +253,9 @@ func scanRun(row rowScanner) (*SessionRun, error) {
 		v := int(exitCode.Int64)
 		r.ExitCode = &v
 	}
+	if effort.Valid {
+		r.Effort = effort.String
+	}
 	return &r, nil
 }
 
@@ -256,14 +264,15 @@ func (s *Store) InsertRun(run *SessionRun) error {
 	const q = `INSERT INTO session_runs
     (project, session, cli_session_id, model, started_at, finished_at, status,
      tasks_done, exit_code, error_msg, total_cost_usd, input_tokens, output_tokens,
-     cache_read_tokens, cache_creation_tokens, num_turns, duration_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     cache_read_tokens, cache_creation_tokens, num_turns, duration_ms, effort)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	res, err := s.db.Exec(q,
 		run.Project, run.Session, run.CLISessionID, run.Model,
 		run.StartedAt, nullTime(run.FinishedAt), run.Status,
 		run.TasksDone, nullIntPtr(run.ExitCode), run.ErrorMsg,
 		run.TotalCostUSD, run.InputTokens, run.OutputTokens,
 		run.CacheReadTokens, run.CacheCreationTokens, run.NumTurns, run.DurationMs,
+		nullStr(run.Effort),
 	)
 	if err != nil {
 		return err
@@ -277,12 +286,12 @@ func (s *Store) UpdateRun(run *SessionRun) error {
 	const q = `UPDATE session_runs SET
     finished_at=?, status=?, tasks_done=?, exit_code=?, error_msg=?,
     total_cost_usd=?, input_tokens=?, output_tokens=?, cache_read_tokens=?,
-    cache_creation_tokens=?, num_turns=?, duration_ms=?, model=?
+    cache_creation_tokens=?, num_turns=?, duration_ms=?, model=?, effort=?
 WHERE id=?`
 	_, err := s.db.Exec(q,
 		nullTime(run.FinishedAt), run.Status, run.TasksDone, nullIntPtr(run.ExitCode), run.ErrorMsg,
 		run.TotalCostUSD, run.InputTokens, run.OutputTokens, run.CacheReadTokens,
-		run.CacheCreationTokens, run.NumTurns, run.DurationMs, run.Model,
+		run.CacheCreationTokens, run.NumTurns, run.DurationMs, run.Model, nullStr(run.Effort),
 		run.ID,
 	)
 	return err
@@ -338,6 +347,60 @@ func (s *Store) ListRuns(project, session string, limit int) ([]*SessionRun, err
 		runs = append(runs, r)
 	}
 	return runs, rows.Err()
+}
+
+// OutcomeStats implements optimization.OutcomeProvider for the real app:
+// one row per (model, effort) actually used in the project, aggregated from
+// finished session_runs (LEARN-TASKS.md LN-13).
+//
+// `complexity` is accepted for interface conformance and echoed back onto
+// every returned row as a label, but it does not filter the query:
+// session_runs has no per-run complexity tag. The analyst's
+// estimated_complexity for a given prompt is computed ad hoc by
+// GetModelRecommendation (app.go) and never persisted against the run it
+// eventually starts, and task_plans (the one table that does carry
+// estimated_complexity) has no foreign key into session_runs — a plan
+// executed via ExecutePlan runs through analysis.CLIExecutor's one-shot
+// `claude -p`, not through SessionManager, so it never produces a
+// session_runs row at all (plan_subtasks.session_run_id exists in the schema
+// but is currently always nil). Aggregating per (model, effort) project-wide
+// is the coarser, honest alternative: ModelRouter.Route's own tier-ordering,
+// minimum-run-count and cost-threshold checks are what keep an override safe
+// despite the coarser grain, not this query.
+func (s *Store) OutcomeStats(project string, complexity optimization.Complexity) ([]optimization.OutcomeStats, error) {
+	const q = `SELECT model, effort, COUNT(*),
+    SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END),
+    AVG(total_cost_usd), AVG(num_turns)
+FROM session_runs
+WHERE project=? AND finished_at IS NOT NULL AND model IS NOT NULL AND model != ''
+GROUP BY model, effort`
+	rows, err := s.db.Query(q, project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []optimization.OutcomeStats
+	for rows.Next() {
+		var model string
+		var effort sql.NullString
+		var runs, completed int
+		var avgCost, avgTurns float64
+		if err := rows.Scan(&model, &effort, &runs, &completed, &avgCost, &avgTurns); err != nil {
+			return nil, err
+		}
+		out = append(out, optimization.OutcomeStats{
+			Project:    project,
+			Complexity: complexity,
+			Model:      model,
+			Effort:     effort.String,
+			Runs:       runs,
+			Completed:  completed,
+			AvgCostUSD: avgCost,
+			AvgTurns:   avgTurns,
+		})
+	}
+	return out, rows.Err()
 }
 
 // --- session_logs ---
