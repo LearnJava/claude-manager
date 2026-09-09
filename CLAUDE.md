@@ -58,7 +58,12 @@ claude-manager/
 │   │   │                            #   SkillDraft; RenderSkillMarkdown renders the SKILL.md body
 │   │   └── schema.go                # JSON Schema for analyst structured output + brief output
 │   ├── optimization/
-│   │   ├── routing.go               # ModelRouter: auto model routing by task complexity
+│   │   ├── routing.go               # ModelRouter: auto model routing by task complexity, now
+│   │   │                            #   overridable by measured outcome (LEARN-TASKS.md LN-13)
+│   │   ├── outcomes.go              # LN-13: OutcomeStats/OutcomeProvider + evaluateOutcome — the
+│   │   │                            #   tier-ordering/min-runs/cost-threshold rules that decide
+│   │   │                            #   whether a project's own history justifies downgrading
+│   │   │                            #   Route()'s recommendation to a cheaper model
 │   │   ├── context.go               # Context utilization monitor, auto-restart at threshold
 │   │   ├── cache.go                 # Cache efficiency tracking, warming delay between session starts
 │   │   ├── loop.go                  # Loop detection (repeated tool calls, ring buffer)
@@ -351,6 +356,41 @@ Routing table (`internal/optimization/routing.go`):
 | architectural | opus | high |
 
 If `auto_model_routing = false` (default), clicking ▶ starts the session immediately with the model from config.
+
+**Routing by measured outcome** (LEARN-TASKS.md LN-13,
+`internal/optimization/outcomes.go`). The static table above is a starting
+point, not the last word: `ModelRouter.SetOutcomeProvider` (wired in
+`GetModelRecommendation`, `app.go`, to `*store.Store` when a store is
+configured) lets `Route()` downgrade its table/analyst recommendation to a
+cheaper, lower-tier model when *this project's own history* shows that model
+completing reliably. The override only fires when the candidate has
+`>= MinOutcomeRuns` (5) finished runs, a completed rate `>=
+OutcomeCompletedThreshold` (90%), and a measured average cost below the
+originally recommended model's own — and never for `ComplexityArchitectural`,
+and never to a model the static ladder (`modelTier`: haiku < sonnet < opus)
+doesn't already know is strictly lower than the one being replaced. With no
+provider wired, or `project == ""`, `Route()` is byte-identical to the
+pre-LN-13 table lookup.
+
+`Store.OutcomeStats(project, complexity)` is the real implementation of
+`optimization.OutcomeProvider`: it aggregates finished `session_runs` by
+`(model, effort)` for the project. `effort` is a new additive column on
+`session_runs` (LN-13), filled at run start/finish from the session's own
+`SessionConfig.Effort` — effort is fixed at CLI launch (see "CLI Launch
+Command" above), so it never changes mid-run. `complexity` is accepted for
+interface conformance and echoed onto every returned row as a label, but it
+does **not** filter the query: `session_runs` carries no per-run complexity
+tag. The analyst's `estimated_complexity` for a prompt is computed ad hoc by
+`GetModelRecommendation` and never persisted against the run it eventually
+starts, and `task_plans` (the table that does carry `estimated_complexity`)
+has no foreign key into `session_runs` — a plan executed via `ExecutePlan`
+runs through `analysis.CLIExecutor`'s one-shot `claude -p`, not through
+`SessionManager`, so it never produces a `session_runs` row at all
+(`plan_subtasks.session_run_id` exists in the schema but is currently always
+nil). Aggregating per `(model, effort)` project-wide, complexity-unfiltered,
+is the coarser, honest alternative: `Route()`'s own tier-ordering,
+minimum-run-count and cost-threshold checks are what keep an override safe
+despite the coarser grain, not this query.
 
 ### Task Source Check
 When `stop_when_no_tasks = true` and `task_source` is set, `Run()` checks the file before each iteration using `hasTasks()`. Two formats are supported (mirrors `orchestrator.py has_tasks()`):
@@ -2001,7 +2041,7 @@ claude_path = "build/fakeclaude.exe"
 
 ## SQLite Tables
 
-- `session_runs` — completed runs with cost/tokens/duration/model
+- `session_runs` — completed runs with cost/tokens/duration/model/**effort** (LN-13)
 - `session_logs` — log entries per run (batch insert)
 - `daily_metrics` — aggregated cost/tokens per day per project (input, output, **cache read, cache creation**)
 - `task_plans` — pre-flight analysis plans

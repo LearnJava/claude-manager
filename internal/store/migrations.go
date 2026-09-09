@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS session_runs (
     cache_read_tokens     INTEGER DEFAULT 0,
     cache_creation_tokens INTEGER DEFAULT 0,
     num_turns             INTEGER DEFAULT 0,
-    duration_ms           INTEGER DEFAULT 0
+    duration_ms           INTEGER DEFAULT 0,
+    effort                TEXT
 )`
 
 	sqlCreateSessionLogs = `
@@ -248,6 +249,11 @@ func migrate(db *sql.DB) error {
 		// action_signatures predates the duration profile (LEARN-TASKS.md
 		// LN-18): same additive pattern as above.
 		`ALTER TABLE action_signatures ADD COLUMN dur_sec INTEGER DEFAULT 0`,
+		// session_runs predates outcome-based model routing (LEARN-TASKS.md
+		// LN-13): a run's effort never had anywhere to land, so
+		// optimization.OutcomeStats (internal/store/store.go) had no way to
+		// report it. Same additive pattern as above.
+		`ALTER TABLE session_runs ADD COLUMN effort TEXT`,
 	} {
 		if _, err := db.Exec(col); err != nil {
 			if !strings.Contains(err.Error(), "duplicate column") {
