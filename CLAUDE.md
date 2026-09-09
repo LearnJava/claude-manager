@@ -124,6 +124,13 @@ claude-manager/
 │   │   │                            #   of an approved skill to <project>/.claude/skills/
 │   │   │                            #   <name>/SKILL.md; ValidSkillName + a confinedPath-style
 │   │   │                            #   check reject any unsafe name before it touches disk.
+│   │   ├── skillquality.go          # LN-11: BuildSkillQualityReport — median input-tokens/
+│   │   │                            #   num-turns/completed-rate before vs. after a skill's
+│   │   │                            #   approved_at, restricted to comparable runs (a step
+│   │   │                            #   whose sig is in source_json); flags "protuhla"
+│   │   │                            #   (unused in the last 20 runs, or no token drop after
+│   │   │                            #   >=5 post-approval runs) as a suggestion, never an
+│   │   │                            #   auto-archive.
 │   │   └── duration.go              # LN-18: DurationProfile — median/p90/max/fail-rate per
 │   │                                #   signature from action_signatures.dur_sec (n>=10 only);
 │   │                                #   durationSection renders the primer's "Command timing"
@@ -150,7 +157,9 @@ claude-manager/
 │   │                                #   LN-04: fetchPermissionCandidates/addPermissionRule +
 │   │                                #   PermissionCandidate/CandidateSet types; LN-10:
 │   │                                #   fetchSkills/approveSkill/archiveSkill + Skill/
-│   │                                #   SkillDraft types for SkillReview.svelte
+│   │                                #   SkillDraft types for SkillReview.svelte; LN-11:
+│   │                                #   fetchSkillQuality + SkillEffect/SkillStats types
+│   │                                #   for SkillReview.svelte's effect table
 │   ├── components/
 │   │   ├── Sidebar.svelte           # Project tree, session indicators, start/stop/delete,
 │   │   │                            #   auto-routing trigger, resizable via drag handle
@@ -187,7 +196,10 @@ claude-manager/
 │   │   │                            #   LN-10: "Skills" tab — mounts SkillReview.svelte
 │   │   ├── SkillReview.svelte       # LN-10: review/edit/accept/archive one project's
 │   │   │                            #   distilled skills — markdown Edit/Preview split
-│   │   │                            #   (PlanReview.svelte style), overwrite-conflict banner
+│   │   │                            #   (PlanReview.svelte style), overwrite-conflict banner;
+│   │   │                            #   LN-11: before/after-approval effect table above the
+│   │   │                            #   list, per-row "OK"/"Suggest archiving"/"Not enough
+│   │   │                            #   data" verdict
 │   │   └── RateLimitBanner.svelte   # Rate limit countdown banner
 │   └── lib/
 │       ├── formatters.ts            # Log formatting, time, cost, tokens, percent;
@@ -1673,8 +1685,54 @@ and never touches a file already written into the project — "В архив"
 list (`SkillReview.svelte` filters `Status !== 'archived'` client-side over
 the same `ListSkills` rows the tab already fetches, rather than a second
 query shape), it does not delete anything on disk. This is also the landing
-spot for LN-11's later "protuhla" suggestion — proposing archival, never
+spot for LN-11's "protuhla" suggestion below — proposing archival, never
 auto-archiving.
+
+**Skill effect measurement and staleness** (LN-11,
+`internal/experience/skillquality.go`). The library of distilled skills only
+grows; without a measured effect, nobody can tell whether a given skill is
+actually saving tokens or just permanently taxing every future run's context.
+`BuildSkillQualityReport(store, project)` — structured like
+`worker/quality.go`'s `ModelQuality`, one row per skill — compares runs
+**before** and **after** the skill's `approved_at`, restricted to *comparable*
+runs: those with at least one step whose signature is in the skill's own
+`source_json` (the candidate's mined `Sig` sequence, LN-09). Per side it
+reports the **median** (not mean — LEARN-TASKS.md LN-11 calls out that per-run
+cost is long-tailed, so one outlier run must not dominate the summary) of
+`input_tokens` and `num_turns`, the completed-run rate, and the run count
+itself.
+
+**Imported runs never enter the measurement.** A bulk-imported row (LN-17) has
+`run_id = NULL` and so no `session_runs` row to pull tokens/status from —
+`store.RunsWithSignature` filters on `run_id IS NOT NULL` at the SQL level
+(never relying on a `JOIN` that would silently drop them the same way), so a
+skill whose only pre-approval evidence is imported history reports
+`Before.Runs = 0` rather than a fabricated "before" baseline.
+
+**Explicit "not enough data".** Fewer than `MinSkillEffectRuns` (3) comparable
+runs on either side sets `InsufficientData = true`, and the UI draws no
+conclusion for such a row — no median is meaningful over one or two runs, and
+a false "improved"/"worse" verdict would be worse than no verdict.
+
+**Staleness is a suggestion, never an automatic archive** — `ArchiveSkill`
+(LN-10) stays a human's explicit click either way.
+`evaluateStale` flags a skill in either of two cases: its signatures never
+occurred at all among the project's last `StaleRunWindow` (20) runs
+(`stale_reason = "unused"`), or it has at least `StaleMinRunsAfter` (5)
+post-approval comparable runs whose median input-token cost did not drop
+below the pre-approval median (`stale_reason = "no_improvement"` — requires a
+non-empty "before" side, since there is nothing to say "did not decrease"
+relative to with no baseline at all). "Unused" is checked first: a skill with
+too little data to measure an effect *and* no recent occurrence at all still
+reads as "propose archiving it", the case LN-11's own worked example (a skill
+that never fired) calls out explicitly.
+
+**Surfaced** as `App.GetSkillQuality(project)` → `[]experience.SkillEffect`,
+rendered by `SkillReview.svelte` as a table above the drafts/approved list —
+per-row before/after (runs / median tokens / median turns / completed %) plus
+a verdict cell ("OK", "Suggest archiving (unused)"/"(no token improvement)",
+or "Not enough data" — which always wins over a stale flag, mirroring the
+backend's "no conclusion" rule).
 
 **Duration profile** (LN-18, `internal/experience/duration.go`). A fresh
 session has no idea how long this project's own slow commands take, and
@@ -1777,6 +1835,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetSkills(project)` | List every skill row (draft/approved/archived) for a project — the "Skills" tab (LEARN-TASKS.md LN-10) |
 | `ApproveSkill(id, md, overwrite)` | Write a (possibly edited) draft's markdown to `<project>/.claude/skills/<name>/SKILL.md`, mark it approved; returns `experience.ErrSkillFileExists` when the file is already there and `overwrite` is false |
 | `ArchiveSkill(id)` | Mark a skill row archived — never touches any file already written into the project |
+| `GetSkillQuality(project)` | Before/after-approval effect (median tokens/turns/completed-rate) per approved skill, plus a "protuhla" (stale) suggestion — the Skills tab's effect table (LEARN-TASKS.md LN-11) |
 | `GetRateLimitStatus()` | Current rate limit info |
 | `ExportLog(id, entries, format)` | Save log as MD/JSON/TXT via native dialog |
 | `CleanOldLogs(days)` | Delete logs older than N days from SQLite |

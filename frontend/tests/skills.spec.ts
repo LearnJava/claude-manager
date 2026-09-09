@@ -178,3 +178,55 @@ test.describe('Skills tab', () => {
     await expect(modal.getByText(/No distilled skills/i)).toBeVisible({ timeout: 5_000 });
   });
 });
+
+// LEARN-TASKS.md LN-11 — the before/after-approval effect table.
+test.describe('Skills tab — effect table (LN-11)', () => {
+  test('renders the quality row with its verdict', async ({ page }) => {
+    const modal = await openSkillsTab(page);
+
+    await page.evaluate(() => {
+      const w = window as any;
+      const App = w.go.main.App;
+      App.GetSkillQuality = () =>
+        Promise.resolve([
+          {
+            skill_id: 1,
+            skill_name: 'run-go-tests',
+            approved_at: new Date().toISOString(),
+            before: { runs: 3, median_input_tokens: 11000, median_num_turns: 12, completed_rate: 0.67 },
+            after: { runs: 3, median_input_tokens: 4000, median_num_turns: 5, completed_rate: 1 },
+            insufficient_data: false,
+            stale: false,
+          },
+          {
+            skill_id: 2,
+            skill_name: 'stale-no-improvement',
+            approved_at: new Date().toISOString(),
+            before: { runs: 3, median_input_tokens: 5000, median_num_turns: 8, completed_rate: 1 },
+            after: { runs: 5, median_input_tokens: 6000, median_num_turns: 9, completed_rate: 1 },
+            insufficient_data: false,
+            stale: true,
+            stale_reason: 'no_improvement',
+          },
+          {
+            skill_id: 3,
+            skill_name: 'unused-skill',
+            approved_at: new Date().toISOString(),
+            before: { runs: 0, median_input_tokens: 0, median_num_turns: 0, completed_rate: 0 },
+            after: { runs: 0, median_input_tokens: 0, median_num_turns: 0, completed_rate: 0 },
+            insufficient_data: true,
+            stale: true,
+            stale_reason: 'unused',
+          },
+        ]);
+    });
+    await modal.getByRole('button', { name: 'Refresh' }).click();
+
+    await expect(modal.getByText('run-go-tests')).toBeVisible({ timeout: 5_000 });
+    await expect(modal.getByText('OK', { exact: true })).toBeVisible();
+    await expect(modal.getByText('stale-no-improvement')).toBeVisible();
+    await expect(modal.getByText(/Suggest archiving/i)).toBeVisible();
+    await expect(modal.getByText('unused-skill')).toBeVisible();
+    await expect(modal.getByText(/Not enough data/i)).toBeVisible();
+  });
+});
