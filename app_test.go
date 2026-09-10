@@ -395,6 +395,61 @@ func TestGetActionSamples_NoStore(t *testing.T) {
 	}
 }
 
+func TestGetSkillCandidates_NoStore(t *testing.T) {
+	a := &App{}
+	if _, err := a.GetSkillCandidates("lumen"); err == nil {
+		t.Error("expected error with no store opened")
+	}
+}
+
+// TestGetSkillCandidates_MinesRecurringSequence is the App-level wiring test
+// for GetSkillCandidates: with experience.MineProjectCandidates tested in
+// depth in internal/experience, this only needs to check the Wails entry
+// point actually reaches the store and returns what was mined — the one
+// thing missing before this task, per CLAUDE.md's "Experience Layer" section
+// (LEARN-TASKS.md LN-08's MineCandidates was never wired to anything the UI
+// could call).
+func TestGetSkillCandidates_MinesRecurringSequence(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	a := &App{store: st}
+	now := time.Now().UTC()
+
+	var rows []store.ActionRow
+	for i := 0; i < 3; i++ {
+		r := &store.SessionRun{Project: "lumen", Session: "S1", Model: "sonnet", StartedAt: now, Status: "completed"}
+		if err := st.InsertRun(r); err != nil {
+			t.Fatalf("InsertRun: %v", err)
+		}
+		rows = append(rows,
+			store.ActionRow{Project: "lumen", Session: "S1", RunID: &r.ID, StepIndex: 0, Tool: "Bash",
+				Sig: "Bash:git status", Arg: "git status", Timestamp: now},
+			store.ActionRow{Project: "lumen", Session: "S1", RunID: &r.ID, StepIndex: 1, Tool: "Bash",
+				Sig: "Bash:git add <ARG>", Arg: "git add -A", Timestamp: now},
+		)
+	}
+	if err := st.InsertActions(rows); err != nil {
+		t.Fatalf("InsertActions: %v", err)
+	}
+
+	cands, err := a.GetSkillCandidates("lumen")
+	if err != nil {
+		t.Fatalf("GetSkillCandidates: %v", err)
+	}
+	found := false
+	for _, c := range cands {
+		if len(c.Sig) == 2 && c.Sig[0] == "Bash:git status" && c.Sig[1] == "Bash:git add <ARG>" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected the recurring 2-gram among candidates, got %+v", cands)
+	}
+}
+
 // TestGetTopActions_IncludesBulkImportedRows: a row with RunID == nil (from
 // IngestDir's bulk import, LEARN-TASKS.md LN-17) must still show up in
 // GetTopActions — the "Actions" tab must not silently drop imported history

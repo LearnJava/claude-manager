@@ -1875,6 +1875,29 @@ pointer in LN-09's prompt, not a correctness requirement.
 (LN-02 → LN-07/08) has been building toward: a recurring pattern becomes a
 procedure a future session loads on demand instead of rediscovering.
 
+**`GetSkillCandidates(project)` is what actually produces a `SkillCandidate`
+to feed `DistillSkill` — until this was wired, LN-08's `MineCandidates` was
+reachable from nothing.** `App.GetSkillCandidates` →
+`experience.MineProjectCandidates` (`internal/experience/candidate.go`) loads
+a project's last `candidateWindowDays` (90) days of `action_signatures` via
+`Store.ActionRowsForCandidates` (a `LEFT JOIN session_runs` so each row
+carries its own run's `status`, empty for a bulk-imported row exactly as
+`outcomeWeight`'s default case expects), folds them into `CandidateRun`s via
+`BuildCandidateRuns` (grouping by the same `COALESCE(run_id,
+cli_session_id)` key LN-07's `actionRunKey` already uses), mines LN-07
+failure clusters from the same rows for `RelatedFailures`, and calls
+`MineCandidates`. The "Candidates" section of `SkillReview.svelte` (above the
+draft/approved list) renders the result with a per-row "Distill" button and a
+model `<select>` — clicking it calls `DistillSkill` with that exact candidate,
+the project's own `Gates` (read via `GetConfig`), and `minScore=0` (the
+backend's own `DefaultSkillMinScore` default). A `below distillation
+threshold` error is shown inline on that row rather than as a generic
+failure. Nothing here persists the mined list — it is recomputed on every
+Skills-tab load, so a candidate stays offered until either enough runs erode
+its score/share below threshold or someone distills it (which does not
+remove it from the list — the recurring pattern may still be worth
+re-mining once more history accumulates).
+
 **Decoupled from `internal/experience` by construction, not by convention.**
 `internal/experience` already imports `internal/session` (for `Step`/
 `TokenUsage`), so `SessionManager.DistillSkill` — which must exist to stream
@@ -2204,6 +2227,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetTokenAttribution(project, topN)` | Estimated-token attribution by signature (top-N) and by tool — the "Cost by tool" tab (LEARN-TASKS.md LN-12) |
 | `GetPermissionCandidates(project, days)` | Suggested auto-allow permission rules, split into safe/needs-review — the "Permissions" tab (LEARN-TASKS.md LN-04) |
 | `AddPermissionRule(project, session, tool, pattern, decision)` | Append a `PermissionRule` to one session's config — the Permissions tab's "Add rule" button |
+| `GetSkillCandidates(project)` | Mine a project's recent `action_signatures` into ranked skill candidates — the Skills tab's "Candidates" list, and the only source of an `experience.SkillCandidate` to pass to `DistillSkill` below (LEARN-TASKS.md LN-08) |
 | `DistillSkill(project, candidate, gates, model, minScore)` | Distill one LN-08 skill candidate into a draft `SKILL.md`, persisted to the `skills` table (status=draft); streams `skill:progress`; returns `analysis.ErrBelowThreshold` below `minScore` (LEARN-TASKS.md LN-09) |
 | `GetSkills(project)` | List every skill row (draft/approved/archived) for a project — the "Skills" tab (LEARN-TASKS.md LN-10) |
 | `ApproveSkill(id, md, overwrite)` | Write a (possibly edited) draft's markdown to `<project>/.claude/skills/<name>/SKILL.md`, mark it approved; returns `experience.ErrSkillFileExists` when the file is already there and `overwrite` is false |

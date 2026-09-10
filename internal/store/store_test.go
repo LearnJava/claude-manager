@@ -881,6 +881,53 @@ func TestRunsWithSignature(t *testing.T) {
 	}
 }
 
+// TestActionRowsForCandidates verifies the LEFT JOIN against session_runs:
+// a row with a live run_id carries that run's status, a bulk-imported row
+// (RunID nil) carries RunStatus="" rather than NULL propagating through, and
+// a row outside the sinceDays window is excluded — the same window
+// convention ActionResultChars/ActionDurations already use.
+func TestActionRowsForCandidates(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	old := now.AddDate(0, 0, -120)
+
+	run := &SessionRun{Project: "p", Session: "S1", Model: "sonnet", StartedAt: now, Status: "completed"}
+	if err := s.InsertRun(run); err != nil {
+		t.Fatalf("InsertRun: %v", err)
+	}
+
+	rows := []ActionRow{
+		{Project: "p", Session: "S1", RunID: &run.ID, StepIndex: 0, Tool: "Bash", Sig: "Bash:git status", Timestamp: now},
+		{Project: "p", Session: "S1", RunID: nil, CLISessionID: "log-a.md", StepIndex: 0, Tool: "Read", Sig: "Read:internal/*.go", Timestamp: now},
+		{Project: "p", Session: "S1", RunID: nil, CLISessionID: "log-old.md", StepIndex: 0, Tool: "Read", Sig: "Read:old/*.go", Timestamp: old},
+	}
+	if err := s.InsertActions(rows); err != nil {
+		t.Fatalf("InsertActions: %v", err)
+	}
+
+	got, err := s.ActionRowsForCandidates("p", 90)
+	if err != nil {
+		t.Fatalf("ActionRowsForCandidates: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 rows within the window, got %d: %+v", len(got), got)
+	}
+
+	byArg := make(map[string]CandidateActionRow)
+	for _, r := range got {
+		byArg[r.Sig] = r
+	}
+	if byArg["Bash:git status"].RunStatus != "completed" {
+		t.Errorf("expected live run's status to be joined in, got %+v", byArg["Bash:git status"])
+	}
+	if byArg["Read:internal/*.go"].RunStatus != "" {
+		t.Errorf("expected imported row's RunStatus empty, got %q", byArg["Read:internal/*.go"].RunStatus)
+	}
+	if byArg["Read:internal/*.go"].RunID != nil {
+		t.Errorf("expected imported row's RunID nil, got %v", byArg["Read:internal/*.go"].RunID)
+	}
+}
+
 func TestTopSignatures(t *testing.T) {
 	s := newTestStore(t)
 	now := time.Now().UTC()

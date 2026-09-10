@@ -1232,6 +1232,20 @@ func addPermissionRuleInConfig(cfg *config.AppConfig, project, sessionName, tool
 	return false
 }
 
+// GetSkillCandidates mines a project's recent action_signatures into ranked
+// skill candidates (LEARN-TASKS.md LN-08) — the Skills tab's "Candidates"
+// list, and the only source of an experience.SkillCandidate to pass to
+// DistillSkill below (nothing else in the app produces one). Requires
+// [optimization] experience_tracking to have been on for some runs; with it
+// off, or too little history (fewer than experience.MinCandidateRuns runs
+// sharing a pattern), the list is simply empty.
+func (a *App) GetSkillCandidates(project string) ([]experience.SkillCandidate, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no store")
+	}
+	return experience.MineProjectCandidates(a.store, project)
+}
+
 // DistillSkill turns one LN-08 skill candidate into a skill draft and
 // persists it as a status=draft row (LEARN-TASKS.md LN-09), streaming
 // skill:progress while the distillation CLI run is in flight. gates is

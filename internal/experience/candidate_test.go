@@ -298,3 +298,107 @@ func TestMineCandidates_Empty(t *testing.T) {
 		t.Errorf("MineCandidates(nil) = %+v, want nil", got)
 	}
 }
+
+// TestBuildCandidateRuns_GroupsByRunAndCarriesStatus checks that rows sharing
+// a run_id fold into one CandidateRun (ordered by insertion, not
+// StepIndex — MineCandidates sorts that itself) with the run's own status,
+// and that a bulk-imported row (RunID nil) groups by its CLISessionID
+// instead — the same actionRunKey fallback LN-07 already relies on.
+func TestBuildCandidateRuns_GroupsByRunAndCarriesStatus(t *testing.T) {
+	runID := int64(42)
+	rows := []store.CandidateActionRow{
+		{ActionRow: store.ActionRow{RunID: &runID, StepIndex: 0, Sig: "A"}, RunStatus: "completed"},
+		{ActionRow: store.ActionRow{RunID: &runID, StepIndex: 1, Sig: "B"}, RunStatus: "completed"},
+		{ActionRow: store.ActionRow{CLISessionID: "log.md", StepIndex: 0, Sig: "C"}, RunStatus: ""},
+	}
+	runs := BuildCandidateRuns(rows)
+	if len(runs) != 2 {
+		t.Fatalf("expected 2 distinct runs, got %d: %+v", len(runs), runs)
+	}
+	byKey := make(map[string]CandidateRun)
+	for _, r := range runs {
+		byKey[r.Key] = r
+	}
+	live := byKey["run:42"]
+	if len(live.Rows) != 2 || live.Status != "completed" {
+		t.Errorf("run:42 = %+v, want 2 rows with status completed", live)
+	}
+	imported := byKey["cli:log.md"]
+	if len(imported.Rows) != 1 || imported.Status != "" {
+		t.Errorf("cli:log.md = %+v, want 1 row with empty status", imported)
+	}
+}
+
+// TestMineProjectCandidates_EndToEnd seeds a real store with a two-step
+// sequence recurring across 3 live session_runs and checks that
+// MineProjectCandidates — the function App.GetSkillCandidates calls — wires
+// ActionRowsForCandidates' LEFT JOIN status through BuildCandidateRuns into a
+// SkillCandidate with a positive score, exercising the store round-trip
+// candidate_test.go's other cases (pure in-memory CandidateRun) don't cover.
+func TestMineProjectCandidates_EndToEnd(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC()
+
+	// The first two runs are preceded by a "git pull" step (100 result
+	// chars) the third run doesn't have — so the 3-gram [pull,status,add]
+	// only reaches DistinctRuns=2 (below MinCandidateRuns) and is dropped by
+	// the frequency filter, while the 2-gram [status,add] reaches 3 and
+	// survives nested dedup untouched (their DistinctRuns differ, so the
+	// dedup rule in MineCandidates never fires). This also gives the
+	// survivor a nonzero rediscoveryChars in two of its three runs, so its
+	// Score is asserted positive below rather than accidentally 0.
+	var rows []store.ActionRow
+	for i := 0; i < 3; i++ {
+		r := &store.SessionRun{Project: "proj", Session: "S1", Model: "sonnet", StartedAt: now, Status: "completed"}
+		if err := s.InsertRun(r); err != nil {
+			t.Fatalf("InsertRun: %v", err)
+		}
+		step := 0
+		if i < 2 {
+			rows = append(rows, store.ActionRow{Project: "proj", Session: "S1", RunID: &r.ID, StepIndex: step, Tool: "Bash",
+				Sig: "Bash:git pull", Arg: "git pull", ResultChars: 100, Timestamp: now})
+			step++
+		}
+		rows = append(rows,
+			store.ActionRow{Project: "proj", Session: "S1", RunID: &r.ID, StepIndex: step, Tool: "Bash",
+				Sig: "Bash:git status", Arg: "git status", Timestamp: now},
+			store.ActionRow{Project: "proj", Session: "S1", RunID: &r.ID, StepIndex: step + 1, Tool: "Bash",
+				Sig: "Bash:git add <ARG>", Arg: "git add -A", Timestamp: now},
+		)
+	}
+	if err := s.InsertActions(rows); err != nil {
+		t.Fatalf("InsertActions: %v", err)
+	}
+
+	cands, err := MineProjectCandidates(s, "proj")
+	if err != nil {
+		t.Fatalf("MineProjectCandidates: %v", err)
+	}
+	c := findCandidate(cands, "Bash:git status", "Bash:git add <ARG>")
+	if c == nil {
+		t.Fatalf("expected the recurring 2-gram to be mined, got %+v", cands)
+	}
+	if c.DistinctRuns != 3 {
+		t.Errorf("DistinctRuns = %d, want 3", c.DistinctRuns)
+	}
+	if c.Score <= 0 {
+		t.Errorf("expected a positive score (2 of 3 runs have rediscovery chars ahead of the match), got %v", c.Score)
+	}
+	if got := findCandidate(cands, "Bash:git pull", "Bash:git status", "Bash:git add <ARG>"); got != nil {
+		t.Errorf("3-gram should be dropped (only 2 distinct runs, below MinCandidateRuns), got %+v", got)
+	}
+}
+
+// TestMineProjectCandidates_NoHistoryReturnsNil checks that a project with no
+// ingested action_signatures rows yields nil, nil — the ordinary state for a
+// project that just turned experience_tracking on — rather than an error.
+func TestMineProjectCandidates_NoHistoryReturnsNil(t *testing.T) {
+	s := newTestStore(t)
+	cands, err := MineProjectCandidates(s, "empty-project")
+	if err != nil {
+		t.Fatalf("MineProjectCandidates: %v", err)
+	}
+	if cands != nil {
+		t.Errorf("expected nil for a project with no ingested history, got %+v", cands)
+	}
+}

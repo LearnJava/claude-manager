@@ -169,6 +169,11 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         // GetSkillQuality (LEARN-TASKS.md LN-11) reads from the same store as
         // GetSkills above — same reason, same empty stub.
         GetSkillQuality: () => Promise.resolve([]),
+        // GetSkillCandidates/DistillSkill (LEARN-TASKS.md LN-08/09) read/write
+        // the same store as GetSkills above — same reason, same empty stub.
+        // Tests that need a populated candidate list override both per-test.
+        GetSkillCandidates: () => Promise.resolve([]),
+        DistillSkill: () => Promise.resolve(null),
         // GetTokenAttribution (LEARN-TASKS.md LN-12) reads from the same store
         // as GetTopActions above — same reason, same empty stub shape.
         GetTokenAttribution: () => Promise.resolve({ TotalEstTokens: 0, BySignature: [], ByTool: [] }),

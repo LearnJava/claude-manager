@@ -270,6 +270,64 @@ func MineCandidates(runs []CandidateRun, minRunShare float64, clusters []Failure
 	return out
 }
 
+// candidateWindowDays bounds MineProjectCandidates the same way
+// TopSignatures/DurationProfile bound their own windows — mining should
+// reflect the project's current workflow, not a pattern that only ever
+// happened a year ago.
+const candidateWindowDays = 90
+
+// BuildCandidateRuns groups action rows sharing a run — COALESCE(run_id,
+// cli_session_id), the same fallback actionRunKey already applies for LN-07
+// — into the CandidateRun shape MineCandidates consumes, carrying each row's
+// own run status along (identical for every row belonging to one run).
+func BuildCandidateRuns(rows []store.CandidateActionRow) []CandidateRun {
+	groups := make(map[string]*CandidateRun)
+	var order []string
+	for _, cr := range rows {
+		key := actionRunKey(cr.ActionRow)
+		g, ok := groups[key]
+		if !ok {
+			g = &CandidateRun{Key: key, Status: cr.RunStatus}
+			groups[key] = g
+			order = append(order, key)
+		}
+		g.Rows = append(g.Rows, cr.ActionRow)
+	}
+	out := make([]CandidateRun, 0, len(order))
+	for _, key := range order {
+		out = append(out, *groups[key])
+	}
+	return out
+}
+
+// MineProjectCandidates loads a project's recent action_signatures rows and
+// mines them into ranked skill candidates (LEARN-TASKS.md LN-08) — the
+// missing link between LN-02's ingestion and LN-09's DistillSkill, which has
+// no other way to receive a SkillCandidate to distill. Failure clusters
+// (LN-07, source B — ExtractFromActionRows) are mined from the same rows so
+// RelatedFailures is populated without a second store round-trip. Returns
+// nil, nil when the project has no ingested history yet, rather than an
+// error — an empty candidate list is the normal, expected state for a
+// project that just turned experience_tracking on.
+func MineProjectCandidates(st *store.Store, project string) ([]SkillCandidate, error) {
+	rows, err := st.ActionRowsForCandidates(project, candidateWindowDays)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	runs := BuildCandidateRuns(rows)
+
+	plain := make([]store.ActionRow, len(rows))
+	for i, r := range rows {
+		plain[i] = r.ActionRow
+	}
+	clusters := Cluster(ExtractFromActionRows(plain))
+
+	return MineCandidates(runs, 0, clusters), nil
+}
+
 // loopSignatures returns the set of signatures that, within this one run,
 // belong to a (tool, arg) pair repeated loopThreshold+ times identically —
 // the same "3+ identical tool+input" rule optimization.LoopDetector applies

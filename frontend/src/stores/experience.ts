@@ -8,14 +8,17 @@ import {
     AddPermissionRule,
     ApproveSkill,
     ArchiveSkill,
+    DistillSkill,
     GetActionSamples,
     GetDurationProfile,
     GetPermissionCandidates,
+    GetSkillCandidates,
     GetSkillQuality,
     GetSkills,
     GetTokenAttribution,
     GetTopActions,
 } from '../../wailsjs/go/main/App';
+import { experience as experienceModel } from '../../wailsjs/go/models';
 
 // The Go store.SignatureStat/ActionRow structs are exposed without JSON
 // tags, so field names arrive capitalized — same convention as
@@ -165,6 +168,71 @@ export async function addPermissionRule(
     decision: string,
 ): Promise<void> {
     await AddPermissionRule(project, session, tool, pattern, decision);
+}
+
+// FixPair/FailureCluster mirror experience.FixPair/FailureCluster (LEARN-TASKS.md
+// LN-07) — a candidate's RelatedFailures below, shown as a short hint on the
+// Skills tab's "Candidates" list rather than fully rendered.
+export interface FixPair {
+    RunKey: string;
+    FailedArg: string;
+    FixedArg: string;
+    Output: string;
+}
+
+export interface FailureCluster {
+    ErrorKey: string;
+    Count: number;
+    DistinctRuns: number;
+    Examples: FixPair[] | null;
+}
+
+// SkillCandidate mirrors experience.SkillCandidate — one recurring tool-call
+// sequence mined from a project's action_signatures, ranked for distillation
+// (LEARN-TASKS.md LN-08). This is the only shape App.DistillSkill accepts, so
+// the "Candidates" list below is the sole source of something to distill —
+// nothing else in the app produces one.
+export interface SkillCandidate {
+    Sig: string[];
+    DistinctRuns: number;
+    RunShare: number;
+    Score: number;
+    Samples: ActionRow[] | null;
+    RelatedFailures: FailureCluster[] | null;
+    ContextLossSuspect: boolean;
+    Imported: boolean;
+    FirstSeen: string;
+    LastSeen: string;
+}
+
+// fetchSkillCandidates mines a project's recent action_signatures into
+// ranked skill candidates — the Skills tab's "Candidates" list.
+export async function fetchSkillCandidates(project: string): Promise<SkillCandidate[]> {
+    const raw = (await GetSkillCandidates(project)) as SkillCandidate[] | null;
+    return raw ?? [];
+}
+
+// distillSkill turns one candidate into a draft SKILL.md (a sonnet CLI call)
+// persisted as status=draft — the "Distill" button's action. minScore<=0
+// falls back to analysis.DefaultSkillMinScore; throws with a message
+// matching /below distillation threshold/i (analysis.ErrBelowThreshold) when
+// the candidate's own Score doesn't clear it — the caller's cue to show that
+// inline rather than as a generic failure.
+export async function distillSkill(
+    project: string,
+    candidate: SkillCandidate,
+    gates: string[],
+    model: string,
+    minScore: number,
+): Promise<Skill> {
+    const raw = await DistillSkill(
+        project,
+        experienceModel.SkillCandidate.createFrom(candidate),
+        gates,
+        model,
+        minScore,
+    );
+    return raw as unknown as Skill;
 }
 
 // Skill mirrors store.Skill — one distilled procedure, draft through

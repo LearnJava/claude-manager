@@ -1148,6 +1148,62 @@ func (s *Store) ActionResultChars(project string, sinceDays int) ([]ResultCharsR
 	return out, rows.Err()
 }
 
+// CandidateActionRow pairs an action_signatures row with the status of the
+// session_runs row it belongs to (empty when RunID is nil, or the run row no
+// longer exists) — ActionRowsForCandidates' own row shape, the raw material
+// experience.BuildCandidateRuns groups into experience.CandidateRun for
+// MineCandidates (LEARN-TASKS.md LN-08).
+type CandidateActionRow struct {
+	ActionRow
+	RunStatus string
+}
+
+// ActionRowsForCandidates returns every action_signatures row for project
+// over the last sinceDays days, each paired with its own run's
+// session_runs.status via a LEFT JOIN — the input to
+// experience.MineProjectCandidates (LEARN-TASKS.md LN-08). A bulk-imported
+// row (LN-17, RunID nil) or one whose run_id no longer resolves gets
+// RunStatus="", which MineCandidates already treats as neutral evidence, not
+// as evidence of success (see outcomeWeight's default case).
+func (s *Store) ActionRowsForCandidates(project string, sinceDays int) ([]CandidateActionRow, error) {
+	const q = `SELECT a.id, a.project, a.session, a.run_id, a.cli_session_id, a.task_ptr,
+       a.step_index, a.tool, a.sig, a.arg, a.is_error, a.out_tokens, a.result_chars, a.dur_sec, a.ts,
+       COALESCE(r.status, '')
+    FROM action_signatures a
+    LEFT JOIN session_runs r ON r.id = a.run_id
+    WHERE a.project = ? AND a.ts >= datetime('now', ?)`
+	rows, err := s.db.Query(q, project, fmt.Sprintf("-%d days", sinceDays))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []CandidateActionRow
+	for rows.Next() {
+		var r CandidateActionRow
+		var runID sql.NullInt64
+		var cliSessionID, taskPtr, arg sql.NullString
+		var isErr int
+		if err := rows.Scan(
+			&r.ID, &r.Project, &r.Session, &runID, &cliSessionID, &taskPtr,
+			&r.StepIndex, &r.Tool, &r.Sig, &arg, &isErr, &r.OutTokens, &r.ResultChars, &r.DurSec, &r.Timestamp,
+			&r.RunStatus,
+		); err != nil {
+			return nil, err
+		}
+		if runID.Valid {
+			v := runID.Int64
+			r.RunID = &v
+		}
+		r.CLISessionID = cliSessionID.String
+		r.TaskPtr = taskPtr.String
+		r.Arg = arg.String
+		r.IsError = isErr != 0
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // RunsWithSignature returns the set of session_runs IDs (as a membership
 // map) that have at least one action_signatures row in project whose sig is
 // one of sigs — the "comparable run" filter for skill-effect measurement

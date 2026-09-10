@@ -8,13 +8,18 @@
     import { formatPercent, formatTime, formatTokens } from '../lib/formatters';
     import { renderMarkdown } from '../lib/markdown';
     import { t } from '../lib/i18n';
+    import { MODELS } from '../lib/models';
+    import { GetConfig } from '../../wailsjs/go/main/App';
     import {
         approveSkill,
         archiveSkill,
+        distillSkill,
+        fetchSkillCandidates,
         fetchSkillQuality,
         fetchSkills,
         parseSkillDraft,
         type Skill,
+        type SkillCandidate,
         type SkillEffect,
     } from '../stores/experience';
 
@@ -30,6 +35,22 @@
     let quality: SkillEffect[] = [];
     let qualityError = '';
 
+    // Candidates mined from action history (LEARN-TASKS.md LN-08) — the only
+    // source of an experience.SkillCandidate to hand DistillSkill (LN-09),
+    // so this is where a new skill starts its life on this tab. gates comes
+    // from the project's own config (the distiller passes them through to
+    // the drafted skill's own gate list).
+    let candidates: SkillCandidate[] = [];
+    let candidatesError = '';
+    let gates: string[] = [];
+    let distillModel = 'sonnet';
+    let distillBusyKey: string | null = null;
+    let distillErrorByKey: Record<string, string> = {};
+
+    function candidateKey(c: SkillCandidate): string {
+        return c.Sig.join('\x1f');
+    }
+
     // Row expansion: clicking a skill opens its review/edit panel. Working
     // copies of the markdown body are kept separately from the loaded row so
     // an in-progress edit survives collapsing/re-expanding within one load().
@@ -44,6 +65,7 @@
         if (!project) {
             skills = [];
             quality = [];
+            candidates = [];
             loading = false;
             return;
         }
@@ -64,9 +86,43 @@
             qualityError = get(t)('skillReview.failedToLoadSkillQuality', { message: e?.message ?? String(e) });
             quality = [];
         }
+        candidatesError = '';
+        try {
+            candidates = await fetchSkillCandidates(project);
+        } catch (e: any) {
+            candidatesError = get(t)('skillReview.failedToLoadCandidates', { message: e?.message ?? String(e) });
+            candidates = [];
+        }
+        try {
+            const cfg = await GetConfig();
+            gates = cfg.Projects?.find((p) => p.Name === project)?.Gates ?? [];
+        } catch {
+            gates = [];
+        }
     }
 
     $: if (project) load();
+
+    async function onDistill(c: SkillCandidate) {
+        if (distillBusyKey !== null) return;
+        const key = candidateKey(c);
+        distillBusyKey = key;
+        distillErrorByKey = { ...distillErrorByKey, [key]: '' };
+        try {
+            await distillSkill(project, c, gates, distillModel, 0);
+            await load();
+        } catch (e: any) {
+            const msg = e?.message ?? String(e);
+            distillErrorByKey = {
+                ...distillErrorByKey,
+                [key]: /below distillation threshold/i.test(msg)
+                    ? get(t)('skillReview.belowThreshold')
+                    : get(t)('skillReview.distillFailed', { message: msg }),
+            };
+        } finally {
+            distillBusyKey = null;
+        }
+    }
 
     function toggleExpand(sk: Skill) {
         if (expandedId === sk.ID) {
@@ -189,6 +245,70 @@
                                     </span>
                                 {:else}
                                     <span class="text-status-working">{$t('skillReview.verdictOk')}</span>
+                                {/if}
+                            </td>
+                        </tr>
+                    {/each}
+                </tbody>
+            </table>
+        </div>
+    {/if}
+
+    {#if candidatesError}
+        <div class="px-3 py-2 text-status-error text-xs">{candidatesError}</div>
+    {:else if candidates.length > 0}
+        <div class="border-b border-bg-border">
+            <div class="px-3 pt-2 pb-1 flex items-center justify-between">
+                <div class="text-xs font-medium text-text-muted">
+                    {$t('skillReview.candidatesHeading')}
+                </div>
+                <label class="flex items-center gap-1 text-xs text-text-muted">
+                    {$t('skillReview.modelLabel')}
+                    <select
+                        bind:value={distillModel}
+                        class="bg-bg border border-bg-border rounded px-1 py-0.5 text-text">
+                        {#each MODELS as m (m.value)}
+                            <option value={m.value}>{m.label}</option>
+                        {/each}
+                    </select>
+                </label>
+            </div>
+            <table class="w-full text-xs border-collapse mb-2">
+                <thead class="text-text-muted">
+                    <tr>
+                        <th class="text-left px-3 py-1 font-medium">{$t('skillReview.colSequence')}</th>
+                        <th class="text-right px-3 py-1 font-medium">{$t('skillReview.colRuns')}</th>
+                        <th class="text-right px-3 py-1 font-medium">{$t('skillReview.colScore')}</th>
+                        <th class="px-3 py-1"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {#each candidates as c (candidateKey(c))}
+                        {@const key = candidateKey(c)}
+                        <tr class="border-t border-bg-border align-top">
+                            <td class="px-3 py-1 text-text font-mono">
+                                {c.Sig.join(' → ')}
+                                {#if c.ContextLossSuspect}
+                                    <span class="ml-1 text-status-waiting">({$t('skillReview.loopSuspect')})</span>
+                                {/if}
+                                {#if c.Imported}
+                                    <span class="ml-1 text-text-muted italic">({$t('skillReview.imported')})</span>
+                                {/if}
+                            </td>
+                            <td class="px-3 py-1 text-right text-text-muted font-mono whitespace-nowrap">
+                                {c.DistinctRuns} ({formatPercent(c.RunShare)})
+                            </td>
+                            <td class="px-3 py-1 text-right text-text-muted font-mono">{c.Score.toFixed(1)}</td>
+                            <td class="px-3 py-1 text-right">
+                                <button
+                                    type="button"
+                                    disabled={distillBusyKey !== null}
+                                    on:click={() => onDistill(c)}
+                                    class="px-2 py-0.5 rounded bg-status-working/80 hover:bg-status-working text-white disabled:opacity-50 whitespace-nowrap">
+                                    {distillBusyKey === key ? $t('skillReview.distilling') : $t('skillReview.distillButton')}
+                                </button>
+                                {#if distillErrorByKey[key]}
+                                    <div class="mt-1 text-status-error">{distillErrorByKey[key]}</div>
                                 {/if}
                             </td>
                         </tr>
