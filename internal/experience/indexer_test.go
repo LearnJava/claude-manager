@@ -3,6 +3,7 @@ package experience
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func newTestStore(t *testing.T) *store.Store {
 func TestIngestDir_Fixtures(t *testing.T) {
 	s := newTestStore(t)
 
-	stats, err := IngestDir(s, "../../testdata/logfiles", "proj", ImportOpts{})
+	stats, err := IngestDir(s, "../../testdata/logfiles", "proj", "", ImportOpts{})
 	if err != nil {
 		t.Fatalf("IngestDir: %v", err)
 	}
@@ -55,7 +56,7 @@ func TestIngestDir_Fixtures(t *testing.T) {
 func TestIngestDir_ReimportIsNoop(t *testing.T) {
 	s := newTestStore(t)
 
-	first, err := IngestDir(s, "../../testdata/logfiles", "proj", ImportOpts{})
+	first, err := IngestDir(s, "../../testdata/logfiles", "proj", "", ImportOpts{})
 	if err != nil {
 		t.Fatalf("IngestDir (first): %v", err)
 	}
@@ -63,7 +64,7 @@ func TestIngestDir_ReimportIsNoop(t *testing.T) {
 		t.Fatal("first import ingested nothing, nothing to test")
 	}
 
-	second, err := IngestDir(s, "../../testdata/logfiles", "proj", ImportOpts{})
+	second, err := IngestDir(s, "../../testdata/logfiles", "proj", "", ImportOpts{})
 	if err != nil {
 		t.Fatalf("IngestDir (second): %v", err)
 	}
@@ -96,7 +97,7 @@ func TestIngestDir_ProgressCallback(t *testing.T) {
 	s := newTestStore(t)
 
 	var calls [][2]int
-	_, err := IngestDir(s, "../../testdata/logfiles", "proj", ImportOpts{
+	_, err := IngestDir(s, "../../testdata/logfiles", "proj", "", ImportOpts{
 		OnProgress: func(processed, total int) { calls = append(calls, [2]int{processed, total}) },
 	})
 	if err != nil {
@@ -125,7 +126,7 @@ func TestIngestDir_MixedFormats(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	stats, err := IngestDir(s, dir, "proj", ImportOpts{})
+	stats, err := IngestDir(s, dir, "proj", "", ImportOpts{})
 	if err != nil {
 		t.Fatalf("IngestDir: %v", err)
 	}
@@ -238,11 +239,107 @@ func copyFile(t *testing.T, src, dst string) {
 // walk, same as an unreadable subdirectory — it just finds nothing.
 func TestIngestDir_MissingRoot(t *testing.T) {
 	s := newTestStore(t)
-	stats, err := IngestDir(s, "../../testdata/logfiles/does-not-exist", "proj", ImportOpts{})
+	stats, err := IngestDir(s, "../../testdata/logfiles/does-not-exist", "proj", "", ImportOpts{})
 	if err != nil {
 		t.Fatalf("IngestDir: %v", err)
 	}
 	if stats.Files != 0 || stats.Errors != 0 {
 		t.Errorf("stats = %+v, want all zero", stats)
+	}
+}
+
+// TestActionRows_MdAndJSONLAgreeOnSignature is the LEARN-TASKS.md LN-19
+// "готово когда" case: a markdown-backend Trajectory (ProjectPath always
+// empty, LN-17) and a JSONL-backend Trajectory (ProjectPath set from the
+// init event's cwd) must produce the identical signature for the same
+// absolute Windows Read path, once the caller-supplied projectPath fallback
+// is wired through actionRows.
+func TestActionRows_MdAndJSONLAgreeOnSignature(t *testing.T) {
+	const absPath = `D:\Project\example-app\internal\foo.go`
+	const projectPath = `D:\Project\example-app`
+
+	mdTraj := Trajectory{
+		// ProjectPath empty, exactly like ParseLogFile's output (LN-17).
+		Steps: []Step{{Index: 0, Kind: StepToolUse, ToolName: "Read", InputText: absPath}},
+	}
+	jsonlTraj := Trajectory{
+		ProjectPath: projectPath,
+		Steps:       []Step{{Index: 0, Kind: StepToolUse, ToolName: "Read", InputText: absPath}},
+	}
+
+	mdRows := actionRows(mdTraj, "proj", "S1", projectPath, nil, "md-file.md", "")
+	jsonlRows := actionRows(jsonlTraj, "proj", "S1", "", nil, "cli-session", "")
+
+	if len(mdRows) != 1 || len(jsonlRows) != 1 {
+		t.Fatalf("got %d md rows, %d jsonl rows, want 1 each", len(mdRows), len(jsonlRows))
+	}
+	if mdRows[0].Sig != jsonlRows[0].Sig {
+		t.Errorf("md sig = %q, jsonl sig = %q, want equal", mdRows[0].Sig, jsonlRows[0].Sig)
+	}
+	if mdRows[0].Sig != "Read:internal/*.go" {
+		t.Errorf("sig = %q, want %q", mdRows[0].Sig, "Read:internal/*.go")
+	}
+}
+
+// TestActionRows_ProjectPathPriority: traj.ProjectPath still wins over the
+// caller-supplied fallback when both are set — the fallback only fills a gap,
+// it never overrides a Trajectory that actually knows its own cwd.
+func TestActionRows_ProjectPathPriority(t *testing.T) {
+	traj := Trajectory{
+		ProjectPath: `D:\Real\project`,
+		Steps:       []Step{{Index: 0, Kind: StepToolUse, ToolName: "Read", InputText: `D:\Real\project\internal\foo.go`}},
+	}
+	rows := actionRows(traj, "proj", "S1", `D:\Wrong\fallback`, nil, "cli-1", "")
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].Sig != "Read:internal/*.go" {
+		t.Errorf("sig = %q, want %q (traj.ProjectPath should win)", rows[0].Sig, "Read:internal/*.go")
+	}
+}
+
+// TestIngestDir_BroughtCorpusNoMachinePrefix: a log brought from another
+// machine (its absolute paths share no prefix with the local project's own
+// path) must never leave a drive letter or a foreign temp-directory prefix
+// in the resulting signature (LEARN-TASKS.md LN-19).
+func TestIngestDir_BroughtCorpusNoMachinePrefix(t *testing.T) {
+	s := newTestStore(t)
+	dir := t.TempDir()
+	md := "# Session log — brought/S1\n\n" +
+		"_Saved 2026-09-08T10:15:30Z, 2 entries._\n\n" +
+		"- `10:15:01` **tool** Read: D:\\temp\\project-logs-20260908\\lumen\\crates\\shell\\src\\main.rs\n" +
+		"  - tool: `Read` D:\\temp\\project-logs-20260908\\lumen\\crates\\shell\\src\\main.rs\n" +
+		"- `10:15:02` **tool_result** fn main() {}\n"
+	if err := os.WriteFile(filepath.Join(dir, "brought.md"), []byte(md), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// The local project's own path shares no prefix with the brought log at
+	// all — the classic "corpus brought from a different machine" case.
+	const localProjectPath = `D:\GoProjects\lumen-browser`
+	stats, err := IngestDir(s, dir, "proj", localProjectPath, ImportOpts{})
+	if err != nil {
+		t.Fatalf("IngestDir: %v", err)
+	}
+	if stats.Actions != 1 {
+		t.Fatalf("Actions = %d, want 1", stats.Actions)
+	}
+
+	sigStats, err := s.TopSignatures("proj", 3650, 0)
+	if err != nil {
+		t.Fatalf("TopSignatures: %v", err)
+	}
+	if len(sigStats) != 1 {
+		t.Fatalf("got %d signatures, want 1", len(sigStats))
+	}
+	sig := sigStats[0].Sig
+	if strings.Contains(sig, "D:/") || strings.Contains(sig, `D:\`) {
+		t.Errorf("sig %q still carries a drive letter", sig)
+	}
+	if strings.Contains(sig, "temp/project-logs") {
+		t.Errorf("sig %q still carries the foreign machine's temp-directory prefix", sig)
+	}
+	if sig != "Read:src/*.rs" {
+		t.Errorf("sig = %q, want %q", sig, "Read:src/*.rs")
 	}
 }

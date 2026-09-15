@@ -126,11 +126,43 @@ func TestSignature_Table(t *testing.T) {
 			wantSig: "Write:*.md",
 		},
 		{
-			name:        "Read: path outside the project is kept as-is",
+			// LEARN-TASKS.md LN-19: an absolute path outside the project is
+			// never kept verbatim — the drive letter must not survive into
+			// the signature, so it's cut to its last two segments instead.
+			name:        "Read: path outside the project drops the drive letter",
 			tool:        "Read",
 			input:       `C:\Other\file.go`,
 			projectPath: `D:\GolangProjects\claude-manager`,
-			wantSig:     "Read:C:/Other/*.go",
+			wantSig:     "Read:Other/*.go",
+		},
+		{
+			// A "brought" corpus (LEARN-TASKS.md LN-19): the path's own
+			// project-dir segment ("claude-manager") is found and everything
+			// up to and including it is dropped, even though the absolute
+			// prefix ("D:/RustProjects") never matches projectPath at all.
+			name:        "Read: foreign machine prefix, project dir segment found",
+			tool:        "Read",
+			input:       `D:\RustProjects\claude-manager\internal\experience\signature.go`,
+			projectPath: `D:\GolangProjects\claude-manager`,
+			wantSig:     "Read:internal/experience/*.go",
+		},
+		{
+			// No project-dir segment anywhere in the path: cut to the last
+			// two segments, still no drive letter.
+			name:        "Read: foreign path with no project-dir match",
+			tool:        "Read",
+			input:       `D:\temp\project-logs-20260908\lumen\crates\shell\src\main.rs`,
+			projectPath: `D:\GolangProjects\lumen-browser`,
+			wantSig:     "Read:src/*.rs",
+		},
+		{
+			// A relative path that was never inside any project is passed
+			// through unchanged — only an absolute path is sanitized.
+			name:        "Read: relative path outside any known project is unchanged",
+			tool:        "Read",
+			input:       "../sibling-repo/file.go",
+			projectPath: `D:\GolangProjects\claude-manager`,
+			wantSig:     "Read:../sibling-repo/*.go",
 		},
 
 		// --- Grep/Glob: pattern verbatim, truncated to 40 ---

@@ -40,7 +40,15 @@ type ImportStats struct {
 // closed and complete the moment it exists, so "already imported or not" is
 // the only question, and re-running IngestDir over the same directory (or a
 // directory it's a superset of) is then a no-op.
-func IngestDir(st *store.Store, root, project string, opts ImportOpts) (ImportStats, error) {
+//
+// projectPath is the local project's own config.ProjectConfig.Path, used as
+// the fallback for actionRows' signature normalization when a file's own
+// Trajectory.ProjectPath is empty — true for every markdown log (LN-17),
+// which carries no cwd (LEARN-TASKS.md LN-19). It is not guessed from root:
+// the log directory being walked may have been brought from another machine
+// entirely, so its paths may not match projectPath at all — see
+// sanitizeForeignPath in signature.go for that case.
+func IngestDir(st *store.Store, root, project, projectPath string, opts ImportOpts) (ImportStats, error) {
 	var stats ImportStats
 	var files []string
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -61,7 +69,7 @@ func IngestDir(st *store.Store, root, project string, opts ImportOpts) (ImportSt
 	}
 
 	for i, path := range files {
-		ingestOne(st, path, project, &stats)
+		ingestOne(st, path, project, projectPath, &stats)
 		if opts.OnProgress != nil {
 			opts.OnProgress(i+1, len(files))
 		}
@@ -74,7 +82,7 @@ func IngestDir(st *store.Store, root, project string, opts ImportOpts) (ImportSt
 // error and moves on to the next file — one bad file must never abort the
 // whole directory (LEARN-TASKS.md LN-17: "файл с битой записью
 // импортируется частично").
-func ingestOne(st *store.Store, path, project string, stats *ImportStats) {
+func ingestOne(st *store.Store, path, project, projectPath string, stats *ImportStats) {
 	info, err := os.Stat(path)
 	if err != nil {
 		stats.Errors++
@@ -107,7 +115,7 @@ func ingestOne(st *store.Store, path, project string, stats *ImportStats) {
 	// worth surfacing in the summary.
 	stats.Errors += traj.Skipped
 
-	rows := actionRows(traj, project, traj.SessionID, nil, name, "")
+	rows := actionRows(traj, project, traj.SessionID, projectPath, nil, name, "")
 	if len(rows) > 0 {
 		if err := st.InsertActions(rows); err != nil {
 			stats.Errors++
@@ -131,13 +139,23 @@ func ingestOne(st *store.Store, path, project string, stats *ImportStats) {
 // runID nil, cliSessionID the file name) and IngestRun below (LN-03: a real
 // runID when the finished run has a session_runs row, the CLI's own session
 // id, and the resolved task pointer).
-func actionRows(traj Trajectory, project, sessionName string, runID *int64, cliSessionID, taskPtr string) []store.ActionRow {
+//
+// fallbackProjectPath is used for signature normalization only when
+// traj.ProjectPath is empty — always true for a markdown-log Trajectory
+// (LEARN-TASKS.md LN-19), which carries no cwd; traj.ProjectPath still wins
+// whenever it is set, since it reflects the actual machine/run the steps
+// came from.
+func actionRows(traj Trajectory, project, sessionName, fallbackProjectPath string, runID *int64, cliSessionID, taskPtr string) []store.ActionRow {
+	projectPath := traj.ProjectPath
+	if projectPath == "" {
+		projectPath = fallbackProjectPath
+	}
 	var rows []store.ActionRow
 	for _, step := range traj.Steps {
 		if step.Kind != StepToolUse || step.ToolName == "" {
 			continue
 		}
-		sig, arg := Signature(step.ToolName, step.InputText, traj.ProjectPath)
+		sig, arg := Signature(step.ToolName, step.InputText, projectPath)
 		var outTokens int64
 		if step.Usage != nil {
 			outTokens = int64(step.Usage.OutputTokens)
@@ -203,7 +221,7 @@ func IngestRun(st *store.Store, project, sessionName string, runID int64, cliSes
 	if runID != 0 {
 		rid = &runID
 	}
-	rows := actionRows(traj, project, sessionName, rid, cliSessionID, taskPtr)
+	rows := actionRows(traj, project, sessionName, projectPath, rid, cliSessionID, taskPtr)
 	if len(rows) > 0 {
 		if err := st.InsertActions(rows); err != nil {
 			return err

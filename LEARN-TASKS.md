@@ -92,7 +92,7 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-16 | ✓ DONE (2026-09-09) | internal/experience/regression.go, internal/session/manager.go, app.go, CostDashboard.svelte, StatusBar.svelte |
 | LN-17 | ✓ DONE (2026-09-08) | internal/experience/mdlog.go, indexer.go (IngestDir), testdata/logfiles/ |
 | LN-18 | ✓ DONE (2026-09-09) | internal/experience/duration.go, primer.go, ExperiencePanel.svelte |
-| LN-19 | ○ TODO | internal/experience/indexer.go (projectPath в actionRows) |
+| LN-19 | ✓ DONE (2026-09-15) | internal/experience/indexer.go (projectPath в actionRows), signature.go (sanitizeForeignPath) |
 | LN-20 | ○ TODO | app.go (ImportProjectLogs), ExperiencePanel.svelte, stores/experience.ts |
 | LN-21 | ○ TODO | internal/experience/indexer.go (IngestRun), internal/session/manager.go |
 | LN-22 | ○ TODO | internal/experience/candidate.go (outcomeWeight) |

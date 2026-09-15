@@ -77,7 +77,7 @@ func TestStepDurSec_NoResult(t *testing.T) {
 	}
 
 	traj := Trajectory{ProjectPath: "/proj", Steps: []Step{pending}}
-	rows := actionRows(traj, "proj", "S1", nil, "cli-1", "")
+	rows := actionRows(traj, "proj", "S1", "", nil, "cli-1", "")
 	if len(rows) != 1 {
 		t.Fatalf("got %d rows, want 1", len(rows))
 	}
