@@ -1,6 +1,7 @@
 package session
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -594,7 +595,7 @@ func TestFinishRun_AutoSavesLogFile(t *testing.T) {
 	ms.pendingLogs = append(ms.pendingLogs, store.LogEntry{Timestamp: time.Now(), Level: "text", Message: "hi"})
 	ms.mu.Unlock()
 
-	m.finishRun(ms, "completed", "")
+	m.finishRun(ms, "completed", "", "")
 
 	deadline := time.Now().Add(2 * time.Second)
 	var files []store.LogFileInfo
@@ -619,7 +620,7 @@ func TestFinishRun_NoLogsNoFile(t *testing.T) {
 	ms := addStubSession(m, "lumen", "P1")
 
 	m.beginRun(ms)
-	m.finishRun(ms, "completed", "")
+	m.finishRun(ms, "completed", "", "")
 
 	files, err := store.ListProjectLogFiles(ms.session.ProjectPath)
 	if err != nil {
@@ -632,8 +633,46 @@ func TestFinishRun_NoLogsNoFile(t *testing.T) {
 
 // indexCall captures one ActionIndexFunc invocation for the tests below.
 type indexCall struct {
-	project, sessionName, cliSessionID, projectPath, taskPtr string
-	runID                                                    int64
+	project, sessionName, cliSessionID, projectPath, taskPtr, mdLogPath string
+	runID                                                               int64
+}
+
+// TestFinishRun_IndexerReceivesAutosavedLogPath (LEARN-TASKS.md LN-21): the
+// indexer must be called with the path of the log file finishRun itself just
+// autosaved to disk — the fallback source IngestRun uses when the CLI's own
+// JSONL transcript can't be found. The two used to run as independent
+// fire-and-forget goroutines with no ordering guarantee between them; now
+// autosave always completes before the indexer call in the same goroutine.
+func TestFinishRun_IndexerReceivesAutosavedLogPath(t *testing.T) {
+	m, _ := newTestManagerWithStore(t)
+	ms := addStubSession(m, "lumen", "P1")
+	ms.session.CLISessionID = "cli-123"
+
+	m.cfg.Optimization.ExperienceTracking = true
+	calls := make(chan indexCall, 1)
+	m.SetActionIndexer(func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr, mdLogPath string) (IngestResult, error) {
+		calls <- indexCall{project, sessionName, cliSessionID, projectPath, taskPtr, mdLogPath, runID}
+		return IngestResult{}, nil
+	})
+
+	m.beginRun(ms)
+	ms.mu.Lock()
+	ms.pendingLogs = append(ms.pendingLogs, store.LogEntry{Timestamp: time.Now(), Level: "text", Message: "hi"})
+	ms.mu.Unlock()
+
+	m.finishRun(ms, "completed", "", "")
+
+	select {
+	case c := <-calls:
+		if c.mdLogPath == "" {
+			t.Fatal("mdLogPath is empty — indexer must receive the just-autosaved log's path")
+		}
+		if _, err := os.Stat(c.mdLogPath); err != nil {
+			t.Errorf("mdLogPath %q does not exist on disk: %v", c.mdLogPath, err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the indexer to be called")
+	}
 }
 
 // TestFinishRun_IndexesActionsWhenTrackingEnabled: with experience_tracking
@@ -647,13 +686,13 @@ func TestFinishRun_IndexesActionsWhenTrackingEnabled(t *testing.T) {
 
 	m.cfg.Optimization.ExperienceTracking = true
 	calls := make(chan indexCall, 1)
-	m.SetActionIndexer(func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr string) error {
-		calls <- indexCall{project, sessionName, cliSessionID, projectPath, taskPtr, runID}
-		return nil
+	m.SetActionIndexer(func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr, mdLogPath string) (IngestResult, error) {
+		calls <- indexCall{project, sessionName, cliSessionID, projectPath, taskPtr, mdLogPath, runID}
+		return IngestResult{}, nil
 	})
 
 	m.beginRun(ms)
-	m.finishRun(ms, "completed", "")
+	m.finishRun(ms, "completed", "", "")
 
 	select {
 	case c := <-calls:
@@ -674,13 +713,13 @@ func TestFinishRun_NoIndexingWhenTrackingDisabled(t *testing.T) {
 	ms.session.CLISessionID = "cli-123"
 
 	calls := make(chan indexCall, 1)
-	m.SetActionIndexer(func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr string) error {
-		calls <- indexCall{project, sessionName, cliSessionID, projectPath, taskPtr, runID}
-		return nil
+	m.SetActionIndexer(func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr, mdLogPath string) (IngestResult, error) {
+		calls <- indexCall{project, sessionName, cliSessionID, projectPath, taskPtr, mdLogPath, runID}
+		return IngestResult{}, nil
 	})
 
 	m.beginRun(ms)
-	m.finishRun(ms, "completed", "")
+	m.finishRun(ms, "completed", "", "")
 
 	select {
 	case c := <-calls:
@@ -699,7 +738,7 @@ func TestFinishRun_NoIndexerWiredIsSafe(t *testing.T) {
 	m.cfg.Optimization.ExperienceTracking = true
 
 	m.beginRun(ms)
-	m.finishRun(ms, "completed", "") // must not panic
+	m.finishRun(ms, "completed", "", "") // must not panic
 }
 
 func TestSetConfigReplacesConfig(t *testing.T) {

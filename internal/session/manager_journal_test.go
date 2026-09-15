@@ -71,7 +71,7 @@ func TestFinishRun_WritesJournalWhenEnabled(t *testing.T) {
 	ms.lastResultText = "Implemented the retry loop."
 	ms.mu.Unlock()
 
-	m.finishRun(ms, "completed", "")
+	m.finishRun(ms, "completed", "", "")
 
 	select {
 	case c := <-calls:
@@ -128,7 +128,7 @@ func TestFinishRun_NoJournalWhenProjectOptedOut(t *testing.T) {
 	m.SetJournalWriter(func(string, bool, JournalEntry) error { return nil })
 
 	m.beginRun(ms)
-	m.finishRun(ms, "completed", "")
+	m.finishRun(ms, "completed", "", "")
 
 	select {
 	case <-analyzeCalled:
@@ -153,7 +153,7 @@ func TestFinishRun_NoJournalWithoutWriter(t *testing.T) {
 	}
 
 	m.beginRun(ms)
-	m.finishRun(ms, "completed", "") // must not panic
+	m.finishRun(ms, "completed", "", "") // must not panic
 
 	select {
 	case <-analyzeCalled:
@@ -179,7 +179,7 @@ func TestFinishRun_NoJournalOnNonCompletedStatus(t *testing.T) {
 	m.SetJournalWriter(func(string, bool, JournalEntry) error { return nil })
 
 	m.beginRun(ms)
-	m.finishRun(ms, "error", "boom")
+	m.finishRun(ms, "error", "boom", "")
 
 	select {
 	case <-analyzeCalled:
