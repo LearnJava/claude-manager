@@ -17,6 +17,7 @@ import {
     GetSkills,
     GetTokenAttribution,
     GetTopActions,
+    ImportProjectLogs,
 } from '../../wailsjs/go/main/App';
 import { experience as experienceModel } from '../../wailsjs/go/models';
 
@@ -335,4 +336,24 @@ export interface SkillEffect {
 export async function fetchSkillQuality(project: string): Promise<SkillEffect[]> {
     const raw = (await GetSkillQuality(project)) as SkillEffect[] | null;
     return raw ?? [];
+}
+
+// ImportStats mirrors session.ImportStats — the summary shown after an
+// "Import logs" run (LEARN-TASKS.md LN-20).
+export interface ImportStats {
+    Files: number;
+    Runs: number;
+    Actions: number;
+    Skipped: number;
+    Errors: number;
+}
+
+// importProjectLogs bulk-imports a directory of saved CLI logs into
+// action_signatures — the "Import logs" button's action. An empty dir
+// imports the project's own <project>/.claude-manager/logs/; otherwise dir
+// is expected to come from the native folder picker (a corpus brought from
+// another machine). Progress streams via the experience:import event while
+// this is in flight.
+export async function importProjectLogs(project: string, dir: string): Promise<ImportStats> {
+    return (await ImportProjectLogs(project, dir)) as ImportStats;
 }

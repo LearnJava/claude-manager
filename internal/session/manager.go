@@ -79,6 +79,24 @@ type RegressionResult struct {
 // arguments.
 type RegressionFunc func(project, sessionName, projectPath, taskDesc string, gates []string, runID int64) (*RegressionResult, error)
 
+// ImportStats mirrors experience.ImportStats (LEARN-TASKS.md LN-20) without
+// importing internal/experience — same import-cycle reason as ActionIndexFunc
+// above.
+type ImportStats struct {
+	Files   int
+	Runs    int
+	Actions int
+	Skipped int
+	Errors  int
+}
+
+// ImportLogsFunc bulk-imports a directory of saved CLI logs into
+// action_signatures (LEARN-TASKS.md LN-20). Declared as a function type here,
+// consumed by ImportProjectLogs below, and wired from app.go to
+// internal/experience.IngestDir — a direct import would cycle, same as
+// ActionIndexFunc above. onProgress mirrors experience.ImportOpts.OnProgress.
+type ImportLogsFunc func(dir, project, projectPath string, onProgress func(processed, total int)) (ImportStats, error)
+
 // Event names emitted to the Wails frontend (see PLAN.md section 8).
 const (
 	EventNameStatus     = "session:status"
@@ -315,6 +333,11 @@ type SessionManager struct {
 	// SetRegressionDetector.
 	regressionFn RegressionFunc
 
+	// importLogsFn is nil unless app.go has wired the bulk log importer
+	// (LEARN-TASKS.md LN-20); ImportProjectLogs also independently gates on
+	// cfg.Optimization.ExperienceTracking — see SetLogImporter.
+	importLogsFn ImportLogsFunc
+
 	runtimeRules *permission.RuntimeRuleSet
 	queue        *permission.PendingQueue
 
@@ -406,6 +429,16 @@ func (m *SessionManager) SetPrimerBuilder(fn PrimerFunc) {
 func (m *SessionManager) SetJournalWriter(fn JournalWriteFunc) {
 	m.mu.Lock()
 	m.journalFn = fn
+	m.mu.Unlock()
+}
+
+// SetLogImporter wires the experience-layer bulk log importer (LEARN-TASKS.md
+// LN-20). Pass nil to disable it entirely (the zero value — ImportProjectLogs
+// then always errors). experience_tracking still gates every call — see
+// ImportProjectLogs.
+func (m *SessionManager) SetLogImporter(fn ImportLogsFunc) {
+	m.mu.Lock()
+	m.importLogsFn = fn
 	m.mu.Unlock()
 }
 
@@ -2138,6 +2171,61 @@ func (m *SessionManager) distillSkill(ctx context.Context, project string, in an
 	logger.L.Info("manager.skill_distilled",
 		"project", project, "skill", sk.Name, "id", sk.ID, "cost_usd", draft.CostUSD)
 	return sk, nil
+}
+
+// EventNameImportProgress notifies the frontend while ImportProjectLogs's
+// bulk directory walk is in flight (LEARN-TASKS.md LN-20) — mirrors
+// EventNameRoadmapProgress/EventNameSkillProgress above: importing a corpus
+// of thousands of log files with no signal reads as a hung UI.
+const EventNameImportProgress = "experience:import"
+
+// ImportProgressEvent is the payload of EventNameImportProgress.
+type ImportProgressEvent struct {
+	Project   string `json:"project"`
+	Processed int    `json:"processed"`
+	Total     int    `json:"total"`
+}
+
+// ImportProjectLogs bulk-imports a directory of CLI JSONL transcripts and
+// auto-saved markdown session logs into action_signatures — the missing UI to
+// LN-17's IngestDir (LEARN-TASKS.md LN-20). dir defaults to the project's own
+// <project>/.claude-manager/logs/ when empty; a caller may instead pass a
+// directory picked via PickDirectory to import a corpus brought from another
+// machine. Gated on the same [optimization] experience_tracking flag as the
+// rest of the experience layer: off, or no importer wired (app.go only wires
+// one when a store is configured), returns an error rather than silently
+// reading — or not reading — the directory, since a click that does nothing
+// must still be visible to whoever clicked it.
+func (m *SessionManager) ImportProjectLogs(project, dir string) (ImportStats, error) {
+	m.mu.Lock()
+	tracking := m.cfg != nil && m.cfg.Optimization.ExperienceTracking
+	importFn := m.importLogsFn
+	m.mu.Unlock()
+	if !tracking {
+		return ImportStats{}, fmt.Errorf("manager: experience_tracking is disabled")
+	}
+	if importFn == nil {
+		return ImportStats{}, fmt.Errorf("manager: no store configured")
+	}
+	path, err := m.projectPath(project)
+	if err != nil {
+		return ImportStats{}, err
+	}
+	if dir == "" {
+		dir = filepath.Join(path, ".claude-manager", "logs")
+	}
+
+	onProgress := func(processed, total int) {
+		m.emit(EventNameImportProgress, ImportProgressEvent{Project: project, Processed: processed, Total: total})
+	}
+	stats, err := importFn(dir, project, path, onProgress)
+	if err != nil {
+		return stats, err
+	}
+	logger.L.Info("manager.import_logs",
+		"project", project, "dir", dir, "files", stats.Files, "runs", stats.Runs,
+		"actions", stats.Actions, "skipped", stats.Skipped, "errors", stats.Errors)
+	return stats, nil
 }
 
 // ApproveRoadmapFiles materializes an approved roadmap plan into

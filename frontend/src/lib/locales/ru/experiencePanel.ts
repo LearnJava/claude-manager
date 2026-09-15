@@ -75,6 +75,15 @@ export default {
     'experiencePanel.actions.noArg': '(нет аргумента)',
     'experiencePanel.actions.errorLoad': 'Не удалось загрузить действия: {error}',
 
+    'experiencePanel.import.button': 'Импорт логов',
+    'experiencePanel.import.projectDir': 'Логи этого проекта',
+    'experiencePanel.import.chooseDir': 'Выбрать каталог…',
+    'experiencePanel.import.running': 'Импортируется…',
+    'experiencePanel.import.progress': 'Импортировано {processed} / {total} файлов…',
+    'experiencePanel.import.errorLoad': 'Импорт не удался: {error}',
+    'experiencePanel.import.resultSummary':
+        'Файлов: {files}, прогонов: {runs}, действий: {actions}, пропущено: {skipped}, ошибок: {errors}',
+
     'experiencePanel.footer.actions': 'Кликните по сигнатуре, чтобы загрузить её примеры.',
     'experiencePanel.footer.timing':
         'Время выполнения берётся из action_signatures.dur_sec — промежутка между tool_use и tool_result для каждого записанного вызова. Сигнатуре нужно минимум 10 замеров, чтобы появиться здесь.',
