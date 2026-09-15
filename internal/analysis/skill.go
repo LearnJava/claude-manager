@@ -14,18 +14,23 @@ import (
 	"claude-manager/internal/proc"
 )
 
-// DefaultSkillMinScore is the minimum SkillCandidate.Score (LEARN-TASKS.md
-// LN-08) a candidate must clear before DistillSkill invokes the CLI at all —
-// distillation is a paid model call, so a low-score candidate must never
-// trigger one. Unlike DefaultMinRunShare (LN-08), this is not corpus-measured
-// — LN-08 shipped without a distribution of real Score values to calibrate
-// against — so it is a conservative starting point, always overridable per
-// call (minScore <= 0 falls back to this).
+// DefaultSkillMinScore is DistillSkill's last-resort fallback for minScore <=
+// 0 when the caller has no candidate distribution to compute a relative
+// threshold from (e.g. a direct/test call to this package). Production
+// callers with access to the full mined candidate list use
+// experience.ResolveSkillMinScore/RelativeScoreThreshold instead
+// (LEARN-TASKS.md LN-23) — an absolute cutoff over a quantity that scales
+// with corpus size cannot be calibrated once: this exact value cut
+// *everything* on this app's own small DB (max score 6.9 of 24 candidates)
+// and let *almost everything* through on an imported corpus two orders of
+// magnitude larger (378 of 379).
 const DefaultSkillMinScore = 10.0
 
 // ErrBelowThreshold is returned by DistillSkill when a candidate's score does
 // not clear minScore. Not a failure: the CLI was correctly never invoked, and
 // the caller should treat this as "skip this candidate", not report an error.
+// DistillSkill always wraps it with the actual score and threshold (LN-23) —
+// a bare "below threshold" tells the user nothing they can act on.
 var ErrBelowThreshold = errors.New("analysis: skill candidate below distillation threshold")
 
 // SkillSample is one concrete example call to seed the distillation prompt
@@ -263,15 +268,18 @@ func decodeSkillPayload(raw json.RawMessage) (*SkillDraft, error) {
 // exactly like RunAnalysisStreaming does for roadmap generation — a
 // distillation run has no other visible sign of being alive rather than hung.
 //
-// Returns ErrBelowThreshold without invoking the CLI at all when score does
-// not clear minScore (minScore <= 0 falls back to DefaultSkillMinScore) —
-// distillation is a paid call and must never fire for a negligible candidate.
+// Returns ErrBelowThreshold (wrapped with the actual score and threshold, so
+// the caller/UI can tell the user what to do about it) without invoking the
+// CLI at all when score does not clear minScore (minScore <= 0 falls back to
+// DefaultSkillMinScore — see its doc comment for why production callers
+// should instead resolve minScore themselves) — distillation is a paid call
+// and must never fire for a negligible candidate.
 func DistillSkill(ctx context.Context, projectPath string, in SkillDistillInput, score, minScore float64, cfg AnalysisConfig, onProgress ProgressFunc) (*SkillDraft, error) {
 	if minScore <= 0 {
 		minScore = DefaultSkillMinScore
 	}
 	if score < minScore {
-		return nil, ErrBelowThreshold
+		return nil, fmt.Errorf("%w: score %.1f, threshold %.1f", ErrBelowThreshold, score, minScore)
 	}
 
 	task := buildSkillTaskText(in)

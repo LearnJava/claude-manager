@@ -214,11 +214,14 @@ export async function fetchSkillCandidates(project: string): Promise<SkillCandid
 }
 
 // distillSkill turns one candidate into a draft SKILL.md (a sonnet CLI call)
-// persisted as status=draft — the "Distill" button's action. minScore<=0
-// falls back to analysis.DefaultSkillMinScore; throws with a message
-// matching /below distillation threshold/i (analysis.ErrBelowThreshold) when
-// the candidate's own Score doesn't clear it — the caller's cue to show that
-// inline rather than as a generic failure.
+// persisted as status=draft — the "Distill" button's action. minScore > 0 is
+// an explicit override; minScore <= 0 (the default) resolves to a relative
+// threshold computed over the project's current candidates (LEARN-TASKS.md
+// LN-23, App.resolveSkillMinScore) instead of a fixed absolute score. Throws
+// with a message matching /below distillation threshold/i
+// (analysis.ErrBelowThreshold) when the candidate's own Score doesn't clear
+// it — the message itself names both the score and the threshold, so the
+// caller can show it directly rather than a generic failure.
 export async function distillSkill(
     project: string,
     candidate: SkillCandidate,
