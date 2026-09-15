@@ -368,7 +368,15 @@ When `optimization.auto_model_routing = true`, clicking ▶ on a session trigger
 1. Pre-flight analysis (haiku, one-shot) on the session's configured prompt
 2. `ModelRouter.Route()` maps `estimated_complexity` → model/effort recommendation
 3. Frontend shows `ModelPicker` with the recommendation
-4. User can **accept** or **override** model/effort before the session starts
+4. User can **accept** or **override** model/effort before the session starts —
+   or **skip the analysis** ("Skip analysis — choose manually") while it is
+   still running, which drops straight into the manual dropdowns. The
+   pre-flight call is not cancelled (it is a plain `claude -p` the frontend
+   has no handle on), so `skipAnalysis` sets a flag that makes the late
+   resolution/rejection a no-op instead of overwriting a choice the user has
+   since made by hand. Worth having because the analysis is a full CLI
+   round-trip: on a slow model or a rate-limited account the picker would
+   otherwise sit on "Analyzing task complexity…" with no way forward.
 5. `StartSessionWithOverride(project, name, model, effort)` launches with chosen values
 
 Routing table (`internal/optimization/routing.go`):

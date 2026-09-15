@@ -3,6 +3,7 @@
 export default {
     'modelPicker.title': 'Start session',
     'modelPicker.analyzing': 'Analyzing task complexity…',
+    'modelPicker.skipAnalysis': 'Skip analysis — choose manually',
     'modelPicker.noRecommendation': 'No recommendation (no prompt configured).',
     'modelPicker.complexity': 'Complexity:',
     'modelPicker.complexityTrivial': 'Trivial',

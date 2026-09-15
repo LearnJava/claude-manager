@@ -3,6 +3,7 @@
 export default {
     'modelPicker.title': 'Запуск сессии',
     'modelPicker.analyzing': 'Анализ сложности задачи…',
+    'modelPicker.skipAnalysis': 'Пропустить анализ — выбрать вручную',
     'modelPicker.noRecommendation': 'Нет рекомендации (промпт не настроен).',
     'modelPicker.complexity': 'Сложность:',
     'modelPicker.complexityTrivial': 'Тривиальная',
