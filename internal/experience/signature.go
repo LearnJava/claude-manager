@@ -148,22 +148,83 @@ func pathSignature(relPath string) string {
 }
 
 // relativizePath makes path relative to projectPath when it is actually
-// inside it; anything else (a different drive, a path outside the project,
-// an empty projectPath) is returned unchanged — an absolute machine prefix
-// in the signature is useless, but forcing a foreign path into "relative"
-// form would be misleading (rule 3).
+// inside it (rule 3). An absolute path that is *not* inside projectPath — a
+// different drive, or a markdown log (LEARN-TASKS.md LN-19) whose
+// Trajectory.ProjectPath was empty and fell back to a caller-supplied
+// projectPath that doesn't match, e.g. a log brought from another machine —
+// is run through sanitizeForeignPath instead of being kept verbatim: an
+// absolute machine prefix (a drive letter, someone else's home directory)
+// in the signature is worse than useless, it collapses a whole repo into one
+// bucket. A relative path that never was inside any project is returned
+// unchanged.
 func relativizePath(path, projectPath string) string {
-	if projectPath == "" || path == "" {
+	if path == "" {
 		return path
 	}
 	p := strings.ReplaceAll(path, "\\", "/")
-	proj := strings.ReplaceAll(projectPath, "\\", "/")
-	proj = strings.TrimSuffix(proj, "/")
-
-	if !strings.HasPrefix(strings.ToLower(p), strings.ToLower(proj)+"/") {
-		return path
+	if projectPath != "" {
+		proj := strings.ReplaceAll(projectPath, "\\", "/")
+		proj = strings.TrimSuffix(proj, "/")
+		if strings.HasPrefix(strings.ToLower(p), strings.ToLower(proj)+"/") {
+			return p[len(proj)+1:]
+		}
 	}
-	return p[len(proj)+1:]
+	if isAbsolutePath(p) {
+		return sanitizeForeignPath(p, projectPath)
+	}
+	return path
+}
+
+// isAbsolutePath recognizes both POSIX ("/home/...") and Windows
+// ("D:/...", "D:\...") absolute paths — a markdown log may have been
+// produced on either.
+func isAbsolutePath(p string) bool {
+	if strings.HasPrefix(p, "/") {
+		return true
+	}
+	return len(p) >= 3 && isDriveLetter(p[:2]) && p[2] == '/'
+}
+
+// isDriveLetter reports whether s is a two-rune Windows drive prefix like
+// "D:" — used both to detect an absolute path and to strip the drive letter
+// out of a sanitized signature, since a machine's drive letter must never
+// survive into a signature shared across machines.
+func isDriveLetter(s string) bool {
+	return len(s) == 2 && s[1] == ':' && ((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z'))
+}
+
+// sanitizeForeignPath turns an absolute path with no local project match
+// into something with no machine-specific prefix (LEARN-TASKS.md LN-19,
+// "привезённый корпус"): if a path segment matches the project directory's
+// own base name, everything up to and including that segment is dropped, so
+// the remainder is project-relative even though the machine that produced
+// the log used a different absolute prefix. Otherwise the path is cut down
+// to its last two segments (parent dir + file, matching pathSignature's own
+// "first two dir segments" shape) — a drive letter is dropped unconditionally
+// first, so it can never survive even when the path is too short to have two
+// segments left after cutting.
+func sanitizeForeignPath(p, projectPath string) string {
+	var clean []string
+	for _, seg := range strings.Split(p, "/") {
+		if seg == "" || isDriveLetter(seg) {
+			continue
+		}
+		clean = append(clean, seg)
+	}
+
+	if projectPath != "" {
+		projName := baseName(strings.TrimSuffix(strings.ReplaceAll(projectPath, "\\", "/"), "/"))
+		for i, seg := range clean {
+			if strings.EqualFold(seg, projName) {
+				return strings.Join(clean[i+1:], "/")
+			}
+		}
+	}
+
+	if len(clean) > 2 {
+		clean = clean[len(clean)-2:]
+	}
+	return strings.Join(clean, "/")
 }
 
 // shellTokenize splits a shell command line into words and chain operators
