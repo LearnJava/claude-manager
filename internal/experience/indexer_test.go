@@ -153,9 +153,12 @@ func TestIngestRun_FixtureAndOffsetIdempotent(t *testing.T) {
 		t.Fatalf("InsertRun: %v", err)
 	}
 
-	err := IngestRun(s, "proj", "S1", run.ID, cliSessionID, `D:\Project\example-app`, "STATUS-P1.md:5")
+	res, err := IngestRun(s, "proj", "S1", run.ID, cliSessionID, `D:\Project\example-app`, "STATUS-P1.md:5", "")
 	if err != nil {
 		t.Fatalf("IngestRun: %v", err)
+	}
+	if res.Rows != 3 {
+		t.Errorf("res.Rows = %d, want 3", res.Rows)
 	}
 
 	stats, err := s.TopSignatures("proj", 3650, 0)
@@ -190,7 +193,7 @@ func TestIngestRun_FixtureAndOffsetIdempotent(t *testing.T) {
 
 	// Re-running with the same cli_session_id must not duplicate rows: the
 	// transcript hasn't grown, so the saved offset already covers it all.
-	if err := IngestRun(s, "proj", "S1", run.ID, cliSessionID, `D:\Project\example-app`, "STATUS-P1.md:5"); err != nil {
+	if _, err := IngestRun(s, "proj", "S1", run.ID, cliSessionID, `D:\Project\example-app`, "STATUS-P1.md:5", ""); err != nil {
 		t.Fatalf("IngestRun (second): %v", err)
 	}
 	stats2, err := s.TopSignatures("proj", 3650, 0)
@@ -211,8 +214,12 @@ func TestIngestRun_FixtureAndOffsetIdempotent(t *testing.T) {
 // no transcript to find — IngestRun must not error, just do nothing.
 func TestIngestRun_EmptyCLISessionIDIsNoop(t *testing.T) {
 	s := newTestStore(t)
-	if err := IngestRun(s, "proj", "S1", 1, "", "/some/path", ""); err != nil {
+	res, err := IngestRun(s, "proj", "S1", 1, "", "/some/path", "", "")
+	if err != nil {
 		t.Fatalf("IngestRun with empty cliSessionID: %v", err)
+	}
+	if res.Reason != ReasonNoCLISessionID {
+		t.Errorf("res.Reason = %q, want %q", res.Reason, ReasonNoCLISessionID)
 	}
 	stats, err := s.TopSignatures("proj", 3650, 0)
 	if err != nil {
@@ -220,6 +227,92 @@ func TestIngestRun_EmptyCLISessionIDIsNoop(t *testing.T) {
 	}
 	if len(stats) != 0 {
 		t.Errorf("expected no rows, got %+v", stats)
+	}
+}
+
+// TestIngestRun_FallbackToMarkdownLogWhenTranscriptNotFound is the
+// LEARN-TASKS.md LN-21 fallback: when FindTranscript can't locate the CLI's
+// own JSONL transcript (the dominant real-corpus cause of near-zero
+// live-ingest coverage — cleaned up, or relocated under a worktree-specific
+// project slug), IngestRun falls back to this run's own auto-saved markdown
+// log instead of just failing.
+func TestIngestRun_FallbackToMarkdownLogWhenTranscriptNotFound(t *testing.T) {
+	s := newTestStore(t)
+	t.Setenv("CM_TRANSCRIPTS_DIR", t.TempDir()) // empty: no transcript will ever be found
+
+	run := &store.SessionRun{Project: "proj", Session: "S1", Model: "sonnet", StartedAt: time.Now().UTC(), Status: "working"}
+	if err := s.InsertRun(run); err != nil {
+		t.Fatalf("InsertRun: %v", err)
+	}
+
+	const cliSessionID = "22222222-2222-2222-2222-222222222222"
+	mdPath := filepath.Join(t.TempDir(), "S1-fallback.md")
+	copyFile(t, "../../testdata/logfiles/basic.md", mdPath)
+
+	res, err := IngestRun(s, "proj", "S1", run.ID, cliSessionID, "", "STATUS-P1.md:5", mdPath)
+	if err != nil {
+		t.Fatalf("IngestRun: %v", err)
+	}
+	if res.Reason != ReasonFallbackMD {
+		t.Errorf("res.Reason = %q, want %q", res.Reason, ReasonFallbackMD)
+	}
+	// basic.md fixture has exactly 1 tool_use step (Bash: git status --short).
+	if res.Rows != 1 {
+		t.Fatalf("res.Rows = %d, want 1", res.Rows)
+	}
+
+	stats, err := s.TopSignatures("proj", 3650, 0)
+	if err != nil {
+		t.Fatalf("TopSignatures: %v", err)
+	}
+	var total int
+	for _, st := range stats {
+		total += st.Count
+	}
+	if total != 1 {
+		t.Fatalf("action rows = %d, want 1", total)
+	}
+
+	// TestIngestRun_FallbackToMarkdownLog_RepeatIsIdempotent (inline, same
+	// setup): re-running with the same cliSessionID and the same md path must
+	// not duplicate rows — a markdown log has no byte offset to resume from
+	// (LN-17), so the fallback needs its own dedup, unlike the transcript
+	// path's ingest_state offset.
+	res2, err := IngestRun(s, "proj", "S1", run.ID, cliSessionID, "", "STATUS-P1.md:5", mdPath)
+	if err != nil {
+		t.Fatalf("IngestRun (repeat): %v", err)
+	}
+	if res2.Reason != ReasonAlreadyIngestedMD {
+		t.Errorf("res2.Reason = %q, want %q", res2.Reason, ReasonAlreadyIngestedMD)
+	}
+	if res2.Rows != 0 {
+		t.Errorf("res2.Rows = %d, want 0 (idempotent no-op)", res2.Rows)
+	}
+
+	stats2, err := s.TopSignatures("proj", 3650, 0)
+	if err != nil {
+		t.Fatalf("TopSignatures (repeat): %v", err)
+	}
+	var total2 int
+	for _, st := range stats2 {
+		total2 += st.Count
+	}
+	if total2 != 1 {
+		t.Errorf("action rows after repeat = %d, want 1 (no duplicates)", total2)
+	}
+}
+
+// TestIngestRun_NoFallbackWhenMdLogPathEmpty: with no markdown log path
+// supplied at all (e.g. the run produced no log entries, so finishRun never
+// autosaved one), a missing transcript is still reported as an error rather
+// than silently swallowed.
+func TestIngestRun_NoFallbackWhenMdLogPathEmpty(t *testing.T) {
+	s := newTestStore(t)
+	t.Setenv("CM_TRANSCRIPTS_DIR", t.TempDir())
+
+	_, err := IngestRun(s, "proj", "S1", 1, "33333333-3333-3333-3333-333333333333", "", "", "")
+	if err == nil {
+		t.Fatal("expected an error when the transcript can't be found and no md fallback path is given")
 	}
 }
 

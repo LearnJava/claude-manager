@@ -122,10 +122,13 @@ func (a *App) startup(ctx context.Context) {
 	// calls this after every run, but only actually opens a transcript when
 	// [optimization] experience_tracking is on (checked live against
 	// whatever config SetConfig last installed, not just at startup).
+	// mdLogPath (LN-21) is this same run's own auto-saved markdown log, the
+	// fallback source when the CLI's own JSONL transcript can't be found.
 	if a.store != nil {
 		st := a.store
-		a.manager.SetActionIndexer(func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr string) error {
-			return experience.IngestRun(st, project, sessionName, runID, cliSessionID, projectPath, taskPtr)
+		a.manager.SetActionIndexer(func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr, mdLogPath string) (session.IngestResult, error) {
+			res, err := experience.IngestRun(st, project, sessionName, runID, cliSessionID, projectPath, taskPtr, mdLogPath)
+			return session.IngestResult{Rows: res.Rows, Reason: res.Reason}, err
 		})
 	}
 

@@ -60,6 +60,12 @@ type SessionEvent struct {
 	Todos          []TodoItem
 	TaskSourceDesc string
 	Err            error
+	// CLISessionID is populated on EvtTaskDone with the CLI session id of the
+	// run that just finished (LEARN-TASKS.md LN-21) — captured before the
+	// next task's fresh id is rotated onto the Session, so a consumer never
+	// races that rotation by reading Session.CLISessionID back off the
+	// (long-lived, mutated-in-place) Session after the fact.
+	CLISessionID string
 }
 
 // EventCallback is invoked by the session for every event. The manager is
@@ -848,16 +854,28 @@ func (s *Session) Run(ctx context.Context) {
 			s.mu.Lock()
 			s.tasksDone++
 			done := s.tasksDone
-			// Each task gets a fresh CLI session: reusing the previous
-			// --session-id would resume the old conversation and drag the whole
-			// finished task's dialogue into the next task's context.
-			s.CLISessionID = uuid.NewString()
+			finishedCLISessionID := s.CLISessionID
 			s.mu.Unlock()
 			logger.L.Info("session.run.task_done", "id", s.ID, "tasks_done", done)
 			// Post-task hook is informational: failures are logged but do not
 			// affect the run loop (PLAN.md section 9).
 			s.runPostTaskHook(ctx)
-			s.emit(SessionEvent{Type: EvtTaskDone, TasksDone: done})
+			// EvtTaskDone carries the CLI session id of the run that JUST
+			// finished (LEARN-TASKS.md LN-21) — finishRun's live-transcript
+			// indexer needs that exact id to find the right transcript.
+			// Rotating s.CLISessionID before this emit (the previous ordering)
+			// meant the manager's EvtTaskDone handler always read the NEXT
+			// task's not-yet-existing id instead, so IngestRun's FindTranscript
+			// failed on effectively every completed autonomous task.
+			s.emit(SessionEvent{Type: EvtTaskDone, TasksDone: done, CLISessionID: finishedCLISessionID})
+			// Each task gets a fresh CLI session: reusing the previous
+			// --session-id would resume the old conversation and drag the whole
+			// finished task's dialogue into the next task's context. Rotated
+			// only after the emit above so nothing observing this event ever
+			// sees the next task's id in place of the one that just finished.
+			s.mu.Lock()
+			s.CLISessionID = uuid.NewString()
+			s.mu.Unlock()
 		}
 
 		if !s.Config.AutoRestart {

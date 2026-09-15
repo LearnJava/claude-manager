@@ -1619,17 +1619,70 @@ same directory is a cheap no-op by construction (`IsLogFileImported` dedup,
 LN-17) — the summary's `skipped` count is what makes that visible rather than
 looking like nothing happened.
 
+**Why live-ingest saw ~0.2% coverage** (LN-21, `internal/session/session.go`,
+`internal/experience/indexer.go`, `internal/session/manager.go`). A real-DB
+measurement (2026-09-15) found only 21 of 9933 `session_runs` with any
+`action_signatures` row — not a transcript-lookup or missing-`cli_session_id`
+problem (checked directly: 100% of the sampled runs carried a `cli_session_id`,
+and `FindTranscript` located the file for 99.6% of them). The actual cause was
+an operation-ordering bug in `Session.Run()`'s `default:` (successful task
+completion) case: `s.CLISessionID` was rotated to the **next** task's fresh
+UUID *before* `s.emit(SessionEvent{Type: EvtTaskDone, ...})`, and
+`SessionManager.finishRun` read `ms.session.CLISessionID` after that emit —
+so `IngestRun` was handed the next, not-yet-launched process's id on every
+completed autonomous task, and `FindTranscript` correctly failed to find a
+transcript that didn't exist yet. `error`/`stopped` runs were unaffected
+(their own event fires before any rotation happens on those paths).
+
+Fixed by moving the rotation to *after* the emit and carrying the just-finished
+run's own id on the event instead of reading it back off the (long-lived,
+mutated-in-place) `Session`: `SessionEvent.CLISessionID`, populated with a
+value captured before rotation. `finishRun(ms, status, errMsg,
+finishedCLISessionID string)` takes that id explicitly for the `completed`
+path (from `ev.CLISessionID`); the `error`/`stopped` paths still pass `""` and
+fall back to `ms.session.CLISessionID`, which remains correct there.
+`TestRun_EvtTaskDone_CarriesFinishedRunsOwnCLISessionID`
+(`internal/session`) drives two real `fakeclaude` processes through an
+autonomous loop and asserts each `EvtTaskDone.CLISessionID` matches the id
+*that task's own* process launched with — verified to fail against the old
+ordering and pass against the fix.
+
+**Markdown-log fallback.** `IngestRun` gained an `mdLogPath` parameter — this
+run's own auto-saved markdown log (`store.SaveSessionLogFile`, written by the
+same `finishRun` call) — used when `FindTranscript` can't locate the CLI's own
+JSONL transcript (cleaned up, or relocated under a worktree-specific project
+slug). `finishRun` now runs the log autosave and the indexer call
+sequentially in one goroutine (previously two independent fire-and-forget
+goroutines with no ordering guarantee) so the autosaved path is available for
+the fallback. Since a markdown log carries no byte offset to resume from
+(`ParseLogFile` always parses the whole file, LN-17), the fallback's own
+idempotency is tracked by recording the md file's own path and size in
+`ingest_state` instead of a transcript byte offset — a repeat call for the
+same run recognizes "already consumed this exact file"
+(`IngestResult.Reason == ReasonAlreadyIngestedMD`) and is a no-op rather than
+re-parsing and duplicating rows.
+
+**Outcome is now distinguishable, not just discarded.** `IngestRun` returns
+`(IngestResult{Rows, Reason}, error)` instead of a bare `error` —
+`ReasonNoCLISessionID` (no `system/init` ever arrived, nothing to index, not
+an error), `ReasonFallbackMD`, `ReasonAlreadyIngestedMD`, or `""` for an
+ordinary transcript-backed ingest. `finishRun` logs every outcome as
+`experience.ingest_run` (`project`, `cli_session_id`, `rows`, `reason`) so
+"nothing to index" and "failed to index" no longer look identical in
+`app.log`.
+
 **Live indexing + the "Actions" tab** (LN-03, `internal/experience/indexer.go`
 `IngestRun`, `internal/store/store.go` `TopSignatures`/`ActionSamples`).
 `IngestRun(st, project, sessionName, runID, cliSessionID, projectPath,
-taskPtr)` is the per-run twin of `IngestDir` above: it locates the CLI's own
+taskPtr, mdLogPath)` is the per-run twin of `IngestDir` above: it locates the CLI's own
 JSONL transcript (`FindTranscript`), resumes from the byte offset
 `GetIngestOffset` last left off (LN-02's `ingest_state`), and inserts the
 newly-appended `tool_use` steps with a real `run_id` — unlike a bulk-imported
 row, a live run always has a `session_runs` row to point at. Called from
 `SessionManager.finishRun` (the same choke point the log autosave and daily
-metrics update already use) in its own fire-and-forget goroutine, gated on
-`[optimization] experience_tracking` (default off) so the flag being off
+metrics update already use), in the same fire-and-forget goroutine as the log
+autosave (LN-21: sequential, so the autosaved path is ready as this call's
+`mdLogPath` fallback), gated on `[optimization] experience_tracking` (default off) so the flag being off
 means a transcript is never opened at all, not just that the result is
 discarded — `SessionManager.SetActionIndexer` takes the indexing function as
 an `ActionIndexFunc`, wired from `app.go` to `experience.IngestRun`, rather

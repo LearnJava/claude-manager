@@ -25,12 +25,22 @@ type Emitter interface {
 	Emit(event string, data any)
 }
 
+// IngestResult mirrors experience.IngestResult (LEARN-TASKS.md LN-21) without
+// importing internal/experience — same import-cycle reason as ActionIndexFunc
+// below.
+type IngestResult struct {
+	Rows   int
+	Reason string
+}
+
 // ActionIndexFunc indexes one finished run's newly-appended CLI transcript
 // lines into action_signatures (LEARN-TASKS.md LN-03). Declared as a function
 // type here, consumed by finishRun, and wired from app.go to
 // internal/experience.IngestRun — a direct import would cycle, since
 // internal/experience already imports internal/session for Step/TokenUsage.
-type ActionIndexFunc func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr string) error
+// mdLogPath (LN-21) is this run's own auto-saved markdown log — the fallback
+// source IngestRun uses when the CLI's own JSONL transcript can't be found.
+type ActionIndexFunc func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr, mdLogPath string) (IngestResult, error)
 
 // JournalEntry mirrors experience.Entry (LEARN-TASKS.md LN-06) without
 // importing internal/experience — same import-cycle reason as
@@ -1444,7 +1454,12 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 		runID := ms.runID
 		ms.mu.Unlock()
 		if runID != 0 {
-			m.finishRun(ms, "completed", "")
+			// ev.CLISessionID is the id of the run that just finished, captured
+			// by Session before it rotates s.CLISessionID for the next task
+			// (LEARN-TASKS.md LN-21) — reading ms.session.CLISessionID here
+			// instead would almost always see that next task's not-yet-launched
+			// id, since this handler runs synchronously off the same emit.
+			m.finishRun(ms, "completed", "", ev.CLISessionID)
 		}
 		m.emit(EventNameTaskDone, TaskDoneEvent{ID: id, TasksDone: ev.TasksDone})
 
@@ -1494,7 +1509,10 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 		runID := ms.runID
 		ms.mu.Unlock()
 		if runID != 0 {
-			m.finishRun(ms, "error", msg)
+			// Unlike EvtTaskDone above, nothing rotates CLISessionID before this
+			// emit for an error exit, so ms.session.CLISessionID (finishRun's
+			// "" fallback) still identifies the run that just errored.
+			m.finishRun(ms, "error", msg, "")
 		}
 		m.emit(EventNameError, ErrorEvent{ID: id, Message: msg})
 	}
@@ -1518,7 +1536,7 @@ func (m *SessionManager) handleStatus(ms *managedSession, st config.SessionStatu
 		runID := ms.runID
 		ms.mu.Unlock()
 		if runID != 0 {
-			m.finishRun(ms, "stopped", "")
+			m.finishRun(ms, "stopped", "", "")
 		}
 	}
 }
@@ -1662,7 +1680,14 @@ type RegressionEvent struct {
 	Hint    string  `json:"hint"`
 }
 
-func (m *SessionManager) finishRun(ms *managedSession, status, errMsg string) {
+// finishedCLISessionID, when non-empty, is the CLI session id of the run
+// that just finished — passed explicitly for a completed task
+// (LEARN-TASKS.md LN-21) because Session rotates ms.session.CLISessionID to
+// the next task's id before this is called, so reading it back off
+// ms.session here would name the wrong run. Empty means "read
+// ms.session.CLISessionID", still correct for the error/stopped paths, which
+// finish before any rotation happens.
+func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedCLISessionID string) {
 	if m.store == nil {
 		return
 	}
@@ -1712,21 +1737,60 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg string) {
 		_ = m.store.InsertLogs(runID, logs)
 	}
 
+	// Resolve the CLI session id to index (LEARN-TASKS.md LN-21): the
+	// explicit finishedCLISessionID for a completed task, else the session's
+	// own live field (still correct for error/stopped — see the doc comment
+	// above).
+	cliSessionID := finishedCLISessionID
+	if cliSessionID == "" {
+		cliSessionID = ms.session.CLISessionID
+	}
+
 	// Auto-save this run's log to <project>/.claude-manager/logs/ as markdown
 	// so it survives independently of the SQLite history (and of "Clear log"
-	// in the UI, which only empties the on-screen buffer). Fire-and-forget:
-	// a failure here must never affect the run's own completed/error/stopped
+	// in the UI, which only empties the on-screen buffer), and index this
+	// run's transcript into action_signatures for the "Actions" tab
+	// (LEARN-TASKS.md LN-03). One goroutine, sequential: the indexer needs
+	// the autosaved log's own path as its markdown fallback when the CLI's
+	// own JSONL transcript can't be found (LEARN-TASKS.md LN-21), so the
+	// save must complete first. Fire-and-forget either way — a failure in
+	// either step must never affect the run's own completed/error/stopped
 	// status, just get logged.
-	if len(logs) > 0 {
+	m.mu.Lock()
+	indexRun := m.indexRun
+	tracking := m.cfg != nil && m.cfg.Optimization.ExperienceTracking
+	m.mu.Unlock()
+	doIndex := indexRun != nil && tracking
+	if len(logs) > 0 || doIndex {
 		projectPath := ms.session.ProjectPath
 		sessID := ms.session.ID
+		taskPtr := ms.session.taskSourceDesc
+		sessionName := ms.name
 		go func() {
-			defer logger.Recover("manager.autosave_log", "id", sessID)
-			path, err := store.SaveSessionLogFile(projectPath, sessID, logs)
-			if err != nil {
-				logger.L.Error("session.log_autosave_failed", "id", sessID, "error", err)
-			} else if path != "" {
-				logger.L.Info("session.log_autosaved", "id", sessID, "path", path)
+			defer logger.Recover("manager.finish_run_async", "id", sessID)
+			var mdLogPath string
+			if len(logs) > 0 {
+				path, err := store.SaveSessionLogFile(projectPath, sessID, logs)
+				if err != nil {
+					logger.L.Error("session.log_autosave_failed", "id", sessID, "error", err)
+				} else if path != "" {
+					logger.L.Info("session.log_autosaved", "id", sessID, "path", path)
+					mdLogPath = path
+				}
+			}
+			if doIndex {
+				res, err := indexRun(project, sessionName, runID, cliSessionID, projectPath, taskPtr, mdLogPath)
+				if err != nil {
+					logger.L.Error("session.index_run_failed", "id", sessID, "cli_session_id", cliSessionID, "error", err)
+					return
+				}
+				logger.L.Info("experience.ingest_run",
+					"id", sessID,
+					"project", project,
+					"cli_session_id", cliSessionID,
+					"rows", res.Rows,
+					"reason", res.Reason,
+				)
 			}
 		}()
 	}
@@ -1743,30 +1807,6 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg string) {
 			TotalRuns:                1,
 			TotalTasks:               1,
 		})
-	}
-
-	// Index this run's transcript into action_signatures for the "Actions"
-	// tab (LEARN-TASKS.md LN-03) — same fire-and-forget goroutine pattern as
-	// the log autosave above, so a failure here can never affect the run's
-	// own completed/error/stopped status. Gated on experience_tracking so the
-	// flag being off means a transcript is never opened at all, not just that
-	// the result is discarded.
-	m.mu.Lock()
-	indexRun := m.indexRun
-	tracking := m.cfg != nil && m.cfg.Optimization.ExperienceTracking
-	m.mu.Unlock()
-	if indexRun != nil && tracking {
-		sessID := ms.session.ID
-		cliSessionID := ms.session.CLISessionID
-		projectPath := ms.session.ProjectPath
-		taskPtr := ms.session.taskSourceDesc
-		sessionName := ms.name
-		go func() {
-			defer logger.Recover("manager.index_run", "id", sessID)
-			if err := indexRun(project, sessionName, runID, cliSessionID, projectPath, taskPtr); err != nil {
-				logger.L.Error("session.index_run_failed", "id", sessID, "error", err)
-			}
-		}()
 	}
 
 	// Check whether this run broke out of its session's own recent cost/

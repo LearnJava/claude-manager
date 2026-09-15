@@ -180,10 +180,38 @@ func actionRows(traj Trajectory, project, sessionName, fallbackProjectPath strin
 	return rows
 }
 
-// IngestRun indexes the newly-appended portion of one finished run's CLI
-// JSONL transcript into action_signatures (LEARN-TASKS.md LN-03), called
-// from SessionManager.finishRun when experience_tracking is on. It is
-// idempotent via the per-CLI-session byte offset in ingest_state
+// IngestResult reports the outcome of one IngestRun call — LEARN-TASKS.md
+// LN-21's fix for the two outcomes that used to look identical from the
+// caller's side ("nothing happened"): a run with genuinely nothing to index
+// (Reason set, err nil) versus one IngestRun actually failed to index
+// (err set). Rows is 0 in both cases, but only the latter is worth alerting
+// on.
+type IngestResult struct {
+	Rows   int
+	Reason string // "" on an ordinary transcript-backed ingest; see Reason* consts otherwise
+}
+
+// Reason values for IngestResult.Reason (LEARN-TASKS.md LN-21).
+const (
+	// ReasonNoCLISessionID: the run never got a system/init event (e.g. the
+	// process died immediately), so there is no CLI session id and thus no
+	// transcript — or markdown log — to find. Not an error: this is expected
+	// for a fraction of error-status runs.
+	ReasonNoCLISessionID = "no_cli_session_id"
+	// ReasonFallbackMD: the CLI's own JSONL transcript could not be found
+	// (cleaned up, or the machine's ~/.claude/projects/ never had it), so
+	// this run's auto-saved markdown log was parsed instead.
+	ReasonFallbackMD = "fallback_md"
+	// ReasonAlreadyIngestedMD: a repeat call after ReasonFallbackMD — the
+	// exact same markdown log was already consumed, so this is an idempotent
+	// no-op rather than a fresh (possibly duplicating) parse.
+	ReasonAlreadyIngestedMD = "already_ingested_md"
+)
+
+// IngestRun indexes one finished run's newly-appended CLI transcript lines
+// into action_signatures (LEARN-TASKS.md LN-03), called from
+// SessionManager.finishRun when experience_tracking is on. It is idempotent
+// via the per-CLI-session byte offset in ingest_state
 // (GetIngestOffset/SetIngestOffset, LN-02): re-running it for the same
 // cliSessionID only reads what wasn't read last time, so a retried or
 // duplicate call never re-inserts rows.
@@ -192,40 +220,85 @@ func actionRows(traj Trajectory, project, sessionName, fallbackProjectPath strin
 // one place a real run_id is available, so rows carry it — TopSignatures'
 // DistinctRuns then counts these rows by run_id directly, falling back to
 // cli_session_id only for the bulk-imported rows that have none.
-func IngestRun(st *store.Store, project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr string) error {
+//
+// mdLogPath, when non-empty, is this same run's own auto-saved markdown log
+// (store.SaveSessionLogFile, written by the same finishRun call that invokes
+// this) — the fallback source when the CLI's own JSONL transcript cannot be
+// found (LEARN-TASKS.md LN-21: a real-corpus measurement found this to be the
+// dominant cause of near-zero live-ingest coverage on a machine where old
+// transcripts get cleaned up or relocated under a worktree-specific project
+// slug). Unlike a JSONL transcript, a markdown log carries no byte offset to
+// resume from (ParseLogFile always parses the whole file, LN-17) — so the
+// saved ingest_state row for this fallback stores the md file's own path and
+// size instead of a transcript byte offset, purely so a repeat call can tell
+// "already consumed this exact file" and skip re-parsing rather than
+// duplicating rows.
+func IngestRun(st *store.Store, project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr, mdLogPath string) (IngestResult, error) {
 	if cliSessionID == "" {
-		// No system/init event ever arrived (e.g. the process died before
-		// producing one) — there is no transcript file to find.
-		return nil
+		return IngestResult{Reason: ReasonNoCLISessionID}, nil
 	}
 
-	path, err := FindTranscript(TranscriptsRoot(), projectPath, cliSessionID)
+	savedPath, savedOffset, ok, err := st.GetIngestOffset(cliSessionID)
 	if err != nil {
-		return err
-	}
-
-	_, offset, ok, err := st.GetIngestOffset(cliSessionID)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		offset = 0
-	}
-
-	traj, newOffset, err := ReadFrom(path, offset)
-	if err != nil {
-		return err
+		return IngestResult{}, err
 	}
 
 	var rid *int64
 	if runID != 0 {
 		rid = &runID
 	}
-	rows := actionRows(traj, project, sessionName, projectPath, rid, cliSessionID, taskPtr)
+
+	path, findErr := FindTranscript(TranscriptsRoot(), projectPath, cliSessionID)
+	if findErr == nil {
+		// The saved offset only means something against the exact file it
+		// was recorded for — a transcript that moved (or a prior fallback
+		// that recorded the md log's own size) must not be treated as a
+		// byte offset into this path.
+		offset := int64(0)
+		if ok && savedPath == path {
+			offset = savedOffset
+		}
+		traj, newOffset, err := ReadFrom(path, offset)
+		if err != nil {
+			return IngestResult{}, err
+		}
+		rows := actionRows(traj, project, sessionName, projectPath, rid, cliSessionID, taskPtr)
+		if len(rows) > 0 {
+			if err := st.InsertActions(rows); err != nil {
+				return IngestResult{}, err
+			}
+		}
+		if err := st.SetIngestOffset(cliSessionID, path, newOffset); err != nil {
+			return IngestResult{}, err
+		}
+		return IngestResult{Rows: len(rows)}, nil
+	}
+
+	if mdLogPath == "" {
+		return IngestResult{}, findErr
+	}
+	if ok && savedPath == mdLogPath {
+		return IngestResult{Reason: ReasonAlreadyIngestedMD}, nil
+	}
+
+	mdTraj, err := ParseLogFile(mdLogPath)
+	if err != nil {
+		// Report the original transcript-lookup failure — that's the error a
+		// caller can actually act on; the fallback itself was best-effort.
+		return IngestResult{}, findErr
+	}
+	rows := actionRows(mdTraj, project, sessionName, projectPath, rid, cliSessionID, taskPtr)
 	if len(rows) > 0 {
 		if err := st.InsertActions(rows); err != nil {
-			return err
+			return IngestResult{}, err
 		}
 	}
-	return st.SetIngestOffset(cliSessionID, path, newOffset)
+	var size int64
+	if fi, statErr := os.Stat(mdLogPath); statErr == nil {
+		size = fi.Size()
+	}
+	if err := st.SetIngestOffset(cliSessionID, mdLogPath, size); err != nil {
+		return IngestResult{}, err
+	}
+	return IngestResult{Rows: len(rows), Reason: ReasonFallbackMD}, nil
 }

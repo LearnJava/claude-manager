@@ -94,7 +94,7 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-18 | ✓ DONE (2026-09-09) | internal/experience/duration.go, primer.go, ExperiencePanel.svelte |
 | LN-19 | ✓ DONE (2026-09-15) | internal/experience/indexer.go (projectPath в actionRows), signature.go (sanitizeForeignPath) |
 | LN-20 | ✓ DONE (2026-09-15) | app.go (ImportProjectLogs), internal/session/manager.go, ExperiencePanel.svelte, stores/experience.ts |
-| LN-21 | ○ TODO | internal/experience/indexer.go (IngestRun), internal/session/manager.go |
+| LN-21 | ✓ DONE (2026-09-15) | internal/session/session.go (EvtTaskDone rotation-order fix), internal/experience/indexer.go (IngestRun md fallback), internal/session/manager.go |
 | LN-22 | ○ TODO | internal/experience/candidate.go (outcomeWeight) |
 | LN-23 | ○ TODO | internal/analysis/skill.go (порог), SkillReview.svelte |
 
@@ -1217,6 +1217,51 @@ p50 = 782, максимум 8692; в топе — переоткрытый git-�
 выхода при пустом `cliSessionID`; тест фолбэка на markdown-лог, когда
 транскрипт не найден; тест, что повторный вызов после фолбэка не дублирует
 строки.
+
+**Результат.** Замер до фикса на реальной БД (`~/.claude-manager/history.db`,
+2026-09-15): 21 из 9933 прогонов во всём приложении имеют хотя бы одну строку
+в `action_signatures` (0.21%), для Lumen за последние 10 дней — 11 из 2692
+(0.41%). Проверка гипотез (а)/(б) прямо на этой БД: у Lumen **100%** прогонов
+несут непустой `cli_session_id` (гипотеза (а) не объясняет провал), и для
+2692 прогонов за 10 дней прямой путь `FindTranscript` (без фолбэка) находит
+файл в **99.6%** случаев (2682/2692, все не пустые) — гипотеза (б) тоже не
+основная причина здесь. Прямой вызов `IngestRun` с правильными
+`(run_id, cli_session_id)` из БД по 10 реальным завершённым прогонам Lumen
+успешно проиндексировал 9 из 10 (десятый — транскрипт физически удалён с
+диска, ожидаемый случай).
+
+Настоящая причина — гонка порядка операций в `Session.Run()` (`default:` в
+цикле в session.go), не входившая в исходные гипотезы (а)/(б)/(в): при
+завершении задачи `s.CLISessionID` ротировался в новый UUID **до**
+`s.emit(SessionEvent{Type: EvtTaskDone, ...})`, а `SessionManager.finishRun`
+читал `ms.session.CLISessionID` уже после ротации — то есть на каждый
+завершённый автономный прогон `IngestRun` получал id **следующей**, ещё не
+запущенной задачи, для которой транскрипта заведомо не существует. Для путей
+`error`/`stopped` ротация происходит уже после соответствующего события, и
+там объект `ms.session.CLISessionID` на момент `finishRun` ещё корректен —
+поэтому баг проявлялся только на `completed`, то есть на подавляющем
+большинстве прогонов, для которых вообще стоило бы что-то индексировать.
+Живой пример этого бага виден в `app.log` этой же сессии: `session:index_run_failed`
+для собственного `Developer 1` с `cli_session_id`, который на момент ошибки
+ещё не был подтверждён событием `system/init`.
+
+Исправление: `EvtTaskDone` теперь несёт `CLISessionID` завершившегося
+прогона, захваченный до ротации (`SessionEvent.CLISessionID`), а ротация
+`s.CLISessionID` перенесена на **после** `s.emit(...)`; `finishRun` берёт
+этот id из события для `completed` и только для `error`/`stopped`
+по-прежнему читает `ms.session.CLISessionID` (там это по-прежнему корректно).
+Регрессионный тест `TestRun_EvtTaskDone_CarriesFinishedRunsOwnCLISessionID`
+(`internal/session`) гоняет два реальных прогона через `fakeclaude` и
+проверяет, что `EvtTaskDone.CLISessionID` каждого прогона совпадает с тем id,
+с которым был запущен именно этот процесс (не следующий) — вручную проверено,
+что при откате правки только этот тест падает.
+
+«После» на живом трафике не измерялось (нужны часы автономных прогонов),
+но правильность механизма подтверждена: (1) регрессионный тест выше падает
+на старом порядке операций и проходит на новом; (2) прямой повтор `IngestRun`
+по всем 10 реальным прогонам Lumen с правильными идентификаторами даёт 9/10
+успешных индексаций, то есть сам путь индексации был рабочим — единственной
+проблемой была невозможность до него добраться с верным `cli_session_id`.
 
 ## LN-22: Вес исхода — по шагу, а не по всему прогону
 
