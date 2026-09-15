@@ -541,3 +541,149 @@ func TestResolveSkillMinScore_FallsBackToRelativeWhenUnset(t *testing.T) {
 		t.Errorf("expected the relative fallback %v, got %v", want, got)
 	}
 }
+
+// TestClassifyCandidate_Rules covers each rule of classifyCandidate in turn —
+// the ordering between them is the load-bearing part (a loop wins over
+// length, a known failure wins over read-only).
+func TestClassifyCandidate_Rules(t *testing.T) {
+	ts := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	readOnly := []store.ActionRow{row("Bash:ls <ARG>", "Bash", "ls internal", 0, 10, ts)}
+	writing := []store.ActionRow{row("Edit:internal/*.go", "Edit", "internal/session/session.go", 0, 10, ts)}
+	failure := []FailureCluster{{ErrorKey: "boom"}}
+
+	cases := []struct {
+		name       string
+		sig        []string
+		samples    []store.ActionRow
+		related    []FailureCluster
+		suspect    bool
+		wantKind   CandidateKind
+		wantReason string
+	}{
+		{"uniform loop beats length", []string{"A", "A"}, readOnly, failure, true, KindNoise, reasonLoop},
+		{"non-uniform is never a loop", []string{"A", "B"}, readOnly, nil, true, KindSkill, reasonMultiStep},
+		{"sequence", []string{"A", "B"}, readOnly, nil, false, KindSkill, reasonMultiStep},
+		{"single step with a known failure", []string{"A"}, readOnly, failure, false, KindSkill, reasonKnownFailure},
+		{"single read-only step", []string{"A"}, readOnly, nil, false, KindPermission, reasonReadOnly},
+		{"single writing step", []string{"A"}, writing, nil, false, KindSkill, reasonSingleStep},
+		{"no samples is not read-only", []string{"A"}, nil, nil, false, KindSkill, reasonSingleStep},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			kind, reason := classifyCandidate(tc.sig, tc.samples, tc.related, tc.suspect)
+			if kind != tc.wantKind || reason != tc.wantReason {
+				t.Errorf("classifyCandidate = (%q, %q), want (%q, %q)", kind, reason, tc.wantKind, tc.wantReason)
+			}
+		})
+	}
+}
+
+// TestAllSamplesReadOnly_OneUnsafeSampleDisqualifies: an allow-rule
+// suggestion must be cleared by every observation, not by the majority.
+func TestAllSamplesReadOnly_OneUnsafeSampleDisqualifies(t *testing.T) {
+	ts := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	samples := []store.ActionRow{
+		row("Bash:git status --short", "Bash", "git status --short", 0, 10, ts),
+		row("Bash:git status --short", "Bash", "git status --short && rm -rf build", 1, 10, ts),
+	}
+	if allSamplesReadOnly(samples) {
+		t.Error("a sample containing rm must disqualify the whole candidate")
+	}
+	if allSamplesReadOnly(nil) {
+		t.Error("no samples must not count as read-only")
+	}
+}
+
+// TestClassifyCandidate_MaskedSignatureIsNotClassified guards the reason
+// rule 4 classifies samples rather than the signature: the mask's own angle
+// brackets look like a shell redirection to ClassifyPermission, so a
+// signature-based check would call every candidate unsafe.
+func TestClassifyCandidate_MaskedSignatureIsNotClassified(t *testing.T) {
+	if ClassifyPermission("Bash", "ls <ARG>") {
+		t.Skip("masked signature no longer trips the redirection check — rule 4's rationale needs revisiting")
+	}
+	ts := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	samples := []store.ActionRow{row("Bash:ls <ARG>", "Bash", "ls internal", 0, 10, ts)}
+	if kind, _ := classifyCandidate([]string{"Bash:ls <ARG>"}, samples, nil, false); kind != KindPermission {
+		t.Errorf("Kind = %q, want %q — classification must read the samples' verbatim args", kind, KindPermission)
+	}
+}
+
+// TestMineCandidates_SequencesOutrankOneLiners is the ranking invariant this
+// classification exists for: a frequent read-only 1-gram necessarily scores
+// at least as high as the sequence containing it, and must still be listed
+// below it.
+func TestMineCandidates_SequencesOutrankOneLiners(t *testing.T) {
+	ts := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	var runs []CandidateRun
+	for i := 0; i < 5; i++ {
+		runs = append(runs, run(fmt.Sprintf("r%d", i), "completed",
+			row("Read:docs/*.md", "Read", "docs/git-workflow.md", 0, 5000, ts),
+			row("Bash:ls <ARG>", "Bash", "ls internal", 1, 5000, ts),
+			row("Bash:cargo test <ARG>", "Bash", "cargo test -p core", 2, 5000, ts),
+			row("Edit:internal/*.go", "Edit", "internal/a.go", 3, 5000, ts),
+		))
+	}
+	// Runs where the 1-gram occurs outside the sequence, so it is not dropped
+	// as nested in it — and genuinely outscores it, which is the case under
+	// test. The surrounding rows are unique per run, so no longer gram
+	// inherits the 1-gram's own run count.
+	for i := 0; i < 3; i++ {
+		runs = append(runs, run(fmt.Sprintf("solo%d", i), "completed",
+			row(fmt.Sprintf("Bash:pre%d <ARG>", i), "Bash", "pre", 0, 5000, ts),
+			row("Bash:ls <ARG>", "Bash", "ls internal", 1, 5000, ts),
+			row(fmt.Sprintf("Bash:post%d <ARG>", i), "Bash", "post", 2, 5000, ts),
+		))
+	}
+	cands := MineCandidates(runs, DefaultMinRunShare, nil)
+	if len(cands) == 0 {
+		t.Fatal("expected candidates")
+	}
+	ls := findCandidate(cands, "Bash:ls <ARG>")
+	if ls == nil {
+		t.Fatal("the 1-gram must still be mined, just ranked as a permission candidate")
+	}
+	if ls.Kind != KindPermission {
+		t.Errorf("Kind of the read-only 1-gram = %q, want %q", ls.Kind, KindPermission)
+	}
+	if ls.Score < cands[0].Score {
+		t.Fatalf("fixture no longer exercises the case: the 1-gram (%v) must outscore the top listed candidate (%v)", ls.Score, cands[0].Score)
+	}
+	if cands[0].Kind != KindSkill {
+		t.Fatalf("top candidate = %v (%s), want a skill-kind one", cands[0].Sig, cands[0].Kind)
+	}
+	for i, c := range cands {
+		if c.Kind == KindSkill && i > 0 && cands[i-1].Kind != KindSkill {
+			t.Errorf("skill candidate at %d ranked below a non-skill one", i)
+		}
+	}
+}
+
+// TestResolveSkillMinScore_UsesSkillKindDistribution: the automatic threshold
+// must be a percentile of the candidates that could actually be distilled,
+// not of a list dominated by permission/noise one-liners.
+func TestResolveSkillMinScore_UsesSkillKindDistribution(t *testing.T) {
+	cands := []SkillCandidate{
+		{Score: 900, Kind: KindPermission},
+		{Score: 800, Kind: KindNoise},
+		{Score: 100, Kind: KindSkill},
+		{Score: 10, Kind: KindSkill},
+	}
+	got := ResolveSkillMinScore(cands, 0, 0.5)
+	want := RelativeScoreThreshold([]float64{100, 10}, 0.5)
+	if got != want {
+		t.Errorf("ResolveSkillMinScore = %v, want %v (skill-kind scores only)", got, want)
+	}
+}
+
+// TestResolveSkillMinScore_FallsBackWhenNoSkillKind keeps every caller that
+// builds SkillCandidates without a Kind (direct/test construction) working
+// exactly as before.
+func TestResolveSkillMinScore_FallsBackWhenNoSkillKind(t *testing.T) {
+	cands := []SkillCandidate{{Score: 100}, {Score: 50}, {Score: 1}}
+	got := ResolveSkillMinScore(cands, 0, 0.5)
+	want := RelativeScoreThreshold([]float64{100, 50, 1}, 0.5)
+	if got != want {
+		t.Errorf("ResolveSkillMinScore = %v, want %v", got, want)
+	}
+}
