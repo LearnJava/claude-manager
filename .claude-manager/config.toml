@@ -1,4 +1,3 @@
-gates = []
 default_permission_mode = ""
 
 [[session]]
@@ -8,7 +7,7 @@ default_permission_mode = ""
   max_tasks = 0
   stop_when_no_tasks = false
   task_source = ""
-  model = "opus"
+  model = "sonnet"
   fallback_model = ""
   fallback_model_on_rate_limit = false
   effort = "medium"
@@ -38,7 +37,7 @@ default_permission_mode = ""
   model = "sonnet"
   fallback_model = ""
   fallback_model_on_rate_limit = false
-  effort = "high"
+  effort = "medium"
   permission_mode = "bypassPermissions"
   allowed_tools = []
   disallowed_tools = []
