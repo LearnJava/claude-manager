@@ -194,6 +194,24 @@ func (a *App) startup(ctx context.Context) {
 		})
 	}
 
+	// Wire the bulk log importer (LEARN-TASKS.md LN-20): only ever reached
+	// when [optimization] experience_tracking is on (checked in
+	// SessionManager.ImportProjectLogs), and only wired at all when a store
+	// exists to import into.
+	if a.store != nil {
+		st := a.store
+		a.manager.SetLogImporter(func(dir, project, projectPath string, onProgress func(int, int)) (session.ImportStats, error) {
+			stats, err := experience.IngestDir(st, dir, project, projectPath, experience.ImportOpts{OnProgress: onProgress})
+			return session.ImportStats{
+				Files:   stats.Files,
+				Runs:    stats.Runs,
+				Actions: stats.Actions,
+				Skipped: stats.Skipped,
+				Errors:  stats.Errors,
+			}, err
+		})
+	}
+
 	// Start the control-plane server (no-op when CM_CONTROL disables it).
 	if controlEmitter != nil {
 		srv, err := control.StartFromEnv(ctx, a.manager, a, controlEmitter)
@@ -1312,6 +1330,18 @@ func (a *App) GetSkills(project string) ([]store.Skill, error) {
 		return nil, fmt.Errorf("no store")
 	}
 	return a.store.ListSkills(project)
+}
+
+// ImportProjectLogs bulk-imports a directory of saved CLI logs into
+// action_signatures — the "Import logs" button that was missing from LN-17's
+// IngestDir (LEARN-TASKS.md LN-20). An empty dir imports the project's own
+// <project>/.claude-manager/logs/; otherwise dir is expected to come from
+// PickDirectory (a corpus brought from another machine). Streams
+// experience:import progress while the walk is in flight; a re-import of a
+// directory already covered is a cheap no-op (session.ImportStats.Skipped
+// reports how many files were skipped).
+func (a *App) ImportProjectLogs(project, dir string) (session.ImportStats, error) {
+	return a.manager.ImportProjectLogs(project, dir)
 }
 
 // ApproveSkill writes a draft's (possibly reviewer-edited) markdown to

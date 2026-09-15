@@ -207,6 +207,44 @@ test.describe('Experience panel', () => {
     await expect(modal).not.toBeVisible({ timeout: 3_000 });
   });
 
+  test('Import logs button: menu, progress event, and result summary', async ({ page }) => {
+    await page.goto('/');
+
+    const experienceBtn = page.getByRole('button', { name: 'Experience' });
+    await expect(experienceBtn).toBeVisible({ timeout: 5_000 });
+    await experienceBtn.click();
+
+    const modal = page.getByRole('dialog');
+    await expect(modal).toBeVisible({ timeout: 3_000 });
+
+    // Override ImportProjectLogs to emit one progress event, then resolve
+    // with a populated ImportStats — mirrors how session.ImportProjectLogs
+    // streams experience:import while IngestDir's walk is in flight.
+    await page.evaluate(() => {
+      const w = window as any;
+      w.go.main.App.ImportProjectLogs = (project: string) => {
+        w.__dispatchWailsEvent('experience:import', { project, processed: 1, total: 2 });
+        return new Promise((resolve) =>
+          setTimeout(
+            () => resolve({ Files: 2, Runs: 2, Actions: 10, Skipped: 1, Errors: 0 }),
+            50,
+          ),
+        );
+      };
+    });
+
+    await modal.getByRole('button', { name: 'Import logs' }).click();
+    await modal.getByText("This project's logs").click();
+
+    await expect(modal.getByText(/Imported 1 \/ 2 files/i)).toBeVisible({ timeout: 3_000 });
+    await expect(
+      modal.getByText(/Files: 2, runs: 2, actions: 10, skipped: 1, errors: 0/i),
+    ).toBeVisible({ timeout: 3_000 });
+
+    await modal.getByRole('button', { name: '✕' }).click();
+    await expect(modal).not.toBeVisible({ timeout: 3_000 });
+  });
+
   test('Settings → Global: toggling Experience layer persists through Save', async ({
     page,
     ctrl,

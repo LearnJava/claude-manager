@@ -1,9 +1,11 @@
 <script lang="ts">
-    import { createEventDispatcher, onMount } from 'svelte';
+    import { createEventDispatcher, onDestroy, onMount } from 'svelte';
     import { projects } from '../stores/projects';
     import { formatDuration, formatPercent, formatTime, formatTokens } from '../lib/formatters';
     import { t } from '../lib/i18n';
     import SkillReview from './SkillReview.svelte';
+    import { PickDirectory } from '../../wailsjs/go/main/App';
+    import { EventsOn } from '../../wailsjs/runtime/runtime';
     import {
         addPermissionRule,
         fetchActionSamples,
@@ -11,8 +13,10 @@
         fetchPermissionCandidates,
         fetchTokenAttribution,
         fetchTopActions,
+        importProjectLogs,
         type ActionRow,
         type AttributionReport,
+        type ImportStats,
         type PermissionCandidate,
         type SignatureDuration,
         type SignatureStat,
@@ -73,6 +77,48 @@
     let attribution: AttributionReport = { TotalEstTokens: 0, BySignature: [], ByTool: [] };
     let costLoading = true;
     let costError = '';
+
+    // Import logs (LEARN-TASKS.md LN-20) — the UI to LN-17's IngestDir.
+    let importMenuOpen = false;
+    let importRunning = false;
+    let importError = '';
+    let importResult: ImportStats | null = null;
+    let importProgress: { processed: number; total: number } | null = null;
+    let unsubImportProgress: (() => void) | null = null;
+
+    onMount(() => {
+        unsubImportProgress = EventsOn(
+            'experience:import',
+            (evt: { project: string; processed: number; total: number }) => {
+                if (evt.project !== project) return;
+                importProgress = { processed: evt.processed, total: evt.total };
+            },
+        );
+    });
+    onDestroy(() => unsubImportProgress?.());
+
+    async function runImport(dir: string) {
+        importMenuOpen = false;
+        importRunning = true;
+        importError = '';
+        importResult = null;
+        importProgress = null;
+        try {
+            importResult = await importProjectLogs(project, dir);
+        } catch (e: any) {
+            importError = $t('experiencePanel.import.errorLoad', { error: e?.message ?? String(e) });
+        } finally {
+            importRunning = false;
+            importProgress = null;
+        }
+    }
+
+    async function importChooseDir() {
+        importMenuOpen = false;
+        const dir = await PickDirectory($t('experiencePanel.import.chooseDir'));
+        if (!dir) return;
+        await runImport(dir);
+    }
 
     function rowKey(c: PermissionCandidate): string {
         return `${c.Tool}\0${c.Pattern}`;
@@ -339,6 +385,31 @@
                 </div>
             </div>
             <div class="flex items-center gap-2">
+                <div class="relative">
+                    <button
+                        type="button"
+                        disabled={!project || importRunning}
+                        on:click={() => (importMenuOpen = !importMenuOpen)}
+                        class="px-2 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg disabled:opacity-50 disabled:cursor-not-allowed">
+                        {importRunning ? $t('experiencePanel.import.running') : $t('experiencePanel.import.button')}
+                    </button>
+                    {#if importMenuOpen}
+                        <div class="absolute right-0 mt-1 w-48 bg-bg-panel border border-bg-border rounded shadow-lg z-20 text-xs">
+                            <button
+                                type="button"
+                                on:click={() => runImport('')}
+                                class="block w-full text-left px-3 py-2 text-text hover:bg-bg-elevated">
+                                {$t('experiencePanel.import.projectDir')}
+                            </button>
+                            <button
+                                type="button"
+                                on:click={importChooseDir}
+                                class="block w-full text-left px-3 py-2 text-text hover:bg-bg-elevated">
+                                {$t('experiencePanel.import.chooseDir')}
+                            </button>
+                        </div>
+                    {/if}
+                </div>
                 <button
                     type="button"
                     on:click={() => {
@@ -384,6 +455,33 @@
                 {/each}
             </div>
         </div>
+
+        {#if importRunning || importError || importResult}
+            <div class="px-4 py-2 border-b border-bg-border shrink-0 text-xs">
+                {#if importRunning}
+                    <span class="text-text-muted">
+                        {importProgress
+                            ? $t('experiencePanel.import.progress', {
+                                  processed: importProgress.processed,
+                                  total: importProgress.total,
+                              })
+                            : $t('experiencePanel.import.running')}
+                    </span>
+                {:else if importError}
+                    <span class="text-status-error">{importError}</span>
+                {:else if importResult}
+                    <span class="text-text-muted">
+                        {$t('experiencePanel.import.resultSummary', {
+                            files: importResult.Files,
+                            runs: importResult.Runs,
+                            actions: importResult.Actions,
+                            skipped: importResult.Skipped,
+                            errors: importResult.Errors,
+                        })}
+                    </span>
+                {/if}
+            </div>
+        {/if}
 
         <!-- Body -->
         <div class="flex-1 min-h-0 overflow-y-auto">

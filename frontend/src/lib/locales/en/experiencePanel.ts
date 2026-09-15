@@ -74,6 +74,15 @@ export default {
     'experiencePanel.actions.noArg': '(no arg)',
     'experiencePanel.actions.errorLoad': 'Failed to load actions: {error}',
 
+    'experiencePanel.import.button': 'Import logs',
+    'experiencePanel.import.projectDir': 'This project\'s logs',
+    'experiencePanel.import.chooseDir': 'Choose folder…',
+    'experiencePanel.import.running': 'Importing…',
+    'experiencePanel.import.progress': 'Imported {processed} / {total} files…',
+    'experiencePanel.import.errorLoad': 'Import failed: {error}',
+    'experiencePanel.import.resultSummary':
+        'Files: {files}, runs: {runs}, actions: {actions}, skipped: {skipped}, errors: {errors}',
+
     'experiencePanel.footer.actions': 'Click a signature to load its recorded examples.',
     'experiencePanel.footer.timing':
         'Durations come from action_signatures.dur_sec — the tool_use→tool_result gap in each logged call. A signature needs at least 10 timed calls to appear here.',

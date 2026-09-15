@@ -1580,10 +1580,44 @@ size, mtime)` — a closed, complete log file either was imported or wasn't,
 unlike a live JSONL transcript's byte-offset checkpoint (`ingest_state`) — so
 re-running `IngestDir` over a directory it already covered inserts nothing
 twice. `ImportOpts.OnProgress(processed, total)` reports as it walks, since an
-import of thousands of files with no feedback reads as a hung process. Not
-yet wired into `app.go`/a frontend button of its own — bulk re-indexing an
-old corpus is an occasional maintenance action, not part of the per-run flow
-LN-03 wires up below.
+import of thousands of files with no feedback reads as a hung process. Wired
+into `app.go`/a frontend button as `ImportProjectLogs` (LN-20, below) — bulk
+re-indexing an old corpus is an occasional maintenance action, not part of the
+per-run flow LN-03 wires up next.
+
+**"Import logs" button** (LN-20, `internal/session/manager.go`
+`SessionManager.ImportProjectLogs`, `app.go` `App.ImportProjectLogs`). LN-17
+shipped `IngestDir` with no UI to call it — `grep -rn IngestDir` found only
+its own definition and tests, so a project's accumulated `.claude-manager/logs/`
+corpus (measured on Lumen: 5791 files, 245 MB, 946 importable runs) sat
+invisible to every downstream consumer (Actions tab, candidate mining) until
+this. `App.ImportProjectLogs(project, dir string) (session.ImportStats,
+error)`: an empty `dir` imports the project's own
+`<project>/.claude-manager/logs/`; otherwise `dir` is expected to come from
+`PickDirectory` (a corpus brought from another machine). Gated on the same
+`[optimization] experience_tracking` flag as the rest of the experience layer
+— off, or no store configured, is an error rather than a silent no-op, since a
+click that does nothing must still be visible to whoever clicked it.
+
+`SessionManager` cannot import `internal/experience` directly (the same cycle
+`ActionIndexFunc`/`PrimerFunc` avoid — `internal/experience` already imports
+`internal/session` for `Step`), so `session.ImportStats` mirrors
+`experience.ImportStats` field-for-field and `session.ImportLogsFunc` is the
+function type `SessionManager.importLogsFn` holds (`SetLogImporter`); `app.go`
+wires it to a closure over `experience.IngestDir`. Progress streams through
+the same `Emitter` every other long-running call uses
+(`plan:roadmap_progress`, `skill:progress`) as `experience:import`
+(`{project, processed, total}`) — importing thousands of files with no signal
+otherwise reads as a hung UI.
+
+**UI** (`ExperiencePanel.svelte`): an "Import logs" button next to "Refresh"
+in the header opens a two-item menu — "This project's logs" (empty `dir`) or
+"Choose folder…" (`PickDirectory`, then the chosen path) — followed by a
+progress line while the import runs and a one-line `ImportStats` summary
+(files/runs/actions/skipped/errors) once it finishes. A repeat import of the
+same directory is a cheap no-op by construction (`IsLogFileImported` dedup,
+LN-17) — the summary's `skipped` count is what makes that visible rather than
+looking like nothing happened.
 
 **Live indexing + the "Actions" tab** (LN-03, `internal/experience/indexer.go`
 `IngestRun`, `internal/store/store.go` `TopSignatures`/`ActionSamples`).
@@ -2241,6 +2275,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `ApproveSkill(id, md, overwrite)` | Write a (possibly edited) draft's markdown to `<project>/.claude/skills/<name>/SKILL.md`, mark it approved; returns `experience.ErrSkillFileExists` when the file is already there and `overwrite` is false |
 | `ArchiveSkill(id)` | Mark a skill row archived — never touches any file already written into the project |
 | `GetSkillQuality(project)` | Before/after-approval effect (median tokens/turns/completed-rate) per approved skill, plus a "protuhla" (stale) suggestion — the Skills tab's effect table (LEARN-TASKS.md LN-11) |
+| `ImportProjectLogs(project, dir)` | Bulk-import a directory of saved CLI logs into `action_signatures` (empty `dir` = the project's own `.claude-manager/logs/`); streams `experience:import` progress — the "Import logs" button (LEARN-TASKS.md LN-20) |
 | `GetRateLimitStatus()` | Current rate limit info |
 | `ExportLog(id, entries, format)` | Save log as MD/JSON/TXT via native dialog |
 | `CleanOldLogs(days)` | Delete logs older than N days from SQLite |
