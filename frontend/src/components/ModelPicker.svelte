@@ -18,6 +18,7 @@
     let rec: Rec = null;
     let loading = true;
     let error = '';
+    let skipped = false;    // true = user opted out of waiting for the analysis
 
     let chosenModel  = 'sonnet';
     let chosenEffort = 'medium';
@@ -29,7 +30,9 @@
         loading = true;
         error = '';
         try {
-            rec = await GetModelRecommendation(project, sessionName) as Rec;
+            const r = await GetModelRecommendation(project, sessionName) as Rec;
+            if (skipped) return; // user already moved on; ignore the late result
+            rec = r;
             if (rec) {
                 // Normalized so it matches an <option> if the router ever
                 // returns a resolved id instead of an alias.
@@ -37,13 +40,23 @@
                 chosenEffort = rec.effort;
             }
         } catch (e: any) {
+            if (skipped) return;
             error = e?.message ?? String(e);
         } finally {
-            loading = false;
+            if (!skipped) loading = false;
         }
     }
 
     load();
+
+    // Skip waiting for the analysis entirely — go straight to manual choice.
+    function skipAnalysis() {
+        skipped = true;
+        loading = false;
+        error = '';
+        rec = null;
+        overriding = true;
+    }
 
     function confirm() {
         dispatch('confirm', { model: chosenModel, effort: chosenEffort });
@@ -93,8 +106,15 @@
 
         <!-- Body -->
         {#if loading}
-            <div class="text-text-muted text-sm py-4 text-center">
-                {$t('modelPicker.analyzing')}
+            <div class="text-text-muted text-sm py-4 text-center flex flex-col items-center gap-2">
+                <span>{$t('modelPicker.analyzing')}</span>
+                <button
+                    type="button"
+                    class="text-blue-400 hover:underline"
+                    style="font-size:13px"
+                    on:click={skipAnalysis}>
+                    {$t('modelPicker.skipAnalysis')}
+                </button>
             </div>
         {:else if error}
             <div class="text-status-error text-sm py-2">{error}</div>
@@ -115,7 +135,7 @@
                     <span class="font-mono font-semibold text-blue-400">{rec.effort}</span>
                 </div>
             </div>
-        {:else}
+        {:else if !skipped}
             <div class="text-text-muted text-sm">{$t('modelPicker.noRecommendation')}</div>
         {/if}
 
