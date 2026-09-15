@@ -204,6 +204,14 @@ export interface SkillCandidate {
     Imported: boolean;
     FirstSeen: string;
     LastSeen: string;
+    // What the candidate is actually worth turning into (experience.
+    // CandidateKind): 'skill' | 'permission' | 'noise'. Advisory — the
+    // backend never refuses to distill on this, it only ranks by it.
+    Kind: string;
+    // Stable reason code for Kind, mapped to localized text by
+    // SkillReview.svelte: multi_step | known_failure | read_only | loop |
+    // single_step.
+    KindReason: string;
 }
 
 // fetchSkillCandidates mines a project's recent action_signatures into

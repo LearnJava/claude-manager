@@ -54,6 +54,40 @@
         return c.Sig.join('\x1f');
     }
 
+    // A candidate's Kind (experience.CandidateKind) says what it is actually
+    // worth turning into — a lone recurring command outranks every sequence
+    // containing it by construction, so frequency alone would keep the head
+    // of this list filled with one-liners no skill could teach anything from.
+    // The backend already ranks skill-kind candidates first; this filter is
+    // for hiding the rest outright.
+    let skillKindOnly = false;
+    $: visibleCandidates = skillKindOnly
+        ? candidates.filter((c) => c.Kind === 'skill')
+        : candidates;
+
+    const KIND_KEYS: Record<string, string> = {
+        skill: 'skillReview.kindSkill',
+        permission: 'skillReview.kindPermission',
+        noise: 'skillReview.kindNoise',
+    };
+    const REASON_KEYS: Record<string, string> = {
+        multi_step: 'skillReview.reasonMultiStep',
+        known_failure: 'skillReview.reasonKnownFailure',
+        read_only: 'skillReview.reasonReadOnly',
+        loop: 'skillReview.reasonLoop',
+        single_step: 'skillReview.reasonSingleStep',
+    };
+
+    // Reactive assignments, not plain functions: the template calls these
+    // with a candidate, so Svelte would not otherwise see $t as a dependency
+    // and the cells would keep the old locale after a language switch. An
+    // unrecognized code (an older row, a kind added backend-side later)
+    // falls back to the raw code rather than an empty cell.
+    $: kindLabel = (c: SkillCandidate): string =>
+        KIND_KEYS[c.Kind] ? $t(KIND_KEYS[c.Kind]) : c.Kind ?? '';
+    $: kindReasonLabel = (c: SkillCandidate): string =>
+        REASON_KEYS[c.KindReason] ? $t(REASON_KEYS[c.KindReason]) : c.KindReason ?? '';
+
     // Row expansion: clicking a skill opens its review/edit panel. Working
     // copies of the markdown body are kept separately from the loaded row so
     // an in-progress edit survives collapsing/re-expanding within one load().
@@ -270,6 +304,10 @@
                     {$t('skillReview.candidatesHeading')}
                 </div>
                 <div class="flex items-center gap-3">
+                    <label class="flex items-center gap-1 text-xs text-text-muted">
+                        <input type="checkbox" bind:checked={skillKindOnly} />
+                        {$t('skillReview.hideNonSkill')}
+                    </label>
                     <label class="flex items-center gap-1 text-xs text-text-muted" title={$t('skillReview.minScoreHint')}>
                         {$t('skillReview.minScoreLabel')}
                         <input
@@ -296,13 +334,14 @@
                 <thead class="text-text-muted">
                     <tr>
                         <th class="text-left px-3 py-1 font-medium">{$t('skillReview.colSequence')}</th>
+                        <th class="text-left px-3 py-1 font-medium">{$t('skillReview.colKind')}</th>
                         <th class="text-right px-3 py-1 font-medium">{$t('skillReview.colRuns')}</th>
                         <th class="text-right px-3 py-1 font-medium">{$t('skillReview.colScore')}</th>
                         <th class="px-3 py-1"></th>
                     </tr>
                 </thead>
                 <tbody>
-                    {#each candidates as c (candidateKey(c))}
+                    {#each visibleCandidates as c (candidateKey(c))}
                         {@const key = candidateKey(c)}
                         <tr class="border-t border-bg-border align-top">
                             <td class="px-3 py-1 text-text font-mono">
@@ -313,6 +352,11 @@
                                 {#if c.Imported}
                                     <span class="ml-1 text-text-muted italic">({$t('skillReview.imported')})</span>
                                 {/if}
+                            </td>
+                            <td class="px-3 py-1 whitespace-nowrap" title={kindReasonLabel(c)}>
+                                <span class={c.Kind === 'skill' ? 'text-status-working' : 'text-text-muted'}>
+                                    {kindLabel(c)}
+                                </span>
                             </td>
                             <td class="px-3 py-1 text-right text-text-muted font-mono whitespace-nowrap">
                                 {c.DistinctRuns} ({formatPercent(c.RunShare)})

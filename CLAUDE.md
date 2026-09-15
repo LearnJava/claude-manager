@@ -1957,6 +1957,41 @@ shortlist. A shorter sequence survives whenever its own `DistinctRuns` is
 *not* matched by any longer sequence that contains it — it is genuinely more
 frequent on its own.
 
+**Frequency alone cannot say what a candidate is *for*.** A 1-gram occurs in
+at least as many runs as every n-gram containing it, so it necessarily
+outscores the sequences it is part of — measured on a real corpus, the whole
+head of the ranked list was `Bash:sed -n <ARG>`, `Bash:git status --short`,
+`Bash:grep -n <ARG>`, `Bash:ls <ARG>`, none of which can become a procedure:
+a skill teaches an *order* of steps, and one command has no order.
+`classifyCandidate` therefore labels every candidate with a
+`CandidateKind` — a hard rule set, never a heuristic score, the same stance
+`ClassifyPermission` (LN-04) takes: a uniform gram flagged as a loop is
+`KindNoise` (the context-loss symptom `ContextLossSuspect` already names —
+distilling it would teach the symptom back); any 2+ step sequence is
+`KindSkill`; a single step with a `RelatedFailures` cluster is `KindSkill`
+too (a documented "fails like this → fixed like that" needs no second step
+and is the highest-value output of this whole pipeline); a single step whose
+*every* sample is cleared by `ClassifyPermission` is `KindPermission` —
+belongs in the Permissions tab, where one fewer prompt per run is a win a
+skill cannot deliver; anything else single-step stays `KindSkill`, ranked
+below the sequences. Rule 4 classifies the samples' **verbatim args**, never
+the signature: a masked signature's own `<ARG>` angle brackets trip
+`ClassifyPermission`'s redirection check, so a signature-based check would
+call every candidate unsafe.
+
+1-grams are deliberately still mined rather than dropped (`for n := 1`) —
+they carry the frequency evidence the run-share threshold is built on, and
+the failure-attached ones are the best skills there are. `Score` is also left
+untouched (LN-22's weighting invariants and LN-23's threshold are defined on
+it); what changes is the *sort*, which now puts `kindRank` ahead of `Score`,
+and `ResolveSkillMinScore`, which computes its top-N% cutoff over the
+`KindSkill` candidates only — a percentile of a population that is mostly
+one-liners no one would distill is not a calibration (it falls back to the
+full list when no candidate carries a Kind, e.g. a direct/test call).
+`SkillReview.svelte` renders the verdict as a "Worth as" column (the reason
+code localized into a tooltip) plus a "Skill candidates only" filter; nothing
+refuses to distill a `KindPermission`/`KindNoise` row — the label is advisory.
+
 **RelatedFailures is a best-effort hint, not a guarantee.** A `FailureCluster`
 (LN-07) is attached to a candidate when one of the cluster's own kept
 `Examples` (capped at `maxClusterExamples`=5) shares a run key with one of the

@@ -83,6 +83,119 @@ type SkillCandidate struct {
 	Imported  bool
 	FirstSeen time.Time
 	LastSeen  time.Time
+	// Kind is what this candidate is actually worth turning into — see
+	// classifyCandidate. Advisory: nothing refuses to distill a
+	// KindPermission/KindNoise candidate, but the ranking and the automatic
+	// threshold (ResolveSkillMinScore) both treat KindSkill as the real
+	// population.
+	Kind CandidateKind
+	// KindReason is a stable code explaining Kind (reasonMultiStep,
+	// reasonKnownFailure, reasonReadOnly, reasonLoop, reasonSingleStep) —
+	// a code, not prose, because the UI is localized (frontend/src/lib/i18n.ts).
+	KindReason string
+}
+
+// CandidateKind is what a mined candidate should become. Frequency alone
+// cannot answer that: a single recurring command is real evidence of
+// *something*, but a skill is a procedure — an order of steps and the
+// conditions around them — and a lone `Bash:ls <ARG>` has no order to teach.
+// Measured on a real corpus, the top of the ranked list was entirely
+// 1-grams (`sed -n`, `git status --short`, `grep -n`, `ls`) precisely
+// because a single signature occurs in at least as many runs as every
+// n-gram containing it, so it necessarily outranks the sequences it is part
+// of. Rather than drop 1-grams from mining (they carry the frequency
+// evidence the run-share threshold is built on, and one *with a known
+// failure attached* is among the best skills there is), each candidate is
+// labelled with what it is good for.
+type CandidateKind string
+
+const (
+	// KindSkill — worth distilling into a SKILL.md (LN-09).
+	KindSkill CandidateKind = "skill"
+	// KindPermission — a single read-only call; the actionable win is an
+	// auto-allow rule (LN-04's Permissions tab), not a procedure.
+	KindPermission CandidateKind = "permission"
+	// KindNoise — the same call repeated identically: a context-loss
+	// symptom, not a habit worth teaching back.
+	KindNoise CandidateKind = "noise"
+)
+
+// KindReason codes — see SkillCandidate.KindReason.
+const (
+	reasonMultiStep    = "multi_step"
+	reasonKnownFailure = "known_failure"
+	reasonReadOnly     = "read_only"
+	reasonLoop         = "loop"
+	reasonSingleStep   = "single_step"
+)
+
+// kindRank orders KindSkill first, then KindPermission, then KindNoise — see
+// MineCandidates' sort.
+func kindRank(k CandidateKind) int {
+	switch k {
+	case KindSkill:
+		return 0
+	case KindPermission:
+		return 1
+	default:
+		return 2
+	}
+}
+
+// classifyCandidate is a hard rule set, never a heuristic score — the same
+// stance ClassifyPermission (LN-04) takes, and for the same reason: a
+// guessed verdict that reads as authoritative is worse than no verdict.
+//
+//  1. A uniform gram flagged as a loop is noise, whatever its length: the
+//     identical call repeated is the context-loss symptom ContextLossSuspect
+//     already names, and distilling it would teach the symptom back.
+//  2. Any sequence of 2+ distinct steps is a skill: the order is the content,
+//     and only a procedure can carry it.
+//  3. A single step with a related failure cluster (LN-07) is a skill too —
+//     "this command fails like this, fix it like that" is the highest-value
+//     thing this whole pipeline produces, and it needs no second step.
+//  4. A single step whose every observed sample is read-only
+//     (ClassifyPermission) belongs in the Permissions tab instead: the win
+//     there is one fewer permission prompt per run, which a skill cannot
+//     deliver.
+//  5. Anything else single-step (a write, a non-whitelisted command) stays a
+//     skill candidate, ranked below the sequences.
+//
+// Rule 4 classifies the *samples'* verbatim args, never the signature: a
+// signature is masked (`sed -n <ARG> <ARG>`) and the mask's own angle
+// brackets trip ClassifyPermission's redirection check, so every masked
+// signature would come back unsafe. Every sample must pass — one unsafe
+// observation is enough to keep the candidate out of an allow-rule
+// suggestion.
+func classifyCandidate(sig []string, samples []store.ActionRow, related []FailureCluster, loopSuspect bool) (CandidateKind, string) {
+	if loopSuspect && uniformGram(sig) {
+		return KindNoise, reasonLoop
+	}
+	if len(sig) > 1 {
+		return KindSkill, reasonMultiStep
+	}
+	if len(related) > 0 {
+		return KindSkill, reasonKnownFailure
+	}
+	if allSamplesReadOnly(samples) {
+		return KindPermission, reasonReadOnly
+	}
+	return KindSkill, reasonSingleStep
+}
+
+// allSamplesReadOnly reports whether every sample occurrence of a candidate
+// is cleared by ClassifyPermission. No samples at all is not read-only —
+// absence of evidence never clears anything here.
+func allSamplesReadOnly(samples []store.ActionRow) bool {
+	if len(samples) == 0 {
+		return false
+	}
+	for _, s := range samples {
+		if !ClassifyPermission(s.Tool, s.Arg) {
+			return false
+		}
+	}
+	return true
 }
 
 // outcomeWeight maps a run's status to how much a *successful* step's
@@ -276,21 +389,33 @@ func MineCandidates(runs []CandidateRun, minRunShare float64, clusters []Failure
 			continue
 		}
 		acc := accs[key]
+		related := relateFailures(acc.runKeys, clusters)
+		kind, reason := classifyCandidate(acc.sig, acc.samples, related, acc.suspect)
 		out = append(out, SkillCandidate{
 			Sig:                acc.sig,
 			DistinctRuns:       acc.distinctRuns,
 			RunShare:           float64(acc.distinctRuns) / float64(totalRuns),
 			Score:              acc.weightSum * math.Log(1+acc.rediscovery),
 			Samples:            acc.samples,
-			RelatedFailures:    relateFailures(acc.runKeys, clusters),
+			RelatedFailures:    related,
 			ContextLossSuspect: acc.suspect,
 			Imported:           acc.imported,
 			FirstSeen:          acc.firstSeen,
 			LastSeen:           acc.lastSeen,
+			Kind:               kind,
+			KindReason:         reason,
 		})
 	}
 
+	// Kind before Score: a 1-gram necessarily occurs in at least as many runs
+	// as every sequence containing it, so ranking by Score alone puts the
+	// alphabet above the workflows (see CandidateKind). Score still orders
+	// within a kind, and is left untouched as a number — LN-22's weighting
+	// invariants and LN-23's relative threshold are both defined on it.
 	sort.Slice(out, func(i, j int) bool {
+		if ri, rj := kindRank(out[i].Kind), kindRank(out[j].Kind); ri != rj {
+			return ri < rj
+		}
 		if out[i].Score != out[j].Score {
 			return out[i].Score > out[j].Score
 		}
@@ -349,13 +474,28 @@ func RelativeScoreThreshold(scores []float64, topFraction float64) float64 {
 // falls back to RelativeScoreThreshold over the project's *current*
 // candidate distribution, so the cutoff tracks corpus size instead of being
 // pinned to an uncalibrated absolute constant.
+// The distribution it thresholds against is the KindSkill candidates only,
+// when there are any: a top-N% cutoff is meaningless if the population it is
+// a percentage of is mostly one-liners that should never be distilled in the
+// first place (measured: the ranked list's own head was entirely
+// KindPermission 1-grams). With no KindSkill candidate at all — including
+// every caller that builds SkillCandidates without a Kind, e.g. a direct
+// test — it falls back to the full list, so the threshold is never computed
+// over an empty set.
 func ResolveSkillMinScore(candidates []SkillCandidate, minScore, topFraction float64) float64 {
 	if minScore > 0 {
 		return minScore
 	}
-	scores := make([]float64, len(candidates))
-	for i, c := range candidates {
-		scores[i] = c.Score
+	scores := make([]float64, 0, len(candidates))
+	for _, c := range candidates {
+		if c.Kind == KindSkill {
+			scores = append(scores, c.Score)
+		}
+	}
+	if len(scores) == 0 {
+		for _, c := range candidates {
+			scores = append(scores, c.Score)
+		}
 	}
 	return RelativeScoreThreshold(scores, topFraction)
 }
