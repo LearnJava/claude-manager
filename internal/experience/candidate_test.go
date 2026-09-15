@@ -122,29 +122,90 @@ func TestMineCandidates_DifferentArgsNotSuspect(t *testing.T) {
 	}
 }
 
-// TestMineCandidates_ErrorRunDoesNotRaiseScore is the LN-08 "cannot learn
-// from failed runs" test: adding an occurrence from a status=error run must
-// leave Score exactly unchanged — outcomeWeight(error) is 0, so it
-// contributes nothing to either factor of the score formula.
-func TestMineCandidates_ErrorRunDoesNotRaiseScore(t *testing.T) {
+// TestMineCandidates_ErrorRunWithSuccessfulStepsGivesReducedWeight is the
+// LN-22 acceptance test: a status=error run whose own steps succeeded
+// (IsError=false) must still contribute — nonzero, per LN-22's "the first
+// ninety-nine steps were fine" motivation — but less than an equivalent
+// completed run would (outcomeWeight 0.3 vs 1.0). A leading row with nonzero
+// ResultChars before the gram's own start is required so rediscoveryChars
+// (and therefore Score) isn't trivially 0 regardless of weight.
+func TestMineCandidates_ErrorRunWithSuccessfulStepsGivesReducedWeight(t *testing.T) {
 	ts := time.Now()
-	mk := func(key string, extra ...CandidateRun) []CandidateRun {
+	mk := func(extra ...CandidateRun) []CandidateRun {
+		// The leading row's Sig varies per run (X1/X2/X3/...) so the 3-gram
+		// [Xn A B] never recurs across runs and is filtered out by the
+		// frequency threshold — only [A B] itself recurs identically, so
+		// nested dedup (LN-08) never collapses [A B] into a same-DistinctRuns
+		// longer gram that happens to start one call earlier.
 		base := []CandidateRun{
-			run("r1", "completed", row("A", "Bash", "a", 0, 100, ts), row("B", "Bash", "b", 1, 10, ts)),
-			run("r2", "completed", row("A", "Bash", "a", 0, 100, ts), row("B", "Bash", "b", 1, 10, ts)),
-			run("r3", "completed", row("A", "Bash", "a", 0, 100, ts), row("B", "Bash", "b", 1, 10, ts)),
+			run("r1", "completed", row("X1", "Bash", "x", 0, 50, ts), row("A", "Bash", "a", 1, 100, ts), row("B", "Bash", "b", 2, 10, ts)),
+			run("r2", "completed", row("X2", "Bash", "x", 0, 50, ts), row("A", "Bash", "a", 1, 100, ts), row("B", "Bash", "b", 2, 10, ts)),
+			run("r3", "completed", row("X3", "Bash", "x", 0, 50, ts), row("A", "Bash", "a", 1, 100, ts), row("B", "Bash", "b", 2, 10, ts)),
 		}
 		return append(base, extra...)
 	}
 
-	before := MineCandidates(mk("before"), DefaultMinRunShare, nil)
+	before := MineCandidates(mk(), DefaultMinRunShare, nil)
 	cBefore := findCandidate(before, "A", "B")
 	if cBefore == nil {
 		t.Fatalf("no [A B] candidate before: %+v", before)
 	}
 
-	afterRuns := mk("after", run("r4", "error", row("A", "Bash", "a", 0, 9999, ts), row("B", "Bash", "b", 1, 9999, ts)))
-	after := MineCandidates(afterRuns, DefaultMinRunShare, nil)
+	errorRun := run("r4", "error", row("X4", "Bash", "x", 0, 50, ts), row("A", "Bash", "a", 1, 100, ts), row("B", "Bash", "b", 2, 10, ts))
+	afterError := MineCandidates(mk(errorRun), DefaultMinRunShare, nil)
+	cAfterError := findCandidate(afterError, "A", "B")
+	if cAfterError == nil {
+		t.Fatalf("no [A B] candidate after error run: %+v", afterError)
+	}
+
+	completedRun := run("r4", "completed", row("X4", "Bash", "x", 0, 50, ts), row("A", "Bash", "a", 1, 100, ts), row("B", "Bash", "b", 2, 10, ts))
+	afterCompleted := MineCandidates(mk(completedRun), DefaultMinRunShare, nil)
+	cAfterCompleted := findCandidate(afterCompleted, "A", "B")
+	if cAfterCompleted == nil {
+		t.Fatalf("no [A B] candidate after completed run: %+v", afterCompleted)
+	}
+
+	if cAfterError.DistinctRuns != cBefore.DistinctRuns+1 {
+		t.Errorf("DistinctRuns after = %d, want %d (raw count still grows)", cAfterError.DistinctRuns, cBefore.DistinctRuns+1)
+	}
+	if cAfterError.Score <= cBefore.Score {
+		t.Errorf("Score after error run = %v, want > %v (successful steps in an error run are real evidence, LN-22)", cAfterError.Score, cBefore.Score)
+	}
+	if cAfterError.Score >= cAfterCompleted.Score {
+		t.Errorf("Score after error run = %v, want < completed-run Score %v (error still counts for less than completed)", cAfterError.Score, cAfterCompleted.Score)
+	}
+}
+
+// TestMineCandidates_ErroredStepScoresZeroRegardlessOfRunStatus is the other
+// half of LN-22's invariant: an n-gram occurrence whose own steps are errors
+// must not score, no matter how the surrounding run ended — not even a
+// status=completed run can turn a failed step into evidence.
+func TestMineCandidates_ErroredStepScoresZeroRegardlessOfRunStatus(t *testing.T) {
+	ts := time.Now()
+	mk := func(extra ...CandidateRun) []CandidateRun {
+		// The leading row's Sig varies per run (X1/X2/X3/...) so the 3-gram
+		// [Xn A B] never recurs across runs and is filtered out by the
+		// frequency threshold — only [A B] itself recurs identically, so
+		// nested dedup (LN-08) never collapses [A B] into a same-DistinctRuns
+		// longer gram that happens to start one call earlier.
+		base := []CandidateRun{
+			run("r1", "completed", row("X1", "Bash", "x", 0, 50, ts), row("A", "Bash", "a", 1, 100, ts), row("B", "Bash", "b", 2, 10, ts)),
+			run("r2", "completed", row("X2", "Bash", "x", 0, 50, ts), row("A", "Bash", "a", 1, 100, ts), row("B", "Bash", "b", 2, 10, ts)),
+			run("r3", "completed", row("X3", "Bash", "x", 0, 50, ts), row("A", "Bash", "a", 1, 100, ts), row("B", "Bash", "b", 2, 10, ts)),
+		}
+		return append(base, extra...)
+	}
+
+	before := MineCandidates(mk(), DefaultMinRunShare, nil)
+	cBefore := findCandidate(before, "A", "B")
+	if cBefore == nil {
+		t.Fatalf("no [A B] candidate before: %+v", before)
+	}
+
+	erroredStepRow := row("A", "Bash", "a", 1, 9999, ts)
+	erroredStepRow.IsError = true
+	completedButErroredStep := run("r4", "completed", row("X4", "Bash", "x", 0, 9999, ts), erroredStepRow, row("B", "Bash", "b", 2, 9999, ts))
+	after := MineCandidates(mk(completedButErroredStep), DefaultMinRunShare, nil)
 	cAfter := findCandidate(after, "A", "B")
 	if cAfter == nil {
 		t.Fatalf("no [A B] candidate after: %+v", after)
@@ -154,7 +215,7 @@ func TestMineCandidates_ErrorRunDoesNotRaiseScore(t *testing.T) {
 		t.Errorf("DistinctRuns after = %d, want %d (raw count still grows)", cAfter.DistinctRuns, cBefore.DistinctRuns+1)
 	}
 	if cAfter.Score != cBefore.Score {
-		t.Errorf("Score after = %v, want unchanged %v (an error run must not pull the candidate up)", cAfter.Score, cBefore.Score)
+		t.Errorf("Score after = %v, want unchanged %v (a failed step must not score even in a completed run)", cAfter.Score, cBefore.Score)
 	}
 }
 
