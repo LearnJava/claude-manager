@@ -44,6 +44,9 @@
     let candidatesError = '';
     let gates: string[] = [];
     let distillModel = 'sonnet';
+    // 0 = automatic (relative threshold over the project's own current
+    // candidates, LEARN-TASKS.md LN-23); >0 overrides it outright.
+    let distillMinScore = 0;
     let distillBusyKey: string | null = null;
     let distillErrorByKey: Record<string, string> = {};
 
@@ -109,14 +112,18 @@
         distillBusyKey = key;
         distillErrorByKey = { ...distillErrorByKey, [key]: '' };
         try {
-            await distillSkill(project, c, gates, distillModel, 0);
+            await distillSkill(project, c, gates, distillModel, distillMinScore);
             await load();
         } catch (e: any) {
             const msg = e?.message ?? String(e);
             distillErrorByKey = {
                 ...distillErrorByKey,
+                // The backend message already names both the candidate's
+                // score and the threshold it missed (LEARN-TASKS.md LN-23) —
+                // shown as-is rather than swapped for a generic canned
+                // phrase, since that would throw the numbers away.
                 [key]: /below distillation threshold/i.test(msg)
-                    ? get(t)('skillReview.belowThreshold')
+                    ? get(t)('skillReview.belowThreshold', { message: msg })
                     : get(t)('skillReview.distillFailed', { message: msg }),
             };
         } finally {
@@ -262,16 +269,28 @@
                 <div class="text-xs font-medium text-text-muted">
                     {$t('skillReview.candidatesHeading')}
                 </div>
-                <label class="flex items-center gap-1 text-xs text-text-muted">
-                    {$t('skillReview.modelLabel')}
-                    <select
-                        bind:value={distillModel}
-                        class="bg-bg border border-bg-border rounded px-1 py-0.5 text-text">
-                        {#each MODELS as m (m.value)}
-                            <option value={m.value}>{m.label}</option>
-                        {/each}
-                    </select>
-                </label>
+                <div class="flex items-center gap-3">
+                    <label class="flex items-center gap-1 text-xs text-text-muted" title={$t('skillReview.minScoreHint')}>
+                        {$t('skillReview.minScoreLabel')}
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            bind:value={distillMinScore}
+                            placeholder="0"
+                            class="w-16 bg-bg border border-bg-border rounded px-1 py-0.5 text-text" />
+                    </label>
+                    <label class="flex items-center gap-1 text-xs text-text-muted">
+                        {$t('skillReview.modelLabel')}
+                        <select
+                            bind:value={distillModel}
+                            class="bg-bg border border-bg-border rounded px-1 py-0.5 text-text">
+                            {#each MODELS as m (m.value)}
+                                <option value={m.value}>{m.label}</option>
+                            {/each}
+                        </select>
+                    </label>
+                </div>
             </div>
             <table class="w-full text-xs border-collapse mb-2">
                 <thead class="text-text-muted">

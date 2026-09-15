@@ -450,6 +450,84 @@ func TestGetSkillCandidates_MinesRecurringSequence(t *testing.T) {
 	}
 }
 
+// TestResolveSkillMinScore_ExplicitOverridesRelative is LEARN-TASKS.md
+// LN-23's "явный minScore из UI перекрывает относительный" invariant at the
+// App-level wiring: a caller-supplied minScore must win even when the
+// project's own history would resolve to a very different relative
+// threshold.
+func TestResolveSkillMinScore_ExplicitOverridesRelative(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	a := &App{store: st}
+	now := time.Now().UTC()
+
+	var rows []store.ActionRow
+	for i := 0; i < 3; i++ {
+		r := &store.SessionRun{Project: "lumen", Session: "S1", Model: "sonnet", StartedAt: now, Status: "completed"}
+		if err := st.InsertRun(r); err != nil {
+			t.Fatalf("InsertRun: %v", err)
+		}
+		rows = append(rows,
+			store.ActionRow{Project: "lumen", Session: "S1", RunID: &r.ID, StepIndex: 0, Tool: "Bash",
+				Sig: "Bash:git status", Arg: "git status", ResultChars: 500, Timestamp: now},
+			store.ActionRow{Project: "lumen", Session: "S1", RunID: &r.ID, StepIndex: 1, Tool: "Bash",
+				Sig: "Bash:git add <ARG>", Arg: "git add -A", ResultChars: 500, Timestamp: now},
+		)
+	}
+	if err := st.InsertActions(rows); err != nil {
+		t.Fatalf("InsertActions: %v", err)
+	}
+
+	if got := a.resolveSkillMinScore("lumen", 999); got != 999 {
+		t.Errorf("explicit minScore must win over the relative computation: got %v, want 999", got)
+	}
+}
+
+// TestResolveSkillMinScore_UnsetFallsBackToRelative checks the other half:
+// minScore <= 0 must resolve to the same value
+// experience.ResolveSkillMinScore/MineProjectCandidates would compute
+// directly over the project's current candidates — not the old fixed
+// analysis.DefaultSkillMinScore.
+func TestResolveSkillMinScore_UnsetFallsBackToRelative(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	a := &App{store: st}
+	now := time.Now().UTC()
+
+	var rows []store.ActionRow
+	for i := 0; i < 3; i++ {
+		r := &store.SessionRun{Project: "lumen", Session: "S1", Model: "sonnet", StartedAt: now, Status: "completed"}
+		if err := st.InsertRun(r); err != nil {
+			t.Fatalf("InsertRun: %v", err)
+		}
+		rows = append(rows,
+			store.ActionRow{Project: "lumen", Session: "S1", RunID: &r.ID, StepIndex: 0, Tool: "Bash",
+				Sig: "Bash:git status", Arg: "git status", ResultChars: 500, Timestamp: now},
+			store.ActionRow{Project: "lumen", Session: "S1", RunID: &r.ID, StepIndex: 1, Tool: "Bash",
+				Sig: "Bash:git add <ARG>", Arg: "git add -A", ResultChars: 500, Timestamp: now},
+		)
+	}
+	if err := st.InsertActions(rows); err != nil {
+		t.Fatalf("InsertActions: %v", err)
+	}
+
+	cands, err := experience.MineProjectCandidates(st, "lumen")
+	if err != nil {
+		t.Fatalf("MineProjectCandidates: %v", err)
+	}
+	want := experience.ResolveSkillMinScore(cands, 0, 0)
+
+	if got := a.resolveSkillMinScore("lumen", 0); got != want {
+		t.Errorf("resolveSkillMinScore(0) = %v, want the relative fallback %v", got, want)
+	}
+}
+
 // TestGetTopActions_IncludesBulkImportedRows: a row with RunID == nil (from
 // IngestDir's bulk import, LEARN-TASKS.md LN-17) must still show up in
 // GetTopActions — the "Actions" tab must not silently drop imported history

@@ -302,6 +302,24 @@ func TestDistillSkillDefaultThreshold(t *testing.T) {
 	}
 }
 
+// LEARN-TASKS.md LN-23: the error text must name both the candidate's own
+// score and the threshold it failed to clear — a bare "below threshold"
+// gives the user nothing to act on.
+func TestDistillSkillBelowThresholdMessageNamesScoreAndThreshold(t *testing.T) {
+	_, err := DistillSkill(context.Background(), t.TempDir(),
+		SkillDistillInput{Sig: []string{"Bash:git status"}}, 3.2, 12.7, AnalysisConfig{}, nil)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "3.2") {
+		t.Errorf("error message %q does not name the candidate's score (3.2)", msg)
+	}
+	if !strings.Contains(msg, "12.7") {
+		t.Errorf("error message %q does not name the threshold (12.7)", msg)
+	}
+}
+
 func TestDistillSkillClaudeUnavailableReturnsError(t *testing.T) {
 	// Above threshold, so the CLI is actually attempted; the binary does not
 	// exist, so this must return an error, never panic.

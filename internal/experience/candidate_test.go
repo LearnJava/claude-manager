@@ -2,6 +2,7 @@ package experience
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -461,5 +462,82 @@ func TestMineProjectCandidates_NoHistoryReturnsNil(t *testing.T) {
 	}
 	if cands != nil {
 		t.Errorf("expected nil for a project with no ingested history, got %+v", cands)
+	}
+}
+
+// syntheticScores builds a deterministic, long-tailed score distribution (a
+// few very high scores, many low ones) mimicking a real corpus of n mined
+// candidates — Score itself scales with weightSum*log(1+rediscoveryChars),
+// so a real distribution is never uniform.
+func syntheticScores(n int) []float64 {
+	scores := make([]float64, n)
+	for i := 0; i < n; i++ {
+		scores[i] = math.Pow(float64(i+1), 1.7)
+	}
+	return scores
+}
+
+// TestRelativeScoreThreshold_ShareScalesWithCorpusSize is LEARN-TASKS.md
+// LN-23's calibration invariant: a corpus of 10 candidates and a corpus of
+// 10 000 must clear a *comparable share* of the same topFraction, unlike the
+// old absolute analysis.DefaultSkillMinScore (which cut everything on a
+// small DB and let almost everything through on a large imported one).
+func TestRelativeScoreThreshold_ShareScalesWithCorpusSize(t *testing.T) {
+	const topFraction = 0.1
+	for _, n := range []int{10, 10_000} {
+		scores := syntheticScores(n)
+		threshold := RelativeScoreThreshold(scores, topFraction)
+		passing := 0
+		for _, s := range scores {
+			if s >= threshold {
+				passing++
+			}
+		}
+		share := float64(passing) / float64(n)
+		if share < 0.08 || share > 0.12 {
+			t.Errorf("n=%d: passing share = %.4f, want close to topFraction %.2f", n, share, topFraction)
+		}
+	}
+}
+
+func TestRelativeScoreThreshold_EmptyReturnsZero(t *testing.T) {
+	if got := RelativeScoreThreshold(nil, 0.1); got != 0 {
+		t.Errorf("expected 0 for an empty distribution, got %v", got)
+	}
+}
+
+func TestRelativeScoreThreshold_TopCandidateAlwaysClears(t *testing.T) {
+	// A tiny project (1-2 candidates) must never lose its top candidate to
+	// rounding a fractional cutoff down to zero passing entries.
+	for _, n := range []int{1, 2, 5} {
+		scores := syntheticScores(n)
+		threshold := RelativeScoreThreshold(scores, DefaultSkillTopFraction)
+		top := scores[n-1] // syntheticScores is ascending; the last is highest
+		if top < threshold {
+			t.Errorf("n=%d: top score %v does not clear its own threshold %v", n, top, threshold)
+		}
+	}
+}
+
+func TestRelativeScoreThreshold_ZeroFractionFallsBackToDefault(t *testing.T) {
+	scores := syntheticScores(100)
+	if got, want := RelativeScoreThreshold(scores, 0), RelativeScoreThreshold(scores, DefaultSkillTopFraction); got != want {
+		t.Errorf("topFraction<=0 should fall back to DefaultSkillTopFraction: got %v, want %v", got, want)
+	}
+}
+
+func TestResolveSkillMinScore_ExplicitOverridesRelative(t *testing.T) {
+	cands := []SkillCandidate{{Score: 100}, {Score: 50}, {Score: 1}}
+	if got := ResolveSkillMinScore(cands, 5, 0); got != 5 {
+		t.Errorf("explicit minScore must win over the relative computation: got %v, want 5", got)
+	}
+}
+
+func TestResolveSkillMinScore_FallsBackToRelativeWhenUnset(t *testing.T) {
+	cands := []SkillCandidate{{Score: 100}, {Score: 50}, {Score: 1}}
+	got := ResolveSkillMinScore(cands, 0, 0.5)
+	want := RelativeScoreThreshold([]float64{100, 50, 1}, 0.5)
+	if got != want {
+		t.Errorf("expected the relative fallback %v, got %v", want, got)
 	}
 }

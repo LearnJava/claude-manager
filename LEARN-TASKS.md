@@ -96,7 +96,7 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-20 | ✓ DONE (2026-09-15) | app.go (ImportProjectLogs), internal/session/manager.go, ExperiencePanel.svelte, stores/experience.ts |
 | LN-21 | ✓ DONE (2026-09-15) | internal/session/session.go (EvtTaskDone rotation-order fix), internal/experience/indexer.go (IngestRun md fallback), internal/session/manager.go |
 | LN-22 | ✓ DONE (2026-09-15) | internal/experience/candidate.go (stepOccurrenceWeight, outcomeWeight) |
-| LN-23 | ○ TODO | internal/analysis/skill.go (порог), SkillReview.svelte |
+| LN-23 | ✓ DONE (2026-09-15) | internal/experience/candidate.go (RelativeScoreThreshold, ResolveSkillMinScore), internal/analysis/skill.go, app.go (resolveSkillMinScore), SkillReview.svelte |
 
 > LN-17 и LN-18 дописаны после разведки корпуса. LN-17 по приоритету идёт
 > **третьим**, сразу за LN-02 (без него нечего анализировать); LN-18 — после

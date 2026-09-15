@@ -302,6 +302,64 @@ func MineCandidates(runs []CandidateRun, minRunShare float64, clusters []Failure
 	return out
 }
 
+// DefaultSkillTopFraction is the fraction of a project's mined skill
+// candidates that clear the distillation threshold when no explicit minScore
+// is given (LEARN-TASKS.md LN-23) — a share, not an absolute score, for the
+// same reason DefaultMinRunShare above is a share rather than a count: Score
+// scales with weightSum*log(1+rediscoveryChars), which grows with corpus
+// size, so a fixed cutoff (the old analysis.DefaultSkillMinScore=10.0) cut
+// *everything* on this app's own small DB (max score 6.9 of 24 candidates)
+// and let *almost everything* through on an imported corpus two orders of
+// magnitude larger (378 of 379, p50=782) — an absolute number over a
+// corpus-size-dependent quantity cannot work in both directions at once. A
+// fixed top fraction of the *current* distribution clears a comparable share
+// of candidates regardless of how large that distribution is.
+const DefaultSkillTopFraction = 0.03
+
+// RelativeScoreThreshold returns the Score a candidate must clear to be
+// among the top topFraction of scores (topFraction <= 0 falls back to
+// DefaultSkillTopFraction). scores need not be pre-sorted. An empty slice
+// returns 0 — there is nothing to threshold against. The returned value
+// always equals some element of scores when scores is non-empty, so the
+// highest-scoring candidate always clears it regardless of how small
+// topFraction*len(scores) rounds down to — a project with only one or two
+// candidates never loses all of them to rounding.
+func RelativeScoreThreshold(scores []float64, topFraction float64) float64 {
+	if topFraction <= 0 {
+		topFraction = DefaultSkillTopFraction
+	}
+	if len(scores) == 0 {
+		return 0
+	}
+	sorted := append([]float64(nil), scores...)
+	sort.Sort(sort.Reverse(sort.Float64Slice(sorted)))
+	idx := int(math.Ceil(float64(len(sorted))*topFraction)) - 1
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(sorted) {
+		idx = len(sorted) - 1
+	}
+	return sorted[idx]
+}
+
+// ResolveSkillMinScore picks the threshold DistillSkill should compare a
+// candidate's score against (LEARN-TASKS.md LN-23): an explicit minScore
+// (> 0 — a caller/UI override) always wins outright; with none given it
+// falls back to RelativeScoreThreshold over the project's *current*
+// candidate distribution, so the cutoff tracks corpus size instead of being
+// pinned to an uncalibrated absolute constant.
+func ResolveSkillMinScore(candidates []SkillCandidate, minScore, topFraction float64) float64 {
+	if minScore > 0 {
+		return minScore
+	}
+	scores := make([]float64, len(candidates))
+	for i, c := range candidates {
+		scores[i] = c.Score
+	}
+	return RelativeScoreThreshold(scores, topFraction)
+}
+
 // candidateWindowDays bounds MineProjectCandidates the same way
 // TopSignatures/DurationProfile bound their own windows — mining should
 // reflect the project's current workflow, not a pattern that only ever

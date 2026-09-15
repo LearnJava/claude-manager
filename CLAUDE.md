@@ -2020,10 +2020,34 @@ whenever it is non-empty.
 
 **Threshold, not a heuristic score.** `DistillSkill` refuses to invoke the CLI
 at all — not just skip acting on a low result — when `SkillCandidate.Score`
-is below `minScore` (`analysis.ErrBelowThreshold`, `<= 0` falls back to
-`DefaultSkillMinScore`): distillation is a paid sonnet call, and LN-08's score
-distribution has no real-corpus calibration yet (unlike `DefaultMinRunShare`),
-so the default is a conservative starting point, always overridable per call.
+is below `minScore` (`analysis.ErrBelowThreshold`, wrapped with the actual
+score and threshold so the caller/UI can act on it): distillation is a paid
+sonnet call. `analysis.DistillSkill`'s own `minScore <= 0` fallback,
+`DefaultSkillMinScore`, is a fixed absolute constant kept only as a
+last-resort default for a direct/test call with no candidate distribution to
+work from — it is not what production wiring uses (see LN-23 below).
+
+**Relative threshold, calibrated to the project's own distribution
+(LEARN-TASKS.md LN-23).** `DefaultSkillMinScore`'s fixed `10.0` cannot work
+across corpus sizes, because `Score` scales with
+`weightSum*log(1+rediscoveryChars)`: on this app's own small DB it cut
+*everything* (max score 6.9 of 24 candidates), and on an imported corpus two
+orders of magnitude larger it let *almost everything* through (378 of 379,
+p50=782). `App.DistillSkill` therefore resolves `minScore` itself
+(`resolveSkillMinScore`) instead of forwarding a caller's `<= 0` straight to
+`analysis.DistillSkill`: an explicit `minScore > 0` (a UI-entered override)
+always wins outright; `<= 0` re-mines the project's current candidates
+(`experience.MineProjectCandidates`) and calls
+`experience.ResolveSkillMinScore`, which sets the cutoff to the top
+`DefaultSkillTopFraction` (3%) of their scores via
+`RelativeScoreThreshold` — a share of the *current* distribution, not an
+absolute number, mirroring why `DefaultMinRunShare` (LN-08) is a share
+rather than a count. `RelativeScoreThreshold` always keeps the
+highest-scoring candidate regardless of how small
+`topFraction*len(scores)` rounds down to, so a project with only one or two
+candidates never loses all of them to rounding. `SkillReview.svelte`'s
+"Min score" field next to the model picker defaults to 0 (automatic); a
+non-zero value is the explicit override.
 
 **Persistence** (`skills` table, `internal/store/migrations.go`): one row per
 distillation, `status="draft"` — `internal/store.Skill` holds `DraftJSON` (the
@@ -2323,7 +2347,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetPermissionCandidates(project, days)` | Suggested auto-allow permission rules, split into safe/needs-review — the "Permissions" tab (LEARN-TASKS.md LN-04) |
 | `AddPermissionRule(project, session, tool, pattern, decision)` | Append a `PermissionRule` to one session's config — the Permissions tab's "Add rule" button |
 | `GetSkillCandidates(project)` | Mine a project's recent `action_signatures` into ranked skill candidates — the Skills tab's "Candidates" list, and the only source of an `experience.SkillCandidate` to pass to `DistillSkill` below (LEARN-TASKS.md LN-08) |
-| `DistillSkill(project, candidate, gates, model, minScore)` | Distill one LN-08 skill candidate into a draft `SKILL.md`, persisted to the `skills` table (status=draft); streams `skill:progress`; returns `analysis.ErrBelowThreshold` below `minScore` (LEARN-TASKS.md LN-09) |
+| `DistillSkill(project, candidate, gates, model, minScore)` | Distill one LN-08 skill candidate into a draft `SKILL.md`, persisted to the `skills` table (status=draft); streams `skill:progress`; `minScore <= 0` resolves to a relative threshold over the project's current candidates rather than a fixed score (LEARN-TASKS.md LN-23); returns `analysis.ErrBelowThreshold`, naming the score and threshold, when the candidate doesn't clear it (LN-09) |
 | `GetSkills(project)` | List every skill row (draft/approved/archived) for a project — the "Skills" tab (LEARN-TASKS.md LN-10) |
 | `ApproveSkill(id, md, overwrite)` | Write a (possibly edited) draft's markdown to `<project>/.claude/skills/<name>/SKILL.md`, mark it approved; returns `experience.ErrSkillFileExists` when the file is already there and `overwrite` is false |
 | `ArchiveSkill(id)` | Mark a skill row archived — never touches any file already written into the project |

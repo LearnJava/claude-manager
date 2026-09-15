@@ -1270,11 +1270,20 @@ func (a *App) GetSkillCandidates(project string) ([]experience.SkillCandidate, e
 // DistillSkill turns one LN-08 skill candidate into a skill draft and
 // persists it as a status=draft row (LEARN-TASKS.md LN-09), streaming
 // skill:progress while the distillation CLI run is in flight. gates is
-// normally the project's own config.ProjectConfig.Gates. minScore <= 0 falls
-// back to analysis.DefaultSkillMinScore; when candidate.Score does not clear
-// it, the CLI is never invoked and the error is analysis.ErrBelowThreshold —
-// callers driving a batch of candidates should treat that as "skip this one",
-// not surface it as a failure.
+// normally the project's own config.ProjectConfig.Gates.
+//
+// minScore > 0 is an explicit override (a UI-entered threshold) and is used
+// as-is. minScore <= 0 (the default the UI sends) resolves to a *relative*
+// threshold instead (LEARN-TASKS.md LN-23,
+// experience.RelativeScoreThreshold): the project's current candidates are
+// re-mined and the cutoff is set to the top DefaultSkillTopFraction of their
+// scores, so the threshold tracks corpus size instead of the old fixed
+// analysis.DefaultSkillMinScore, which cut everything on a small project and
+// almost nothing on a large imported one. When candidate.Score does not
+// clear the resolved threshold, the CLI is never invoked and the error is
+// analysis.ErrBelowThreshold, wrapped with the actual score and threshold —
+// callers driving a batch of candidates should treat that as "skip this
+// one", not surface it as a failure.
 //
 // SessionManager.DistillSkill takes analysis.SkillDistillInput, not
 // experience.SkillCandidate/FailureCluster directly — see
@@ -1286,7 +1295,28 @@ func (a *App) DistillSkill(project string, candidate experience.SkillCandidate, 
 	if err != nil {
 		return nil, err
 	}
-	return a.manager.DistillSkill(project, in, sourceJSON, candidate.Score, minScore, model)
+	effectiveMin := a.resolveSkillMinScore(project, minScore)
+	return a.manager.DistillSkill(project, in, sourceJSON, candidate.Score, effectiveMin, model)
+}
+
+// resolveSkillMinScore is DistillSkill's minScore resolution (LEARN-TASKS.md
+// LN-23), split out for direct unit testing without going through the full
+// SessionManager/CLI path: minScore > 0 (an explicit UI override) always
+// wins outright; minScore <= 0 re-mines the project's current candidates and
+// resolves via experience.ResolveSkillMinScore/RelativeScoreThreshold. A
+// mining failure (or no store configured) is not surfaced here — it simply
+// yields an empty distribution, which RelativeScoreThreshold turns into 0,
+// and analysis.DistillSkill's own <=0 fallback (DefaultSkillMinScore) takes
+// over from there as a last resort.
+func (a *App) resolveSkillMinScore(project string, minScore float64) float64 {
+	if minScore > 0 {
+		return minScore
+	}
+	var candidates []experience.SkillCandidate
+	if a.store != nil {
+		candidates, _ = experience.MineProjectCandidates(a.store, project)
+	}
+	return experience.ResolveSkillMinScore(candidates, minScore, 0)
 }
 
 // skillDistillInputFromCandidate translates one LN-08 SkillCandidate (plus
