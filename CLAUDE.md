@@ -2445,7 +2445,7 @@ prompt, which is why the prompt is one line.
 
 | Session | Queue (`task_source`) | Task specs | Branch prefix | Pool slot |
 |---|---|---|---|---|
-| `Программист 1` | `LEARN-STATUS.md` | `LEARN-TASKS.md` (LN-01..18) | `p1-` | `p1-work` |
+| `Developer 1` | `STATUS-P1.md` | `LEARN-TASKS.md` (LN-19..23) | `p1-` | `p1-work` |
 
 Read the task file's own rules before starting — each breakdown carries
 invariants that are not repeated here (`LEARN-TASKS.md` §Инварианты: everything
