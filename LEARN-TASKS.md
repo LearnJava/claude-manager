@@ -95,7 +95,7 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-19 | ✓ DONE (2026-09-15) | internal/experience/indexer.go (projectPath в actionRows), signature.go (sanitizeForeignPath) |
 | LN-20 | ✓ DONE (2026-09-15) | app.go (ImportProjectLogs), internal/session/manager.go, ExperiencePanel.svelte, stores/experience.ts |
 | LN-21 | ✓ DONE (2026-09-15) | internal/session/session.go (EvtTaskDone rotation-order fix), internal/experience/indexer.go (IngestRun md fallback), internal/session/manager.go |
-| LN-22 | ○ TODO | internal/experience/candidate.go (outcomeWeight) |
+| LN-22 | ✓ DONE (2026-09-15) | internal/experience/candidate.go (stepOccurrenceWeight, outcomeWeight) |
 | LN-23 | ○ TODO | internal/analysis/skill.go (порог), SkillReview.svelte |
 
 > LN-17 и LN-18 дописаны после разведки корпуса. LN-17 по приоритету идёт
@@ -1290,6 +1290,59 @@ p50 = 782, максимум 8692; в топе — переоткрытый git-�
 но меньший вклад, чем такой же `completed`; тест, что n-грамма из ошибочных
 шагов не набирает очков ни при каком статусе прогона; таблица «оценка до / после»
 по топ-20 кандидатов импортированного корпуса в описании PR.
+
+**Результат.** Формула стала пошаговой: `stepOccurrenceWeight(rows, status)`
+проверяет `IsError` у каждой строки, которую покрывает конкретное вхождение
+n-граммы, — если хоть одна ошибочна, вхождение даёт 0 независимо от статуса
+прогона; иначе вес берётся из `outcomeWeight(status)`, применяемого теперь не
+ко всему прогону разом, а к каждому вхождению отдельно. `outcomeWeight`
+изменён: `completed` — 1.0 (без изменений), `stopped`/`rate_limited`/`error` —
+0.3 (раньше `error` был 0.0), неизвестный статус (bulk-импорт) — 0.6 (без
+изменений). Обоснование объединения `error` с `stopped`/`rate_limited`: с
+точки зрения одного успешного шага упавший на другом шаге прогон неотличим от
+прерванного — то, что прогон не дошёл до чистого завершения, не говорит
+ничего о достоверности конкретного удачного шага.
+
+Замер на реальном корпусе Lumen (5805 md-логов, `IngestDir`, 950 прогонов,
+92904 строк `action_signatures`) с синтетическим распределением статусов
+82% `error` / 18% `completed` (воспроизводит измеренное реальное соотношение
+`session_runs` Lumen: 7593/9270 = 81.9% `error`), топ-20 кандидатов по новой
+оценке:
+
+| sig | score (до) | score (после) |
+|---|---|---|
+| `Bash:grep -n <ARG> <ARG>` | 2269.62 | 5929.89 |
+| `Bash:git status --short` | 1919.67 | 5062.35 |
+| `Bash:sed -n <ARG> <ARG>` | 1950.86 | 4951.83 |
+| `Edit:.claude/worktrees/*.md` | 1712.05 | 4471.08 |
+| `Read:.claude/worktrees/*.md` | 1575.95 | 3929.63 |
+| `Bash:git branch --show-current` | 1396.02 | 3927.17 |
+| `Bash:git pull <ARG> <ARG> <ARG>` | 1424.24 | 3908.84 |
+| `Read:.claude/worktrees/*.rs` | 1305.34 | 3792.96 |
+| `Read:*.md` | 1464.92 | 3668.06 |
+| `Edit:.claude/worktrees/*.rs` | 1227.19 | 3520.79 |
+| `Bash:bash worktree-pool.sh <ARG> <ARG> <ARG>` | 1150.55 | 3369.10 |
+| `Bash:bash worktree-pool.sh <ARG> <ARG>` | 1206.19 | 3174.43 |
+| `Read:...md > Edit:...md` | 1257.80 | 3161.94 |
+| `Read:...rs > Edit:...rs` | 1124.85 | 2959.11 |
+| `Bash:git push <ARG> <ARG> <ARG>` | 876.54 | 2858.00 |
+| `Bash:ls <ARG>` | 1156.51 | 2817.89 |
+| `grep > grep` | 959.09 | 2722.67 |
+| `Bash:wc -l <ARG>` | 865.06 | 2681.73 |
+| `grep > sed -n` | 1156.61 | 2665.49 |
+| `Bash:git merge --no-ff <ARG> -m <ARG>` | 847.39 | 2632.82 |
+
+Оценка выросла в 2.5-2.9 раза по всему топ-20 — ожидаемо: при 82% `error` по
+старой формуле почти 4/5 наблюдений давали нулевой вклад, по новой они
+считаются на 0.3 вместо 0.0 (это единственное отличие между старой и новой
+таблицами здесь: реальные `is_error` в этом импортированном корпусе редки —
+2275/92904 ≈ 2.4% строк — так что эффект маскирования ошибочных шагов на
+этом топ-20 почти не виден, виден именно эффект снятия жёсткого нуля со
+статуса `error`). Число кандидатов выше порога 10.0 почти не изменилось
+(365→366 из 367) на этом конкретном распределении, потому что верхушка и
+так была далеко от порога; выигрыш — не в пересечении порога, а в том, что
+у проекта с реальной долей `error` за 80% (как у Lumen) оценка вообще
+отражает объём накопленного опыта, а не обнуляется весами.
 
 ## LN-23: Калибровка порога дистилляции
 

@@ -85,23 +85,51 @@ type SkillCandidate struct {
 	LastSeen  time.Time
 }
 
-// outcomeWeight maps a run's status to how much its evidence counts for
-// (LEARN-TASKS.md LN-08): a completed run is full evidence, a stopped one
-// partial, an error run cannot teach a good pattern at all, and an unknown
-// status (no run_id to look up — imported history) is neutral. rate_limited
-// is not enumerated in LN-08 but is, like stopped, an interruption rather
-// than a failure of the run's own doing, so it gets the same partial weight.
+// outcomeWeight maps a run's status to how much a *successful* step's
+// evidence counts for (LEARN-TASKS.md LN-22, superseding LN-08's original
+// run-level formula): a completed run is full evidence, everything else that
+// didn't cleanly finish (stopped, rate-limited, or the run eventually errored
+// out) is partial, and an unknown status (no run_id to look up — imported
+// history) is neutral. This is a *step*-level weight now, applied only to a
+// gram occurrence whose own rows are error-free — see stepOccurrenceWeight,
+// which is what actually zeroes out a failed step's contribution.
+//
+// LN-08 originally gave status="error" a hard 0.0 — on real data (Lumen:
+// 7593 of 9270 runs are status=error) that meant the overwhelming majority of
+// a project's history could never contribute at all, even when the run's
+// first ninety-nine steps succeeded and only the hundredth crashed it. From
+// one already-failed step's own perspective, an "error" run is exactly like
+// "stopped"/"rate_limited": the run itself didn't reach a clean finish, but
+// that says nothing about whether *this particular* successful step is a
+// reliable observation — so error now shares stopped/rate_limited's reduced
+// (not zero) weight.
 func outcomeWeight(status string) float64 {
 	switch status {
 	case "completed":
 		return 1.0
-	case "stopped", "rate_limited":
+	case "stopped", "rate_limited", "error":
 		return 0.3
-	case "error":
-		return 0.0
 	default: // "" (unknown/imported) or anything unrecognized
 		return 0.6
 	}
+}
+
+// stepOccurrenceWeight is the weight of one gram occurrence: rows is the
+// slice of contiguous action rows the gram spans at this occurrence. If any
+// of them is itself an error (IsError), the occurrence contributes nothing —
+// "n-грамма, у которой ошибочны сами шаги, по-прежнему не набирает очков"
+// (LEARN-TASKS.md LN-22) — regardless of what the surrounding run's overall
+// status was: a step that failed is not a reliable observation no matter how
+// the run around it ended. Otherwise the occurrence counts at the run's own
+// outcomeWeight — a genuine, successful step is real evidence even inside a
+// run that later errored out.
+func stepOccurrenceWeight(rows []store.ActionRow, status string) float64 {
+	for _, r := range rows {
+		if r.IsError {
+			return 0
+		}
+	}
+	return outcomeWeight(status)
 }
 
 // candAcc accumulates one n-gram's evidence across runs while scanning.
@@ -109,8 +137,8 @@ type candAcc struct {
 	sig          []string
 	runKeys      []string // one entry per distinct run, in first-seen order — RelatedFailures matching
 	distinctRuns int
-	weightSum    float64 // Σ outcomeWeight(run) over distinct runs
-	rediscovery  float64 // Σ charsToFirst(run) * outcomeWeight(run) over distinct runs
+	weightSum    float64 // Σ stepOccurrenceWeight(occurrence) over distinct runs
+	rediscovery  float64 // Σ charsToFirst(run) * stepOccurrenceWeight(occurrence) over distinct runs
 	suspect      bool
 	imported     bool
 	firstSeen    time.Time
@@ -124,14 +152,17 @@ type candAcc struct {
 // DefaultMinRunShare). clusters links each result's RelatedFailures.
 //
 // Score, per candidate, is `distinctRuns * log(1+rediscoveryChars) *
-// outcomeWeight` (LEARN-TASKS.md LN-08) computed as weightSum *
+// outcomeWeight` (LEARN-TASKS.md LN-08/LN-22) computed as weightSum *
 // log(1+rediscoveryChars): outcomeWeight there is the *average* per-run
 // weight, so distinctRuns * average = weightSum exactly, and both
-// rediscoveryChars and weightSum already accumulate each run's own weight.
-// This makes the "a failed run must not pull the candidate up" invariant
-// exact rather than approximate: a run with outcomeWeight 0 (status=error)
-// contributes literally 0 to both terms, so adding one to a candidate's
-// evidence never changes its Score — DistinctRuns still grows (it is an
+// rediscoveryChars and weightSum already accumulate each occurrence's own
+// weight — now per gram occurrence (stepOccurrenceWeight), not once for the
+// whole run (LN-22: weighting by run status alone meant a run that failed on
+// its hundredth step contributed nothing for the ninety-nine steps it got
+// right). This keeps the "a failed step must not pull the candidate up"
+// invariant exact rather than approximate: an occurrence whose own rows
+// include an error contributes literally 0 to both terms, so adding one to a
+// candidate's evidence never changes its Score — DistinctRuns still grows (it is an
 // honest, unweighted occurrence count), but the score that ranks candidates
 // for distillation does not move.
 func MineCandidates(runs []CandidateRun, minRunShare float64, clusters []FailureCluster) []SkillCandidate {
@@ -151,7 +182,6 @@ func MineCandidates(runs []CandidateRun, minRunShare float64, clusters []Failure
 		sort.Slice(rows, func(i, j int) bool { return rows[i].StepIndex < rows[j].StepIndex })
 
 		loopSigs := loopSignatures(rows)
-		weight := outcomeWeight(run.Status)
 		seenInRun := make(map[string]bool)
 
 		for n := 1; n <= maxNGram; n++ {
@@ -165,6 +195,8 @@ func MineCandidates(runs []CandidateRun, minRunShare float64, clusters []Failure
 					continue // only the first occurrence in a run counts
 				}
 				seenInRun[key] = true
+
+				weight := stepOccurrenceWeight(rows[i:i+n], run.Status)
 
 				acc, ok := accs[key]
 				if !ok {
