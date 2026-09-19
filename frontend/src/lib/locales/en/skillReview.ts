@@ -37,6 +37,7 @@ export default {
     'skillReview.imported': 'partly imported',
     'skillReview.distillButton': 'Distill',
     'skillReview.distilling': 'Distilling…',
+    'skillReview.alreadyDistilled': 'Already distilled → {name} ({status})',
     'skillReview.belowThreshold': 'Below distillation threshold: {message}',
     'skillReview.distillFailed': 'Distillation failed: {message}',
     'skillReview.colName': 'Name',

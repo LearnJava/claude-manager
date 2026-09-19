@@ -37,6 +37,7 @@ export default {
     'skillReview.imported': 'частично импортировано',
     'skillReview.distillButton': 'Дистиллировать',
     'skillReview.distilling': 'Дистилляция…',
+    'skillReview.alreadyDistilled': 'Уже дистиллирован → {name} ({status})',
     'skillReview.belowThreshold': 'Ниже порога дистилляции: {message}',
     'skillReview.distillFailed': 'Дистилляция не удалась: {message}',
     'skillReview.colName': 'Название',

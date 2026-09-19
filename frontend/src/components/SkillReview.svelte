@@ -5,11 +5,13 @@
     // is meaningfully bigger than the Actions/Permissions/Timing tabs' plain
     // tables — doesn't balloon that file.
     import { get } from 'svelte/store';
+    import { onDestroy, onMount } from 'svelte';
     import { formatPercent, formatTime, formatTokens } from '../lib/formatters';
     import { renderMarkdown } from '../lib/markdown';
     import { t } from '../lib/i18n';
     import { MODELS } from '../lib/models';
     import { GetConfig } from '../../wailsjs/go/main/App';
+    import { EventsOn } from '../../wailsjs/runtime/runtime';
     import {
         approveSkill,
         archiveSkill,
@@ -49,10 +51,42 @@
     let distillMinScore = 0;
     let distillBusyKey: string | null = null;
     let distillErrorByKey: Record<string, string> = {};
+    // Last activity line from the analyst CLI while a distillation is in
+    // flight (skill:progress) — without this the busy button is the only
+    // sign of life for a call that can genuinely take a minute or more.
+    let distillProgress = '';
+    let unsubSkillProgress: (() => void) | null = null;
+
+    onMount(() => {
+        unsubSkillProgress = EventsOn(
+            'skill:progress',
+            (evt: { project: string; text: string }) => {
+                if (evt.project !== project) return;
+                distillProgress = evt.text;
+            },
+        );
+    });
+    onDestroy(() => unsubSkillProgress?.());
 
     function candidateKey(c: SkillCandidate): string {
         return c.Sig.join('\x1f');
     }
+
+    // A candidate stays in the mined list even after it's been distilled
+    // (see the "Nothing here persists the mined list" note in CLAUDE.md —
+    // the pattern may still be worth re-mining later), so the row alone
+    // never says "already done". SourceJSON is JSON.stringify(candidate.Sig)
+    // on the backend (app.go:skillDistillInputFromCandidate) — matching it
+    // the same way here is the only way to tell "this exact sequence
+    // already has a skill" without a new Wails call.
+    $: distilledNameBySig = skills.reduce<Record<string, { name: string; status: string }>>(
+        (acc, sk) => {
+            acc[sk.SourceJSON] = { name: sk.Name, status: sk.Status };
+            return acc;
+        },
+        {},
+    );
+    $: alreadyDistilled = (c: SkillCandidate) => distilledNameBySig[JSON.stringify(c.Sig)];
 
     // A candidate's Kind (experience.CandidateKind) says what it is actually
     // worth turning into — a lone recurring command outranks every sequence
@@ -144,6 +178,7 @@
         if (distillBusyKey !== null) return;
         const key = candidateKey(c);
         distillBusyKey = key;
+        distillProgress = '';
         distillErrorByKey = { ...distillErrorByKey, [key]: '' };
         try {
             await distillSkill(project, c, gates, distillModel, distillMinScore);
@@ -162,6 +197,7 @@
             };
         } finally {
             distillBusyKey = null;
+            distillProgress = '';
         }
     }
 
@@ -343,6 +379,7 @@
                 <tbody>
                     {#each visibleCandidates as c (candidateKey(c))}
                         {@const key = candidateKey(c)}
+                        {@const distilled = alreadyDistilled(c)}
                         <tr class="border-t border-bg-border align-top">
                             <td class="px-3 py-1 text-text font-mono">
                                 {c.Sig.join(' → ')}
@@ -351,6 +388,11 @@
                                 {/if}
                                 {#if c.Imported}
                                     <span class="ml-1 text-text-muted italic">({$t('skillReview.imported')})</span>
+                                {/if}
+                                {#if distilled}
+                                    <div class="mt-0.5 text-status-working font-sans">
+                                        {$t('skillReview.alreadyDistilled', { name: distilled.name, status: statusLabel(distilled.status, $t) })}
+                                    </div>
                                 {/if}
                             </td>
                             <td class="px-3 py-1 whitespace-nowrap" title={kindReasonLabel(c)}>
@@ -370,6 +412,11 @@
                                     class="px-2 py-0.5 rounded bg-status-working/80 hover:bg-status-working text-white disabled:opacity-50 whitespace-nowrap">
                                     {distillBusyKey === key ? $t('skillReview.distilling') : $t('skillReview.distillButton')}
                                 </button>
+                                {#if distillBusyKey === key && distillProgress}
+                                    <div class="mt-1 text-text-muted italic truncate max-w-[220px]" title={distillProgress}>
+                                        {distillProgress}
+                                    </div>
+                                {/if}
                                 {#if distillErrorByKey[key]}
                                     <div class="mt-1 text-status-error">{distillErrorByKey[key]}</div>
                                 {/if}
