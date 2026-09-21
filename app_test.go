@@ -1177,3 +1177,86 @@ func TestSkillDistillInputFromCandidate_DoesNotMutateCandidateSlices(t *testing.
 		t.Error("caller's gates slice was mutated")
 	}
 }
+
+// TestUpdateConfig_AddingAlreadyConfiguredProjectPreservesOverlay reproduces
+// the bug where registering a project by path — one whose folder already has
+// its own <project>/.claude-manager/config.toml with real sessions, from
+// being configured before this app instance ever knew about it — wiped that
+// file: UpdateConfig unconditionally wrote the new, blank ProjectConfig stub
+// over whatever was already on disk. Adding such a project must leave its
+// existing overlay untouched.
+func TestUpdateConfig_AddingAlreadyConfiguredProjectPreservesOverlay(t *testing.T) {
+	dir := t.TempDir()
+	existing := config.ProjectConfig{
+		Sessions: []config.SessionConfig{{Name: "S1", Model: "sonnet"}},
+		Gates:    []string{"go build ./..."},
+	}
+	if err := config.SaveProjectOverlay(dir, existing, []config.WorkerConfig{{Name: "w1", BaseURL: "http://localhost:1234", Model: "m", KeyEnv: "W1_KEY"}}); err != nil {
+		t.Fatalf("seed SaveProjectOverlay: %v", err)
+	}
+
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	a := &App{cfg: &config.AppConfig{}, cfgPath: cfgPath}
+
+	// The frontend adds the project by name+path only — nothing loaded from
+	// its folder yet.
+	newCfg := config.AppConfig{
+		Projects: []config.ProjectConfig{{Name: "existing", Path: dir}},
+	}
+	if err := a.UpdateConfig(newCfg); err != nil {
+		t.Fatalf("UpdateConfig: %v", err)
+	}
+
+	ov, err := config.LoadProjectOverlay(dir)
+	if err != nil {
+		t.Fatalf("LoadProjectOverlay: %v", err)
+	}
+	if ov == nil || len(ov.Sessions) != 1 || ov.Sessions[0].Name != "S1" {
+		t.Fatalf("sessions were wiped: %+v", ov)
+	}
+	if len(ov.Gates) != 1 || ov.Gates[0] != "go build ./..." {
+		t.Fatalf("gates were wiped: %+v", ov)
+	}
+	if len(ov.Workers) != 1 || ov.Workers[0].Name != "w1" {
+		t.Fatalf("local workers were wiped: %+v", ov)
+	}
+
+	// The reloaded in-memory config must also reflect the preserved overlay,
+	// not a blank project.
+	if len(a.cfg.Projects) != 1 || len(a.cfg.Projects[0].Sessions) != 1 {
+		t.Fatalf("reloaded config missing sessions: %+v", a.cfg.Projects)
+	}
+}
+
+// TestUpdateConfig_KnownProjectCanStillClearSessions ensures the fix above
+// only special-cases a brand-new registration: editing an already-known
+// project (round-tripped through GetConfig, where the frontend's data is
+// authoritative) must still be able to remove sessions.
+func TestUpdateConfig_KnownProjectCanStillClearSessions(t *testing.T) {
+	dir := t.TempDir()
+	seeded := config.ProjectConfig{Sessions: []config.SessionConfig{{Name: "S1"}}}
+	if err := config.SaveProjectOverlay(dir, seeded, nil); err != nil {
+		t.Fatalf("seed SaveProjectOverlay: %v", err)
+	}
+
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	a := &App{
+		cfg:     &config.AppConfig{Projects: []config.ProjectConfig{{Name: "existing", Path: dir, Sessions: seeded.Sessions}}},
+		cfgPath: cfgPath,
+	}
+
+	newCfg := config.AppConfig{
+		Projects: []config.ProjectConfig{{Name: "existing", Path: dir}}, // sessions cleared
+	}
+	if err := a.UpdateConfig(newCfg); err != nil {
+		t.Fatalf("UpdateConfig: %v", err)
+	}
+
+	ov, err := config.LoadProjectOverlay(dir)
+	if err != nil {
+		t.Fatalf("LoadProjectOverlay: %v", err)
+	}
+	if ov != nil && len(ov.Sessions) != 0 {
+		t.Fatalf("expected sessions to be clearable on a known project, got: %+v", ov.Sessions)
+	}
+}

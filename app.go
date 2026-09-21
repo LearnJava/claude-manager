@@ -891,13 +891,47 @@ func (a *App) GetRateLimitStatus() *session.RateLimitInfo {
 // project registry (name+path), and the shared worker presets. Workers stay in
 // the global file — it lives in the home dir and is never committed to a repo.
 func (a *App) UpdateConfig(cfg config.AppConfig) error {
+	knownPaths := map[string]bool{}
+	if a.cfg != nil {
+		for _, p := range a.cfg.Projects {
+			if p.Path != "" {
+				knownPaths[p.Path] = true
+			}
+		}
+	}
+
 	global := cfg
 	global.Projects = make([]config.ProjectConfig, len(cfg.Projects))
 	for i, p := range cfg.Projects {
 		if p.Path != "" && isDir(p.Path) {
+			existing, err := config.LoadProjectOverlay(p.Path)
+			if err != nil {
+				return err
+			}
+			if existing != nil && !knownPaths[p.Path] {
+				// This project's folder already carries its own overlay
+				// (config.toml/config.local.toml) but has never been loaded
+				// into this app instance before now — e.g. "add project" was
+				// just pointed at an already-configured repo. The incoming p
+				// is a blank stub in that case; writing it verbatim would
+				// wipe the sessions/gates/workers the project already has.
+				// Register it as a pointer only and let the reload below
+				// merge the existing overlay in, exactly like any other
+				// already-known project.
+				global.Projects[i] = config.ProjectConfig{Name: p.Name, Path: p.Path}
+				continue
+			}
+			// Local workers have no field on ProjectConfig for the frontend
+			// to round-trip, so carry over whatever is already on disk
+			// instead of always passing nil, which would otherwise blank
+			// out the project's local worker list on every single save.
+			var localWorkers []config.WorkerConfig
+			if existing != nil {
+				localWorkers = existing.Workers
+			}
 			// Fold this project's context into its folder; the global entry
 			// shrinks to a registry pointer that the overlay is merged onto.
-			if err := config.SaveProjectOverlay(p.Path, p, nil); err != nil {
+			if err := config.SaveProjectOverlay(p.Path, p, localWorkers); err != nil {
 				return err
 			}
 			global.Projects[i] = config.ProjectConfig{Name: p.Name, Path: p.Path}
