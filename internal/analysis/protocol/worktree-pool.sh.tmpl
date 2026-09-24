@@ -42,7 +42,11 @@ die() { printf '%s\n' "$*" >&2; exit 1; }
 # The primary working tree, even when this script runs from inside a worktree:
 # --git-common-dir points at <main>/.git.
 common=$(git rev-parse --git-common-dir 2>/dev/null) || die 'Not a git repository.'
-common=$(cd "$common" && pwd) || die "Cannot read git dir: $common"
+# `pwd -W` (Git Bash) prints C:/... instead of /c/...: an MSYS path breaks
+# every later `git -C` / `git worktree add` when MSYS path conversion is off
+# (Hermes sets MSYS_NO_PATHCONV=1) — the guards would then read an empty
+# `git status` as "clean". Plain `pwd` elsewhere.
+common=$(cd "$common" && { pwd -W 2>/dev/null || pwd; }) || die "Cannot read git dir: $common"
 ROOT=$(dirname "$common")
 POOL="$ROOT/.claude/worktrees"
 INTEGRATION={{.MainBranch}}
