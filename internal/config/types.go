@@ -306,4 +306,9 @@ type LogEntry struct {
 	Message   string    `json:"message"`
 	ToolName  string    `json:"tool_name"`  // for tool calls
 	ToolInput string    `json:"tool_input"` // salient input field, full text (UI collapses long values)
+	// ToolUseID links a "tool" entry to its "tool_result"/"error" entry: the
+	// Claude parser copies it from the tool_use block's id / the tool_result's
+	// tool_use_id; the Hermes parser (which has no id in its wire format)
+	// synthesizes one. Not persisted to session_logs — live-stream only.
+	ToolUseID string `json:"tool_use_id,omitempty"`
 }
