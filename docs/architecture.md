@@ -187,7 +187,8 @@ claude-manager/
 │   │   ├── projects.ts              # Projects state
 │   │   ├── theme.ts                 # Dark/light theme toggle, localStorage persistence
 │   │   ├── logSearch.ts             # Log filter store, Ctrl+F focus
-│   │   ├── logView.ts               # Log rendering mode: markdown vs raw (localStorage)
+│   │   ├── logView.ts               # Log rendering mode: markdown vs raw + layout: feed vs
+│   │   │                            #   classic (localStorage; UI-02)
 │   │   ├── workers.ts               # Mixed programming: worker:* events, per-project tasks/
 │   │   │                            #   quality, register+dispatch+cancel actions (MP-08)
 │   │   └── experience.ts            # LN-03: fetchTopActions/fetchActionSamples wrappers +
@@ -204,7 +205,11 @@ claude-manager/
 │   │   ├── ModelPicker.svelte       # Pre-start model selector: recommendation + override dropdowns
 │   │   ├── ResumePrompt.svelte      # Unfinished previous run: continue (--resume) / start fresh
 │   │   ├── LogStream.svelte         # Real-time log with color coding, autoscroll, search filter,
-│   │   │                            #   "Markdown" checkbox (formatted ⇄ raw)
+│   │   │                            #   "Markdown" checkbox, "Лента" (feed) layout toggle: groups
+│   │   │                            #   tool calls via lib/logGroups.ts (UI-02); classic view
+│   │   │                            #   unchanged and remains the default
+│   │   ├── LogEntryRow.svelte       # One log row (collapse, markdown render/raw, M override);
+│   │   │                            #   shared by LogStream's classic view and expanded feed groups
 │   │   ├── TaskPanel.svelte         # Right of the log, two tabs — "Task": current task
 │   │   │                            #   (TodoWrite), checklist, progress %, session prompt;
 │   │   │                            #   "Roadmap": RoadmapTree (default for task_source sessions)

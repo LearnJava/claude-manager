@@ -2,19 +2,10 @@
     import { tick, beforeUpdate, afterUpdate, onMount } from 'svelte';
     import { sessionLogs, type LogEntry } from '../stores/sessions';
     import { logSearch, logSearchText, logSearchFocus } from '../stores/logSearch';
-    import { logMarkdown } from '../stores/logView';
+    import { logMarkdown, logLayout } from '../stores/logView';
     import { t } from '../lib/i18n';
-    import {
-        hasMarkdown,
-        hasStrongMarkdown,
-        looksLikeMachineOutput,
-        renderMarkdown,
-    } from '../lib/markdown';
-    import {
-        formatTime,
-        logEntryColor,
-        logEntryIcon,
-    } from '../lib/formatters';
+    import { groupEntries, entryKey } from '../lib/logGroups';
+    import LogEntryRow from './LogEntryRow.svelte';
 
     export let sessionId: string;
     // Threshold (px) — if the user has scrolled further than this from the
@@ -55,95 +46,23 @@
     }
 
     // Entries longer than this (or multi-line) are collapsed to their first line
-    // behind a ＋/− toggle so verbose tool output / prompts don't flood the view.
+    // behind a ＋/− toggle — used by the feed view's group header ellipsis and
+    // read-only summary; per-row collapse now lives in LogEntryRow.svelte.
     const COLLAPSE_CHARS = 200;
-    // Explicit open/closed state, keyed by seq (LogEntry.seq), not by array
-    // index: indices shift when the ring buffer trims old entries or the search
-    // filter changes, which would silently expand the wrong rows. Only rows the
-    // user actually clicked are in here; everything else follows the default
-    // below (markdown bodies default to open — a collapsed heading, table or
-    // code block is exactly the part that needed formatting).
-    let overrides = new Map<number, boolean>();
 
-    // Levels whose message is prose that Claude (or the user) wrote, so any
-    // markup in it is intentional and a single signal is enough.
-    const MARKDOWN_LEVELS = new Set(['', 'text', 'thinking', 'result', 'user']);
+    // Feed-view group expand state, keyed by the group's seq (its first
+    // entry's LogEntry.seq) — same reasoning as LogStream's old row
+    // `overrides`: indices shift under the ring buffer and search filter,
+    // seq does not. Absent from the map = collapsed by default.
+    let groupOpen = new Map<number, boolean>();
 
-    // Everything else — tool output above all — is formatted too, but only on
-    // structural markup (`hasStrongMarkdown`) and never when the body is
-    // machine output whose column alignment carries the meaning (a Read
-    // listing with line numbers, a diff, a git listing). Those two guards are
-    // the difference between formatting a .md file someone `cat`-ed and
-    // mangling `cargo build` output.
-    function autoMarkdown(e: LogEntry): boolean {
-        const msg = e.message ?? '';
-        if (MARKDOWN_LEVELS.has((e.level ?? '').toLowerCase())) return hasMarkdown(msg);
-        return hasStrongMarkdown(msg) && !looksLikeMachineOutput(msg);
+    function toggleGroup(seq: number, open: boolean) {
+        groupOpen.set(seq, !open);
+        groupOpen = groupOpen; // trigger Svelte reactivity
     }
 
-    // Per-entry override of that decision, keyed by seq. The `M` button writes
-    // here, so one row can be forced back to raw (a `## main` line from
-    // `git status` really isn't a heading) or forced into markdown (output the
-    // guards above held back). Nothing is remembered across restarts — this is
-    // a per-glance decision, unlike the global Markdown checkbox.
-    let mdOverride = new Map<number, boolean>();
-
-    // The button is only offered where the call is genuinely ambiguous: tool
-    // output and other non-prose levels that carry markup. Prose levels follow
-    // the global checkbox alone, so their rows stay uncluttered.
-    function offersMarkdown(e: LogEntry): boolean {
-        if (MARKDOWN_LEVELS.has((e.level ?? '').toLowerCase())) return false;
-        return hasMarkdown(e.message ?? '');
-    }
-
-    // `on` / `open` are the row's state *before* the click. Collapse state is
-    // pinned here on purpose: it otherwise follows the markdown decision, so
-    // switching a row back to raw would fold it to its first line — the click
-    // would look like it hid the entry rather than unformatted it. Turning
-    // rendering on always expands, since a collapsed body shows no formatting.
-    function toggleForced(key: number, on: boolean, open: boolean) {
-        mdOverride.set(key, !on);
-        overrides.set(key, on ? open : true);
-        mdOverride = mdOverride; // trigger Svelte reactivity
-        overrides = overrides;
-    }
-
-    // renderMarkdown re-runs for every visible row whenever any reactive
-    // dependency changes (an expand click, a filter keystroke, a new entry).
-    // Memoize per seq so a long log isn't re-parsed on every one of them.
-    const mdCache = new Map<number, { src: string; html: string }>();
-
-    function renderCached(key: number, msg: string): string {
-        const hit = mdCache.get(key);
-        if (hit && hit.src === msg) return hit.html;
-        const html = renderMarkdown(msg);
-        if (mdCache.size > 1000) mdCache.clear();
-        mdCache.set(key, { src: msg, html });
-        return html;
-    }
-
-    function isCollapsible(msg: string): boolean {
-        if (!msg) return false;
-        return msg.includes('\n') || msg.length > COLLAPSE_CHARS;
-    }
-
-    // First line, capped at COLLAPSE_CHARS, with an ellipsis marking hidden rest.
-    function summarize(msg: string): string {
-        const nl = msg.indexOf('\n');
-        let head = nl >= 0 ? msg.slice(0, nl) : msg;
-        if (head.length > COLLAPSE_CHARS) head = head.slice(0, COLLAPSE_CHARS);
-        return head + ' …';
-    }
-
-    // Fallback key for entries without a seq (should not happen for live
-    // entries; negative range avoids colliding with real seq values).
-    function entryKey(e: LogEntry, i: number): number {
-        return e.seq ?? -(i + 1);
-    }
-
-    function toggle(key: number, open: boolean) {
-        overrides.set(key, !open);
-        overrides = overrides; // trigger Svelte reactivity
+    function onLayoutToggle(e: Event) {
+        logLayout.set((e.currentTarget as HTMLInputElement).checked ? 'feed' : 'classic');
     }
 
     $: allEntries = ($sessionLogs[sessionId] ?? []) as LogEntry[];
@@ -151,6 +70,16 @@
     $: entries = filter
         ? allEntries.filter((e) => entryMatches(e, filter))
         : allEntries;
+    // Feed view groups the *filtered* entries, same as the classic view
+    // filters rows — a group whose only surviving member matched the search
+    // still shows correctly grouped instead of leaking raw entries around it.
+    $: blocks = groupEntries(entries);
+
+    // A block matches the search if any of its entries do — used to
+    // auto-expand the group containing a hit (UI-02 "Группа … раскрывается").
+    $: matchingSeqs = filter
+        ? new Set(blocks.filter((b) => b.entries.some((e) => entryMatches(e, filter))).map((b) => b.seq))
+        : new Set<number>();
 
     function entryMatches(e: LogEntry, q: string): boolean {
         if (!q) return true;
@@ -273,6 +202,17 @@
                 class="w-3 h-3 accent-blue-500 cursor-pointer" />
             {$t('logStream.markdownLabel')}
         </label>
+        <label
+            title={$t('logStream.feedLayoutTitle')}
+            class="flex items-center gap-1 shrink-0 text-[11px] text-text-muted
+                   select-none cursor-pointer whitespace-nowrap">
+            <input
+                type="checkbox"
+                checked={$logLayout === 'feed'}
+                on:change={onLayoutToggle}
+                class="w-3 h-3 accent-blue-500 cursor-pointer" />
+            {$t('logStream.feedLayoutLabel')}
+        </label>
     </div>
 
     <div
@@ -288,60 +228,60 @@
                     {$t('logStream.noLogEntries')}
                 {/if}
             </div>
-        {:else}
+        {:else if $logLayout === 'classic'}
             {#each entries as e, i (entryKey(e, i))}
-                {@const msg = e.message ?? ''}
-                {@const key = entryKey(e, i)}
-                {@const mdSrc = mdOverride.get(key) ?? autoMarkdown(e)}
-                {@const md = $logMarkdown && mdSrc}
-                {@const offered = $logMarkdown && offersMarkdown(e)}
-                {@const collapsible = isCollapsible(msg)}
-                {@const isOpen = collapsible ? overrides.get(key) ?? mdSrc : true}
-                <div class="flex items-start gap-2 py-px {logEntryColor(e)}">
-                    <span class="text-text-dim shrink-0 select-none">
-                        [{formatTime(e.time)}]
-                    </span>
-                    <span class="shrink-0 select-none w-4 text-center">
-                        {logEntryIcon(e)}
-                    </span>
-                    {#if collapsible}
+                <LogEntryRow entry={e} entryKey={entryKey(e, i)} />
+            {/each}
+        {:else}
+            {#each blocks as block (block.seq)}
+                {#if block.kind === 'tools'}
+                    {@const isOpen = groupOpen.get(block.seq) ?? matchingSeqs.has(block.seq)}
+                    <div class="py-px">
                         <button
                             type="button"
-                            on:click={() => toggle(key, isOpen)}
-                            title={isOpen ? $t('logStream.collapse') : $t('logStream.expand')}
-                            class="shrink-0 select-none w-4 text-center text-text-dim
-                                   hover:text-text font-bold leading-5">
-                            {isOpen ? '−' : '＋'}
+                            on:click={() => toggleGroup(block.seq, isOpen)}
+                            class="flex items-center gap-2 w-full text-left text-sky-700
+                                   dark:text-sky-400 hover:text-text">
+                            <span class="shrink-0 select-none w-4 text-center text-text-dim
+                                         font-bold leading-5">
+                                {isOpen ? '−' : '＋'}
+                            </span>
+                            <span class="shrink-0 select-none">🔧</span>
+                            {#if block.summary?.readOnly}
+                                <span class="truncate">
+                                    {$t('logStream.readOnlySummary')}: {block.summary.callLabels.join(', ')}
+                                </span>
+                            {:else}
+                                <span class="truncate">{block.summary?.firstLabel}</span>
+                                {#if block.summary && block.summary.extraCount > 0}
+                                    <span class="text-text-dim shrink-0">
+                                        + {block.summary.extraCount} {$t('logStream.moreCommands')}
+                                    </span>
+                                {/if}
+                            {/if}
+                            {#if block.summary?.hasError}
+                                <span class="text-red-600 dark:text-status-error shrink-0 font-bold">
+                                    ✖
+                                </span>
+                            {/if}
                         </button>
-                    {:else}
-                        <span class="shrink-0 w-4 select-none"></span>
-                    {/if}
-                    {#if offered}
-                        <button
-                            type="button"
-                            on:click={() => toggleForced(key, mdSrc, isOpen)}
-                            title={mdSrc
-                                ? $t('logStream.showAsRaw')
-                                : $t('logStream.renderAsMarkdown')}
-                            class="shrink-0 select-none w-4 text-center leading-5 text-[10px]
-                                   rounded {mdSrc
-                                       ? 'text-blue-600 dark:text-blue-400 font-bold'
-                                       : 'text-text-dim hover:text-text'}">
-                            M
-                        </button>
-                    {:else}
-                        <span class="shrink-0 w-4 select-none"></span>
-                    {/if}
-                    {#if md && isOpen}
-                        <div class="md-body min-w-0 flex-1 break-words">
-                            {@html renderCached(key, msg)}
+                        {#if isOpen}
+                            <div class="pl-6 border-l border-bg-border ml-2">
+                                {#each block.entries as e, i (entryKey(e, i))}
+                                    <LogEntryRow entry={e} entryKey={entryKey(e, i)} />
+                                {/each}
+                            </div>
+                        {/if}
+                    </div>
+                {:else if block.kind === 'user'}
+                    <div class="flex justify-end py-1">
+                        <div class="max-w-[80%] bg-bg-elevated rounded px-3 py-1.5">
+                            <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />
                         </div>
-                    {:else}
-                        <span class="whitespace-pre-wrap break-words">
-                            {collapsible && !isOpen ? summarize(msg) : msg}
-                        </span>
-                    {/if}
-                </div>
+                    </div>
+                {:else}
+                    <LogEntryRow entry={block.entries[0]} entryKey={block.seq} />
+                {/if}
             {/each}
         {/if}
     </div>
