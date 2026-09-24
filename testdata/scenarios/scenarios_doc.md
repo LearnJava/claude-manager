@@ -118,6 +118,22 @@ pre-LN-15 behavior.
 
 ---
 
+### feed-thinking.json
+**State/Feature:** Feed layout — thinking + tool call + prose (VIEW-TASKS.md UI-03)
+**Match:** `feed-demo`
+
+Exercises the sequence the feed layout renders as three distinct block kinds:
+a `thinking` content block, a `Read` tool_use/tool_result pair, and a final
+`text` block containing markdown (`## Summary`, `**No changes needed.**`).
+Backs the `test/S5` Playwright session (`frontend/tests/global-setup.ts`) for
+manual/exploratory runs of the feed toggle; `frontend/tests/log-feed.spec.ts`
+itself asserts against directly-injected `session:log` events (same approach
+as `log-markdown.spec.ts`) since log entries are never replayed from history
+on reload — a real scenario run finishes before a fresh page load could see
+it.
+
+---
+
 ### multi-turn.json
 **State/Feature:** Bidirectional streaming — multiple `user_message` inputs  
 **Match:** `multi-turn`, `conversation`

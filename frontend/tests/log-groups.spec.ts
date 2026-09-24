@@ -125,4 +125,21 @@ test.describe('groupEntries', () => {
         expect(entryKey(e, 0)).toBe(-1);
         expect(entryKey(e, 3)).toBe(-4);
     });
+
+    test('a thinking block reports the seconds until the next entry', () => {
+        const th = entry({ level: 'thinking', message: 'hmm', time: '2026-01-01T00:00:00.000Z' });
+        const next = entry({ level: 'text', message: 'ok', time: '2026-01-01T00:00:03.000Z' });
+
+        const blocks = groupEntries([th, next]);
+        const thinkingBlock = blocks.find((b) => b.kind === 'thinking');
+        expect(thinkingBlock?.thinkingSeconds).toBe(3);
+    });
+
+    test('a thinking block with no following entry yet has no duration', () => {
+        const th = entry({ level: 'thinking', message: 'hmm', time: '2026-01-01T00:00:00.000Z' });
+
+        const blocks = groupEntries([th]);
+        const thinkingBlock = blocks.find((b) => b.kind === 'thinking');
+        expect(thinkingBlock?.thinkingSeconds).toBeNull();
+    });
 });

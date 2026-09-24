@@ -38,6 +38,12 @@ export interface LogBlock {
     entries: LogEntry[];
     // Only present when kind === 'tools'.
     summary?: ToolsBlockSummary;
+    // Only present when kind === 'thinking'. Seconds between this entry's
+    // `time` and the next entry in the session (not the next block) — the
+    // agent kept thinking until something else happened. `null` means there
+    // is no next entry yet, i.e. the agent is thinking right now (VIEW-TASKS.md
+    // UI-03 "Думает…" without a duration).
+    thinkingSeconds?: number | null;
 }
 
 const MAX_LABEL_CHARS = 80;
@@ -76,6 +82,16 @@ function buildToolsSummary(entries: LogEntry[]): ToolsBlockSummary {
 // Levels that, once a tools group is open, extend it instead of closing it —
 // "Внутри серии записи system и thinking не рвут группу" (VIEW-TASKS.md UI-02).
 const TOOLS_PASSTHROUGH = new Set(['system', 'thinking']);
+
+// Seconds between two entries' `time` fields, or null if either is missing/
+// invalid — the caller treats null as "still thinking" (no next entry yet).
+function secondsBetween(from: LogEntry, to: LogEntry | undefined): number | null {
+    if (!to) return null;
+    const a = Date.parse(from.time);
+    const b = Date.parse(to.time);
+    if (isNaN(a) || isNaN(b)) return null;
+    return Math.max(0, Math.round((b - a) / 1000));
+}
 
 export function groupEntries(entries: LogEntry[]): LogBlock[] {
     const blocks: LogBlock[] = [];
@@ -124,7 +140,12 @@ export function groupEntries(entries: LogEntry[]): LogBlock[] {
         } else if (level === 'text' || level === 'result') {
             blocks.push({ kind: 'prose', seq: key, entries: [e] });
         } else if (level === 'thinking') {
-            blocks.push({ kind: 'thinking', seq: key, entries: [e] });
+            blocks.push({
+                kind: 'thinking',
+                seq: key,
+                entries: [e],
+                thinkingSeconds: secondsBetween(e, entries[i + 1]),
+            });
         } else {
             blocks.push({ kind: 'other', seq: key, entries: [e] });
         }

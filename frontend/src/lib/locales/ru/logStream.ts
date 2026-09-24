@@ -16,4 +16,6 @@ export default {
     'logStream.feedLayoutTitle': 'Группировать вызовы инструментов в ленту, как в Hermes Desktop',
     'logStream.moreCommands': 'команд',
     'logStream.readOnlySummary': 'Просмотрено',
+    'logStream.thoughtFor': 'Думал {s}s',
+    'logStream.thinkingNow': 'Думает…',
 } as Record<string, string>;
