@@ -72,6 +72,7 @@ Markdown уже рендерится (`lib/markdown.ts`), длинные зап�
 | UI-03 | ○ TODO | LogStream.svelte, lib/logGroups.ts |
 | UI-04 | ○ TODO | internal/session/parser.go, hermes_parser.go, LogStream.svelte |
 | UI-05 | ○ TODO | LogStream.svelte, GUI-TESTS.md, docs/design-decisions.md |
+| UI-06 | ○ TODO | SessionCard.svelte, locales/{ru,en}/sessionCard.ts |
 
 ---
 
@@ -244,3 +245,46 @@ cm-mcp/control-plane (`docs/testing-harness.md`) и поправить найд�
 раздел о ленте: зачем она, правила группировки, почему классический вид
 сохранён; в `docs/architecture.md` — новые файлы в дереве. Полный гейт
 зелёный.
+
+---
+
+## UI-06: Крупная надпись «Use Hermes» / «Use Claude Code» в шапке сессии
+
+**Зависит от:** —
+**Files:** `frontend/src/components/SessionCard.svelte`,
+`frontend/src/lib/locales/{ru,en}/sessionCard.ts`, новый или существующий
+spec в `frontend/tests/`, `GUI-TESTS.md` (раздел «SessionCard.svelte — KPI
+Display»).
+
+Пользователь хочет сразу видеть, какой инструмент ведёт сессию. Сейчас это
+видно только по мелкому значку `☤` в `Sidebar.svelte` у сессий Hermes, в
+шапке сессии — нигде.
+
+**Где.** Карточка сессии над логом (`SessionCard.svelte`), вторая строка:
+`Ходов · Токены · Модель: claude-opus-5-5`. Надпись ставится **справа от
+модели**, на той же строке, с отступом от неё.
+
+**Что показывать.** `session.runtime === 'hermes'` → **Use Hermes**, иначе
+(`''`, отсутствует) → **Use Claude Code**. Поле уже приходит во фронт:
+`SessionState.runtime` (`internal/session/manager.go`, `stores/sessions.ts`).
+Бэкенд не трогать. Текст надписи не переводить, это название продукта,
+но `title` с пояснением («Сессию ведёт Hermes CLI» / «Сессию ведёт Claude Code
+CLI») — через локали.
+
+**Как выглядит.** Крупно и заметно на фоне мелкого `text-xs` строки:
+`text-lg`–`text-xl`, `font-bold`/`font-extrabold`, с градиентной заливкой
+текста (`bg-gradient-to-r … bg-clip-text text-transparent`). Цвета у
+инструментов разные и узнаваемые: Hermes — фиолетово-синий, Claude Code —
+оранжево-терракотовый в духе фирменного цвета Claude. Надпись должна читаться
+в светлой и тёмной теме: градиенты подобрать с `dark:`-вариантами, как
+требует `frontend/tests/formatters.spec.ts` для цветов лога. Строка при этом
+не должна «прыгать»: выровнять по базовой линии (`items-baseline`) или по
+центру, чтобы мелкий текст рядом остался на своём месте, а при узком окне
+надпись переносилась вместе с `flex-wrap`, а не обрезала модель.
+
+**Готово когда:** Playwright-тест: карточка сессии с `runtime: 'hermes'`
+показывает «Use Hermes», без `runtime` — «Use Claude Code» (данные через
+fakeclaude и control-plane, см. `docs/testing-harness.md`; для Hermes —
+сессия с `runtime = "hermes"` в тестовом конфиге). Строка в `GUI-TESTS.md`
+со `✓`. Снимок экрана в светлой и тёмной теме приложен к итоговому отчёту
+задачи.
