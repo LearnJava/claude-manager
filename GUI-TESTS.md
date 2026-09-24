@@ -104,6 +104,18 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 
 ---
 
+## LogStream.svelte — лента (feed default, UI-05)
+
+| ID | Title | Steps | Assert | Status |
+|----|-------|-------|--------|--------|
+| LS-21 | Feed is the default with no stored preference | Select a fresh session, no `cm.logLayout` in localStorage | "Feed" checkbox is checked | ✓ |
+| LS-22 | A stored classic choice still wins | Set `cm.logLayout = 'classic'`, select session | "Feed" checkbox is unchecked | ✓ |
+| LS-23 | Ctrl+F finds and expands a hit inside a collapsed group | Push 2 tool-call pairs, collapse, Ctrl+F a term only in the 2nd result | Matching group auto-expands, term visible | ✓ |
+| LS-24 | Error inside a tools series marks the collapsed header | Push a `tool` call then an `error` | Collapsed header shows `✖` | ✓ |
+| LS-25 | Autoscroll pins to bottom as feed blocks arrive | Push 30 `text` entries | Last entry visible, no "Jump to latest" button | ✓ |
+
+---
+
 ## SessionCard.svelte — KPI Display
 
 | ID | Title | Steps | Assert | Status |

@@ -56,6 +56,16 @@ async function pushLog(page: Page, message: string, level = 'text') {
     );
 }
 
+// This spec asserts per-entry markdown rendering, which is a classic-view
+// concern: in the feed layout (default since UI-05) an orphan `tool_result`
+// pushed with no preceding `tool` call — exactly what pushLog() sends here —
+// starts its own collapsed "tools" group (VIEW-TASKS.md UI-02's adjacency
+// rule), hiding the entry's .md-body behind a click that has nothing to do
+// with what this file tests. Force classic so the assertions stay about
+// markdown, not grouping; the feed's own markdown behaviour is covered by
+// log-feed.spec.ts.
+const feedToggleSel = 'label:has-text("Feed") input[type="checkbox"]';
+
 async function openSession(page: Page) {
     await page.goto('/');
     await selectSession(page);
@@ -70,6 +80,10 @@ async function selectSession(page: Page) {
     await expect(page.locator(toggleSel)).toBeVisible({
         timeout: 5_000,
     });
+    const feedToggle = page.locator(feedToggleSel);
+    if (await feedToggle.isChecked()) {
+        await feedToggle.uncheck();
+    }
 }
 
 test.describe('LogStream markdown', () => {

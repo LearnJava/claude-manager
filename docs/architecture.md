@@ -206,8 +206,8 @@ claude-manager/
 │   │   ├── ResumePrompt.svelte      # Unfinished previous run: continue (--resume) / start fresh
 │   │   ├── LogStream.svelte         # Real-time log with color coding, autoscroll, search filter,
 │   │   │                            #   "Markdown" checkbox, "Лента" (feed) layout toggle: groups
-│   │   │                            #   tool calls via lib/logGroups.ts (UI-02); classic view
-│   │   │                            #   unchanged and remains the default
+│   │   │                            #   tool calls via lib/logGroups.ts (UI-02); feed is the default
+│   │   │                            #   since UI-05, classic stays one click away and unchanged
 │   │   ├── LogEntryRow.svelte       # One log row (collapse, markdown render/raw, M override);
 │   │   │                            #   shared by LogStream's classic view and expanded feed groups
 │   │   ├── TaskPanel.svelte         # Right of the log, two tabs — "Task": current task
