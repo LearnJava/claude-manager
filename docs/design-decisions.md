@@ -92,6 +92,22 @@ Key event types to parse:
 - `{"type":"stream_event",...}` — partial-message deltas (from `--include-partial-messages`); dropped silently, the full `assistant` message follows
 - `{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"|"allowed_warning"|"rejected",...}}` — rate limit status. Real Claude emits an informational `status:"allowed"` event on **every** session; only a rejecting status (`rejected`/`exceeded`/…) pauses/restarts the run. `allowed_warning` (with utilization) is surfaced to the UI but does not abort.
 
+**Linking a tool call to its result (`config.LogEntry.ToolUseID`, UI-01).**
+`tool_use`/`tool_result` are separate stream events with no positional
+relationship in the log — a `LogEntry` needs to carry the pairing itself so
+UI-02's grouping doesn't have to guess from adjacency. Claude CLI already puts
+the id on the wire (`tool_use.id`, echoed back as `tool_result.tool_use_id`,
+including on the `is_error` block for a failed call): `parser.go` copies it
+straight through onto both `LogEntry` sides. Hermes's stream-json
+(`hermes_parser.go`) has no id at all, so `hermesStream` synthesizes one — a
+monotonic counter per `tool_use`, pushed onto a per-tool-name stack; the
+matching `tool_result` pops the most recent unclosed call with that name. This
+assumes Hermes's own tool calls for one name don't complete out of FIFO order,
+which holds for the current single-turn-per-process model (HR-04) where
+results stream back in the same order the calls were issued. Not persisted to
+`session_logs` — `History` (the classic view) is unaffected; the id lives only
+on the in-memory/live-event `LogEntry` UI-02 groups from.
+
 ### Permission Handling
 When `permission_mode != "bypassPermissions"`, Claude CLI sends permission requests via stdout and blocks waiting for response on stdin. The manager MUST:
 1. Parse the permission request from stream-json

@@ -207,6 +207,7 @@ type rawAssistantMessage struct {
 
 type rawContent struct {
 	Type     string          `json:"type"`
+	ID       string          `json:"id"` // tool_use block id, echoed back as tool_result.tool_use_id
 	Text     string          `json:"text"`
 	Name     string          `json:"name"`
 	Input    json.RawMessage `json:"input"`
@@ -346,6 +347,7 @@ func handleAssistant(ev rawStreamEvent, now time.Time) ParsedEvent {
 				Message:   c.Name + ": " + abbrev,
 				ToolName:  c.Name,
 				ToolInput: abbrev,
+				ToolUseID: c.ID,
 			})
 		case "thinking":
 			if strings.TrimSpace(c.Thinking) != "" {
@@ -445,10 +447,11 @@ func handleUser(line string, now time.Time) ParsedEvent {
 			level = "error"
 		}
 		entries = append(entries, config.LogEntry{
-			Time:    now,
-			Level:   level,
-			Source:  "claude",
-			Message: out,
+			Time:      now,
+			Level:     level,
+			Source:    "claude",
+			Message:   out,
+			ToolUseID: b.ToolUseID,
 		})
 	}
 	if len(entries) == 0 {
