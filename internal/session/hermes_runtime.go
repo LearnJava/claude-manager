@@ -140,6 +140,7 @@ func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) erro
 	s.rateLimited.Store(false)
 	s.rateLimitInf.Store(nil)
 	s.authErrorHit.Store(false)
+	s.sessionNotFoundHit.Store(false)
 	s.contextRestartHit.Store(false)
 	s.continueMarkerHit.Store(false)
 	s.stepLimitHit.Store(false)
@@ -180,6 +181,9 @@ func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) erro
 		}
 		if s.authErrorHit.Load() {
 			return errAuthError
+		}
+		if s.sessionNotFoundHit.Load() {
+			return errSessionNotFound
 		}
 		if s.rateLimited.Load() {
 			return errRateLimited
@@ -454,6 +458,9 @@ func (s *Session) drainHermesStderr(r io.Reader) {
 		}
 		if isAuthError(line) {
 			s.authErrorHit.Store(true)
+		}
+		if isSessionNotFoundError(line) {
+			s.sessionNotFoundHit.Store(true)
 		}
 		s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
 			Time: time.Now(), Level: "system", Source: "hermes", Message: line,

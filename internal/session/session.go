@@ -167,11 +167,11 @@ type PermissionResponseMessage struct {
 
 // Params is the constructor payload for a new Session.
 type Params struct {
-	ID                string
-	ProjectName       string
-	ProjectPath       string
-	Config            config.SessionConfig
-	ClaudePath        string
+	ID          string
+	ProjectName string
+	ProjectPath string
+	Config      config.SessionConfig
+	ClaudePath  string
 	// HermesPath is the `hermes` binary for Config.Runtime == "hermes"
 	// (HERMES-TASKS.md HR-04); default "hermes".
 	HermesPath        string
@@ -276,13 +276,14 @@ type Session struct {
 	questionTimer   *time.Timer
 
 	// Per-run state.
-	cmd               *exec.Cmd
-	stdinPipe         io.WriteCloser
-	cancelRun         context.CancelFunc
-	rateLimited       atomic.Bool
-	rateLimitInf      atomic.Pointer[RateLimitInfo]
-	authErrorHit      atomic.Bool
-	contextRestartHit atomic.Bool
+	cmd                *exec.Cmd
+	stdinPipe          io.WriteCloser
+	cancelRun          context.CancelFunc
+	rateLimited        atomic.Bool
+	rateLimitInf       atomic.Pointer[RateLimitInfo]
+	authErrorHit       atomic.Bool
+	sessionNotFoundHit atomic.Bool
+	contextRestartHit  atomic.Bool
 	// continueMarkerHit is set when the run's last turn ended on the
 	// continue-session marker (the agent declaring its work done), and
 	// stepLimitHit when Hermes cut the turn off at its step budget. Both are
@@ -331,6 +332,19 @@ var errPreHookFailed = errors.New("session: pre_task_hook failed")
 // errAuthError is the sentinel for HTTP 403 / authentication failures detected
 // in stderr. The Run loop pauses for 60 seconds before retrying.
 var errAuthError = errors.New("session: auth error (403)")
+
+// errSessionNotFound is the sentinel for a Hermes "Session not found: <id>"
+// stderr line: the --resume target this run tried to continue no longer
+// exists in the Hermes profile's own session store (e.g. that CLI run
+// crashed before Hermes persisted it, or the profile's state.db was
+// cleared). This is unrelated to credentials, but Hermes exits the same way
+// it does for a real auth/init failure, so it must be told apart in stderr
+// or every retry keeps resuming the same dead id forever (session.stderr
+// "Session not found: …" logged, generic "credentials or agent init failed"
+// surfaced, loop repeats every retry_delay_sec). The Run loop clears the
+// stale resume target (persisted state + in-memory resumeSessionID) and
+// retries as a fresh conversation.
+var errSessionNotFound = errors.New("session: hermes resume target not found")
 
 // errContextRestart is the internal sentinel signalling that runOnce ended
 // because checkContextRestart deliberately closed stdin (forcing a clean
@@ -837,6 +851,28 @@ func (s *Session) Run(ctx context.Context) {
 				s.setStatus(config.StatusIdle)
 				return
 			}
+		case errors.Is(err, errSessionNotFound):
+			// The --resume target (from a persisted state file, or from
+			// lastHermesConv after a prior failed turn) no longer exists in
+			// this Hermes profile's session store. Retrying with the same
+			// id repeats "Session not found" forever, so drop every trace
+			// of it and let the next attempt start a brand new conversation
+			// instead of parroting a dead --resume flag.
+			logger.L.Warn("session.run.session_not_found", "id", s.ID)
+			s.setStatus(config.StatusRetrying)
+			s.emitErr(err)
+			if s.crashRecovery && s.stateStore != nil {
+				s.stateStore.Clear(s.ProjectName, s.Config.Name)
+			}
+			s.mu.Lock()
+			s.resumeSessionID = ""
+			s.lastHermesConv = ""
+			s.CLISessionID = uuid.NewString()
+			s.mu.Unlock()
+			if !s.sleepCtx(ctx, time.Duration(s.retryDelay)*time.Second) {
+				s.setStatus(config.StatusIdle)
+				return
+			}
 		case errors.Is(err, errAuthError):
 			logger.L.Error("session.run.auth_error", "id", s.ID)
 			s.setStatus(config.StatusRetrying)
@@ -1120,6 +1156,16 @@ func isAuthError(line string) bool {
 		(strings.Contains(lower, "forbidden") ||
 			strings.Contains(lower, "authenticate") ||
 			strings.Contains(lower, "unauthorized"))
+}
+
+// isSessionNotFoundError reports whether a Hermes stderr line is its
+// "Session not found: <id>" message — the --resume target does not exist in
+// the Hermes profile's own session store. Distinct from isAuthError: Hermes
+// exits non-zero the same way for both, but this one is not a credentials
+// problem and resuming the same id again only repeats it forever (see
+// errSessionNotFound).
+func isSessionNotFoundError(line string) bool {
+	return strings.Contains(line, "Session not found:")
 }
 
 // runOnce launches one Claude CLI process and pumps its I/O until exit.
