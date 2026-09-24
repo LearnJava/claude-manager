@@ -687,6 +687,78 @@ func TestAbbreviateInput_NeverTruncates(t *testing.T) {
 	}
 }
 
+func TestBuildDiff_EditTwoOldThreeNew(t *testing.T) {
+	input := json.RawMessage(`{"file_path":"/src/x.go","old_string":"a\nb","new_string":"a\nb\nc"}`)
+	diff := BuildDiff("Edit", input)
+	if diff == nil {
+		t.Fatal("expected a diff, got nil")
+	}
+	if diff.Added != 3 || diff.Removed != 2 {
+		t.Fatalf("+%d -%d, want +3 -2", diff.Added, diff.Removed)
+	}
+	if len(diff.Lines) != 5 {
+		t.Fatalf("expected 5 diff lines (2 del + 3 add), got %d", len(diff.Lines))
+	}
+}
+
+func TestBuildDiff_WriteTenLines(t *testing.T) {
+	lines := make([]string, 10)
+	for i := range lines {
+		lines[i] = "line"
+	}
+	content := strings.Join(lines, "\\n")
+	input := json.RawMessage(`{"file_path":"/src/new.go","content":"` + content + `"}`)
+	diff := BuildDiff("Write", input)
+	if diff == nil {
+		t.Fatal("expected a diff, got nil")
+	}
+	if diff.Added != 10 || diff.Removed != 0 {
+		t.Fatalf("+%d -%d, want +10 -0", diff.Added, diff.Removed)
+	}
+}
+
+func TestBuildDiff_TruncatesOverLimit(t *testing.T) {
+	lines := make([]string, DiffLineLimit+50)
+	for i := range lines {
+		lines[i] = "x"
+	}
+	content := strings.Join(lines, "\\n")
+	input := json.RawMessage(`{"file_path":"/big.go","content":"` + content + `"}`)
+	diff := BuildDiff("Write", input)
+	if diff == nil {
+		t.Fatal("expected a diff, got nil")
+	}
+	if diff.Added != DiffLineLimit+50 {
+		t.Fatalf("Added = %d, want %d", diff.Added, DiffLineLimit+50)
+	}
+	if len(diff.Lines) != DiffLineLimit {
+		t.Fatalf("Lines = %d, want capped at %d", len(diff.Lines), DiffLineLimit)
+	}
+	if diff.Truncated != 50 {
+		t.Fatalf("Truncated = %d, want 50", diff.Truncated)
+	}
+}
+
+func TestBuildDiff_NonEditToolReturnsNil(t *testing.T) {
+	if diff := BuildDiff("Bash", json.RawMessage(`{"command":"ls"}`)); diff != nil {
+		t.Fatalf("expected nil for a non-edit tool, got %+v", diff)
+	}
+}
+
+func TestBuildDiff_MultiEditSumsAllPairs(t *testing.T) {
+	input := json.RawMessage(`{"file_path":"/x.go","edits":[
+		{"old_string":"a","new_string":"a1"},
+		{"old_string":"b\nc","new_string":"b"}
+	]}`)
+	diff := BuildDiff("MultiEdit", input)
+	if diff == nil {
+		t.Fatal("expected a diff, got nil")
+	}
+	if diff.Added != 2 || diff.Removed != 3 {
+		t.Fatalf("+%d -%d, want +2 -3", diff.Added, diff.Removed)
+	}
+}
+
 func TestParseAssistantTodoWrite(t *testing.T) {
 	line := `{"type":"assistant","message":{"model":"claude-sonnet-4-6","content":[{"type":"tool_use","name":"TodoWrite","input":{"todos":[{"content":"Fix parser","status":"completed","activeForm":"Fixing parser"},{"content":"Add tests","status":"in_progress","activeForm":"Adding tests"},{"content":"Update docs","status":"pending","activeForm":"Updating docs"}]}}],"usage":{"input_tokens":10,"output_tokens":5}}}`
 

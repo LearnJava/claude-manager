@@ -348,6 +348,7 @@ func handleAssistant(ev rawStreamEvent, now time.Time) ParsedEvent {
 				ToolName:  c.Name,
 				ToolInput: abbrev,
 				ToolUseID: c.ID,
+				Diff:      BuildDiff(c.Name, c.Input),
 			})
 		case "thinking":
 			if strings.TrimSpace(c.Thinking) != "" {
@@ -581,7 +582,7 @@ func AbbreviateInput(toolName string, inputJSON json.RawMessage) string {
 		if cmd, ok := getString("command"); ok {
 			return cmd
 		}
-	case "Read", "Edit", "Write":
+	case "Read", "Edit", "Write", "MultiEdit":
 		if path, ok := getString("file_path"); ok {
 			return path
 		}
@@ -596,4 +597,96 @@ func AbbreviateInput(toolName string, inputJSON json.RawMessage) string {
 	}
 
 	return string(inputJSON)
+}
+
+// DiffLineLimit caps FileDiff.Lines so a huge Write/content payload doesn't
+// balloon every LogEntry the runtime keeps in memory; the rest is only
+// counted (FileDiff.Truncated), per VIEW-TASKS.md UI-04.
+const DiffLineLimit = 400
+
+// editPair is one old->new text replacement — a single Edit/patch call, or
+// one entry of a MultiEdit's edits array.
+type editPair struct{ old, new string }
+
+// BuildDiff computes the added/removed line summary for a file-editing
+// tool_use input (Claude Edit/MultiEdit/Write, Hermes patch/write_file) — the
+// feed view's diff card (VIEW-TASKS.md UI-04). Returns nil for every other
+// tool, or when the input carries no actual change (e.g. an empty Write).
+func BuildDiff(toolName string, inputJSON json.RawMessage) *config.FileDiff {
+	if len(inputJSON) == 0 {
+		return nil
+	}
+	switch toolName {
+	case "Edit", "patch":
+		var in struct {
+			OldString string `json:"old_string"`
+			NewString string `json:"new_string"`
+		}
+		if err := json.Unmarshal(inputJSON, &in); err != nil {
+			return nil
+		}
+		return diffFromEdits([]editPair{{in.OldString, in.NewString}})
+	case "MultiEdit":
+		var in struct {
+			Edits []struct {
+				OldString string `json:"old_string"`
+				NewString string `json:"new_string"`
+			} `json:"edits"`
+		}
+		if err := json.Unmarshal(inputJSON, &in); err != nil || len(in.Edits) == 0 {
+			return nil
+		}
+		pairs := make([]editPair, len(in.Edits))
+		for i, e := range in.Edits {
+			pairs[i] = editPair{e.OldString, e.NewString}
+		}
+		return diffFromEdits(pairs)
+	case "Write", "write_file":
+		var in struct {
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal(inputJSON, &in); err != nil {
+			return nil
+		}
+		return diffFromEdits([]editPair{{"", in.Content}})
+	}
+	return nil
+}
+
+// diffFromEdits turns a series of old->new replacements into a FileDiff,
+// splitting each side on newlines and tagging every line "del"/"add" in
+// left-to-right, old-then-new order — a plain unified-diff-style rendering,
+// not a line-by-line LCS match (VIEW-TASKS.md UI-04 explicitly rules out
+// syntax highlighting/smart diffing here, so a minimal line tagging is enough).
+func diffFromEdits(pairs []editPair) *config.FileDiff {
+	diff := &config.FileDiff{}
+	for _, p := range pairs {
+		if p.old != "" {
+			for _, l := range strings.Split(p.old, "\n") {
+				appendDiffLine(diff, "del", l)
+			}
+		}
+		if p.new != "" {
+			for _, l := range strings.Split(p.new, "\n") {
+				appendDiffLine(diff, "add", l)
+			}
+		}
+	}
+	if diff.Added == 0 && diff.Removed == 0 {
+		return nil
+	}
+	return diff
+}
+
+func appendDiffLine(diff *config.FileDiff, kind, text string) {
+	if kind == "add" {
+		diff.Added++
+	} else {
+		diff.Removed++
+	}
+	if len(diff.Lines) < DiffLineLimit {
+		diff.Lines = append(diff.Lines, config.DiffLine{Type: kind, Text: text})
+	} else {
+		diff.Truncated++
+	}
 }
