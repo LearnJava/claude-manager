@@ -142,4 +142,43 @@ test.describe('groupEntries', () => {
         const thinkingBlock = blocks.find((b) => b.kind === 'thinking');
         expect(thinkingBlock?.thinkingSeconds).toBeNull();
     });
+
+    test('a tool_use with a diff becomes its own edit block, not a tools block', () => {
+        const call = entry({
+            level: 'tool',
+            tool_name: 'Edit',
+            tool_input: '/src/store_test.go',
+        });
+        (call as any).diff = { added: 3, removed: 2, lines: [] };
+
+        const blocks = groupEntries([call]);
+        expect(blocks).toHaveLength(1);
+        expect(blocks[0].kind).toBe('edit');
+        expect(blocks[0].editSummary?.fileName).toBe('store_test.go');
+        expect(blocks[0].editSummary?.added).toBe(3);
+        expect(blocks[0].editSummary?.removed).toBe(2);
+    });
+
+    test('an edit block absorbs its own tool_result but not further calls', () => {
+        const call = entry({ level: 'tool', tool_name: 'Write', tool_input: '/a.go' });
+        (call as any).diff = { added: 10, removed: 0, lines: [] };
+        (call as any).tool_use_id = 'e1';
+        const result = entry({ level: 'tool_result', message: 'ok' });
+        (result as any).tool_use_id = 'e1';
+        const next = entry({ level: 'tool', tool_name: 'Bash', tool_input: 'go build' });
+
+        const blocks = groupEntries([call, result, next]);
+        expect(blocks.map((b) => b.kind)).toEqual(['edit', 'tools']);
+        expect(blocks[0].entries).toHaveLength(2);
+    });
+
+    test('an edit block interrupts an open tools series', () => {
+        const c1 = entry({ level: 'tool', tool_name: 'Bash', tool_input: 'ls' });
+        const edit = entry({ level: 'tool', tool_name: 'Edit', tool_input: '/a.go' });
+        (edit as any).diff = { added: 1, removed: 1, lines: [] };
+        const c2 = entry({ level: 'tool', tool_name: 'Bash', tool_input: 'pwd' });
+
+        const blocks = groupEntries([c1, edit, c2]);
+        expect(blocks.map((b) => b.kind)).toEqual(['tools', 'edit', 'tools']);
+    });
 });

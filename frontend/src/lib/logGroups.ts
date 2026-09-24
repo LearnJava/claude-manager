@@ -6,10 +6,10 @@
 // rendering and localized strings, this module only decides grouping and
 // hands back structured summaries a component can format.
 
-import type { LogEntry } from '../stores/sessions';
+import type { DiffLine, LogEntry } from '../stores/sessions';
 import { READ_TOOLS } from './formatters';
 
-export type LogBlockKind = 'user' | 'prose' | 'thinking' | 'other' | 'tools';
+export type LogBlockKind = 'user' | 'prose' | 'thinking' | 'other' | 'tools' | 'edit';
 
 // Everything a collapsed 'tools' block header needs, computed once so the
 // component doesn't re-scan entries on every render.
@@ -30,6 +30,22 @@ export interface ToolsBlockSummary {
     hasError: boolean;
 }
 
+// Everything a collapsed 'edit' block's card needs — VIEW-TASKS.md UI-04's
+// "карточка с именем и счётчиком строк" (file name + +N/-M) plus the diff
+// itself for the expanded view.
+export interface EditBlockSummary {
+    // Full path as given by the tool's abbreviated input (tool_input) — shown
+    // in the card's title attribute.
+    filePath: string;
+    // Last path segment, e.g. "store_test.go" — the card's visible label.
+    fileName: string;
+    added: number;
+    removed: number;
+    lines: DiffLine[];
+    // Further lines beyond config.DiffLineLimit that were dropped, 0 if none.
+    truncated: number;
+}
+
 export interface LogBlock {
     kind: LogBlockKind;
     // seq of the group's first entry — stable across ring-buffer eviction and
@@ -38,6 +54,8 @@ export interface LogBlock {
     entries: LogEntry[];
     // Only present when kind === 'tools'.
     summary?: ToolsBlockSummary;
+    // Only present when kind === 'edit'.
+    editSummary?: EditBlockSummary;
     // Only present when kind === 'thinking'. Seconds between this entry's
     // `time` and the next entry in the session (not the next block) — the
     // agent kept thinking until something else happened. `null` means there
@@ -65,6 +83,15 @@ function callLabel(e: LogEntry): string {
     return e.tool_name ?? '';
 }
 
+// Last path segment of a file-edit tool's input, e.g. "/src/a/store_test.go"
+// -> "store_test.go". Falls back to the full (truncated) label when there is
+// no path separator (an unusual input, or a non-path abbreviation).
+export function fileBaseName(path: string): string {
+    const trimmed = path.trim();
+    const parts = trimmed.split(/[\\/]/).filter(Boolean);
+    return parts.length > 0 ? parts[parts.length - 1] : truncate(trimmed);
+}
+
 function buildToolsSummary(entries: LogEntry[]): ToolsBlockSummary {
     const calls = entries.filter((e) => (e.level ?? '').toLowerCase() === 'tool');
     const callLabels = calls.map(callLabel);
@@ -79,8 +106,22 @@ function buildToolsSummary(entries: LogEntry[]): ToolsBlockSummary {
     };
 }
 
-// Levels that, once a tools group is open, extend it instead of closing it —
-// "Внутри серии записи system и thinking не рвут группу" (VIEW-TASKS.md UI-02).
+function buildEditSummary(callEntry: LogEntry): EditBlockSummary {
+    const filePath = (callEntry.tool_input ?? callEntry.tool_name ?? '').trim();
+    const diff = callEntry.diff;
+    return {
+        filePath,
+        fileName: fileBaseName(filePath),
+        added: diff?.added ?? 0,
+        removed: diff?.removed ?? 0,
+        lines: diff?.lines ?? [],
+        truncated: diff?.truncated ?? 0,
+    };
+}
+
+// Levels that, once a tools/edit group is open, extend it instead of closing
+// it — "Внутри серии записи system и thinking не рвут группу" (VIEW-TASKS.md
+// UI-02).
 const TOOLS_PASSTHROUGH = new Set(['system', 'thinking']);
 
 // Seconds between two entries' `time` fields, or null if either is missing/
@@ -96,11 +137,18 @@ function secondsBetween(from: LogEntry, to: LogEntry | undefined): number | null
 export function groupEntries(entries: LogEntry[]): LogBlock[] {
     const blocks: LogBlock[] = [];
     let cur: LogEntry[] | null = null;
+    // Which kind the currently-open run will flush as. Only meaningful while
+    // `cur` is non-null.
+    let curKind: 'tools' | 'edit' = 'tools';
     let curSeq = 0;
 
     const flush = () => {
         if (cur && cur.length > 0) {
-            blocks.push({ kind: 'tools', seq: curSeq, entries: cur, summary: buildToolsSummary(cur) });
+            if (curKind === 'edit') {
+                blocks.push({ kind: 'edit', seq: curSeq, entries: cur, editSummary: buildEditSummary(cur[0]) });
+            } else {
+                blocks.push({ kind: 'tools', seq: curSeq, entries: cur, summary: buildToolsSummary(cur) });
+            }
         }
         cur = null;
     };
@@ -109,16 +157,47 @@ export function groupEntries(entries: LogEntry[]): LogBlock[] {
         const level = (e.level ?? '').toLowerCase();
         const key = entryKey(e, i);
 
-        const isToolMember =
-            level === 'tool' ||
+        const isCall = level === 'tool';
+        // A file-editing call (Edit/MultiEdit/Write, patch/write_file) gets
+        // its own card, never merged into a run of other tool calls — VIEW-
+        // TASKS.md UI-04 "отдельная карточка, а не строка внутри группы tools".
+        const isEditCall = isCall && !!e.diff;
+
+        const isResultMember =
             level === 'tool_result' ||
             // An error paired to a call (by tool_use_id) or simply adjacent to
             // an already-open series — "по соседству" per UI-02.
             (level === 'error' && (cur !== null || !!e.tool_use_id));
 
-        if (isToolMember) {
+        if (isEditCall) {
+            // Always starts a fresh block: closes whatever run (tools or a
+            // previous edit) was open.
+            flush();
+            cur = [e];
+            curKind = 'edit';
+            curSeq = key;
+            return;
+        }
+
+        if (isCall) {
+            // A plain tool call closes an open edit card (only its own
+            // result may follow it) before joining/starting a tools run.
+            if (cur && curKind === 'edit') flush();
             if (!cur) {
                 cur = [];
+                curKind = 'tools';
+                curSeq = key;
+            }
+            cur.push(e);
+            return;
+        }
+
+        if (isResultMember) {
+            // Attaches to whatever run is currently open — a tools series or
+            // the single call of an open edit card.
+            if (!cur) {
+                cur = [];
+                curKind = 'tools';
                 curSeq = key;
             }
             cur.push(e);

@@ -89,6 +89,21 @@ export interface SessionState {
     context_util: number;
 }
 
+export interface DiffLine {
+    type: 'add' | 'del';
+    text: string;
+}
+
+// Mirrors config.FileDiff (backend) — the added/removed line summary for a
+// file-editing tool_use (VIEW-TASKS.md UI-04). Present only on 'tool' entries
+// whose tool is an edit (Edit/MultiEdit/Write/patch/write_file).
+export interface FileDiff {
+    added: number;
+    removed: number;
+    lines: DiffLine[];
+    truncated?: number;
+}
+
 export interface LogEntry {
     time: string;
     level: string;
@@ -100,6 +115,9 @@ export interface LogEntry {
     // config.LogEntry.ToolUseID in the backend. Absent on entries with no
     // pairing (text, system, result, user).
     tool_use_id?: string;
+    // Added/removed line summary for a file-edit tool_use — see
+    // config.LogEntry.Diff. Absent for every other tool call.
+    diff?: FileDiff;
     // Client-side monotonic id assigned in appendLog. Stable across buffer
     // trimming and filtering — LogStream keys rows and expand-state on it.
     seq?: number;

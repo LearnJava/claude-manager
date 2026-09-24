@@ -18,4 +18,5 @@ export default {
     'logStream.readOnlySummary': 'Viewed',
     'logStream.thoughtFor': 'Thought for {s}s',
     'logStream.thinkingNow': 'Thinking…',
+    'logStream.editMoreLines': '{n} more lines',
 } as Record<string, string>;

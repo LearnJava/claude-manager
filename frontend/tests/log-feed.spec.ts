@@ -90,5 +90,34 @@ for (const theme of ['dark', 'light'] as const) {
             const proseContainer = page.locator('.font-sans.md-body, .font-sans:has(.md-body)').first();
             await expect(proseContainer).toBeVisible();
         });
+
+        test('a file edit renders as its own card with +N/-M and an expandable diff', async ({ page }) => {
+            await openFeed(page, theme);
+
+            await pushLog(page, 'tool', 'Edit: /src/store_test.go', {
+                tool_name: 'Edit',
+                tool_input: '/src/store_test.go',
+                diff: {
+                    added: 3,
+                    removed: 1,
+                    lines: [
+                        { type: 'del', text: 'old line' },
+                        { type: 'add', text: 'new line 1' },
+                        { type: 'add', text: 'new line 2' },
+                        { type: 'add', text: 'new line 3' },
+                    ],
+                },
+            });
+
+            const card = page.locator('button', { hasText: 'store_test.go' }).first();
+            await expect(card).toBeVisible({ timeout: 5_000 });
+            await expect(card).toContainText('+3');
+            await expect(card).toContainText('−1');
+            await expect(page.locator('text=new line 1')).toHaveCount(0);
+
+            await card.click();
+            await expect(page.locator('text=new line 1')).toBeVisible();
+            await expect(page.locator('text=old line')).toBeVisible();
+        });
     });
 }
