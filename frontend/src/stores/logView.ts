@@ -38,8 +38,9 @@ export function toggleLogMarkdown() {
 
 // Feed vs classic log rendering (VIEW-TASKS.md UI-02). Same persistence
 // pattern as logMarkdown above: a reading preference, not per-session state.
-// Default 'classic' — the feed is opt-in until UI-03/04/05 round it out
-// (UI-05 flips this default once the block is done).
+// Default 'feed' as of UI-05 — the block is round out (grouping, thinking,
+// edit cards) and the live walkthrough found no blocker. Classic stays one
+// click away and an existing localStorage choice always wins.
 const LAYOUT_STORAGE_KEY = 'cm.logLayout';
 
 export type LogLayout = 'feed' | 'classic';
@@ -54,7 +55,7 @@ function readStoredLayout(): LogLayout | null {
     return null;
 }
 
-export const logLayout = writable<LogLayout>(readStoredLayout() ?? 'classic');
+export const logLayout = writable<LogLayout>(readStoredLayout() ?? 'feed');
 
 logLayout.subscribe((v) => {
     try {

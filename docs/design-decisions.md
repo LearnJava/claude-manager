@@ -755,6 +755,69 @@ that renders analyst/Claude-written prose gets the same look for free.
 analyst prose — no `hasMarkdown` gate needed, unlike LogStream's tool-output
 rows) renders through the same `renderMarkdown` + `.md-body` pair.
 
+### The Feed — Hermes-Style Log Grouping (VIEW-TASKS.md UI-01..05)
+
+**Why.** The classic `LogStream` is one line per `LogEntry` — a tool call and
+its result are two unrelated rows, a run of a dozen `Read`/`Grep` calls reads
+as a dozen lines, and an agent's markdown reply looks exactly like `git
+status` output. Watching Hermes Desktop for comparison (VIEW-TASKS.md's
+screen-recording notes) showed the difference is almost entirely grouping and
+collapse, not new information: tool calls in a row collapse to one line, a
+file edit becomes a small diff card, thinking collapses to a duration, prose
+gets proportional font. `lib/logGroups.ts` (`groupEntries`) turns the flat
+`LogEntry[]` into that structure; `LogStream.svelte` renders it when
+`stores/logView.ts: logLayout === 'feed'`.
+
+**Grouping rules (`groupEntries`).** A run of `tool`/`tool_result`/`error`
+entries collapses into one `'tools'` block, keyed by its first entry's `seq`
+(stable across the log's ring-buffer eviction and the search filter — same
+reasoning as the classic view's row `overrides`). `system`/`thinking` entries
+inside an open run pass through without closing it; anything else (`text`,
+`user`, a new file-editing call) flushes the run and starts its own block. A
+file-editing call (`Edit`/`Write`/`MultiEdit`, `patch`/`write_file` — any
+`LogEntry.Diff` from the backend) always gets its own `'edit'` block instead
+of joining a `'tools'` run: a diff card reads nothing like "+3 more
+commands". The collapsed `'tools'` header shows the first call's label plus
+"+N commands", or — when every call in the run is `READ_TOOLS`
+(`Read`/`Grep`/`Glob`/`LS`/`NotebookRead`) — a "Просмотрено: a.go, b.go" file
+list instead, matching how Hermes shows a read-only scan. An `error` anywhere
+in a collapsed run surfaces as a `✖` on the header itself — collapsing a
+group must never hide that something inside it failed.
+
+**Classic view is the invariant, not a fallback.** `logLayout` defaults to
+`'feed'` as of UI-05 (was `'classic'` through UI-02..04, opt-in while the
+feed was still being built out); an existing `localStorage` choice always
+wins over the default either way, and unchecking "Feed" in the toolbar
+returns to exactly today's row-per-entry `LogStream`, still covered by its
+own untouched spec files. `LogEntryRow.svelte` — one log row's collapse/
+markdown/raw rendering — is shared by both views (the classic `{#each}` and
+an expanded feed group), so a row looks identical wherever it is shown; only
+the framing (group header, diff card, thinking line, user bubble) differs
+between the two.
+
+**Search behaves the same in both views.** `LogStream` groups the *filtered*
+entries, not the other way around, so a search hit inside a collapsed `tools`
+run auto-expands that one group (`matchingSeqs`) instead of the row simply
+not being visible. The `N/M` counter above the log still counts entries, not
+groups — a collapsed group with 3 of its 4 rows matching should not read as
+"1 match".
+
+**Why `log-markdown.spec.ts` forces classic.** That spec pushes an orphan
+`tool_result` with no preceding `tool` call to test per-entry markdown
+rendering in isolation; in the feed that adjacency-only push starts its own
+collapsed `'tools'` group (correct per the grouping rule above), which would
+hide the assertion behind an unrelated expand click. It sets the `Feed`
+checkbox off before each test so the assertions stay about markdown, not
+grouping — the feed's own markdown behaviour (prose renders proportional, a
+markdown message stays uncollapsed) is covered separately in
+`log-feed.spec.ts`.
+
+Covered by `frontend/tests/log-groups.spec.ts` (pure `groupEntries` unit
+tests), `frontend/tests/log-feed.spec.ts` (thinking/prose/edit-card DOM,
+light+dark) and `frontend/tests/log-feed-default.spec.ts` (default-on,
+localStorage override, Ctrl+F into a collapsed group, an error on a
+collapsed header, autoscroll) — GUI-TESTS.md LS-19..25.
+
 ### Live Model Switching
 
 Lets the user change a **running** session's model from a small dropdown in
