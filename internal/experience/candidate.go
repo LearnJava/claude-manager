@@ -218,9 +218,9 @@ func allSamplesReadOnly(samples []store.ActionRow) bool {
 // (not zero) weight.
 func outcomeWeight(status string) float64 {
 	switch status {
-	case "completed":
+	case "completed", "slice":
 		return 1.0
-	case "stopped", "rate_limited", "error":
+	case "stopped", "rate_limited", "error", "unfinished":
 		return 0.3
 	default: // "" (unknown/imported) or anything unrecognized
 		return 0.6

@@ -38,6 +38,9 @@ claude-manager/
 │   │   │                            #   permission_request, rate_limit_event, init,
 │   │   │                            #   TodoWrite todos (current task + progress)
 │   │   ├── input.go                 # Write to stdin: user_message, permission_response
+│   │   ├── hermes_parser.go         # Hermes CLI stream-json → the same ParsedEvent (HERMES-TASKS.md)
+│   │   ├── hermes_runtime.go        # runtime = "hermes": `hermes chat` per turn, --resume by id
+│   │   ├── task_outcome.go          # Hermes turn → completed/slice/unfinished; 429 behind a 401 via agent.log
 │   │   └── ratelimit.go             # Rate limit detection, retry logic, timers
 │   ├── permission/
 │   │   ├── handler.go               # Handle permission_request: auto-approve rules -> UI queue -> stdin
@@ -246,6 +249,7 @@ claude-manager/
 ├── cmd/                             # Test/control harness binaries (see PLAN.md §21)
 │   ├── fakeclaude/                  # Scripted Claude CLI double (deterministic stream-json)
 │   ├── fakeworker/                  # Scripted OpenAI-compatible worker double (SSE, MP-07)
+│   ├── fakehermes/                  # Scripted `hermes chat --format stream-json` double
 │   └── cm-mcp/                      # MCP server: drive the app as agent tools
 ├── internal/
 │   ├── testkit/                     # Scenario loaders + fakeclaude<->parser conformance,

@@ -67,7 +67,10 @@ type OptimizationSettings struct {
 }
 
 type GlobalSettings struct {
-	ClaudePath        string `toml:"claude_path"`
+	ClaudePath string `toml:"claude_path"`
+	// HermesPath is the `hermes` binary used by sessions with
+	// runtime = "hermes" (HERMES-TASKS.md HR-02). Default "hermes".
+	HermesPath        string `toml:"hermes_path"`
 	DefaultRetryDelay int    `toml:"default_retry_delay"`
 	RateLimitPause    int    `toml:"rate_limit_pause"`
 	LogRetentionDays  int    `toml:"log_retention_days"`
@@ -221,7 +224,31 @@ type SessionConfig struct {
 	// turn of a fresh, non-resumed process (LEARN-TASKS.md LN-15). Off by
 	// default; crash recovery is unaffected — it still always uses --resume.
 	ContextHandoff bool `toml:"context_handoff"`
+
+	// Runtime selects the agent CLI the session drives (HERMES-TASKS.md
+	// HR-02): "claude" (default, also when empty) or "hermes" (`hermes chat
+	// --format stream-json`, one process per turn). With it empty or
+	// "claude" nothing about the launch changes.
+	Runtime string `toml:"runtime"`
+	// HermesProvider is passed as `--provider` (e.g. "openrouter",
+	// "anthropic"); empty lets Hermes use its own configured provider.
+	HermesProvider string `toml:"hermes_provider"`
+	// HermesProfile is passed as the global `-p <profile>` flag, giving the
+	// session its own Hermes memory, skills, hooks and state.db.
+	HermesProfile string `toml:"hermes_profile"`
+	// HermesSkills are preloaded with `-s` on every turn.
+	HermesSkills []string `toml:"hermes_skills"`
+	// HermesMaxTurns is passed as `--max-turns`: the tool-calling budget of
+	// one Hermes turn. 0 means the manager's default (500) rather than the
+	// user's own agent.max_turns, which is sized for chat, not for a task.
+	HermesMaxTurns int `toml:"hermes_max_turns"`
 }
+
+// RuntimeHermes is the SessionConfig.Runtime value that drives `hermes`.
+const RuntimeHermes = "hermes"
+
+// IsHermes reports whether the session runs on the Hermes CLI runtime.
+func (s SessionConfig) IsHermes() bool { return s.Runtime == RuntimeHermes }
 
 type PermissionRule struct {
 	Tool     string `toml:"tool"`     // "Bash", "Edit", "Write", "*"

@@ -420,6 +420,15 @@
                                             ? $t('sidebar.unfinishedTooltipTask', { task: unfinished[s.id].task })
                                             : $t('sidebar.unfinishedTooltip')}>⏸</span>
                                 {/if}
+                                {#if s.runtime === 'hermes'}
+                                    <!-- Hermes models are free-form provider ids; the Claude
+                                         dropdown does not apply. Changed in Settings. -->
+                                    <span
+                                        class="ml-1.5 shrink-0 px-1 rounded border border-bg-border text-text-muted truncate max-w-[9rem]"
+                                        style="font-size: 10px; line-height: 1.4;"
+                                        data-testid="hermes-badge-{s.id}"
+                                        title={$t('sidebar.hermesTooltip', { model: s.model || '—' })}>☤ {s.model || 'hermes'}</span>
+                                {:else}
                                 <select
                                     value={normalizeModel(s.model)}
                                     disabled={!!modelBusy[s.id]}
@@ -436,6 +445,7 @@
                                         <option value={normalizeModel(s.model)}>{s.model}</option>
                                     {/if}
                                 </select>
+                                {/if}
                                 {#if modelBusy[s.id]}
                                     <span class="text-text-dim ml-1" style="font-size: 10px">…</span>
                                 {/if}

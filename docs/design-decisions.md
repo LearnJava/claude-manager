@@ -805,6 +805,63 @@ lists rather than hand-written `<option>` tags. Exact resolved ids are still
 shown where the *version* is the point: the sidebar select's tooltip and
 `SessionCard`'s "Model:" line.
 
+### Hermes CLI Runtime (experimental, HERMES-TASKS.md)
+
+`SessionConfig.Runtime = "hermes"` makes a session drive `hermes chat
+--query-file - --format stream-json` instead of `claude`. Empty/`"claude"`
+leaves the Claude launch path byte-identical. `runOnce` branches to
+`runOnceHermes` (`internal/session/hermes_runtime.go`) right after the
+crash-recovery state save; everything after parsing goes through the shared
+`handleEvent(ParsedEvent)`, which `handleLine` now delegates to.
+
+**One process per turn.** A Hermes process answers one query and exits
+after its `result` line — there is no long-lived stdin conversation. The
+conversation id comes from the `system/init` line (stored as
+`CLISessionID`, so crash recovery's `resumeSessionID` works unchanged), and
+every later turn is a new process with `--resume <id>`. For an interactive
+session `runOnceHermes` loops: turn → wait on `inputCh` (the same channel
+`SendMessage`/`AnswerQuestion` already write the Claude user envelope into;
+`decodeInputLine` unwraps it) → next turn. A live model switch therefore
+never restarts anything: `SetSessionModel` returns early for a Hermes
+session and the next turn's `-m` picks it up.
+
+**Stream mapping** (`hermes_parser.go`): `text` deltas are buffered and
+flushed as one `text` log entry at the next non-text event; `tool_use`/
+`tool_result` become `tool`/`tool_result` entries (`todo_list`'s *result*
+feeds the TaskPanel); `result.tokens` becomes one `EvtUsage` plus the
+`EvtResult`; `exit_code != 0` or `error` marks the turn failed, and its text
+is run through `detectRateLimitText`/`isAuthError`. Real recordings live in
+`testdata/hermes-stream/`. There is no cost in the stream yet (HR-06).
+
+**Not mapped:** Hermes has no `--append-system-prompt`, so the session's
+`SystemPromptAppend` and, for autonomous runs, the ask-user/background
+prompts are prepended to the first turn of a fresh conversation.
+`max_budget_usd`, `fallback_model`, allowed/disallowed tools and `add_dirs`
+are ignored with a system log line. `bypassPermissions` → `--yolo`; any
+other mode leaves Hermes' own approval policy in charge (a non-TTY run
+blocks dangerous commands rather than asking).
+
+Tests: `hermes_test.go` (parser on real recordings, args), 
+`hermes_runtime_test.go` (full Run loop against `cmd/fakehermes`),
+`hermes_real_test.go` (real `hermes`, opt-in via `CM_REAL_HERMES=1`).
+
+**Rate limit behind a 401.** `hermes chat` reports only a turn's *last*
+error, and Hermes rotates credentials on a 429 — so a spent usage limit can
+surface as another credential's `401 … token has been revoked`. A failed
+turn is therefore checked against `<HERMES_HOME>/logs/agent.log` (last 4 MB):
+a `RateLimitError` / `Credential 429` line tagged with this conversation id
+and dated after the turn started makes it a rate limit (`EvtRateLimit`, wait
+`rate_limit_pause`, retry). Hermes gives no reset time, so it simply retries
+every pause. After a rate limit or an error the next attempt `--resume`s the
+same conversation instead of restarting the task.
+
+**Soft stop only at a task boundary** (both runtimes): `Stop(soft)` is
+honoured before the first run, after a closed task, or after a finished
+slice — never on an error, rate limit or unfinished turn, which used to end
+a session mid-task when the limit ran out after the user had asked it to
+stop *after* the task. `TestHermesRuntime_RateLimitBehind401_ResumesDespiteSoftStop`
+replays the incident via `FAKEHERMES_FAIL_429_THEN_401=1`.
+
 ### Auth Error Handling (403)
 `drainStderr()` detects lines containing `"403"` + `"forbidden"` / `"authenticate"` / `"unauthorized"`.
 On detection, `authErrorHit` atomic is set → `runOnce()` returns `errAuthError` → `Run()` pauses 60 seconds and retries.

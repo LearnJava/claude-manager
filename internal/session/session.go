@@ -39,6 +39,9 @@ const (
 	EvtQuestion   = "question"
 	EvtUsage      = "usage"
 	EvtTaskDone   = "task_done"
+	// EvtRunEnd closes a run that ended cleanly without closing its task
+	// (RunStatus is RunStatusSlice or RunStatusUnfinished).
+	EvtRunEnd     = "run_end"
 	EvtTodo       = "todo"
 	EvtTaskSource = "task_source"
 	EvtError      = "error"
@@ -66,6 +69,8 @@ type SessionEvent struct {
 	// races that rotation by reading Session.CLISessionID back off the
 	// (long-lived, mutated-in-place) Session after the fact.
 	CLISessionID string
+	// RunStatus is set on EvtRunEnd: the session_runs status to record.
+	RunStatus string
 }
 
 // EventCallback is invoked by the session for every event. The manager is
@@ -167,6 +172,9 @@ type Params struct {
 	ProjectPath       string
 	Config            config.SessionConfig
 	ClaudePath        string
+	// HermesPath is the `hermes` binary for Config.Runtime == "hermes"
+	// (HERMES-TASKS.md HR-04); default "hermes".
+	HermesPath        string
 	RetryDelay        int // seconds, fallback for non-rate-limit errors
 	RateLimitPauseSec int // seconds, fallback when no resetsAt is provided
 	OnEvent           EventCallback
@@ -243,6 +251,7 @@ type Session struct {
 	CLISessionID string // UUID passed via --session-id; reused on --resume
 
 	claudePath        string
+	hermesPath        string
 	retryDelay        int
 	rateLimitPauseSec int
 	questionTimeout   time.Duration
@@ -274,7 +283,16 @@ type Session struct {
 	rateLimitInf      atomic.Pointer[RateLimitInfo]
 	authErrorHit      atomic.Bool
 	contextRestartHit atomic.Bool
-
+	// continueMarkerHit is set when the run's last turn ended on the
+	// continue-session marker (the agent declaring its work done), and
+	// stepLimitHit when Hermes cut the turn off at its step budget. Both are
+	// reset per run and read by Run to classify the task outcome.
+	continueMarkerHit atomic.Bool
+	stepLimitHit      atomic.Bool
+	// lastHermesConv is the Hermes conversation the last runOnceHermes left
+	// off in (protected by mu). A run that dies on a rate limit or an API
+	// error resumes it instead of starting the task over in a fresh one.
+	lastHermesConv string
 	// pendingHandoff is the distilled recap text (LEARN-TASKS.md LN-15) to
 	// send as the first user turn of the next runOnce call, set by
 	// checkContextRestart just before it kills the current process. Cleared
@@ -328,6 +346,9 @@ func New(p Params) *Session {
 	if p.ClaudePath == "" {
 		p.ClaudePath = "claude"
 	}
+	if p.HermesPath == "" {
+		p.HermesPath = "hermes"
+	}
 	if p.RetryDelay <= 0 {
 		p.RetryDelay = 30
 	}
@@ -344,6 +365,7 @@ func New(p Params) *Session {
 		Config:            p.Config,
 		CLISessionID:      uuid.NewString(),
 		claudePath:        p.ClaudePath,
+		hermesPath:        p.HermesPath,
 		retryDelay:        p.RetryDelay,
 		rateLimitPauseSec: p.RateLimitPauseSec,
 		questionTimeout:   time.Duration(p.QuestionTimeoutSec) * time.Second,
@@ -700,13 +722,23 @@ func (s *Session) Run(ctx context.Context) {
 		}
 	}
 
+	unfinishedStreak := 0
+	// atTaskBoundary is true when the previous iteration ended at a point
+	// where "stop after this task" can honour itself: before the first run,
+	// after a closed task, or after a finished slice. A run that failed, hit
+	// a rate limit or ended unfinished is NOT a boundary — a soft stop must
+	// then wait for the task to actually get somewhere instead of turning a
+	// transient failure into a full stop (observed on S6: a soft stop set
+	// two hours earlier fired on the rate-limit error and the session never
+	// resumed after the limit reset).
+	atTaskBoundary := true
 	for {
 		if ctx.Err() != nil {
 			logger.L.Info("session.run.cancelled", "id", s.ID)
 			s.setStatus(config.StatusIdle)
 			return
 		}
-		if s.softStop.Load() {
+		if s.softStop.Load() && atTaskBoundary {
 			logger.L.Info("session.run.soft_stopped", "id", s.ID)
 			s.setStatus(config.StatusIdle)
 			return
@@ -765,7 +797,15 @@ func (s *Session) Run(ctx context.Context) {
 		}
 
 		s.setStatus(config.StatusStarting)
+		// Remember which task this run is for, as the integration branch sees
+		// it, so the outcome is judged by whether that pointer left the queue
+		// rather than by the agent's word for it.
+		pointerBefore := ""
+		if s.Config.TaskSource != "" {
+			pointerBefore = firstTaskPointer(readTaskQueue(ctx, s.ProjectPath, s.Config.TaskSource))
+		}
 		err := s.runOnce(ctx, false)
+		atTaskBoundary = false
 
 		// Clear resumeSessionID after the first runOnce attempt regardless of
 		// outcome — subsequent runs in the same process start fresh.
@@ -783,6 +823,7 @@ func (s *Session) Run(ctx context.Context) {
 			logger.L.Warn("session.run.rate_limited", "id", s.ID, "using_fallback", s.usingFallback)
 			s.setStatus(config.StatusRateLimited)
 			s.emitErr(err)
+			s.resumeHermesAfterFailure()
 			// Fallback model: switch to FallbackModel immediately instead of waiting.
 			if s.Config.FallbackModelOnRateLimit && s.Config.FallbackModel != "" && !s.usingFallback {
 				s.usingFallback = true
@@ -842,15 +883,66 @@ func (s *Session) Run(ctx context.Context) {
 			s.mu.Lock()
 			s.CLISessionID = uuid.NewString()
 			s.mu.Unlock()
+			s.resumeHermesAfterFailure()
 			if !s.sleepCtx(ctx, time.Duration(s.retryDelay)*time.Second) {
 				s.setStatus(config.StatusIdle)
 				return
 			}
 		default:
-			// Successful task completion: clear persisted state.
+			// Clean exit: the turn ended. Whether the task did is decided
+			// separately (classifyTaskOutcome).
 			if s.crashRecovery && s.stateStore != nil {
 				s.stateStore.Clear(s.ProjectName, s.Config.Name)
 			}
+			pointerAfter := ""
+			if pointerBefore != "" {
+				pointerAfter = firstTaskPointer(readTaskQueue(ctx, s.ProjectPath, s.Config.TaskSource))
+			}
+			outcome := classifyTaskOutcome(pointerBefore, pointerAfter, s.continueMarkerHit.Load())
+			if outcome != OutcomeClosed {
+				s.mu.Lock()
+				finishedCLISessionID := s.CLISessionID
+				s.CLISessionID = uuid.NewString()
+				s.mu.Unlock()
+				status, msg := RunStatusSlice, fmt.Sprintf(
+					"Run ended with %s still first in %s — a slice of the task is done, the next session continues it",
+					pointerBefore, s.Config.TaskSource)
+				if outcome == OutcomeUnfinished {
+					status = RunStatusUnfinished
+					reason := "the agent stopped without declaring its work done"
+					if s.stepLimitHit.Load() {
+						reason = "the turn was cut off by the step limit"
+					}
+					msg = fmt.Sprintf("Task %s not finished: %s — not counted as done, the next session continues it",
+						pointerBefore, reason)
+				}
+				logger.L.Info("session.run.task_outcome", "id", s.ID, "outcome", outcome,
+					"pointer", pointerBefore, "step_limit", s.stepLimitHit.Load())
+				s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+					Time: time.Now(), Level: "system", Source: "manager", Message: msg,
+				}})
+				s.emit(SessionEvent{Type: EvtRunEnd, RunStatus: status, CLISessionID: finishedCLISessionID})
+				if outcome == OutcomeUnfinished {
+					unfinishedStreak++
+					if unfinishedStreak >= maxUnfinishedStreak {
+						logger.L.Error("session.run.unfinished_streak", "id", s.ID, "pointer", pointerBefore, "runs", unfinishedStreak)
+						s.setStatus(config.StatusError)
+						s.emitErr(fmt.Errorf("task %s ended unfinished %d runs in a row — stopping the loop instead of retrying it again",
+							pointerBefore, unfinishedStreak))
+						return
+					}
+					if !s.sleepCtx(ctx, time.Duration(s.retryDelay)*time.Second) {
+						s.setStatus(config.StatusIdle)
+						return
+					}
+				} else {
+					unfinishedStreak = 0
+					atTaskBoundary = true // a finished slice
+				}
+				break
+			}
+			unfinishedStreak = 0
+			atTaskBoundary = true
 			s.mu.Lock()
 			s.tasksDone++
 			done := s.tasksDone
@@ -1056,6 +1148,12 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 		}
 	}
 
+	// Hermes runtime (HERMES-TASKS.md HR-04): a different process model
+	// (one process per turn), same event pipeline from here on.
+	if s.Config.IsHermes() {
+		return s.runOnceHermes(ctx, forceInteractive)
+	}
+
 	// In autonomous mode the manager owns the session lifecycle: one CLI process
 	// handles one task/turn, then restarts with a fresh context (see PLAN.md
 	// token optimization). Real Claude CLI keeps its process alive waiting on
@@ -1125,6 +1223,8 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	s.rateLimitInf.Store(nil)
 	s.authErrorHit.Store(false)
 	s.contextRestartHit.Store(false)
+	s.continueMarkerHit.Store(false)
+	s.stepLimitHit.Store(false)
 
 	writerDone := make(chan struct{})
 	go func() {
@@ -1300,8 +1400,13 @@ func (s *Session) sendInitialPrompt(ch chan<- []byte, prompt string) error {
 // pauses the run for a genuine human decision, with a timeout fallback (see
 // startQuestionTimeout) so an unattended run is never stuck forever.
 func (s *Session) handleLine(line string, autonomous bool) bool {
-	ev := ParseLine(line)
+	return s.handleEvent(ParseLine(line), autonomous)
+}
 
+// handleEvent dispatches one already-parsed event. It is the runtime-agnostic
+// half of handleLine: the Hermes runtime (hermes_runtime.go) produces the
+// same ParsedEvent values from its own stream format and feeds them here.
+func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 	s.mu.Lock()
 	s.lastActivity = time.Now()
 	s.mu.Unlock()
@@ -1345,6 +1450,9 @@ func (s *Session) handleLine(line string, autonomous bool) bool {
 			s.emit(SessionEvent{Type: EvtLog, Entry: &entry})
 		}
 		if ev.Result != nil {
+			if ev.Result.Subtype == "error_max_turns" {
+				s.stepLimitHit.Store(true)
+			}
 			// Auth failures surface as result text on stdout (e.g. "Failed to
 			// authenticate. API Error: 403 Request not allowed"), not on stderr.
 			if isAuthError(ev.Result.ResultText) {
@@ -1354,6 +1462,7 @@ func (s *Session) handleLine(line string, autonomous bool) bool {
 			if autonomous {
 				if q := ParseAskUserQuestion(ev.Result.ResultText); q != nil {
 					if q.Kind == KindContinueSession {
+						s.continueMarkerHit.Store(true)
 						logger.L.Info("session.question_auto", "id", s.ID, "question", q.Question)
 						s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
 							Time:   time.Now(),

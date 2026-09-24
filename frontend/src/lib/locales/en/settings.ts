@@ -21,6 +21,7 @@ export default {
     // Global tab — General
     'settings.general.heading': 'General',
     'settings.general.claudePath': 'Claude CLI path',
+    'settings.general.hermesPath': 'Hermes CLI path',
     'settings.general.theme': 'Theme',
     'settings.general.retryDelay': 'Retry delay (sec)',
     'settings.general.rateLimitPause': 'Rate limit pause (sec)',
@@ -159,6 +160,12 @@ export default {
     'settings.sessions.promptLabel': 'Prompt',
 
     'settings.sessions.modelHeading': 'Model',
+    'settings.sessions.runtime': 'Runtime',
+    'settings.sessions.runtimeTitle': 'Which agent CLI runs this session. Hermes CLI runs any provider model; Claude models via Hermes are billed as API/extra usage, not from the Claude subscription.',
+    'settings.sessions.hermesProvider': 'Hermes provider',
+    'settings.sessions.hermesProfile': 'Hermes profile',
+    'settings.sessions.hermesProfileTitle': 'Named Hermes profile (hermes -p): its own memory, skills, hooks and session history.',
+    'settings.sessions.hermesNote': 'Hermes runs one process per turn and resumes the conversation by id. Not applied: budget limit, fallback model, allowed/disallowed tools, extra dirs. Permission modes other than bypass follow the Hermes approval policy: dangerous commands are blocked, not asked.',
     'settings.sessions.effort': 'Effort',
     'settings.sessions.fallbackModel': 'Fallback model',
     'settings.sessions.fallbackModelTitle': 'Model used when the primary model is rate-limited or overloaded.',

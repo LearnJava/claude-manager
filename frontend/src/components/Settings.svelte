@@ -64,6 +64,11 @@
         PreTaskHook: string;
         PostTaskHook: string;
         CrashRecoveryPrompt: string;
+        // HERMES-TASKS.md HR-02: '' / 'claude' or 'hermes'.
+        Runtime: string;
+        HermesProvider: string;
+        HermesProfile: string;
+        HermesSkills: string[];
     }
 
     interface ProjectConfig {
@@ -96,6 +101,7 @@
 
     interface GlobalSettings {
         ClaudePath: string;
+        HermesPath: string;
         DefaultRetryDelay: number;
         RateLimitPause: number;
         LogRetentionDays: number;
@@ -163,6 +169,10 @@
             PreTaskHook: '',
             PostTaskHook: '',
             CrashRecoveryPrompt: '',
+            Runtime: '',
+            HermesProvider: '',
+            HermesProfile: '',
+            HermesSkills: [],
         };
     }
 
@@ -245,6 +255,7 @@
     function normaliseConfig(raw: any): AppConfig {
         const settings: GlobalSettings = {
             ClaudePath: '',
+            HermesPath: '',
             DefaultRetryDelay: 30,
             RateLimitPause: 300,
             LogRetentionDays: 30,
@@ -749,6 +760,15 @@
                                     type="text"
                                     bind:value={gs.ClaudePath}
                                     placeholder="claude"
+                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                            </label>
+                            <label class="flex flex-col text-xs text-text-muted gap-1">
+                                {$t('settings.general.hermesPath')}
+                                <input
+                                    type="text"
+                                    bind:value={gs.HermesPath}
+                                    placeholder="hermes"
+                                    data-testid="hermes-path"
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                             </label>
                             <label class="flex flex-col text-xs text-text-muted gap-1">
@@ -1334,9 +1354,53 @@
 
                                     <section>
                                         <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.sessions.modelHeading')}</h3>
+                                        <div class="grid grid-cols-3 gap-3 mb-3">
+                                            <label class="flex flex-col text-xs text-text-muted gap-1"
+                                                   title={$t('settings.sessions.runtimeTitle')}>
+                                                {$t('settings.sessions.runtime')}
+                                                <select
+                                                    bind:value={sess.Runtime}
+                                                    data-testid="session-runtime"
+                                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
+                                                    <option value="">Claude Code CLI</option>
+                                                    <option value="hermes">Hermes CLI</option>
+                                                </select>
+                                            </label>
+                                            {#if sess.Runtime === 'hermes'}
+                                                <label class="flex flex-col text-xs text-text-muted gap-1">
+                                                    {$t('settings.sessions.hermesProvider')}
+                                                    <input
+                                                        type="text"
+                                                        bind:value={sess.HermesProvider}
+                                                        placeholder="auto"
+                                                        class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                                                </label>
+                                                <label class="flex flex-col text-xs text-text-muted gap-1"
+                                                       title={$t('settings.sessions.hermesProfileTitle')}>
+                                                    {$t('settings.sessions.hermesProfile')}
+                                                    <input
+                                                        type="text"
+                                                        bind:value={sess.HermesProfile}
+                                                        placeholder="default"
+                                                        class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                                                </label>
+                                            {/if}
+                                        </div>
+                                        {#if sess.Runtime === 'hermes'}
+                                            <p class="text-xs text-text-muted mb-3">{$t('settings.sessions.hermesNote')}</p>
+                                        {/if}
                                         <div class="grid grid-cols-3 gap-3">
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
                                                 {$t('settings.field.model')}
+                                                {#if sess.Runtime === 'hermes'}
+                                                <!-- Hermes takes any provider model id (anthropic/claude-sonnet-4.6, …) -->
+                                                <input
+                                                    type="text"
+                                                    bind:value={sess.Model}
+                                                    placeholder="anthropic/claude-sonnet-4.6"
+                                                    data-testid="hermes-model"
+                                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                                                {:else}
                                                 <select
                                                     bind:value={sess.Model}
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
@@ -1348,6 +1412,7 @@
                                                         <option value={sess.Model}>{sess.Model}</option>
                                                     {/if}
                                                 </select>
+                                                {/if}
                                             </label>
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
                                                 {$t('settings.sessions.effort')}

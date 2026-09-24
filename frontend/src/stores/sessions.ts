@@ -64,6 +64,8 @@ export interface SessionState {
     model: string;
     effort: string;
     permission_mode: string;
+    /** "hermes" for a Hermes CLI session (HERMES-TASKS.md), "" for Claude Code CLI. */
+    runtime?: string;
     started_at: string;
     last_activity: string;
     rate_limit_until: string;
