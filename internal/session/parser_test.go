@@ -214,6 +214,40 @@ func TestParseAssistantMultipleContentBlocks(t *testing.T) {
 	}
 }
 
+// TestParseToolUseAndResult_ShareToolUseID: a tool_use block's id and its
+// corresponding tool_result's tool_use_id must produce the same ToolUseID on
+// both LogEntry sides (UI-01), and two parallel calls must get different ids.
+func TestParseToolUseAndResult_ShareToolUseID(t *testing.T) {
+	callLine := `{"type":"assistant","message":{"content":[` +
+		`{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"ls"}},` +
+		`{"type":"tool_use","id":"toolu_2","name":"Bash","input":{"command":"pwd"}}` +
+		`]}}`
+	callEv := parseLineAt(callLine, testTime)
+	if len(callEv.Entries) != 2 {
+		t.Fatalf("expected 2 tool entries, got %d", len(callEv.Entries))
+	}
+	if callEv.Entries[0].ToolUseID != "toolu_1" || callEv.Entries[1].ToolUseID != "toolu_2" {
+		t.Fatalf("expected distinct ids toolu_1/toolu_2, got %q/%q",
+			callEv.Entries[0].ToolUseID, callEv.Entries[1].ToolUseID)
+	}
+
+	resultLine := `{"type":"user","message":{"role":"user","content":[` +
+		`{"type":"tool_result","tool_use_id":"toolu_1","content":"file1"},` +
+		`{"type":"tool_result","tool_use_id":"toolu_2","content":"/home","is_error":true}` +
+		`]}}`
+	resultEv := parseLineAt(resultLine, testTime)
+	if len(resultEv.Entries) != 2 {
+		t.Fatalf("expected 2 result entries, got %d", len(resultEv.Entries))
+	}
+	if resultEv.Entries[0].ToolUseID != "toolu_1" {
+		t.Errorf("expected ToolUseID toolu_1, got %q", resultEv.Entries[0].ToolUseID)
+	}
+	if resultEv.Entries[1].ToolUseID != "toolu_2" || resultEv.Entries[1].Level != "error" {
+		t.Errorf("expected ToolUseID toolu_2 and level error, got %q/%s",
+			resultEv.Entries[1].ToolUseID, resultEv.Entries[1].Level)
+	}
+}
+
 // TestParseAssistantWithUsage uses the real sample from PLAN.md section 18.1.
 func TestParseAssistantWithUsage(t *testing.T) {
 	line := `{

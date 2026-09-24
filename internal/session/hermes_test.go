@@ -101,6 +101,37 @@ func TestHermesStream_NonJSONLineSurfaces(t *testing.T) {
 	}
 }
 
+// TestHermesStream_ToolUseIDLinksCallAndResult: Hermes has no wire-level
+// tool_use_id, so hermesStream synthesizes one — two different tools' calls
+// and results (interleaved) must still pair up correctly.
+func TestHermesStream_ToolUseIDLinksCallAndResult(t *testing.T) {
+	h := newHermesStream()
+	var evs []ParsedEvent
+	for _, line := range []string{
+		`{"type":"tool_use","name":"terminal","input":{"command":"ls"}}`,
+		`{"type":"tool_use","name":"read_file","input":{"path":"a.go"}}`,
+		`{"type":"tool_result","name":"read_file","output":"package a","is_error":false}`,
+		`{"type":"tool_result","name":"terminal","output":"boom","is_error":true}`,
+	} {
+		evs = append(evs, h.Parse(line)...)
+	}
+	if len(evs) != 4 {
+		t.Fatalf("expected 4 events, got %d: %+v", len(evs), evs)
+	}
+	terminalCallID := evs[0].Entries[0].ToolUseID
+	readCallID := evs[1].Entries[0].ToolUseID
+	if terminalCallID == "" || readCallID == "" || terminalCallID == readCallID {
+		t.Fatalf("expected distinct non-empty ids, got %q/%q", terminalCallID, readCallID)
+	}
+	if evs[2].Entries[0].ToolUseID != readCallID {
+		t.Errorf("read_file result should link to its own call, got %q want %q",
+			evs[2].Entries[0].ToolUseID, readCallID)
+	}
+	if evs[3].Entries[0].ToolUseID != terminalCallID || evs[3].Entries[0].Level != "error" {
+		t.Errorf("terminal result should link to its own call and be an error, got %+v", evs[3].Entries[0])
+	}
+}
+
 func TestBuildHermesArgs(t *testing.T) {
 	s := New(Params{ID: "p/S", Config: config.SessionConfig{
 		Name: "S", Runtime: "hermes", Model: "anthropic/claude-sonnet-4.6",

@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -35,9 +36,16 @@ type hermesStream struct {
 	// lastError is the `error` text of the last failed result line, so the
 	// runtime can classify it (rate limit, auth) without reparsing.
 	lastError string
+	// Hermes's wire format carries no tool_use_id, so we synthesize one: a
+	// monotonic counter assigned to each tool_use, tracked per tool name so a
+	// tool_result finds the most recent unclosed call with that name.
+	toolSeq       int
+	pendingByName map[string][]string
 }
 
-func newHermesStream() *hermesStream { return &hermesStream{now: time.Now} }
+func newHermesStream() *hermesStream {
+	return &hermesStream{now: time.Now, pendingByName: make(map[string][]string)}
+}
 
 type hermesRawEvent struct {
 	Type       string          `json:"type"`
@@ -99,9 +107,12 @@ func (h *hermesStream) Parse(line string) []ParsedEvent {
 
 	case "tool_use":
 		abbrev := hermesAbbreviateInput(ev.Name, ev.Input)
+		h.toolSeq++
+		id := fmt.Sprintf("hermes-%d", h.toolSeq)
+		h.pendingByName[ev.Name] = append(h.pendingByName[ev.Name], id)
 		return append(out, ParsedEvent{EventType: EventLog, Entries: []config.LogEntry{{
 			Time: now, Level: "tool", Source: "hermes",
-			Message: ev.Name + ": " + abbrev, ToolName: ev.Name, ToolInput: abbrev,
+			Message: ev.Name + ": " + abbrev, ToolName: ev.Name, ToolInput: abbrev, ToolUseID: id,
 		}}})
 
 	case "tool_result":
@@ -122,7 +133,14 @@ func (h *hermesStream) Parse(line string) []ParsedEvent {
 		if ev.IsError {
 			level = "error"
 		}
-		pe.Entries = []config.LogEntry{{Time: now, Level: level, Source: "hermes", Message: msg}}
+		// Pop the most recent unclosed tool_use with this name — Hermes has
+		// no tool_use_id of its own to match on.
+		var id string
+		if q := h.pendingByName[ev.Name]; len(q) > 0 {
+			id = q[len(q)-1]
+			h.pendingByName[ev.Name] = q[:len(q)-1]
+		}
+		pe.Entries = []config.LogEntry{{Time: now, Level: level, Source: "hermes", Message: msg, ToolUseID: id}}
 		return append(out, pe)
 
 	case "result":

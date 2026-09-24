@@ -96,6 +96,10 @@ export interface LogEntry {
     message: string;
     tool_name?: string;
     tool_input?: string;
+    // Links a "tool" entry to its "tool_result"/"error" entry — see
+    // config.LogEntry.ToolUseID in the backend. Absent on entries with no
+    // pairing (text, system, result, user).
+    tool_use_id?: string;
     // Client-side monotonic id assigned in appendLog. Stable across buffer
     // trimming and filtering — LogStream keys rows and expand-state on it.
     seq?: number;
