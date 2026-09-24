@@ -112,6 +112,7 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | SC-04 | Cache hit ratio shown correctly | Session with cache events | Displayed % matches `cache_read / (cache_read + cache_creation)` | ○ |
 | SC-05 | Branch shown if present | Session has branch in metadata | Branch label visible in card row 2 | ○ |
 | SC-06 | Model shown if present | Session has model metadata | Model label visible in card row 2 | ○ |
+| SC-07 | Runtime label reflects `session.runtime` | Session with `runtime: 'hermes'` vs. unset | "Use Hermes" / "Use Claude Code" shown next to model, gradient text, `dark:` variants for both themes | **✓** |
 
 ---
 

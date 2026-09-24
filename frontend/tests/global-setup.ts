@@ -50,6 +50,10 @@ export default async function globalSetup(): Promise<void> {
     './cmd/fakeclaude',
     path.join(ROOT, 'cmd', 'fakeclaude', exeName('fakeclaude')),
   );
+  const fakehermesBin = buildBinary(
+    './cmd/fakehermes',
+    path.join(ROOT, 'cmd', 'fakehermes', exeName('fakehermes')),
+  );
   const fakeworkerBin = buildBinary(
     './cmd/fakeworker',
     path.join(ROOT, 'cmd', 'fakeworker', exeName('fakeworker')),
@@ -79,7 +83,7 @@ export default async function globalSetup(): Promise<void> {
   }
 
   // 4. Write the runtime TOML.
-  const cfgPath = writeTestConfig(tmpDir, fakeclaudeBin, {
+  const cfgPath = writeTestConfig(tmpDir, fakeclaudeBin, fakehermesBin, {
     mixedEnabled,
     workerUrl,
     seedRepo,
@@ -194,9 +198,15 @@ interface MixedOpts {
   seedRepo: string;
 }
 
-function writeTestConfig(tmpDir: string, fakeclaudePath: string, mixed: MixedOpts): string {
+function writeTestConfig(
+  tmpDir: string,
+  fakeclaudePath: string,
+  fakehermesPath: string,
+  mixed: MixedOpts,
+): string {
   // Normalise to forward slashes for TOML string compatibility on Windows.
   const claudePathToml = fakeclaudePath.replace(/\\/g, '/');
+  const hermesPathToml = fakehermesPath.replace(/\\/g, '/');
   // The "test" project's path must NOT be ROOT (this checkout): fakeclaude is
   // fully scripted and never touches the filesystem, but config.go's project
   // overlay does — it reads a real `<path>/.claude-manager/config.toml` off
@@ -216,6 +226,7 @@ function writeTestConfig(tmpDir: string, fakeclaudePath: string, mixed: MixedOpt
   const lines = [
     '[settings]',
     `claude_path = "${claudePathToml}"`,
+    `hermes_path = "${hermesPathToml}"`,
     'log_retention_days = 1',
     'crash_recovery = false',
     'preflight_analysis = false',
@@ -247,6 +258,16 @@ function writeTestConfig(tmpDir: string, fakeclaudePath: string, mixed: MixedOpt
     'prompt = "Let us have a multi-turn conversation"',
     'auto_restart = false',
     'model = "claude-sonnet-4-6"',
+    'permission_mode = "default"',
+    '',
+    // S4 — Hermes runtime session (UI-06: "Use Hermes" label). fakehermes is
+    // fully scripted like fakeclaude; matching keyword is irrelevant since it
+    // always echoes the first line of the query.
+    '[[project.session]]',
+    'name = "S4"',
+    'prompt = "Please do the simple hello task"',
+    'runtime = "hermes"',
+    'auto_restart = false',
     'permission_mode = "default"',
   ];
 

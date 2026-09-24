@@ -24,4 +24,8 @@ export default {
     'sessionCard.cacheHitLabel': 'Попадания в кэш:',
     'sessionCard.contextLabel': 'Контекст:',
     'sessionCard.contextTooltip': 'Использование окна контекста',
+    'sessionCard.useHermesLabel': 'Use Hermes',
+    'sessionCard.useHermesTooltip': 'Сессию ведёт Hermes CLI',
+    'sessionCard.useClaudeCodeLabel': 'Use Claude Code',
+    'sessionCard.useClaudeCodeTooltip': 'Сессию ведёт Claude Code CLI',
 } as Record<string, string>;
