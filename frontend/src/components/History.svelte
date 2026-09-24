@@ -126,6 +126,10 @@
                 return 'text-status-error';
             case 'rate_limited':
                 return 'text-status-ratelimit';
+            case 'slice':
+                return 'text-status-starting';
+            case 'unfinished':
+                return 'text-status-ratelimit';
             case 'stopped':
                 return 'text-text-muted';
             case 'running':

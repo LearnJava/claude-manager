@@ -903,6 +903,17 @@ func (a *App) UpdateConfig(cfg config.AppConfig) error {
 	global := cfg
 	global.Projects = make([]config.ProjectConfig, len(cfg.Projects))
 	for i, p := range cfg.Projects {
+		if p.Path != "" && isDir(p.Path) && !a.knowsProjectPath(p.Path) {
+			// A folder new to the app may already carry a committed overlay
+			// (a cloned repo, a re-added project). The Settings form built
+			// this entry from scratch, so its empty fields mean "not set",
+			// not "delete" — adopt the folder's values instead of writing
+			// `session = []` over them.
+			var err error
+			if p, err = adoptExistingOverlay(p); err != nil {
+				return err
+			}
+		}
 		if p.Path != "" && isDir(p.Path) {
 			existing, err := config.LoadProjectOverlay(p.Path)
 			if err != nil {
@@ -955,6 +966,50 @@ func (a *App) UpdateConfig(cfg config.AppConfig) error {
 		a.manager.SetConfig(reloaded)
 	}
 	return nil
+}
+
+// knowsProjectPath reports whether the currently loaded config already has a
+// project registered at path. Only such projects may have their overlay
+// fields cleared by UpdateConfig — the user saw those values in Settings.
+func (a *App) knowsProjectPath(path string) bool {
+	if a.cfg == nil {
+		return false
+	}
+	want := filepath.Clean(path)
+	for _, p := range a.cfg.Projects {
+		if p.Path != "" && strings.EqualFold(filepath.Clean(p.Path), want) {
+			return true
+		}
+	}
+	return false
+}
+
+// adoptExistingOverlay fills the unset fields of a newly added project from
+// the overlay already present in its folder. Fields the user set explicitly
+// in the form win.
+func adoptExistingOverlay(p config.ProjectConfig) (config.ProjectConfig, error) {
+	ov, err := config.LoadProjectOverlay(p.Path)
+	if err != nil || ov == nil {
+		return p, err
+	}
+	if len(p.Sessions) == 0 {
+		p.Sessions = ov.Sessions
+	}
+	if len(p.Gates) == 0 {
+		p.Gates = ov.Gates
+	}
+	if p.DefaultPermissionMode == "" {
+		p.DefaultPermissionMode = ov.DefaultPermissionMode
+	}
+	if ov.MixedProgramming != nil && *ov.MixedProgramming {
+		p.MixedProgramming = true
+	}
+	if p.MixedMaxRounds == 0 {
+		p.MixedMaxRounds = ov.MixedMaxRounds
+	}
+	p.Journal = p.Journal || ov.Journal
+	p.JournalCommit = p.JournalCommit || ov.JournalCommit
+	return p, nil
 }
 
 // isDir reports whether path exists and is a directory.

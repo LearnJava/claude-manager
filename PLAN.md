@@ -526,7 +526,10 @@ SessionManager
 goroutine Session.Run(ctx):
     loop:
         if ctx.Done → return
-        if softStop → return
+        if softStop && atTaskBoundary → return
+        // atTaskBoundary: до первого запуска, после закрытой задачи или
+        // законченного среза. Ошибка, rate limit, unfinished — не граница:
+        // сессия ждёт/повторяет и доводит задачу, а стоп исполняется потом.
         if maxTasks > 0 && tasksDone >= maxTasks → return
         if taskSource != "" && !hasTasks(taskSource) → return
         // hasTasks — два формата (зеркалит orchestrator.py has_tasks()):
@@ -727,7 +730,8 @@ Branch: p1-transform-fix    Task: BUG-021    Tasks done: 2
 
 - **Pause** — не убивает процесс; после завершения текущей задачи не запускает следующую
 - **Stop** — немедленный kill процесса (SIGTERM → таймаут → SIGKILL)
-- **Stop after task** — мягкая остановка: текущая задача доработает
+- **Stop after task** — мягкая остановка: текущая задача доработает (в том числе переждёт
+  rate limit и повторит ход после ошибки), и только после её конца сессия встанет
 - **Restart** — Stop + Start
 - **Copy log** — весь лог в буфер обмена
 - **Clear log** — очистить визуальный буфер (в SQLite остаётся)

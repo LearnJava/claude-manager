@@ -23,7 +23,7 @@ type SessionRun struct {
 	Model               string
 	StartedAt           time.Time
 	FinishedAt          *time.Time
-	Status              string // "completed" | "error" | "stopped" | "rate_limited"
+	Status              string // "completed" | "slice" | "unfinished" | "error" | "stopped" | "rate_limited"
 	TasksDone           int
 	ExitCode            *int
 	ErrorMsg            string
@@ -286,12 +286,14 @@ func (s *Store) UpdateRun(run *SessionRun) error {
 	const q = `UPDATE session_runs SET
     finished_at=?, status=?, tasks_done=?, exit_code=?, error_msg=?,
     total_cost_usd=?, input_tokens=?, output_tokens=?, cache_read_tokens=?,
-    cache_creation_tokens=?, num_turns=?, duration_ms=?, model=?, effort=?
+    cache_creation_tokens=?, num_turns=?, duration_ms=?, model=?, effort=?,
+    cli_session_id=COALESCE(NULLIF(?, ''), cli_session_id)
 WHERE id=?`
 	_, err := s.db.Exec(q,
 		nullTime(run.FinishedAt), run.Status, run.TasksDone, nullIntPtr(run.ExitCode), run.ErrorMsg,
 		run.TotalCostUSD, run.InputTokens, run.OutputTokens, run.CacheReadTokens,
 		run.CacheCreationTokens, run.NumTurns, run.DurationMs, run.Model, nullStr(run.Effort),
+		run.CLISessionID,
 		run.ID,
 	)
 	return err

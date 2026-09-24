@@ -221,6 +221,8 @@ type SessionState struct {
 	Model          string     `json:"model"`
 	Effort         string     `json:"effort"`
 	PermissionMode string     `json:"permission_mode"`
+	// Runtime is "hermes" for a Hermes CLI session, "" for Claude Code CLI.
+	Runtime        string     `json:"runtime"`
 	StartedAt      time.Time  `json:"started_at"`
 	LastActivity   time.Time  `json:"last_activity"`
 	RateLimitUntil time.Time  `json:"rate_limit_until"`
@@ -602,6 +604,7 @@ func (m *SessionManager) StartSession(project, name string) error {
 		ProjectPath:       proj.Path,
 		Config:            *sc,
 		ClaudePath:        m.cfg.Settings.ClaudePath,
+		HermesPath:        m.cfg.Settings.HermesPath,
 		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
@@ -677,6 +680,7 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 		ProjectPath:       proj.Path,
 		Config:            sessionCfg,
 		ClaudePath:        m.cfg.Settings.ClaudePath,
+		HermesPath:        m.cfg.Settings.HermesPath,
 		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
@@ -827,6 +831,11 @@ func (m *SessionManager) SetSessionModel(id, model string) error {
 	if sess.Autonomous() {
 		return nil
 	}
+	// Hermes runs one process per turn, so the next turn's `-m` already
+	// picks up the new model — no restart, nothing interrupted.
+	if sess.Config.IsHermes() {
+		return nil
+	}
 
 	st := sess.Status()
 	if st == config.StatusIdle || st == config.StatusError {
@@ -886,6 +895,7 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 		ProjectPath:       proj.Path,
 		Config:            sessionCfg,
 		ClaudePath:        m.cfg.Settings.ClaudePath,
+		HermesPath:        m.cfg.Settings.HermesPath,
 		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
@@ -1098,6 +1108,7 @@ func (m *SessionManager) GetAllSessions() []SessionState {
 					Model:          s.Model,
 					Effort:         s.Effort,
 					PermissionMode: s.PermissionMode,
+					Runtime:        s.Runtime,
 					Prompt:         s.Prompt,
 					Todos:          []TodoItem{},
 				})
@@ -1135,6 +1146,7 @@ func (m *SessionManager) GetSession(id string) (SessionState, bool) {
 		Model:          firstNonEmpty(snap.ActiveModel, ms.session.Config.Model),
 		Effort:         ms.session.Config.Effort,
 		PermissionMode: ms.session.Config.PermissionMode,
+		Runtime:        ms.session.Config.Runtime,
 		StartedAt:      snap.StartedAt,
 		LastActivity:   snap.LastActivity,
 		RateLimitUntil: ms.rateLimitUntil,
@@ -1463,6 +1475,15 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 		}
 		m.emit(EventNameTaskDone, TaskDoneEvent{ID: id, TasksDone: ev.TasksDone})
 
+	case EvtRunEnd:
+		// A clean exit that did not close its task (a slice, or unfinished):
+		// record the run with that status, and no task_done notification.
+		ms.mu.Lock()
+		runID := ms.runID
+		ms.mu.Unlock()
+		if runID != 0 {
+			m.finishRun(ms, ev.RunStatus, "", ev.CLISessionID)
+		}
 	case EvtRateLimit:
 		if ev.RateLimit != nil {
 			until := time.Time{}
@@ -1795,7 +1816,14 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 		}()
 	}
 
-	if status == "completed" {
+	// A slice or an unfinished run spent as much as a completed one: its cost
+	// and tokens count toward the day, only the task counter waits for the
+	// run that actually closes the task.
+	if status == "completed" || status == RunStatusSlice || status == RunStatusUnfinished {
+		tasks := 0
+		if status == "completed" {
+			tasks = 1
+		}
 		_ = m.store.AddDailyMetrics(&store.DailyMetrics{
 			Date:                     now.Format("2006-01-02"),
 			Project:                  project,
@@ -1805,7 +1833,7 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 			TotalCacheReadTokens:     cacheReadTok,
 			TotalCacheCreationTokens: cacheCreateTok,
 			TotalRuns:                1,
-			TotalTasks:               1,
+			TotalTasks:               tasks,
 		})
 	}
 
@@ -1850,8 +1878,9 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 	// memory (LEARN-TASKS.md LN-06) — same fire-and-forget goroutine pattern
 	// as the transcript indexer above. Gated on the project's own Journal
 	// flag (off by default) and on a writer actually being wired: with either
-	// missing, the analyst is never invoked at all, not just discarded.
-	if status == "completed" {
+	// missing, the analyst is never invoked at all, not just discarded. A
+	// finished slice of a multi-slice task is journaled like a closed task.
+	if status == "completed" || status == RunStatusSlice {
 		pcfg := m.findProjectConfig(project)
 		m.mu.Lock()
 		journalWrite := m.journalFn

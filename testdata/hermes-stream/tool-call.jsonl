@@ -1,0 +1,6 @@
+{"type": "system", "subtype": "init", "model": "claude-haiku-4-5", "session_id": "20260924_111123_993e42", "timestamp": 1790237484024}
+{"type": "tool_use", "name": "terminal", "input": {"command": "echo hello-cm"}, "timestamp": 1790237489281}
+{"type": "tool_result", "name": "terminal", "output": "{\"output\": \"hello-cm\", \"exit_code\": 0, \"error\": null}", "duration_ms": 1180, "is_error": false, "timestamp": 1790237490462}
+{"type": "text", "text": "\n\ndone", "timestamp": 1790237491113}
+{"type": "text", "text": ".", "timestamp": 1790237491159}
+{"type": "result", "session_id": "20260924_111123_993e42", "exit_code": 0, "text": "done.", "tokens": {"input": 8, "output": 63, "total": 29979, "cache_read": 14910, "cache_write": 14998}, "duration_ms": 7173, "timestamp": 1790237491198}

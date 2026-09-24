@@ -348,6 +348,9 @@ func applyDefaults(cfg *AppConfig) {
 	if s.ClaudePath == "" {
 		s.ClaudePath = "claude"
 	}
+	if s.HermesPath == "" {
+		s.HermesPath = "hermes"
+	}
 	if s.DefaultRetryDelay == 0 {
 		s.DefaultRetryDelay = 30
 	}
@@ -512,6 +515,9 @@ func validate(cfg *AppConfig) error {
 			}
 			if names[s.Name] {
 				return fmt.Errorf("config: project %q has duplicate session name %q", p.Name, s.Name)
+			}
+			if s.Runtime != "" && s.Runtime != "claude" && s.Runtime != RuntimeHermes {
+				return fmt.Errorf("config: project %q session %q has invalid runtime %q (want claude|hermes)", p.Name, s.Name, s.Runtime)
 			}
 			names[s.Name] = true
 		}

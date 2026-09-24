@@ -2,9 +2,11 @@ package session
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,5 +114,84 @@ func TestRun_EvtTaskDone_CarriesFinishedRunsOwnCLISessionID(t *testing.T) {
 	// pass even with the bug present.
 	if launchedIDs[0] == launchedIDs[1] {
 		t.Fatalf("both tasks launched with the same CLI session id %q — rotation isn't happening, test is not exercising the bug", launchedIDs[0])
+	}
+}
+
+// A clean exit is not a closed task: when the queue's top pointer is still in
+// place after the run and the agent did not end on the continue-session
+// marker, the run is recorded unfinished (EvtRunEnd, no EvtTaskDone, no
+// tasks_done bump), and after maxUnfinishedStreak such runs in a row the loop
+// stops instead of paying for the same task forever.
+func TestRun_UnfinishedTaskIsNotCountedAndStreakStops(t *testing.T) {
+	claudePath := buildFakeclaudeForSession(t)
+	dir := t.TempDir()
+	scenarioDir, err := filepath.Abs(filepath.Join("..", "..", "testdata", "scenarios"))
+	if err != nil {
+		t.Fatalf("abs: %v", err)
+	}
+	t.Setenv("FAKECLAUDE_SCENARIO", scenarioDir)
+	// No git repository: the queue is read off disk, and nothing edits it.
+	if err := os.WriteFile(filepath.Join(dir, "STATUS-P1.md"), []byte("# queue\nTASKS.md:7\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var runEnds []string
+	taskDone := 0
+	var logs []string
+	s := New(Params{
+		ID:          "it/UF",
+		ProjectName: "it",
+		ProjectPath: dir,
+		ClaudePath:  claudePath,
+		Config: config.SessionConfig{
+			Name:            "UF",
+			Model:           "sonnet",
+			PermissionMode:  "bypassPermissions",
+			AutoRestart:     true,
+			StopWhenNoTasks: true,
+			TaskSource:      "STATUS-P1.md",
+			Prompt:          "hello",
+		},
+		OnEvent: func(_ string, ev SessionEvent) {
+			switch ev.Type {
+			case EvtRunEnd:
+				runEnds = append(runEnds, ev.RunStatus)
+			case EvtTaskDone:
+				taskDone++
+			case EvtLog:
+				if ev.Entry != nil && ev.Entry.Source == "manager" {
+					logs = append(logs, ev.Entry.Message)
+				}
+			}
+		},
+	})
+	s.retryDelay = 0
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s.Run(ctx)
+
+	if taskDone != 0 || s.TasksDone() != 0 {
+		t.Errorf("task_done events = %d, tasks_done = %d; want 0 — the task never left the queue", taskDone, s.TasksDone())
+	}
+	if len(runEnds) != maxUnfinishedStreak {
+		t.Fatalf("run_end events = %v, want %d unfinished runs before the loop stops", runEnds, maxUnfinishedStreak)
+	}
+	for _, st := range runEnds {
+		if st != RunStatusUnfinished {
+			t.Errorf("run status = %q, want %q", st, RunStatusUnfinished)
+		}
+	}
+	if s.Status() != config.StatusError {
+		t.Errorf("status = %v, want error after the unfinished streak", s.Status())
+	}
+	found := false
+	for _, l := range logs {
+		if strings.Contains(l, "Task TASKS.md:7 not finished") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no 'not finished' line in the log: %v", logs)
 	}
 }
