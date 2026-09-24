@@ -99,6 +99,8 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | LS-17 | Machine output stays raw, button offers it | Push a `tool_result` with Read line numbers | No `.md-body`; clicking `M` renders that row | ✓ |
 | LS-18 | Prose rows have no per-entry button | Push a `text` entry with markdown | Rendered, but no `M` button | ✓ |
 | LS-16 | Markdown choice persists | Uncheck, reload the app | Checkbox still unchecked (localStorage) | ✓ |
+| LS-19 | Feed: thinking collapses to duration line | Push a `thinking` entry, then a follow-up | Muted italic `Thought for Ns` row, click expands to raw text | ✓ |
+| LS-20 | Feed: prose renders proportional, not mono | Push a `text` entry with markdown | `.md-body` block not inside a `font-mono` ancestor | ✓ |
 
 ---
 

@@ -16,4 +16,6 @@ export default {
     'logStream.feedLayoutTitle': 'Group tool calls into a Hermes Desktop-style feed',
     'logStream.moreCommands': 'commands',
     'logStream.readOnlySummary': 'Viewed',
+    'logStream.thoughtFor': 'Thought for {s}s',
+    'logStream.thinkingNow': 'Thinking…',
 } as Record<string, string>;

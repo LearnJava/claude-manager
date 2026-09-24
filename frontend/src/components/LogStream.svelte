@@ -5,6 +5,7 @@
     import { logMarkdown, logLayout } from '../stores/logView';
     import { t } from '../lib/i18n';
     import { groupEntries, entryKey } from '../lib/logGroups';
+    import { formatTime } from '../lib/formatters';
     import LogEntryRow from './LogEntryRow.svelte';
 
     export let sessionId: string;
@@ -279,8 +280,39 @@
                             <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />
                         </div>
                     </div>
+                {:else if block.kind === 'thinking'}
+                    {@const isOpen = groupOpen.get(block.seq) ?? false}
+                    {@const label =
+                        block.thinkingSeconds === null || block.thinkingSeconds === undefined
+                            ? $t('logStream.thinkingNow')
+                            : $t('logStream.thoughtFor', { s: block.thinkingSeconds })}
+                    <div class="py-px" title={formatTime(block.entries[0].time)}>
+                        <button
+                            type="button"
+                            on:click={() => toggleGroup(block.seq, isOpen)}
+                            class="flex items-center gap-2 w-full text-left text-text-dim
+                                   italic hover:text-text">
+                            <span class="shrink-0 select-none w-4 text-center font-bold leading-5">
+                                {isOpen ? '−' : '＋'}
+                            </span>
+                            <span class="truncate">{label}</span>
+                        </button>
+                        {#if isOpen}
+                            <div class="pl-6 border-l border-bg-border ml-2">
+                                <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />
+                            </div>
+                        {/if}
+                    </div>
+                {:else if block.kind === 'prose'}
+                    <div
+                        class="font-sans text-[13px] leading-[1.5] max-w-[80ch] py-1"
+                        title={formatTime(block.entries[0].time)}>
+                        <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />
+                    </div>
                 {:else}
-                    <LogEntryRow entry={block.entries[0]} entryKey={block.seq} />
+                    <div title={formatTime(block.entries[0].time)}>
+                        <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />
+                    </div>
                 {/if}
             {/each}
         {/if}

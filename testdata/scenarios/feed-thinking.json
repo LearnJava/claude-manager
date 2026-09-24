@@ -1,0 +1,45 @@
+{
+  "name": "feed-thinking",
+  "match": "(?i)\\bfeed-demo\\b",
+  "model": "claude-sonnet-4-6",
+  "context_window": 200000,
+  "exit_code": 0,
+  "steps": [
+    {
+      "type": "await_stdin",
+      "expect": "user",
+      "timeout_ms": 5000,
+      "store_as": "msg"
+    },
+    {
+      "type": "emit",
+      "delay_ms": 0,
+      "event": {"type":"system","subtype":"init","session_id":"${session_id}","model":"${model}","tools":["Read","Edit","Bash"],"cwd":"${cwd}"}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 50,
+      "event": {"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Let me look at the failing test first."}],"usage":{"input_tokens":500,"output_tokens":20,"cache_read_input_tokens":0}}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 3000,
+      "event": {"type":"assistant","message":{"content":[{"type":"tool_use","id":"c1","name":"Read","input":{"file_path":"internal/session/parser.go"}}],"usage":{"input_tokens":700,"output_tokens":30,"cache_read_input_tokens":0}}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 50,
+      "event": {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"c1","content":"package session\n..."}]}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 50,
+      "event": {"type":"assistant","message":{"content":[{"type":"text","text":"## Summary\n\nThe parser looks correct. **No changes needed.**"}],"usage":{"input_tokens":900,"output_tokens":60,"cache_read_input_tokens":0}}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 20,
+      "event": {"type":"result","subtype":"success","total_cost_usd":0.006,"num_turns":1,"usage":{"input_tokens":2100,"output_tokens":110},"modelUsage":{"claude-sonnet-4-6":{"costUSD":0.006}}}
+    }
+  ]
+}

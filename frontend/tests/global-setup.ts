@@ -269,6 +269,15 @@ function writeTestConfig(
     'runtime = "hermes"',
     'auto_restart = false',
     'permission_mode = "default"',
+    '',
+    // S5 — feed-thinking scenario (UI-03): thinking → tool call → prose, for
+    // the feed-layout Playwright snapshot in light/dark theme.
+    '[[project.session]]',
+    'name = "S5"',
+    'prompt = "Run the feed-demo walkthrough"',
+    'auto_restart = false',
+    'model = "claude-sonnet-4-6"',
+    'permission_mode = "default"',
   ];
 
   if (mixed.mixedEnabled) {
