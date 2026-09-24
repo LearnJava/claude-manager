@@ -12,4 +12,8 @@ export default {
     'logStream.showAsRaw': 'Show this entry as raw text',
     'logStream.renderAsMarkdown': 'Render this entry as markdown',
     'logStream.jumpToLatest': 'Jump to latest',
+    'logStream.feedLayoutLabel': 'Feed',
+    'logStream.feedLayoutTitle': 'Group tool calls into a Hermes Desktop-style feed',
+    'logStream.moreCommands': 'commands',
+    'logStream.readOnlySummary': 'Viewed',
 } as Record<string, string>;

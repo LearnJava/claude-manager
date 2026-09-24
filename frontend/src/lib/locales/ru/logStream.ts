@@ -12,4 +12,8 @@ export default {
     'logStream.showAsRaw': 'Показать запись как исходный текст',
     'logStream.renderAsMarkdown': 'Отобразить запись как markdown',
     'logStream.jumpToLatest': 'К последним записям',
+    'logStream.feedLayoutLabel': 'Лента',
+    'logStream.feedLayoutTitle': 'Группировать вызовы инструментов в ленту, как в Hermes Desktop',
+    'logStream.moreCommands': 'команд',
+    'logStream.readOnlySummary': 'Просмотрено',
 } as Record<string, string>;

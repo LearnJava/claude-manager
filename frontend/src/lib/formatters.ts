@@ -124,8 +124,10 @@ export function contextBarColor(util: number | undefined | null): string {
 
 // ---- Log entry styling ----
 
-// Tool families used to colour-code tool_use entries.
-const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'NotebookRead']);
+// Tool families used to colour-code tool_use entries. Exported: lib/logGroups.ts
+// reuses READ_TOOLS to decide whether a tools block collapses to the
+// "Просмотрено: a.go, b.go" read-only summary instead of "cmd + N commands".
+export const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'NotebookRead']);
 const BASH_TOOLS = new Set(['Bash', 'BashOutput', 'KillBash', 'KillShell']);
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'ApplyDiff']);
 const AGENT_TOOLS = new Set(['Task', 'Agent']);
