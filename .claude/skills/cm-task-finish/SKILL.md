@@ -61,11 +61,14 @@ npm --prefix frontend test >> .tmp/gate.log 2>&1; echo "exit=$?"
    по памяти, чужие правки его уводят.
 2. **Таблица Status в мастер-файле задач** (`LEARN-TASKS.md`, `TASKS.md`,
    `MIXED-TASKS.md`, `HARNESS-TASKS.md`) — `● IN PROGRESS` → `✓ DONE (дата)`.
-3. **Новый метод `App`** → строка в таблице «Wails Bindings (app.go)» в CLAUDE.md.
-4. **Новое поле конфига** → `config.example.toml` + CLAUDE.md.
-5. **Новый пакет или заметный файл** → дерево архитектуры в начале CLAUDE.md.
+3. **Новый метод `App`** → строка в таблице «Wails Bindings (app.go)» в
+   [docs/architecture.md](../../../docs/architecture.md).
+4. **Новое поле конфига** → `config.example.toml` + релевантный раздел PLAN.md.
+5. **Новый пакет или заметный файл** → дерево архитектуры в
+   [docs/architecture.md](../../../docs/architecture.md).
 6. **Новый сценарий fakeclaude/fakeworker** → `testdata/scenarios/scenarios_doc.md`.
-7. **Новый инструмент cm-mcp** → таблица «cm-mcp tools available to Claude».
+7. **Новый инструмент cm-mcp** → таблица «cm-mcp tools available to Claude» в
+   [docs/testing-harness.md](../../../docs/testing-harness.md).
 
 Если сдвигал строки в мастер-файле задач — переиндексируй указатели в очереди
 (вставил K строк выше строки L → все `NN ≥ L` сдвигаются на +K) и проверь

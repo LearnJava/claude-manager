@@ -1025,7 +1025,7 @@ LN-01. `IngestDir(root, project string, opts ImportOpts) (ImportStats, error)`:
 
 **Отдельный сигнал — `sleep`.** Высокая доля `sleep` с большой медианой это
 антипаттерн «жду фоновую задачу», который в этой архитектуре не работает
-(см. «Background-Task Warning» в `CLAUDE.md`). Выносить в отчёт отдельной
+(см. «Background-Task Warning» в `docs/design-decisions.md`). Выносить в отчёт отдельной
 строкой с суммарным временем — это прямой ответ на вопрос «куда ушло время
 прогона».
 
