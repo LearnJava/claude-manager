@@ -27,6 +27,15 @@ tmp→rename, and appends `config.local.toml` to `.gitignore` (idempotent).
 overlay and shrinks the global `[[project]]` to a registry pointer; projects
 without a writable folder keep their settings inline in the global file.
 
+**Adding a folder that already has an overlay.** "Add project" in Settings
+builds the entry from `emptyProject()` (`Sessions: []`), so a naive save would
+write `session = []` over a cloned repo's committed `config.toml` and delete its
+sessions. `UpdateConfig` therefore treats a project whose path is *not* in the
+currently loaded config as new and runs `adoptExistingOverlay` first: every
+unset field (sessions, gates, permission mode, opt-ins) is taken from the
+folder, anything typed into the form wins. A project already known to the app is
+saved verbatim — that is how deleting its last session in Settings still works.
+
 **Privacy rationale.** `mixed_programming = true` is the "my code may leave this
 machine" opt-in, so it lives only in the gitignored `config.local.toml` — a
 teammate cloning the repo gets sessions+gates but must opt into external workers
