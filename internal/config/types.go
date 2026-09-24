@@ -311,4 +311,29 @@ type LogEntry struct {
 	// tool_use_id; the Hermes parser (which has no id in its wire format)
 	// synthesizes one. Not persisted to session_logs — live-stream only.
 	ToolUseID string `json:"tool_use_id,omitempty"`
+	// Diff carries the added/removed lines for a file-editing tool_use (Claude
+	// Edit/MultiEdit/Write, Hermes patch/write_file) — VIEW-TASKS.md UI-04. Nil
+	// for every other tool call. Not persisted to session_logs, same reasoning
+	// as ToolUseID: it lives only on the in-memory/live-event LogEntry the feed
+	// view renders its diff card from.
+	Diff *FileDiff `json:"diff,omitempty"`
+}
+
+// DiffLine is one line of a FileDiff, tagged whether it was added or removed.
+type DiffLine struct {
+	Type string `json:"type"` // "add" | "del"
+	Text string `json:"text"`
+}
+
+// FileDiff is the added/removed line summary AbbreviateInput's edit-tool
+// siblings (BuildDiff) compute for a tool_use input, so the UI can render a
+// "+N −M" file-edit card without re-parsing the raw JSON input itself.
+type FileDiff struct {
+	Added   int        `json:"added"`
+	Removed int        `json:"removed"`
+	Lines   []DiffLine `json:"lines"`
+	// Truncated is how many further lines were cut once Lines hit the
+	// DiffLineLimit, so a huge Write doesn't balloon every LogEntry in memory.
+	// 0 when nothing was cut.
+	Truncated int `json:"truncated,omitempty"`
 }

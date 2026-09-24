@@ -132,6 +132,24 @@ func TestHermesStream_ToolUseIDLinksCallAndResult(t *testing.T) {
 	}
 }
 
+// TestHermesStream_PatchToolUseCarriesDiff: hermes' patch tool_use input maps
+// to the same FileDiff shape the Claude Edit path produces (VIEW-TASKS.md
+// UI-04's "Hermes-тест на patch").
+func TestHermesStream_PatchToolUseCarriesDiff(t *testing.T) {
+	h := newHermesStream()
+	evs := h.Parse(`{"type":"tool_use","name":"patch","input":{"path":"a.go","old_string":"foo","new_string":"bar\nbaz"}}`)
+	if len(evs) != 1 || len(evs[0].Entries) != 1 {
+		t.Fatalf("got %+v", evs)
+	}
+	diff := evs[0].Entries[0].Diff
+	if diff == nil {
+		t.Fatal("expected a Diff on the patch tool_use entry, got nil")
+	}
+	if diff.Added != 2 || diff.Removed != 1 {
+		t.Fatalf("+%d -%d, want +2 -1", diff.Added, diff.Removed)
+	}
+}
+
 func TestBuildHermesArgs(t *testing.T) {
 	s := New(Params{ID: "p/S", Config: config.SessionConfig{
 		Name: "S", Runtime: "hermes", Model: "anthropic/claude-sonnet-4.6",
