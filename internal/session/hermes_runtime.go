@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +41,69 @@ var hermesEfforts = map[string]bool{
 	"high": true, "xhigh": true, "max": true, "ultra": true,
 }
 
+// hermesKeepEnv are the HERMES_* variables a child `hermes chat` may inherit:
+// where Hermes lives and which bash it uses. Everything else HERMES_* is
+// per-session state of whatever Hermes process launched the manager.
+var hermesKeepEnv = map[string]bool{
+	"HERMES_HOME":          true,
+	"HERMES_GIT_BASH_PATH": true,
+}
+
+// hermesEnv builds the environment of one `hermes chat` process.
+//
+// The manager may itself be started from inside a Hermes session (a Hermes
+// desktop terminal, an agent running `claude-manager.exe`), and then carries
+// that session's state in its environment. Two pieces of it break a child:
+//   - TERMINAL_CWD beats the process cwd for Hermes' terminal/file tools, so
+//     an inherited one (e.g. C:\Users\x) sends every relative path and
+//     context-file lookup (AGENTS.md, CLAUDE.md) outside the project —
+//     observed: the agent went looking for docs/roles/P6.md across C:\.
+//   - HERMES_SESSION_*, HERMES_MAX_ITERATIONS, HERMES_EXEC_ASK, … describe
+//     the parent's session, not this one.
+//
+// TERMINAL_CWD is therefore pinned to the project folder, the parent's other
+// HERMES_* variables are dropped, and Python is forced to UTF-8 so Cyrillic
+// prompts and tool output survive the Windows ANSI code page.
+func hermesEnv(parent []string, projectPath string) []string {
+	env := make([]string, 0, len(parent)+4)
+	for _, kv := range parent {
+		name, _, _ := strings.Cut(kv, "=")
+		upper := strings.ToUpper(name)
+		if upper == "TERMINAL_CWD" || upper == "PYTHONIOENCODING" || upper == "PYTHONUTF8" {
+			continue
+		}
+		if strings.HasPrefix(upper, "HERMES_") && !hermesKeepEnv[upper] {
+			continue
+		}
+		env = append(env, kv)
+	}
+	if projectPath != "" {
+		env = append(env, "TERMINAL_CWD="+projectPath)
+	}
+	return append(env, "PYTHONIOENCODING=utf-8", "PYTHONUTF8=1")
+}
+
+// hermesModelAliases maps the Claude CLI aliases a session config typically
+// carries (the Settings dropdown writes them) to exact model ids. Hermes
+// resolves these aliases against the live models.dev catalog and rejects
+// them as ambiguous ("alias 'opus' matches 8 models on anthropic"), so a
+// session switched from claude to hermes with model = "opus" failed every
+// turn with HTTP 404. The ids are what Claude CLI itself resolves them to on
+// this account (session_runs.model).
+var hermesModelAliases = map[string]string{
+	"opus":   "claude-opus-5-5",
+	"sonnet": "claude-sonnet-5",
+	"haiku":  "claude-haiku-4-5",
+}
+
+// hermesModel returns the model id to pass to `hermes -m`.
+func hermesModel(model string) string {
+	if id, ok := hermesModelAliases[strings.ToLower(strings.TrimSpace(model))]; ok {
+		return id
+	}
+	return model
+}
+
 // hermesTurn is the outcome of one `hermes chat` process.
 type hermesTurn struct {
 	finished  bool   // handleEvent reported the turn as finished
@@ -58,11 +122,13 @@ func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) erro
 	s.cancelRun = cancel
 	s.inputCh = inputCh
 	convID := s.resumeSessionID
+	s.lastHermesConv = ""
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
 		s.cancelRun = nil
 		s.inputCh = nil
+		s.lastHermesConv = convID
 		if s.questionTimer != nil {
 			s.questionTimer.Stop()
 			s.questionTimer = nil
@@ -75,6 +141,8 @@ func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) erro
 	s.rateLimitInf.Store(nil)
 	s.authErrorHit.Store(false)
 	s.contextRestartHit.Store(false)
+	s.continueMarkerHit.Store(false)
+	s.stepLimitHit.Store(false)
 
 	prompt := s.initialPromptText(forceInteractive)
 	var images []ImageAttachment
@@ -125,6 +193,14 @@ func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) erro
 		if turn.failed != "" {
 			return fmt.Errorf("hermes turn failed: %s", turn.failed)
 		}
+		if autonomous && turn.sessionID != "" && hermesTurnHitStepLimit(s.hermesStateDB(), turn.sessionID) {
+			s.stepLimitHit.Store(true)
+			logger.L.Warn("session.hermes.step_limit", "id", s.ID, "conversation", turn.sessionID)
+			s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+				Time: time.Now(), Level: "system", Source: "manager",
+				Message: "Turn stopped by Hermes' step limit (--max-turns) — the agent was cut off mid-task",
+			}})
+		}
 		if autonomous && turn.finished {
 			return nil
 		}
@@ -145,6 +221,7 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 	defer cleanup()
 
 	args := s.buildHermesArgs(convID, imagePath)
+	turnStart := time.Now()
 	logger.L.Debug("session.launch", "id", s.ID, "hermes", s.hermesPath, "cwd", s.ProjectPath,
 		"args", strings.Join(args, " "))
 
@@ -156,9 +233,7 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 	// The query goes through stdin (--query-file -), never argv: nothing is
 	// shell- or argv-quoted, so any prompt text arrives verbatim.
 	cmd.Stdin = strings.NewReader(prompt)
-	// Hermes is Python: force UTF-8 on its pipes so a Cyrillic prompt or
-	// tool output isn't mangled by the Windows ANSI code page.
-	cmd.Env = append(os.Environ(), "PYTHONIOENCODING=utf-8", "PYTHONUTF8=1")
+	cmd.Env = hermesEnv(os.Environ(), s.ProjectPath)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -236,6 +311,23 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 	<-stderrDone
 	waitErr := cmd.Wait()
 
+	// A failed turn whose own log lines show a 429 was a spent usage limit,
+	// whatever error Hermes reported last (see hermesTurnHitRateLimit).
+	if turn.failed != "" && !s.rateLimited.Load() {
+		conv := turn.sessionID
+		if conv == "" {
+			conv = convID
+		}
+		if hermesTurnHitRateLimit(s.hermesAgentLog(), conv, turnStart) {
+			logger.L.Warn("session.hermes.rate_limit_in_log", "id", s.ID, "conversation", conv, "reported", turn.failed)
+			s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+				Time: time.Now(), Level: "system", Source: "manager",
+				Message: "Hermes hit the API usage limit (429) — waiting for it to reset, then continuing this conversation",
+			}})
+			s.onRateLimit(&RateLimitInfo{Status: "exceeded", RateLimitType: "hermes_429", Utilization: 1.0})
+		}
+	}
+
 	if waitErr != nil && turn.failed == "" && ctx.Err() == nil {
 		logger.L.Error("session.process_exit", "id", s.ID, "error", waitErr)
 		return turn, fmt.Errorf("hermes exited: %w", waitErr)
@@ -270,8 +362,13 @@ func (s *Session) buildHermesArgs(convID, imagePath string) []string {
 	if convID != "" {
 		args = append(args, "--resume", convID)
 	}
+	maxTurns := s.Config.HermesMaxTurns
+	if maxTurns <= 0 {
+		maxTurns = hermesMaxTurnsDefault
+	}
+	args = append(args, "--max-turns", strconv.Itoa(maxTurns))
 	if model != "" {
-		args = append(args, "-m", model)
+		args = append(args, "-m", hermesModel(model))
 	}
 	if p := strings.TrimSpace(s.Config.HermesProvider); p != "" {
 		args = append(args, "--provider", p)

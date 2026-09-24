@@ -231,3 +231,73 @@ func TestHermesRuntime_RateLimitResult(t *testing.T) {
 		t.Errorf("no EvtRateLimit emitted")
 	}
 }
+
+// The S6 incident, end to end: a soft stop requested mid-task, then the
+// usage limit runs out. Hermes reports only the rotated-to credential's 401,
+// with the 429 visible in its agent.log alone. The session must treat it as
+// a rate limit (not a generic error), NOT let the pending soft stop end it
+// there, and continue the SAME conversation once the limit resets — only
+// then, at the task's end, does the soft stop take effect.
+func TestHermesRuntime_RateLimitBehind401_ResumesDespiteSoftStop(t *testing.T) {
+	bin := buildFakehermes(t)
+	home := t.TempDir()
+	t.Setenv("HERMES_HOME", home)
+	t.Setenv("FAKEHERMES_FAIL_429_THEN_401", "1")
+	logPath := filepath.Join(t.TempDir(), "calls.jsonl")
+	t.Setenv("FAKEHERMES_LOG", logPath)
+
+	var mu sync.Mutex
+	var limited, errs, dones int
+	var logs []string
+	var s *Session
+	s = New(Params{
+		ID: "p/L", ProjectName: "p", ProjectPath: t.TempDir(), HermesPath: bin,
+		RateLimitPauseSec: 1,
+		Config: config.SessionConfig{Name: "L", Runtime: "hermes", Model: "m",
+			Prompt: "do the task", AutoRestart: true},
+		OnEvent: func(_ string, ev SessionEvent) {
+			mu.Lock()
+			defer mu.Unlock()
+			switch ev.Type {
+			case EvtRateLimit:
+				limited++
+			case EvtError:
+				errs++
+			case EvtTaskDone:
+				dones++
+			case EvtInit:
+				// The user clicks "stop after task" while the task runs.
+				s.Stop(true)
+			case EvtLog:
+				if ev.Entry != nil && ev.Entry.Source == "manager" {
+					logs = append(logs, ev.Entry.Message)
+				}
+			}
+		},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	s.Run(ctx)
+
+	calls := readFakeHermesLog(t, logPath)
+	if len(calls) != 2 {
+		t.Fatalf("launched %d hermes processes, want 2 (the failed turn, then its resumption): %+v", len(calls), calls)
+	}
+	if slices.Contains(calls[0].Args, "--resume") {
+		t.Errorf("first turn must start fresh: %v", calls[0].Args)
+	}
+	if argValue(calls[1].Args, "--resume") == "" {
+		t.Errorf("the turn after the rate limit must resume the same conversation: %v", calls[1].Args)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if limited == 0 {
+		t.Errorf("the 429 behind the 401 was not treated as a rate limit (logs: %v)", logs)
+	}
+	if dones != 1 {
+		t.Errorf("task_done events = %d, want 1 — the task finishes after the limit resets", dones)
+	}
+	if st := s.Status(); st != config.StatusIdle {
+		t.Errorf("final status = %s, want idle (soft stop honoured at the task's end)", st)
+	}
+}

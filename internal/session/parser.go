@@ -41,6 +41,9 @@ type SessionResult struct {
 	ModelUsage    map[string]ModelUsage `json:"modelUsage"`
 	StopReason    string                `json:"stop_reason"`
 	ResultText    string                `json:"result"`
+	// Subtype is Claude's result subtype ("success", "error_max_turns",
+	// "error_during_execution"); empty for Hermes.
+	Subtype string `json:"subtype,omitempty"`
 }
 
 // RateLimitInfo holds rate limit status from a rate_limit_event.
@@ -491,10 +494,17 @@ func handleResult(ev rawStreamEvent, now time.Time) ParsedEvent {
 		ModelUsage:    ev.ModelUsage,
 		StopReason:    ev.StopReason,
 		ResultText:    ev.ResultText,
+		Subtype:       ev.Subtype,
 	}
 	msg := ev.ResultText
 	if msg == "" {
 		msg = "Session completed"
+	}
+	// A non-success subtype (the turn hit --max-turns, or failed mid-run) is
+	// otherwise invisible in the saved log, where every result line looks
+	// alike — tag it so the log itself says how the turn ended.
+	if ev.Subtype != "" && ev.Subtype != "success" {
+		msg = "[" + ev.Subtype + "] " + msg
 	}
 	return ParsedEvent{
 		EventType: EventResult,

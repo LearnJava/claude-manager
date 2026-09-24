@@ -1475,6 +1475,15 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 		}
 		m.emit(EventNameTaskDone, TaskDoneEvent{ID: id, TasksDone: ev.TasksDone})
 
+	case EvtRunEnd:
+		// A clean exit that did not close its task (a slice, or unfinished):
+		// record the run with that status, and no task_done notification.
+		ms.mu.Lock()
+		runID := ms.runID
+		ms.mu.Unlock()
+		if runID != 0 {
+			m.finishRun(ms, ev.RunStatus, "", ev.CLISessionID)
+		}
 	case EvtRateLimit:
 		if ev.RateLimit != nil {
 			until := time.Time{}
@@ -1807,7 +1816,14 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 		}()
 	}
 
-	if status == "completed" {
+	// A slice or an unfinished run spent as much as a completed one: its cost
+	// and tokens count toward the day, only the task counter waits for the
+	// run that actually closes the task.
+	if status == "completed" || status == RunStatusSlice || status == RunStatusUnfinished {
+		tasks := 0
+		if status == "completed" {
+			tasks = 1
+		}
 		_ = m.store.AddDailyMetrics(&store.DailyMetrics{
 			Date:                     now.Format("2006-01-02"),
 			Project:                  project,
@@ -1817,7 +1833,7 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 			TotalCacheReadTokens:     cacheReadTok,
 			TotalCacheCreationTokens: cacheCreateTok,
 			TotalRuns:                1,
-			TotalTasks:               1,
+			TotalTasks:               tasks,
 		})
 	}
 
@@ -1862,8 +1878,9 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 	// memory (LEARN-TASKS.md LN-06) — same fire-and-forget goroutine pattern
 	// as the transcript indexer above. Gated on the project's own Journal
 	// flag (off by default) and on a writer actually being wired: with either
-	// missing, the analyst is never invoked at all, not just discarded.
-	if status == "completed" {
+	// missing, the analyst is never invoked at all, not just discarded. A
+	// finished slice of a multi-slice task is journaled like a closed task.
+	if status == "completed" || status == RunStatusSlice {
 		pcfg := m.findProjectConfig(project)
 		m.mu.Lock()
 		journalWrite := m.journalFn

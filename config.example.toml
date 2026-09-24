@@ -180,6 +180,7 @@ path = 'D:\RustProjects\lumen-browser'
   # hermes_provider = "openrouter"         # --provider; empty = Hermes default
   # hermes_profile = "cm-lumen"            # -p <profile>: own memory/skills/hooks
   # hermes_skills = ["my-skill"]           # -s, preloaded every turn
+  # hermes_max_turns = 500                 # --max-turns per turn; 0 = 500, not Hermes' own agent.max_turns
 
   # Auto-approve rules evaluated in order; first match wins
   [[project.session.permission_rule]]

@@ -9,7 +9,11 @@
 //   - emits init → a tool_use/tool_result pair → the reply as two text
 //     deltas → result, in the exact shape hermes_cli/stream_json.py writes;
 //   - the reply is "echo: <first line of the query>", or, when the query
-//     contains "FAIL_429", a failed result with a rate-limit error.
+//     contains "FAIL_429", a failed result with a rate-limit error;
+//   - "FAIL_429_THEN_401" (or FAKEHERMES_FAIL_429_THEN_401=1): the first
+//     invocation per $HERMES_HOME logs a 429 for its conversation to
+//     $HERMES_HOME/logs/agent.log and fails with a 401, like a real spent
+//     usage limit behind Hermes' credential rotation; later ones succeed.
 //
 // FAKEHERMES_LOG, when set, is a file each invocation appends one JSON line
 // to ({"args":[…],"query":"…"}), so a test can assert on exactly what the
@@ -21,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -59,10 +64,34 @@ func run(args []string, in io.Reader, out io.Writer) int {
 	}
 	emit(map[string]any{"type": "system", "subtype": "init", "model": model, "session_id": sid})
 
-	if strings.Contains(q, "FAIL_429") {
+	if strings.Contains(q, "FAIL_429") && !strings.Contains(q, "FAIL_429_THEN_401") {
 		emit(map[string]any{"type": "result", "session_id": sid, "exit_code": 1, "text": "",
 			"error": "HTTP 429: rate limit exceeded", "tokens": map[string]int{}, "duration_ms": 5})
 		return 1
+	}
+
+	// FAIL_429_THEN_401 replays the S6 incident once per HERMES_HOME: the
+	// usage limit (429) shows only in <HERMES_HOME>/logs/agent.log, while
+	// the turn's reported error is the 401 of the rotated-to credential.
+	// Any later invocation (the resumed turn) succeeds.
+	if strings.Contains(q, "FAIL_429_THEN_401") || os.Getenv("FAKEHERMES_FAIL_429_THEN_401") == "1" {
+		if home := os.Getenv("HERMES_HOME"); home != "" {
+			marker := filepath.Join(home, "fail_429_then_401.done")
+			if _, err := os.Stat(marker); err != nil {
+				_ = os.WriteFile(marker, nil, 0o644)
+				_ = os.MkdirAll(filepath.Join(home, "logs"), 0o755)
+				if f, err := os.OpenFile(filepath.Join(home, "logs", "agent.log"),
+					os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+					ts := time.Now().Format("2006-01-02 15:04:05,000")
+					fmt.Fprintf(f, "%s INFO [%s] run_agent: Credential 429 (rate limit) — rotated to pool entry 31d239\n", ts, sid)
+					fmt.Fprintf(f, "%s WARNING [%s] agent.conversation_loop: API call failed (attempt 2/3) error_type=RateLimitError\n", ts, sid)
+					_ = f.Close()
+				}
+				emit(map[string]any{"type": "result", "session_id": sid, "exit_code": 1, "text": "",
+					"error": "HTTP 401: OAuth access token has been revoked.", "tokens": map[string]int{}, "duration_ms": 5})
+				return 1
+			}
+		}
 	}
 
 	emit(map[string]any{"type": "tool_use", "name": "terminal", "input": map[string]any{"command": "echo hi"}})

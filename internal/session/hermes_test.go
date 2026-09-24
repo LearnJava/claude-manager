@@ -111,11 +111,17 @@ func TestBuildHermesArgs(t *testing.T) {
 	got := s.buildHermesArgs("20260924_1", "")
 	want := []string{
 		"-p", "cm-p", "chat", "--query-file", "-", "--format", "stream-json", "--source", "tool",
-		"--resume", "20260924_1", "-m", "anthropic/claude-sonnet-4.6", "--provider", "openrouter",
+		"--resume", "20260924_1", "--max-turns", "500", "-m", "anthropic/claude-sonnet-4.6", "--provider", "openrouter",
 		"--reasoning", "high", "-s", "a", "-s", "b", "--yolo",
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("args =\n%v\nwant\n%v", got, want)
+	}
+
+	// hermes_max_turns overrides the manager's default step budget.
+	sMax := New(Params{ID: "p/M", Config: config.SessionConfig{Name: "M", Runtime: "hermes", HermesMaxTurns: 80}})
+	if v := argValue(sMax.buildHermesArgs("", ""), "--max-turns"); v != "80" {
+		t.Errorf("--max-turns = %q, want 80", v)
 	}
 
 	// A fresh conversation has no --resume; a non-bypass mode never gets
@@ -127,6 +133,40 @@ func TestBuildHermesArgs(t *testing.T) {
 	for _, bad := range []string{"--resume", "--yolo", "--reasoning", "-p"} {
 		if slices.Contains(got2, bad) {
 			t.Errorf("args %v must not contain %s", got2, bad)
+		}
+	}
+
+	// Claude CLI aliases are ambiguous to Hermes (HTTP 404: model: opus) and
+	// must be passed as exact ids.
+	s3 := New(Params{ID: "p/U", Config: config.SessionConfig{Name: "U", Runtime: "hermes", Model: "opus"}})
+	if m := argValue(s3.buildHermesArgs("", ""), "-m"); m != "claude-opus-5-5" {
+		t.Errorf("-m for alias opus = %q, want claude-opus-5-5", m)
+	}
+}
+
+func TestHermesEnv_PinsProjectCwdAndDropsParentSession(t *testing.T) {
+	parent := []string{
+		"PATH=C:\\bin",
+		"TERMINAL_CWD=C:\\Users\\konstantin",
+		"HERMES_HOME=C:\\h",
+		"HERMES_GIT_BASH_PATH=C:\\git\\bash.exe",
+		"HERMES_SESSION_ID=20260924_102935_377658",
+		"HERMES_MAX_ITERATIONS=150",
+		"Hermes_Desktop=1",
+		"PYTHONUTF8=0",
+	}
+	env := hermesEnv(parent, `C:\proj`)
+	has := func(kv string) bool { return slices.Contains(env, kv) }
+	for _, want := range []string{"PATH=C:\\bin", "TERMINAL_CWD=C:\\proj", "HERMES_HOME=C:\\h",
+		"HERMES_GIT_BASH_PATH=C:\\git\\bash.exe", "PYTHONUTF8=1", "PYTHONIOENCODING=utf-8"} {
+		if !has(want) {
+			t.Errorf("env missing %s: %v", want, env)
+		}
+	}
+	for _, bad := range []string{"TERMINAL_CWD=C:\\Users\\konstantin", "HERMES_SESSION_ID=20260924_102935_377658",
+		"HERMES_MAX_ITERATIONS=150", "Hermes_Desktop=1", "PYTHONUTF8=0"} {
+		if has(bad) {
+			t.Errorf("env must not carry %s", bad)
 		}
 	}
 }

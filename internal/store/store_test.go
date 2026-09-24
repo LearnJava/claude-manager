@@ -110,6 +110,31 @@ func TestUpdateRun(t *testing.T) {
 	}
 }
 
+// The CLI's own session id is only known once the init event arrives, after
+// InsertRun. UpdateRun must record it (for Hermes it is the id to --resume and
+// the key into state.db), and an empty value must not erase a known one.
+func TestUpdateRun_CLISessionID(t *testing.T) {
+	s := newTestStore(t)
+	run := &SessionRun{Project: "p", Session: "s", CLISessionID: "uuid-pregenerated", StartedAt: time.Now(), Status: "running"}
+	if err := s.InsertRun(run); err != nil {
+		t.Fatalf("InsertRun: %v", err)
+	}
+	run.CLISessionID = "20260924_120716_72bea7"
+	if err := s.UpdateRun(run); err != nil {
+		t.Fatalf("UpdateRun: %v", err)
+	}
+	if got, _ := s.GetRun(run.ID); got.CLISessionID != "20260924_120716_72bea7" {
+		t.Errorf("cli_session_id = %q, want the init event's id", got.CLISessionID)
+	}
+	run.CLISessionID = ""
+	if err := s.UpdateRun(run); err != nil {
+		t.Fatalf("UpdateRun: %v", err)
+	}
+	if got, _ := s.GetRun(run.ID); got.CLISessionID != "20260924_120716_72bea7" {
+		t.Errorf("empty update erased cli_session_id: %q", got.CLISessionID)
+	}
+}
+
 func TestUpdateRunExitCode(t *testing.T) {
 	s := newTestStore(t)
 	now := time.Now().UTC()

@@ -238,6 +238,10 @@ type SessionConfig struct {
 	HermesProfile string `toml:"hermes_profile"`
 	// HermesSkills are preloaded with `-s` on every turn.
 	HermesSkills []string `toml:"hermes_skills"`
+	// HermesMaxTurns is passed as `--max-turns`: the tool-calling budget of
+	// one Hermes turn. 0 means the manager's default (500) rather than the
+	// user's own agent.max_turns, which is sized for chat, not for a task.
+	HermesMaxTurns int `toml:"hermes_max_turns"`
 }
 
 // RuntimeHermes is the SessionConfig.Runtime value that drives `hermes`.
