@@ -107,7 +107,7 @@
     </div>
 
     <!-- Row 2: branch / task / turns / tokens -->
-    <div class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted">
+    <div class="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-text-muted">
         {#if session.branch}
             <span>{$t('sessionCard.branchLabel')} <span class="text-text">{session.branch}</span></span>
         {/if}
@@ -124,6 +124,17 @@
         </span>
         {#if session.model}
             <span>{$t('sessionCard.modelLabel')} <span class="text-text">{session.model}</span></span>
+        {/if}
+        {#if session.runtime === 'hermes'}
+            <span
+                data-testid="runtime-label"
+                class="text-lg font-extrabold bg-gradient-to-r from-violet-600 to-blue-600 dark:from-violet-400 dark:to-blue-400 bg-clip-text text-transparent"
+                title={$t('sessionCard.useHermesTooltip')}>{$t('sessionCard.useHermesLabel')}</span>
+        {:else}
+            <span
+                data-testid="runtime-label"
+                class="text-lg font-extrabold bg-gradient-to-r from-orange-600 to-red-700 dark:from-orange-400 dark:to-red-400 bg-clip-text text-transparent"
+                title={$t('sessionCard.useClaudeCodeTooltip')}>{$t('sessionCard.useClaudeCodeLabel')}</span>
         {/if}
     </div>
 
