@@ -18,4 +18,5 @@ export default {
     'logStream.readOnlySummary': 'Просмотрено',
     'logStream.thoughtFor': 'Думал {s}s',
     'logStream.thinkingNow': 'Думает…',
+    'logStream.editMoreLines': 'ещё {n} строк',
 } as Record<string, string>;

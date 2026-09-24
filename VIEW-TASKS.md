@@ -70,7 +70,7 @@ Markdown уже рендерится (`lib/markdown.ts`), длинные зап�
 | UI-01 | ✓ DONE (2026-09-24) | internal/session/parser.go, hermes_parser.go, internal/config/types.go, stores/sessions.ts |
 | UI-02 | ✓ DONE (2026-09-24) | frontend/src/lib/logGroups.ts, LogStream.svelte, stores/logView.ts, LogEntryRow.svelte |
 | UI-03 | ✓ DONE (2026-09-24) | LogStream.svelte, lib/logGroups.ts |
-| UI-04 | ○ TODO | internal/session/parser.go, hermes_parser.go, LogStream.svelte |
+| UI-04 | ✓ DONE (2026-09-24) | internal/session/parser.go, hermes_parser.go, LogStream.svelte |
 | UI-05 | ○ TODO | LogStream.svelte, GUI-TESTS.md, docs/design-decisions.md |
 | UI-06 | ✓ DONE (2026-09-24) | SessionCard.svelte, locales/{ru,en}/sessionCard.ts |
 

@@ -274,6 +274,56 @@
                             </div>
                         {/if}
                     </div>
+                {:else if block.kind === 'edit'}
+                    {@const isOpen = groupOpen.get(block.seq) ?? false}
+                    {@const summary = block.editSummary}
+                    <div class="py-px">
+                        <button
+                            type="button"
+                            on:click={() => toggleGroup(block.seq, isOpen)}
+                            title={summary?.filePath}
+                            class="flex items-center gap-2 w-full text-left text-orange-700
+                                   dark:text-status-waiting hover:text-text">
+                            <span class="shrink-0 select-none w-4 text-center text-text-dim
+                                         font-bold leading-5">
+                                {isOpen ? '−' : '＋'}
+                            </span>
+                            <span class="shrink-0 select-none">✎</span>
+                            <span class="truncate">{summary?.fileName}</span>
+                            {#if summary && summary.added > 0}
+                                <span class="text-green-700 dark:text-status-working shrink-0">
+                                    +{summary.added}
+                                </span>
+                            {/if}
+                            {#if summary && summary.removed > 0}
+                                <span class="text-red-600 dark:text-status-error shrink-0">
+                                    −{summary.removed}
+                                </span>
+                            {/if}
+                        </button>
+                        {#if isOpen}
+                            <div class="pl-6 border-l border-bg-border ml-2">
+                                <div class="font-mono text-[12px] leading-5 whitespace-pre-wrap break-words">
+                                    {#each summary?.lines ?? [] as line}
+                                        <div
+                                            class={line.type === 'add'
+                                                ? 'bg-green-50 dark:bg-green-950 text-green-800 dark:text-status-working'
+                                                : 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-status-error'}>
+                                            {line.type === 'add' ? '+' : '−'}{line.text}
+                                        </div>
+                                    {/each}
+                                    {#if summary && summary.truncated > 0}
+                                        <div class="text-text-dim italic">
+                                            … {$t('logStream.editMoreLines', { n: summary.truncated })}
+                                        </div>
+                                    {/if}
+                                </div>
+                                {#each block.entries.slice(1) as e, i (entryKey(e, i + 1))}
+                                    <LogEntryRow entry={e} entryKey={entryKey(e, i + 1)} />
+                                {/each}
+                            </div>
+                        {/if}
+                    </div>
                 {:else if block.kind === 'user'}
                     <div class="flex justify-end py-1">
                         <div class="max-w-[80%] bg-bg-elevated rounded px-3 py-1.5">
