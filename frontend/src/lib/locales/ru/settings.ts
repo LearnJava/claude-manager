@@ -21,6 +21,7 @@ export default {
     // Global tab — General
     'settings.general.heading': 'Общие',
     'settings.general.claudePath': 'Путь к Claude CLI',
+    'settings.general.hermesPath': 'Путь к Hermes CLI',
     'settings.general.theme': 'Тема',
     'settings.general.retryDelay': 'Задержка повтора (сек)',
     'settings.general.rateLimitPause': 'Пауза при лимите запросов (сек)',
@@ -159,6 +160,12 @@ export default {
     'settings.sessions.promptLabel': 'Промпт',
 
     'settings.sessions.modelHeading': 'Модель',
+    'settings.sessions.runtime': 'Среда выполнения',
+    'settings.sessions.runtimeTitle': 'Какой CLI агента запускает эту сессию. Hermes CLI работает с моделями любого провайдера; модели Claude через Hermes оплачиваются как API/extra usage, а не из подписки Claude.',
+    'settings.sessions.hermesProvider': 'Провайдер Hermes',
+    'settings.sessions.hermesProfile': 'Профиль Hermes',
+    'settings.sessions.hermesProfileTitle': 'Именованный профиль Hermes (hermes -p): своя память, навыки, хуки и история сессий.',
+    'settings.sessions.hermesNote': 'Hermes запускает отдельный процесс на каждый ход и продолжает разговор по id. Не применяются: лимит бюджета, резервная модель, allowed/disallowed tools, доп. каталоги. Режимы разрешений, кроме bypass, работают по политике Hermes: опасные команды блокируются, а не спрашиваются.',
     'settings.sessions.effort': 'Уровень',
     'settings.sessions.fallbackModel': 'Резервная модель',
     'settings.sessions.fallbackModelTitle': 'Модель, используемая при превышении лимита запросов или перегрузке основной модели.',

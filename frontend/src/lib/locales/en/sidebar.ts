@@ -27,6 +27,7 @@ export default {
     'sidebar.unfinishedTooltip': 'Previous run unfinished (interrupted or stopped). Click ▶ to continue it or begin from scratch.',
     'sidebar.unfinishedTooltipTask': 'Previous run unfinished (interrupted or stopped) — {task}. Click ▶ to continue it or begin from scratch.',
     'sidebar.modelTooltip': "Model: {model}. Switching applies on the next task for autonomous sessions; interactive ones restart now (same conversation). The choice is remembered as this session's default.",
+    'sidebar.hermesTooltip': 'Hermes CLI session — model: {model}',
     'sidebar.stopRequestedTooltip': 'Stop requested — will stop once the current task finishes',
     'sidebar.stopTooltip': 'Stop (finishes current task first)',
     'sidebar.startTooltip': 'Start',

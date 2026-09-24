@@ -1,0 +1,4 @@
+{"type": "system", "subtype": "init", "model": "claude-haiku-4-5", "session_id": "20260924_111123_993e42", "timestamp": 1790237498027}
+{"type": "text", "text": "hello", "timestamp": 1790237502633}
+{"type": "text", "text": "-cm", "timestamp": 1790237502645}
+{"type": "result", "session_id": "20260924_111123_993e42", "exit_code": 0, "text": "hello-cm", "tokens": {"input": 3, "output": 6, "total": 15032, "cache_read": 14998, "cache_write": 25}, "duration_ms": 4732, "timestamp": 1790237502760}

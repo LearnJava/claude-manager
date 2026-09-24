@@ -3,6 +3,7 @@
 
 [settings]
 claude_path = "claude"                  # path to CLI; "claude" if it's in PATH
+hermes_path = "hermes"                  # Hermes CLI, used by sessions with runtime = "hermes"
 default_retry_delay = 30               # seconds between retries on error
 rate_limit_pause = 300                 # seconds to pause when rate-limited
 log_retention_days = 30                # days to keep session history in SQLite
@@ -166,6 +167,19 @@ path = 'D:\RustProjects\lumen-browser'
   # history. Off by default; crash recovery is unaffected — it always still
   # uses --resume.
   context_handoff = false
+
+  # Runtime (HERMES-TASKS.md): "claude" (default) or "hermes". A hermes
+  # session runs `hermes chat --query-file - --format stream-json`, one
+  # process per turn, resuming the conversation by id. `model` is then any
+  # provider model id (e.g. "anthropic/claude-sonnet-4.6"); `effort` maps to
+  # --reasoning. Claude models via Hermes are billed as API/extra usage, not
+  # from the Claude subscription. Ignored under hermes: max_budget_usd,
+  # fallback_model, allowed/disallowed_tools, add_dirs; any permission_mode
+  # other than bypassPermissions (= --yolo) follows Hermes' own approvals.
+  # runtime = "hermes"
+  # hermes_provider = "openrouter"         # --provider; empty = Hermes default
+  # hermes_profile = "cm-lumen"            # -p <profile>: own memory/skills/hooks
+  # hermes_skills = ["my-skill"]           # -s, preloaded every turn
 
   # Auto-approve rules evaluated in order; first match wins
   [[project.session.permission_rule]]

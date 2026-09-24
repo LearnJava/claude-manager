@@ -167,6 +167,9 @@ type Params struct {
 	ProjectPath       string
 	Config            config.SessionConfig
 	ClaudePath        string
+	// HermesPath is the `hermes` binary for Config.Runtime == "hermes"
+	// (HERMES-TASKS.md HR-04); default "hermes".
+	HermesPath        string
 	RetryDelay        int // seconds, fallback for non-rate-limit errors
 	RateLimitPauseSec int // seconds, fallback when no resetsAt is provided
 	OnEvent           EventCallback
@@ -243,6 +246,7 @@ type Session struct {
 	CLISessionID string // UUID passed via --session-id; reused on --resume
 
 	claudePath        string
+	hermesPath        string
 	retryDelay        int
 	rateLimitPauseSec int
 	questionTimeout   time.Duration
@@ -328,6 +332,9 @@ func New(p Params) *Session {
 	if p.ClaudePath == "" {
 		p.ClaudePath = "claude"
 	}
+	if p.HermesPath == "" {
+		p.HermesPath = "hermes"
+	}
 	if p.RetryDelay <= 0 {
 		p.RetryDelay = 30
 	}
@@ -344,6 +351,7 @@ func New(p Params) *Session {
 		Config:            p.Config,
 		CLISessionID:      uuid.NewString(),
 		claudePath:        p.ClaudePath,
+		hermesPath:        p.HermesPath,
 		retryDelay:        p.RetryDelay,
 		rateLimitPauseSec: p.RateLimitPauseSec,
 		questionTimeout:   time.Duration(p.QuestionTimeoutSec) * time.Second,
@@ -1056,6 +1064,12 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 		}
 	}
 
+	// Hermes runtime (HERMES-TASKS.md HR-04): a different process model
+	// (one process per turn), same event pipeline from here on.
+	if s.Config.IsHermes() {
+		return s.runOnceHermes(ctx, forceInteractive)
+	}
+
 	// In autonomous mode the manager owns the session lifecycle: one CLI process
 	// handles one task/turn, then restarts with a fresh context (see PLAN.md
 	// token optimization). Real Claude CLI keeps its process alive waiting on
@@ -1300,8 +1314,13 @@ func (s *Session) sendInitialPrompt(ch chan<- []byte, prompt string) error {
 // pauses the run for a genuine human decision, with a timeout fallback (see
 // startQuestionTimeout) so an unattended run is never stuck forever.
 func (s *Session) handleLine(line string, autonomous bool) bool {
-	ev := ParseLine(line)
+	return s.handleEvent(ParseLine(line), autonomous)
+}
 
+// handleEvent dispatches one already-parsed event. It is the runtime-agnostic
+// half of handleLine: the Hermes runtime (hermes_runtime.go) produces the
+// same ParsedEvent values from its own stream format and feeds them here.
+func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 	s.mu.Lock()
 	s.lastActivity = time.Now()
 	s.mu.Unlock()

@@ -221,6 +221,8 @@ type SessionState struct {
 	Model          string     `json:"model"`
 	Effort         string     `json:"effort"`
 	PermissionMode string     `json:"permission_mode"`
+	// Runtime is "hermes" for a Hermes CLI session, "" for Claude Code CLI.
+	Runtime        string     `json:"runtime"`
 	StartedAt      time.Time  `json:"started_at"`
 	LastActivity   time.Time  `json:"last_activity"`
 	RateLimitUntil time.Time  `json:"rate_limit_until"`
@@ -602,6 +604,7 @@ func (m *SessionManager) StartSession(project, name string) error {
 		ProjectPath:       proj.Path,
 		Config:            *sc,
 		ClaudePath:        m.cfg.Settings.ClaudePath,
+		HermesPath:        m.cfg.Settings.HermesPath,
 		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
@@ -677,6 +680,7 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 		ProjectPath:       proj.Path,
 		Config:            sessionCfg,
 		ClaudePath:        m.cfg.Settings.ClaudePath,
+		HermesPath:        m.cfg.Settings.HermesPath,
 		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
@@ -827,6 +831,11 @@ func (m *SessionManager) SetSessionModel(id, model string) error {
 	if sess.Autonomous() {
 		return nil
 	}
+	// Hermes runs one process per turn, so the next turn's `-m` already
+	// picks up the new model — no restart, nothing interrupted.
+	if sess.Config.IsHermes() {
+		return nil
+	}
 
 	st := sess.Status()
 	if st == config.StatusIdle || st == config.StatusError {
@@ -886,6 +895,7 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 		ProjectPath:       proj.Path,
 		Config:            sessionCfg,
 		ClaudePath:        m.cfg.Settings.ClaudePath,
+		HermesPath:        m.cfg.Settings.HermesPath,
 		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
@@ -1098,6 +1108,7 @@ func (m *SessionManager) GetAllSessions() []SessionState {
 					Model:          s.Model,
 					Effort:         s.Effort,
 					PermissionMode: s.PermissionMode,
+					Runtime:        s.Runtime,
 					Prompt:         s.Prompt,
 					Todos:          []TodoItem{},
 				})
@@ -1135,6 +1146,7 @@ func (m *SessionManager) GetSession(id string) (SessionState, bool) {
 		Model:          firstNonEmpty(snap.ActiveModel, ms.session.Config.Model),
 		Effort:         ms.session.Config.Effort,
 		PermissionMode: ms.session.Config.PermissionMode,
+		Runtime:        ms.session.Config.Runtime,
 		StartedAt:      snap.StartedAt,
 		LastActivity:   snap.LastActivity,
 		RateLimitUntil: ms.rateLimitUntil,

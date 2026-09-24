@@ -37,6 +37,8 @@ claude-manager/
 │   │   │                            #   permission_request, rate_limit_event, init,
 │   │   │                            #   TodoWrite todos (current task + progress)
 │   │   ├── input.go                 # Write to stdin: user_message, permission_response
+│   │   ├── hermes_parser.go         # Hermes CLI stream-json → the same ParsedEvent (HERMES-TASKS.md)
+│   │   ├── hermes_runtime.go        # runtime = "hermes": `hermes chat` per turn, --resume by id
 │   │   └── ratelimit.go             # Rate limit detection, retry logic, timers
 │   ├── permission/
 │   │   ├── handler.go               # Handle permission_request: auto-approve rules -> UI queue -> stdin
@@ -245,6 +247,7 @@ claude-manager/
 ├── cmd/                             # Test/control harness binaries (see PLAN.md §21)
 │   ├── fakeclaude/                  # Scripted Claude CLI double (deterministic stream-json)
 │   ├── fakeworker/                  # Scripted OpenAI-compatible worker double (SSE, MP-07)
+│   ├── fakehermes/                  # Scripted `hermes chat --format stream-json` double
 │   └── cm-mcp/                      # MCP server: drive the app as agent tools
 ├── internal/
 │   ├── testkit/                     # Scenario loaders + fakeclaude<->parser conformance,
@@ -1067,6 +1070,46 @@ renders it — every model `<select>` in the app (sidebar, `ModelPicker`,
 lists rather than hand-written `<option>` tags. Exact resolved ids are still
 shown where the *version* is the point: the sidebar select's tooltip and
 `SessionCard`'s "Model:" line.
+
+### Hermes CLI Runtime (experimental, HERMES-TASKS.md)
+
+`SessionConfig.Runtime = "hermes"` makes a session drive `hermes chat
+--query-file - --format stream-json` instead of `claude`. Empty/`"claude"`
+leaves the Claude launch path byte-identical. `runOnce` branches to
+`runOnceHermes` (`internal/session/hermes_runtime.go`) right after the
+crash-recovery state save; everything after parsing goes through the shared
+`handleEvent(ParsedEvent)`, which `handleLine` now delegates to.
+
+**One process per turn.** A Hermes process answers one query and exits
+after its `result` line — there is no long-lived stdin conversation. The
+conversation id comes from the `system/init` line (stored as
+`CLISessionID`, so crash recovery's `resumeSessionID` works unchanged), and
+every later turn is a new process with `--resume <id>`. For an interactive
+session `runOnceHermes` loops: turn → wait on `inputCh` (the same channel
+`SendMessage`/`AnswerQuestion` already write the Claude user envelope into;
+`decodeInputLine` unwraps it) → next turn. A live model switch therefore
+never restarts anything: `SetSessionModel` returns early for a Hermes
+session and the next turn's `-m` picks it up.
+
+**Stream mapping** (`hermes_parser.go`): `text` deltas are buffered and
+flushed as one `text` log entry at the next non-text event; `tool_use`/
+`tool_result` become `tool`/`tool_result` entries (`todo_list`'s *result*
+feeds the TaskPanel); `result.tokens` becomes one `EvtUsage` plus the
+`EvtResult`; `exit_code != 0` or `error` marks the turn failed, and its text
+is run through `detectRateLimitText`/`isAuthError`. Real recordings live in
+`testdata/hermes-stream/`. There is no cost in the stream yet (HR-06).
+
+**Not mapped:** Hermes has no `--append-system-prompt`, so the session's
+`SystemPromptAppend` and, for autonomous runs, the ask-user/background
+prompts are prepended to the first turn of a fresh conversation.
+`max_budget_usd`, `fallback_model`, allowed/disallowed tools and `add_dirs`
+are ignored with a system log line. `bypassPermissions` → `--yolo`; any
+other mode leaves Hermes' own approval policy in charge (a non-TTY run
+blocks dangerous commands rather than asking).
+
+Tests: `hermes_test.go` (parser on real recordings, args), 
+`hermes_runtime_test.go` (full Run loop against `cmd/fakehermes`),
+`hermes_real_test.go` (real `hermes`, opt-in via `CM_REAL_HERMES=1`).
 
 ### Auth Error Handling (403)
 `drainStderr()` detects lines containing `"403"` + `"forbidden"` / `"authenticate"` / `"unauthorized"`.
