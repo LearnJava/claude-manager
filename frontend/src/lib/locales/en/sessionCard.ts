@@ -24,4 +24,8 @@ export default {
     'sessionCard.cacheHitLabel': 'Cache hit:',
     'sessionCard.contextLabel': 'Context:',
     'sessionCard.contextTooltip': 'Context window utilization',
+    'sessionCard.useHermesLabel': 'Use Hermes',
+    'sessionCard.useHermesTooltip': 'This session is driven by Hermes CLI',
+    'sessionCard.useClaudeCodeLabel': 'Use Claude Code',
+    'sessionCard.useClaudeCodeTooltip': 'This session is driven by Claude Code CLI',
 } as Record<string, string>;
