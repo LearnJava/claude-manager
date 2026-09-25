@@ -42,6 +42,19 @@ export async function installBridge(page: Page, port: string, token: string): Pr
           });
       }
 
+      // Sets one field of a configured session via GetConfig → UpdateConfig.
+      async function setSessionField(id: string, field: string, value: string): Promise<void> {
+        const slash = id.indexOf('/');
+        const project = id.slice(0, slash);
+        const name = id.slice(slash + 1);
+        type Cfg = { Projects?: Array<{ Name: string; Sessions?: Array<Record<string, unknown>> }> };
+        const cfg = await rpc<Cfg>('GetConfig', {});
+        const sc = cfg?.Projects?.find((pr) => pr.Name === project)?.Sessions?.find((s) => s.Name === name);
+        if (!sc) throw new Error(`session "${id}" not found`);
+        sc[field] = value;
+        await rpc('UpdateConfig', { config: cfg });
+      }
+
       // ── Event registry ──────────────────────────────────────────────────────
       // map: eventName → [[callback, remaining]]  (remaining = -1 for infinite)
       const _cbs: Record<string, Array<[(data: unknown) => void, number]>> = {};
@@ -115,6 +128,12 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         GetSessionState: (project: string, name: string) =>
           rpc('GetSessionState', { project, session: name }),
         GetModelRecommendation: () => Promise.resolve(null),
+        // The control plane has no dedicated RPC for these; both are a
+        // config round-trip in the real app too (App.SetSessionRuntime /
+        // rememberSessionModel → UpdateConfig), so do the same here.
+        SetSessionRuntime: (id: string, runtime: string) =>
+          setSessionField(id, 'Runtime', runtime === 'claude' ? '' : runtime),
+        SetSessionModel: (id: string, model: string) => setSessionField(id, 'Model', model),
         // Mixed programming (MIXED-TASKS.md MP-08).
         RegisterMixedBrief: (id: string, task: string, systemPrompt: string) =>
           rpc('RegisterMixedBrief', { id, task, system_prompt: systemPrompt }).then(() => id),
@@ -201,6 +220,21 @@ export async function installBridge(page: Page, port: string, token: string): Pr
           (window as typeof window & { __dispatchWailsEvent: (n: string, d: unknown) => void })
             .__dispatchWailsEvent(env.event, data);
         } catch { /* ignore malformed */ }
+      };
+
+      // Events emitted before the socket opened are lost — a test that calls
+      // StartSession right after page.goto() raced it, and the UI kept showing
+      // the session idle. The real Wails runtime has no such window, so
+      // resync every session's status from a snapshot once connected.
+      ws.onopen = () => {
+        rpc<Array<{ id: string; status: string }>>('GetAllSessions', {})
+          .then((list) => {
+            const dispatch = (window as typeof window & {
+              __dispatchWailsEvent: (n: string, d: unknown) => void;
+            }).__dispatchWailsEvent;
+            (list ?? []).forEach((s) => dispatch('session:status', { id: s.id, status: s.status }));
+          })
+          .catch(() => { /* non-critical */ });
       };
 
       ws.onerror = () => {

@@ -79,7 +79,7 @@ test.describe('Sidebar', () => {
     const sessionRow = page.locator('[role="button"]', { hasText: SESSION }).first();
     await expect(sessionRow).toBeVisible({ timeout: 5_000 });
 
-    const modelSelect = sessionRow.locator('select');
+    const modelSelect = page.getByTestId('model-select-test/S1');
     await expect(modelSelect).toHaveValue('sonnet', { timeout: 3_000 });
     await expect(modelSelect.locator('option')).toHaveText(['Haiku', 'Sonnet', 'Opus', 'Fable']);
   });

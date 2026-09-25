@@ -267,7 +267,7 @@ test.describe('Experience panel', () => {
 
     const saveBtn = modal.getByRole('button', { name: 'Save' });
     await saveBtn.click();
-    await expect(modal.getByText(/Saved/i)).toBeVisible({ timeout: 5_000 });
+    await expect(modal.getByText('Saved.', { exact: true })).toBeVisible({ timeout: 5_000 });
 
     const cfg = await ctrl.rpc<{ Optimization?: { ExperienceTracking?: boolean } }>(
       'GetConfig',
@@ -278,7 +278,7 @@ test.describe('Experience panel', () => {
     // Restore so other tests are not affected by the flip.
     await checkbox.click();
     await saveBtn.click();
-    await expect(modal.getByText(/Saved/i)).toBeVisible({ timeout: 5_000 });
+    await expect(modal.getByText('Saved.', { exact: true })).toBeVisible({ timeout: 5_000 });
 
     await modal.getByRole('button', { name: 'Close' }).click();
     await expect(modal).not.toBeVisible({ timeout: 3_000 });

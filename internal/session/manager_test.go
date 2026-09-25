@@ -949,3 +949,39 @@ func TestManager_QuestionFlow(t *testing.T) {
 		t.Errorf("expected no pending questions after answering, got %+v", got)
 	}
 }
+
+// TestGetSession_StoppedReportsCurrentConfig: a stopped session keeps the
+// Config it was started with, but the sidebar must show what the next start
+// will use — the current config's runtime and model.
+func TestGetSession_StoppedReportsCurrentConfig(t *testing.T) {
+	m := newTestManager(t)
+	addStubSession(m, "lumen", "P1")
+	_, sc, err := m.findConfig("lumen", "P1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc.Model = "opus"
+	sc.Runtime = config.RuntimeHermes
+
+	st, ok := m.GetSession("lumen/P1")
+	if !ok {
+		t.Fatal("expected stub session")
+	}
+	if st.Model != "opus" || st.Runtime != config.RuntimeHermes {
+		t.Errorf("got model=%q runtime=%q, want opus/hermes from config", st.Model, st.Runtime)
+	}
+}
+
+// TestSetSessionModel_StoppedUpdatesConfig: switching the model of a stopped
+// session must survive GetSession reading it back from config.
+func TestSetSessionModel_StoppedUpdatesConfig(t *testing.T) {
+	m := newTestManager(t)
+	addStubSession(m, "lumen", "P1")
+	if err := m.SetSessionModel("lumen/P1", "haiku"); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := m.GetSession("lumen/P1")
+	if st.Model != "haiku" {
+		t.Errorf("Model = %q, want haiku", st.Model)
+	}
+}

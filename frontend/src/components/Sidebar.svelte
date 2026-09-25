@@ -4,11 +4,11 @@
     import ModelPicker from './ModelPicker.svelte';
     import ResumePrompt from './ResumePrompt.svelte';
     import AlienCrew from './AlienCrew.svelte';
-    import { MODELS, normalizeModel, isKnownModel } from '../lib/models';
+    import { MODELS, normalizeModel } from '../lib/models';
     import { t } from '../lib/i18n';
 
     const dispatch = createEventDispatcher();
-    import { selectedSessionId, sessions, type SessionState, type SessionStatus } from '../stores/sessions';
+    import { selectedSessionId, sessions, refreshSessions, type SessionState, type SessionStatus } from '../stores/sessions';
     import {
         StartSession,
         StopSession,
@@ -19,6 +19,7 @@
         GetAutoModelRouting,
         StartSessionWithModel,
         SetSessionModel,
+        SetSessionRuntime,
         HasClaudeMd,
         GenerateClaudeMdSession,
         StartAdHocChatSession,
@@ -41,7 +42,7 @@
     async function onModelChange(e: Event, s: SessionState) {
         e.stopPropagation();
         const model = (e.target as HTMLSelectElement).value;
-        if (!model || model === normalizeModel(s.model)) return;
+        if (!model || model === modelValue(s)) return;
         modelBusy = { ...modelBusy, [s.id]: true };
         modelError = { ...modelError, [s.id]: '' };
         try {
@@ -59,6 +60,49 @@
         } finally {
             modelBusy = { ...modelBusy, [s.id]: false };
         }
+    }
+
+    // Per-session CLI switch (Claude Code CLI / Hermes CLI). Persisted in the
+    // session's config (`runtime`, same field as Settings) by SetSessionRuntime;
+    // the store is then re-read from the backend, which reports a stopped
+    // session's runtime/model from config — so the row shows what the next
+    // start will really run. Locked while the session runs: the CLI is fixed
+    // for the lifetime of its process.
+    async function onRuntimeChange(e: Event, s: SessionState) {
+        e.stopPropagation();
+        const runtime = (e.target as HTMLSelectElement).value;
+        if (runtime === runtimeOf(s)) return;
+        modelBusy = { ...modelBusy, [s.id]: true };
+        modelError = { ...modelError, [s.id]: '' };
+        try {
+            await SetSessionRuntime(s.id, runtime);
+        } catch (err: any) {
+            modelError = { ...modelError, [s.id]: err?.message ?? String(err) };
+        } finally {
+            await refreshSessions();
+            modelBusy = { ...modelBusy, [s.id]: false };
+        }
+    }
+
+    function runtimeOf(s: SessionState): string {
+        return s.runtime === 'hermes' ? 'hermes' : 'claude';
+    }
+
+    // Value for the model <select>. Claude sessions fold resolved ids onto
+    // our aliases (see lib/models). Hermes takes any provider id
+    // (`anthropic/claude-sonnet-4.6`), and folding that onto "sonnet" would
+    // show a model the session isn't actually using — only exact aliases fold.
+    function modelValue(s: SessionState): string {
+        if (s.runtime === 'hermes') {
+            const raw = (s.model ?? '').trim();
+            return MODELS.some((m) => m.value === raw.toLowerCase()) ? raw.toLowerCase() : raw;
+        }
+        return normalizeModel(s.model);
+    }
+
+    function hasCustomModel(s: SessionState): boolean {
+        const v = modelValue(s);
+        return !!v && !MODELS.some((m) => m.value === v);
     }
 
     let autoModelRouting = false;
@@ -420,32 +464,48 @@
                                             ? $t('sidebar.unfinishedTooltipTask', { task: unfinished[s.id].task })
                                             : $t('sidebar.unfinishedTooltip')}>⏸</span>
                                 {/if}
-                                {#if s.runtime === 'hermes'}
-                                    <!-- Hermes models are free-form provider ids; the Claude
-                                         dropdown does not apply. Changed in Settings. -->
-                                    <span
-                                        class="ml-1.5 shrink-0 px-1 rounded border border-bg-border text-text-muted truncate max-w-[9rem]"
-                                        style="font-size: 10px; line-height: 1.4;"
-                                        data-testid="hermes-badge-{s.id}"
-                                        title={$t('sidebar.hermesTooltip', { model: s.model || '—' })}>☤ {s.model || 'hermes'}</span>
-                                {:else}
+                                <!-- A disabled <select> swallows clicks in Chromium, so while
+                                     it's locked it lets them through to the row
+                                     (pointer-events-none) and the wrapper keeps the tooltip. -->
+                                <span
+                                    class="ml-1.5 shrink-0 inline-flex"
+                                    title={isRunning(s) ? $t('sidebar.runtimeLockedTooltip') : $t('sidebar.runtimeTooltip')}>
                                 <select
-                                    value={normalizeModel(s.model)}
-                                    disabled={!!modelBusy[s.id]}
-                                    on:change={(e) => onModelChange(e, s)}
-                                    title={$t('sidebar.modelTooltip', { model: s.model || '—' })}
-                                    class="ml-1.5 shrink-0 bg-bg border border-bg-border rounded px-1 text-text-muted
-                                           disabled:opacity-50"
+                                    value={runtimeOf(s)}
+                                    disabled={!!modelBusy[s.id] || isRunning(s)}
+                                    on:focus={() => select(s.id)}
+                                    on:change={(e) => onRuntimeChange(e, s)}
+                                    data-testid="runtime-select-{s.id}"
+                                    class="bg-bg border border-bg-border rounded px-1 disabled:opacity-60 disabled:pointer-events-none
+                                           {s.runtime === 'hermes' ? 'text-amber-400' : 'text-text-muted'}"
                                     style="font-size: 10px; line-height: 1.4;">
+                                    <option value="claude">Claude</option>
+                                    <option value="hermes">☤ Hermes</option>
+                                </select>
+                                </span>
+                                <select
+                                    value={modelValue(s)}
+                                    disabled={!!modelBusy[s.id]}
+                                    on:focus={() => select(s.id)}
+                                    on:change={(e) => onModelChange(e, s)}
+                                    data-testid="model-select-{s.id}"
+                                    title={s.runtime === 'hermes'
+                                        ? $t('sidebar.hermesTooltip', { model: s.model || '—' })
+                                        : $t('sidebar.modelTooltip', { model: s.model || '—' })}
+                                    class="ml-1 shrink-0 bg-bg border border-bg-border rounded px-1 text-text-muted max-w-[11rem]
+                                           disabled:opacity-50 disabled:pointer-events-none"
+                                    style="font-size: 10px; line-height: 1.4;">
+                                    {#if !s.model}
+                                        <option value="" disabled>—</option>
+                                    {/if}
                                     {#each MODELS as m}
                                         <option value={m.value}>{m.label}</option>
                                     {/each}
-                                    {#if s.model && !isKnownModel(s.model)}
-                                        <!-- A custom/pinned id from config that isn't one of ours -->
-                                        <option value={normalizeModel(s.model)}>{s.model}</option>
+                                    {#if hasCustomModel(s)}
+                                        <!-- A custom/pinned id from config (or a Hermes provider id) that isn't one of ours -->
+                                        <option value={modelValue(s)}>{s.model}</option>
                                     {/if}
                                 </select>
-                                {/if}
                                 {#if modelBusy[s.id]}
                                     <span class="text-text-dim ml-1" style="font-size: 10px">…</span>
                                 {/if}

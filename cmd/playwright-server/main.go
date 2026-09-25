@@ -58,7 +58,7 @@ func main() {
 
 	ce := control.NewControlEmitter(500)
 	mgr := session.NewSessionManager(cfg, *cfgPath, nil, ce)
-	app := &configApp{cfg: cfg, cfgPath: *cfgPath}
+	app := &configApp{cfg: cfg, cfgPath: *cfgPath, mgr: mgr}
 	srv := control.NewServer(mgr, app, ce, token)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -74,11 +74,18 @@ func main() {
 type configApp struct {
 	cfg     *config.AppConfig
 	cfgPath string
+	mgr     *session.SessionManager
 }
 
 func (a *configApp) GetConfig() *config.AppConfig { return a.cfg }
 
 func (a *configApp) UpdateConfig(cfg config.AppConfig) error {
+	if err := config.Save(&cfg, a.cfgPath); err != nil {
+		return err
+	}
+	// Same as App.UpdateConfig: the manager must see the new config, or a
+	// stopped session keeps reporting (and starting with) the old values.
 	a.cfg = &cfg
-	return config.Save(&cfg, a.cfgPath)
+	a.mgr.SetConfig(a.cfg)
+	return nil
 }
