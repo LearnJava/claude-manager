@@ -189,3 +189,13 @@ export function logEntryIcon(e: LogEntryLike): string {
     }
     return '💬';
 }
+
+// Compact tool-call duration for feed rows: `0.3s`, `12s`, `1m05s`.
+export function formatCallDuration(ms: number | undefined | null): string {
+    if (ms === undefined || ms === null || isNaN(ms as number)) return '';
+    const v = Math.max(0, Number(ms));
+    if (v < 10_000) return `${(Math.floor(v / 100) / 10).toFixed(1)}s`;
+    const s = Math.floor(v / 1000);
+    if (s < 60) return `${s}s`;
+    return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`;
+}

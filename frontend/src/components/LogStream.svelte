@@ -7,6 +7,7 @@
     import { groupEntries, entryKey } from '../lib/logGroups';
     import { formatTime } from '../lib/formatters';
     import LogEntryRow from './LogEntryRow.svelte';
+    import ToolCallRow from './ToolCallRow.svelte';
 
     export let sessionId: string;
     // Threshold (px) — if the user has scrolled further than this from the
@@ -265,11 +266,28 @@
                                     ✖
                                 </span>
                             {/if}
+                            {#if !isOpen && block.summary?.toolCalls.some((c) => c.state === 'running')}
+                                <span
+                                    data-testid="group-spinner"
+                                    class="shrink-0 inline-block w-3 h-3 rounded-full border-2
+                                           border-text-dim border-t-transparent animate-spin"></span>
+                            {/if}
                         </button>
                         {#if isOpen}
+                            {@const calls = new Map((block.summary?.toolCalls ?? []).map((c) => [c.call, c]))}
+                            {@const results = new Set((block.summary?.toolCalls ?? []).map((c) => c.result))}
                             <div class="pl-6 border-l border-bg-border ml-2">
                                 {#each block.entries as e, i (entryKey(e, i))}
-                                    <LogEntryRow entry={e} entryKey={entryKey(e, i)} />
+                                    {#if calls.has(e)}
+                                        {@const tc = calls.get(e)}
+                                        <ToolCallRow
+                                            {tc}
+                                            forceOpen={!!filter &&
+                                                (entryMatches(tc.call, filter) ||
+                                                    (!!tc.result && entryMatches(tc.result, filter)))} />
+                                    {:else if !results.has(e)}
+                                        <LogEntryRow entry={e} entryKey={entryKey(e, i)} />
+                                    {/if}
                                 {/each}
                             </div>
                         {/if}
