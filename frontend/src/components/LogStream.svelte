@@ -247,7 +247,7 @@
                                          font-bold leading-5">
                                 {isOpen ? '−' : '＋'}
                             </span>
-                            <span class="shrink-0 select-none">🔧</span>
+                            <span class="shrink-0 select-none">{block.summary?.firstEmoji ?? '🔧'}</span>
                             {#if block.summary?.readOnly}
                                 <span class="truncate">
                                     {$t('logStream.readOnlySummary')}: {block.summary.callLabels.join(', ')}

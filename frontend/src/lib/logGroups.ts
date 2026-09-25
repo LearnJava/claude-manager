@@ -8,6 +8,7 @@
 
 import type { DiffLine, LogEntry } from '../stores/sessions';
 import { READ_TOOLS } from './formatters';
+import { toolDisplay } from './toolDisplay';
 
 export type LogBlockKind = 'user' | 'prose' | 'thinking' | 'other' | 'tools' | 'edit';
 
@@ -17,6 +18,8 @@ export interface ToolsBlockSummary {
     // First tool call's display label (tool_input if present, else tool_name),
     // truncated to ~80 chars — the "первая команда или путь" from Hermes.
     firstLabel: string;
+    // Emoji of the first call (toolDisplay) for the collapsed header.
+    firstEmoji: string;
     // Additional tool calls beyond the first, for "+ N команд" / "+ N commands".
     extraCount: number;
     // True when every call in the group is a READ_TOOLS member — the group
@@ -91,6 +94,8 @@ function truncate(s: string): string {
 }
 
 function callLabel(e: LogEntry): string {
+    const detail = toolDisplay(e).detail;
+    if (detail) return truncate(detail);
     const input = (e.tool_input ?? '').trim();
     if (input) return truncate(input);
     return e.tool_name ?? '';
@@ -148,6 +153,7 @@ function buildToolsSummary(entries: LogEntry[], turnEnded: (call: LogEntry) => b
     const hasError = entries.some((e) => (e.level ?? '').toLowerCase() === 'error');
     return {
         firstLabel: callLabels[0] ?? '',
+        firstEmoji: calls[0] ? toolDisplay(calls[0]).emoji : '🔧',
         extraCount: Math.max(0, callLabels.length - 1),
         readOnly,
         callLabels,
