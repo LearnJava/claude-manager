@@ -349,6 +349,7 @@ func handleAssistant(ev rawStreamEvent, now time.Time) ParsedEvent {
 				ToolInput: abbrev,
 				ToolUseID: c.ID,
 				Diff:      BuildDiff(c.Name, c.Input),
+				ToolArgs:  BuildToolArgs(c.Input),
 			})
 		case "thinking":
 			if strings.TrimSpace(c.Thinking) != "" {
