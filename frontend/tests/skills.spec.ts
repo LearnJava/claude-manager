@@ -244,7 +244,7 @@ test.describe('Skills tab — candidates (LN-08)', () => {
     await expect(modal.getByText('Bash:git status → Bash:git add <ARG>')).toBeVisible({ timeout: 5_000 });
     await modal.getByRole('button', { name: 'Distill' }).click();
 
-    await expect(modal.getByText('git-status-then-add')).toBeVisible({ timeout: 5_000 });
+    await expect(modal.getByText('git-status-then-add', { exact: true })).toBeVisible({ timeout: 5_000 });
     const calls = await page.evaluate(() => (window as any).__distillCalls);
     expect(calls.length).toBe(1);
     expect(calls[0][0]).toBe('test');

@@ -826,6 +826,13 @@ func (m *SessionManager) SetSessionModel(id, model string) error {
 	}
 	sess := ms.session
 	sess.SetModel(model)
+	// The next StartSession rebuilds from config, and GetSession reports a
+	// stopped session's model from config too — keep that copy in step.
+	if _, sc, err := m.findConfig(ms.project, ms.name); err == nil && sc != nil {
+		m.mu.Lock()
+		sc.Model = model
+		m.mu.Unlock()
+	}
 	logger.L.Info("manager.set_session_model", "id", id, "model", model)
 
 	if sess.Autonomous() {
@@ -1135,6 +1142,19 @@ func (m *SessionManager) GetSession(id string) (SessionState, bool) {
 	}
 	snap := ms.session.Snapshot()
 
+	// A stopped session keeps the Config it was started with, but the next
+	// start re-reads the config (StartSession). Report what that start will
+	// use, so the sidebar's runtime/model pickers never show a stale value
+	// after the config changed. Looked up before ms.mu to keep lock order
+	// m.mu → ms.mu out of the picture.
+	var cfgNow *config.SessionConfig
+	if snap.Status == config.StatusIdle || snap.Status == config.StatusError {
+		if _, sc, err := m.findConfig(ms.project, ms.name); err == nil && sc != nil {
+			c := *sc
+			cfgNow = &c
+		}
+	}
+
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 
@@ -1166,6 +1186,12 @@ func (m *SessionManager) GetSession(id string) (SessionState, bool) {
 		TotalCostUSD:   ms.totalCostUSD,
 		ContextWindow:  ms.contextWindow,
 		ContextUtil:    ms.contextUtil,
+	}
+	if cfgNow != nil {
+		st.Model = cfgNow.Model
+		st.Effort = cfgNow.Effort
+		st.PermissionMode = cfgNow.PermissionMode
+		st.Runtime = cfgNow.Runtime
 	}
 	if snap.PendingPerm != nil && snap.Status == config.StatusWaitingPermission {
 		req := permission.PermissionRequest{

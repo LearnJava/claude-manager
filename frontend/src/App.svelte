@@ -27,8 +27,23 @@
     let showExperience = false;
 
     // ---- Resizable sidebar ----
-    let sidebarWidth = 250;
+    // Default wide enough for a session row's name + CLI + model pickers;
+    // the dragged width is remembered across restarts.
+    const SIDEBAR_WIDTH_KEY = 'cm.sidebarWidth';
+    const SIDEBAR_MIN = 150;
+    const SIDEBAR_MAX = 700;
+    let sidebarWidth = loadSidebarWidth();
     let resizing = false;
+
+    function loadSidebarWidth(): number {
+        try {
+            const v = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+            if (v >= SIDEBAR_MIN && v <= SIDEBAR_MAX) return v;
+        } catch {
+            // localStorage may be unavailable (sandboxed contexts).
+        }
+        return 360;
+    }
 
     function onDividerMouseDown(e: MouseEvent) {
         resizing = true;
@@ -37,11 +52,13 @@
 
     function onWindowMouseMove(e: MouseEvent) {
         if (!resizing) return;
-        sidebarWidth = Math.max(150, Math.min(500, e.clientX));
+        sidebarWidth = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, e.clientX));
     }
 
     function onWindowMouseUp() {
+        if (!resizing) return;
         resizing = false;
+        try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth)); } catch {}
     }
 
     onMount(async () => {

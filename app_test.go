@@ -1260,3 +1260,31 @@ func TestUpdateConfig_KnownProjectCanStillClearSessions(t *testing.T) {
 		t.Fatalf("expected sessions to be clearable on a known project, got: %+v", ov.Sessions)
 	}
 }
+
+func TestSetSessionRuntimeInConfig(t *testing.T) {
+	original := []config.SessionConfig{{Name: "P1"}}
+	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{Name: "lumen", Sessions: original}}}
+
+	changed, found := setSessionRuntimeInConfig(cfg, "lumen", "P1", config.RuntimeHermes)
+	if !changed || !found {
+		t.Fatalf("changed=%v found=%v, want true/true", changed, found)
+	}
+	if cfg.Projects[0].Sessions[0].Runtime != config.RuntimeHermes {
+		t.Errorf("runtime = %q, want hermes", cfg.Projects[0].Sessions[0].Runtime)
+	}
+	if original[0].Runtime != "" {
+		t.Error("caller's slice mutated in place")
+	}
+	if changed, _ := setSessionRuntimeInConfig(cfg, "lumen", "P1", config.RuntimeHermes); changed {
+		t.Error("identical runtime should report no change")
+	}
+	if _, found := setSessionRuntimeInConfig(cfg, "lumen", "P9", ""); found {
+		t.Error("unknown session should not be found")
+	}
+
+	// "claude" spelled out equals the empty default.
+	cfg.Projects[0].Sessions[0].Runtime = "claude"
+	if changed, _ := setSessionRuntimeInConfig(cfg, "lumen", "P1", ""); changed {
+		t.Error(`"claude" and "" are the same runtime`)
+	}
+}

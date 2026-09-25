@@ -844,6 +844,70 @@ func setSessionModelInConfig(cfg *config.AppConfig, project, name, model, effort
 	return false
 }
 
+// SetSessionRuntime switches which agent CLI a session drives — "claude"
+// (Claude Code CLI) or "hermes" (Hermes CLI) — and persists it in the
+// session's config, the same field Settings edits. The runtime is fixed for
+// the lifetime of a process, so a running session is refused: stop it first,
+// the next start picks the new CLI up.
+func (a *App) SetSessionRuntime(id, runtime string) error {
+	runtime = strings.TrimSpace(strings.ToLower(runtime))
+	if runtime == "claude" {
+		runtime = "" // config default; keeps untouched configs byte-identical
+	}
+	if runtime != "" && runtime != config.RuntimeHermes {
+		return fmt.Errorf("unknown runtime %q (want claude|hermes)", runtime)
+	}
+	project, name, ok := splitSessionID(id)
+	if !ok {
+		return fmt.Errorf("invalid session id %q", id)
+	}
+	if a.cfg == nil {
+		return fmt.Errorf("no config loaded")
+	}
+	if st, ok := a.manager.GetSession(id); ok && st.Status != "idle" && st.Status != "error" {
+		return fmt.Errorf("session %q is running — stop it before switching the CLI", id)
+	}
+	cfg := *a.cfg
+	cfg.Projects = append([]config.ProjectConfig(nil), a.cfg.Projects...)
+	changed, found := setSessionRuntimeInConfig(&cfg, project, name, runtime)
+	if !found {
+		return fmt.Errorf("session %q not found", id)
+	}
+	if !changed {
+		return nil
+	}
+	if err := a.UpdateConfig(cfg); err != nil {
+		return err
+	}
+	logger.L.Info("app.set_session_runtime", "id", id, "runtime", runtime)
+	return nil
+}
+
+// setSessionRuntimeInConfig sets project/session's runtime in cfg on cloned
+// slices (see setSessionModelInConfig). Reports whether the value changed and
+// whether the session exists at all.
+func setSessionRuntimeInConfig(cfg *config.AppConfig, project, name, runtime string) (changed, found bool) {
+	for pi := range cfg.Projects {
+		if cfg.Projects[pi].Name != project {
+			continue
+		}
+		for si, sc := range cfg.Projects[pi].Sessions {
+			if sc.Name != name {
+				continue
+			}
+			if sc.Runtime == runtime || (runtime == "" && sc.Runtime == "claude") {
+				return false, true
+			}
+			sessions := append([]config.SessionConfig(nil), cfg.Projects[pi].Sessions...)
+			sessions[si].Runtime = runtime
+			cfg.Projects[pi].Sessions = sessions
+			return true, true
+		}
+		return false, false
+	}
+	return false, false
+}
+
 // ---- State / history / metrics ----
 
 func (a *App) GetAllSessions() []session.SessionState {
@@ -903,6 +967,10 @@ func (a *App) UpdateConfig(cfg config.AppConfig) error {
 	global := cfg
 	global.Projects = make([]config.ProjectConfig, len(cfg.Projects))
 	for i, p := range cfg.Projects {
+		// Sessions/gates typed into the form for a new project are an
+		// explicit choice that must win over the folder's overlay — only a
+		// blank stub is registered as a pointer below.
+		explicit := len(p.Sessions) > 0 || len(p.Gates) > 0
 		if p.Path != "" && isDir(p.Path) && !a.knowsProjectPath(p.Path) {
 			// A folder new to the app may already carry a committed overlay
 			// (a cloned repo, a re-added project). The Settings form built
@@ -919,7 +987,7 @@ func (a *App) UpdateConfig(cfg config.AppConfig) error {
 			if err != nil {
 				return err
 			}
-			if existing != nil && !knownPaths[p.Path] {
+			if existing != nil && !knownPaths[p.Path] && !explicit {
 				// This project's folder already carries its own overlay
 				// (config.toml/config.local.toml) but has never been loaded
 				// into this app instance before now — e.g. "add project" was

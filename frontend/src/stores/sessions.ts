@@ -323,13 +323,23 @@ export async function initSessions(): Promise<void> {
 
     appStartedAt.set(new Date());
 
+    // Subscribe first, snapshot second: an event emitted while the snapshot
+    // (or anything else awaited here) was in flight used to be dropped, and
+    // the older snapshot then stuck — e.g. a session started right at load
+    // showed idle while it was working.
+    subscribeEvents();
+
     try {
         const list = (await GetAllSessions()) as SessionState[];
-        const map: Record<string, SessionState> = {};
-        (list ?? []).forEach((s) => {
-            map[s.id] = s;
+        sessions.update((current) => {
+            const map: Record<string, SessionState> = {};
+            (list ?? []).forEach((s) => {
+                map[s.id] = s;
+            });
+            // Entries already in the store came from events newer than this
+            // snapshot (setSession also scheduled a full refresh for them).
+            return { ...map, ...current };
         });
-        sessions.set(map);
     } catch (e) {
         console.warn('GetAllSessions failed:', e);
     }
@@ -342,8 +352,10 @@ export async function initSessions(): Promise<void> {
     }
 
     refreshTodayCost();
+}
 
-    // ---- Wails event subscriptions ----
+// ---- Wails event subscriptions ----
+function subscribeEvents() {
 
     EventsOn('session:status', (evt: { id: string; status: SessionStatus }) => {
         if (!evt || !evt.id) return;

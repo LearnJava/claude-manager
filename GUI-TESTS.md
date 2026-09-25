@@ -13,7 +13,7 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 |----|-------|-------|--------|--------|
 | APP-01 | Sidebar resize via drag | Drag divider right by 100px | `sidebarWidth` increases to ~350px, content reflows | ○ |
 | APP-02 | Sidebar resize clamped to min | Drag divider far left | Sidebar width stays ≥ 150px | ○ |
-| APP-03 | Sidebar resize clamped to max | Drag divider far right | Sidebar width stays ≤ 500px | ○ |
+| APP-03 | Sidebar resize clamped to max | Drag divider far right | Sidebar width stays ≤ 700px; the width is remembered across reloads (default 360px) | ○ |
 | APP-04 | Ctrl+1 selects first session | Start app, press Ctrl+1 | First session becomes selected, SessionView renders | ○ |
 | APP-05 | Ctrl+2..4 cycle sessions | Press Ctrl+2, Ctrl+3, Ctrl+4 | Corresponding session becomes active each time | ○ |
 | APP-06 | Ctrl+F focuses log search | Click main area, press Ctrl+F | Search input in LogStream receives focus, text selected | ○ |
@@ -44,6 +44,9 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | SB-13 | Uptime badge hidden on hover | Hover session row | Uptime element not visible while hovered | ○ |
 | SB-14 | ModelPicker shown when auto-routing on | Enable `auto_model_routing`, click ▶ | ModelPicker modal appears before session starts | ○ |
 | SB-15 | Model dropdown has one entry per model | Load app (S1 configured as pinned id `claude-sonnet-4-6`) | Options are exactly Haiku/Sonnet/Opus/Fable, value `sonnet` — no duplicate spelling appended | **✓** |
+| SB-16 | CLI/model pickers mirror config | Load app | S1 CLI picker = `claude`, S4 = `hermes`; S1 model = `sonnet` (`sidebar-runtime.spec.ts`) | **✓** |
+| SB-17 | CLI switch persists | Pick Hermes on idle S1, reload | Config `runtime = "hermes"`, picker still Hermes after reload; switching back clears it | **✓** |
+| SB-18 | CLI picker locked while running | Start S1 | CLI picker disabled until the session stops | **✓** |
 
 ---
 

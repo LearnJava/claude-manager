@@ -316,6 +316,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `StartSession(project, name)` | Launch session with config model/effort |
 | `StartSessionWithModel(project, name, model, effort)` | Launch with model/effort override; the override is remembered as the session's default |
 | `SetSessionModel(id, model)` | Switch a running session's model live and remember it (see "Live Model Switching") |
+| `SetSessionRuntime(id, runtime)` | Switch a stopped session between `claude` and `hermes` CLI (sidebar picker); persisted as the session's `runtime`. Refused while the session runs |
 | `StopSession(id, soft)` | Stop (soft=true finishes current task first) |
 | `RestartSession(id)` | Hard stop + restart |
 | `ResumeSession(id)` | Resume from saved CLI session ID |

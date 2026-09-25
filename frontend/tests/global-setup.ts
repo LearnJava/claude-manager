@@ -42,6 +42,7 @@ export default async function globalSetup(): Promise<void> {
   if (process.env.CM_CONTROL_TOKEN) {
     process.env.CM_CONTROL_PORT = CM_PORT;
     await assertConnectable(CM_PORT, process.env.CM_CONTROL_TOKEN);
+    await warmUpVite();
     return;
   }
 
@@ -107,6 +108,26 @@ export default async function globalSetup(): Promise<void> {
   process.env.CM_CONTROL_TOKEN = token;
   process.env.CM_CONTROL_PORT = CM_PORT;
   process.env.CM_MIXED_ENABLED = mixedEnabled ? '1' : '0';
+
+  // 7. Warm up Vite. The dev server transforms modules on first request, and
+  //    on a cold start that alone can exceed a test's 30s budget — whichever
+  //    spec happened to run first then failed at page.goto.
+  await warmUpVite();
+}
+
+async function warmUpVite(): Promise<void> {
+  const { chromium } = await import('@playwright/test');
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto('http://localhost:5173/', { timeout: 180_000, waitUntil: 'load' });
+  } catch (err) {
+    // Not fatal: the tests will surface a real problem on their own.
+    process.stderr.write(`[global-setup] vite warm-up failed: ${String(err)}
+`);
+  } finally {
+    await browser.close();
+  }
 }
 
 // ---- helpers ----
