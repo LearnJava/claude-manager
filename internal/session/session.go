@@ -43,6 +43,7 @@ const (
 	// (RunStatus is RunStatusSlice or RunStatusUnfinished).
 	EvtRunEnd     = "run_end"
 	EvtTodo       = "todo"
+	EvtActivity   = "activity"
 	EvtTaskSource = "task_source"
 	EvtError      = "error"
 )
@@ -61,6 +62,7 @@ type SessionEvent struct {
 	Usage          *TokenUsage
 	TasksDone      int
 	Todos          []TodoItem
+	Activity       *ActivityInfo
 	TaskSourceDesc string
 	Err            error
 	// CLISessionID is populated on EvtTaskDone with the CLI session id of the
@@ -71,6 +73,12 @@ type SessionEvent struct {
 	CLISessionID string
 	// RunStatus is set on EvtRunEnd: the session_runs status to record.
 	RunStatus string
+}
+
+// ActivityInfo is an Activity stamped with when it began (EvtActivity payload).
+type ActivityInfo struct {
+	Activity
+	Since time.Time
 }
 
 // EventCallback is invoked by the session for every event. The manager is
@@ -265,6 +273,7 @@ type Session struct {
 
 	mu              sync.Mutex
 	status          config.SessionStatus
+	activity        Activity // last emitted activity; zero value = none yet
 	currentTask     string
 	taskSourceDesc  string
 	todos           []TodoItem
@@ -1461,6 +1470,10 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 	s.lastActivity = time.Now()
 	s.mu.Unlock()
 
+	if ev.Activity != nil {
+		s.setActivity(*ev.Activity)
+	}
+
 	switch ev.EventType {
 	case EventInit:
 		if ev.Init != nil {
@@ -1751,6 +1764,24 @@ func (s *Session) setStatus(st config.SessionStatus) {
 	s.mu.Unlock()
 	logger.L.Info("session.status", "id", s.ID, "from", old.String(), "to", st.String())
 	s.emit(SessionEvent{Type: EvtStatus, Status: st})
+	// A session that is not running has no activity.
+	switch st {
+	case config.StatusIdle, config.StatusError, config.StatusStopping, config.StatusRateLimited:
+		s.setActivity(Activity{Kind: ActivityIdle})
+	}
+}
+
+// setActivity records what the session is doing and emits an EvtActivity only
+// on a change of kind or tool (same pattern as setStatus). Never persisted.
+func (s *Session) setActivity(a Activity) {
+	s.mu.Lock()
+	if s.activity == a {
+		s.mu.Unlock()
+		return
+	}
+	s.activity = a
+	s.mu.Unlock()
+	s.emit(SessionEvent{Type: EvtActivity, Activity: &ActivityInfo{Activity: a, Since: time.Now()}})
 }
 
 // setTaskSourceDesc updates the resolved task_source description and emits an

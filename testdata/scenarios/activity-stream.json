@@ -1,0 +1,18 @@
+{
+  "name": "activity-stream",
+  "match": "(?i)\bactivity-demo\b",
+  "model": "claude-sonnet-4-6",
+  "context_window": 200000,
+  "exit_code": 0,
+  "steps": [
+    {"type": "await_stdin", "expect": "user", "timeout_ms": 5000, "store_as": "msg"},
+    {"type": "emit", "delay_ms": 0, "event": {"type":"system","subtype":"init","session_id":"${session_id}","model":"${model}","tools":["Read"],"cwd":"${cwd}"}},
+    {"type": "emit", "delay_ms": 20, "event": {"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}}},
+    {"type": "emit", "delay_ms": 500, "event": {"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"c1","name":"Read","input":{}}}}},
+    {"type": "emit", "delay_ms": 20, "event": {"type":"assistant","message":{"content":[{"type":"tool_use","id":"c1","name":"Read","input":{"file_path":"a.go"}}],"usage":{"input_tokens":100,"output_tokens":10}}}},
+    {"type": "emit", "delay_ms": 20, "event": {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"c1","content":"package a"}]}}},
+    {"type": "emit", "delay_ms": 20, "event": {"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}},
+    {"type": "emit", "delay_ms": 20, "event": {"type":"assistant","message":{"content":[{"type":"text","text":"Done."}],"usage":{"input_tokens":120,"output_tokens":5}}}},
+    {"type": "emit", "delay_ms": 20, "event": {"type":"result","subtype":"success","total_cost_usd":0.001,"num_turns":1,"usage":{"input_tokens":220,"output_tokens":15},"modelUsage":{"claude-sonnet-4-6":{"costUSD":0.001}}}}
+  ]
+}

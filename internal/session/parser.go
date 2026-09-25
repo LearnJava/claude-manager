@@ -136,6 +136,21 @@ func ParseAskUserQuestion(resultText string) *AskUserQuestion {
 	return &q
 }
 
+// Activity kinds for the transient session:activity event (UI-09).
+const (
+	ActivityThinking = "thinking"
+	ActivityTool     = "tool"
+	ActivityWriting  = "writing"
+	ActivityIdle     = "idle"
+)
+
+// Activity is what a session is doing right now, derived from a stream event.
+// Tool is set only for ActivityTool.
+type Activity struct {
+	Kind string `json:"kind"`
+	Tool string `json:"tool,omitempty"`
+}
+
 // ---- ParsedEvent ----
 
 const (
@@ -157,6 +172,7 @@ type ParsedEvent struct {
 	Permission *PermissionRequest // non-nil for EventPermission
 	Usage      *TokenUsage        // per-turn usage from assistant messages
 	Todos      []TodoItem         // non-nil when the turn contained a TodoWrite
+	Activity   *Activity          // non-nil when the event marks an activity change
 }
 
 // ---- Internal raw JSON structures ----
@@ -176,6 +192,9 @@ type rawStreamEvent struct {
 
 	// assistant fields
 	Message *rawAssistantMessage `json:"message"`
+
+	// stream_event field (--include-partial-messages)
+	Event *rawPartialEvent `json:"event"`
 
 	// result event fields
 	TotalCostUSD  float64               `json:"total_cost_usd"`
@@ -197,6 +216,12 @@ type rawStreamEvent struct {
 	Command     string `json:"command"`
 	FilePath    string `json:"file_path"`
 	RiskLevel   string `json:"risk_level"`
+}
+
+// rawPartialEvent is the inner Anthropic SSE event of a stream_event line.
+type rawPartialEvent struct {
+	Type         string      `json:"type"`
+	ContentBlock *rawContent `json:"content_block"`
 }
 
 type rawAssistantMessage struct {
@@ -265,10 +290,11 @@ func parseLineAt(line string, now time.Time) ParsedEvent {
 	case "permission_request":
 		return handlePermission(ev)
 	case "stream_event":
-		// Partial-message deltas emitted by --include-partial-messages. The full
-		// "assistant" message follows, so these are redundant; drop them silently
-		// instead of flooding the log with raw JSON.
-		return ParsedEvent{EventType: EventUnknown}
+		// Partial-message events emitted by --include-partial-messages. The full
+		// "assistant" message follows, so they add nothing to the log; only a
+		// content_block_start is kept, as an activity change. Deltas are dropped
+		// so a long answer does not flood the IPC channel.
+		return ParsedEvent{EventType: EventUnknown, Activity: streamActivity(ev.Event)}
 	default:
 		return ParsedEvent{
 			EventType: EventUnknown,
@@ -280,6 +306,23 @@ func parseLineAt(line string, now time.Time) ParsedEvent {
 			}},
 		}
 	}
+}
+
+// streamActivity maps a content_block_start to the activity it begins; nil for
+// every other partial event.
+func streamActivity(e *rawPartialEvent) *Activity {
+	if e == nil || e.Type != "content_block_start" || e.ContentBlock == nil {
+		return nil
+	}
+	switch e.ContentBlock.Type {
+	case "thinking", "redacted_thinking":
+		return &Activity{Kind: ActivityThinking}
+	case "tool_use", "server_tool_use":
+		return &Activity{Kind: ActivityTool, Tool: e.ContentBlock.Name}
+	case "text":
+		return &Activity{Kind: ActivityWriting}
+	}
+	return nil
 }
 
 // ---- Event handlers ----
@@ -514,6 +557,7 @@ func handleResult(ev rawStreamEvent, now time.Time) ParsedEvent {
 	return ParsedEvent{
 		EventType: EventResult,
 		Result:    result,
+		Activity:  &Activity{Kind: ActivityIdle},
 		Entries: []config.LogEntry{{
 			Time:    now,
 			Level:   "result",

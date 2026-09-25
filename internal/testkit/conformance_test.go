@@ -31,7 +31,7 @@ func TestConformance_AllEventsRecognized(t *testing.T) {
 				}
 				line := string(step.Event)
 				evt := session.ParseLine(line)
-				if evt.EventType == session.EventUnknown {
+				if evt.EventType == session.EventUnknown && evt.Activity == nil {
 					t.Errorf("step[%d]: parsed as EventUnknown\n  event: %s", i, line)
 					continue
 				}

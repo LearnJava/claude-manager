@@ -117,6 +117,7 @@ const (
 	EventNameQuestion   = "session:question"
 	EventNameContext    = "session:context"
 	EventNameTodo       = "session:todo"
+	EventNameActivity   = "session:activity"
 	EventNameTaskSource = "session:task_source"
 	EventNameInit       = "session:init"
 	EventNameResult     = "session:result"
@@ -176,6 +177,16 @@ type ContextEvent struct {
 	CacheCreation int     `json:"cache_creation"`
 	ContextWindow int     `json:"context_window"`
 	Utilization   float64 `json:"utilization"`
+}
+
+// ActivityEvent is the transient session:activity payload (UI-09): what the
+// session is doing now. Kind is thinking | tool | writing | idle; Since is when
+// that activity began. Not persisted.
+type ActivityEvent struct {
+	ID    string    `json:"id"`
+	Kind  string    `json:"kind"`
+	Tool  string    `json:"tool,omitempty"`
+	Since time.Time `json:"since"`
 }
 
 // TodoEvent carries Claude's own todo list (from TodoWrite) so the UI can show
@@ -1468,6 +1479,13 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 			Todos:       ev.Todos,
 			CurrentTask: currentTaskFromTodos(ev.Todos),
 		})
+
+	case EvtActivity:
+		if ev.Activity != nil {
+			m.emit(EventNameActivity, ActivityEvent{
+				ID: id, Kind: ev.Activity.Kind, Tool: ev.Activity.Tool, Since: ev.Activity.Since,
+			})
+		}
 
 	case EvtTaskSource:
 		m.emit(EventNameTaskSource, TaskSourceEvent{

@@ -285,6 +285,7 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 	}()
 
 	stream := newHermesStream()
+	s.setActivity(Activity{Kind: ActivityThinking}) // until the first event says otherwise
 	dispatch := func(evs []ParsedEvent) {
 		for _, ev := range evs {
 			if ev.EventType == EventInit && ev.Init != nil {
