@@ -116,6 +116,8 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | LS-23 | Ctrl+F finds and expands a hit inside a collapsed group | Push 2 tool-call pairs, collapse, Ctrl+F a term only in the 2nd result | Matching group auto-expands, term visible | ✓ |
 | LS-24 | Error inside a tools series marks the collapsed header | Push a `tool` call then an `error` | Collapsed header shows `✖` | ✓ |
 | LS-25 | Autoscroll pins to bottom as feed blocks arrive | Push 30 `text` entries | Last entry visible, no "Jump to latest" button | ✓ |
+| LS-26 | Expanded group shows one row per tool call | Push 3 calls (ok, error, running), expand group | Rows with emoji, `0.3s`/`1m05s`, ✓/✖ + error text, spinner on running; group header spinner while collapsed | ✓ |
+| LS-27 | Click on call row reveals call + result; search on output opens group and row | Click row / Ctrl+F a term only in output | Output text visible | ✓ |
 
 ---
 
