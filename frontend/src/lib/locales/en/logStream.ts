@@ -19,4 +19,9 @@ export default {
     'logStream.thoughtFor': 'Thought for {s}s',
     'logStream.thinkingNow': 'Thinking…',
     'logStream.editMoreLines': '{n} more lines',
+    'logStream.turnDone': 'Done',
+    'logStream.turnIn': 'in {d}',
+    'logStream.turnCount': '{n} turns',
+    'logStream.turnTokens': '{n} tokens',
+    'logStream.turnFailed': 'Failed',
 } as Record<string, string>;

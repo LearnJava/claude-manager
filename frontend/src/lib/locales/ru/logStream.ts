@@ -19,4 +19,9 @@ export default {
     'logStream.thoughtFor': 'Думал {s}s',
     'logStream.thinkingNow': 'Думает…',
     'logStream.editMoreLines': 'ещё {n} строк',
+    'logStream.turnDone': 'Готово',
+    'logStream.turnIn': 'за {d}',
+    'logStream.turnCount': '{n} ходов',
+    'logStream.turnTokens': '{n} токенов',
+    'logStream.turnFailed': 'Ошибка',
 } as Record<string, string>;

@@ -106,6 +106,18 @@ export interface FileDiff {
     truncated?: number;
 }
 
+// Result of one turn, taken from `session:result` and attached to the turn's
+// `result` log entry — VIEW-TASKS.md UI-13. Live-only, never persisted.
+export interface TurnSummary {
+    duration_ms?: number;
+    num_turns?: number;
+    total_cost_usd?: number;
+    usage?: Record<string, number>;
+    subtype?: string;
+    stop_reason?: string;
+    result?: string;
+}
+
 export interface LogEntry {
     time: string;
     level: string;
@@ -126,6 +138,8 @@ export interface LogEntry {
     // Tool call duration in ms, on the tool_result/error entry — see
     // config.LogEntry.DurationMs. Live-only.
     duration_ms?: number;
+    // Turn outcome on a `result` entry — see TurnSummary.
+    turn?: TurnSummary;
     // Client-side monotonic id assigned in appendLog. Stable across buffer
     // trimming and filtering — LogStream keys rows and expand-state on it.
     seq?: number;
@@ -306,8 +320,35 @@ function setSession(id: string, mutator: (s: SessionState) => SessionState) {
 
 let logSeq = 0;
 
+// `session:result` and the turn's `result` log entry are separate events with
+// no fixed order; whichever comes first waits here for the other.
+const pendingTurn: Record<string, TurnSummary> = {};
+
+function attachTurn(id: string, turn: TurnSummary) {
+    let attached = false;
+    sessionLogs.update((map) => {
+        const cur = map[id];
+        if (!cur) return map;
+        for (let i = cur.length - 1; i >= 0; i--) {
+            const e = cur[i];
+            if ((e.level ?? '').toLowerCase() !== 'result') continue;
+            if (e.turn) break;
+            attached = true;
+            const next = cur.slice();
+            next[i] = { ...e, turn };
+            return { ...map, [id]: next };
+        }
+        return map;
+    });
+    if (!attached) pendingTurn[id] = turn;
+}
+
 function appendLog(id: string, entry: LogEntry) {
-    const stamped = { ...entry, seq: ++logSeq };
+    let stamped: LogEntry = { ...entry, seq: ++logSeq };
+    if ((entry.level ?? '').toLowerCase() === 'result' && pendingTurn[id]) {
+        stamped = { ...stamped, turn: pendingTurn[id] };
+        delete pendingTurn[id];
+    }
     sessionLogs.update((map) => {
         const cur = map[id] ?? [];
         const next = cur.length >= LOG_BUFFER_LIMIT
@@ -485,8 +526,9 @@ function subscribeEvents() {
         }));
     });
 
-    EventsOn('session:result', (evt: { id: string; result: { total_cost_usd?: number } }) => {
+    EventsOn('session:result', (evt: { id: string; result: TurnSummary }) => {
         if (!evt || !evt.id) return;
+        if (evt.result) attachTurn(evt.id, evt.result);
         const cost = evt.result?.total_cost_usd ?? 0;
         setSession(evt.id, (s) => ({ ...s, total_cost_usd: s.total_cost_usd + cost }));
     });

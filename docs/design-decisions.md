@@ -835,6 +835,46 @@ light+dark) and `frontend/tests/log-feed-default.spec.ts` (default-on,
 localStorage override, Ctrl+F into a collapsed group, an error on a
 collapsed header, autoscroll) — GUI-TESTS.md LS-19..25.
 
+### The Live Turn Block (VIEW-TASKS.md UI-07..13)
+
+What makes the feed *live* rather than a static transcript. Everything here is
+transient: never stored in SQLite, so a reloaded history shows tool rows and
+prose but no spinners, durations or summary lines. Fields are live-only on
+purpose — the data exists only while the CLI streams it, and persisting it
+would need a schema change for a cosmetic feature.
+
+- **Tool call fields (UI-07/08).** `tool_args` on the `tool` entry and
+  `duration_ms` + `tool_use_id` pairing on the `tool_result`/`error` entry.
+  Claude has no per-call duration on the wire, so `tooltimer.go` measures it;
+  Hermes reports `duration_ms` itself and `hermesStream` synthesizes ids.
+- **Activity (UI-09).** `session:activity {kind: thinking|tool|writing|idle,
+  tool?, since}`. Claude source: `stream_event` `content_block_start`
+  (`--include-partial-messages`). Hermes source: `text`→writing,
+  `tool_use`→tool, `tool_result`→thinking, `result`→idle. Emitted on change
+  only; session *status* stays `working` after `result`, "turn over" is
+  `activity: idle`.
+- **`toolDisplay` (UI-10).** One table in `lib/toolDisplay.ts` maps a tool name
+  to emoji, a "running" phrase (`💻 Running npm test`) and a done description;
+  unknown tools fall back to the name. Shared by `ToolCallRow` (UI-11) and
+  `LiveStatus` (UI-12), so a call reads the same in the expanded group and in
+  the status line.
+- **Live status line (UI-12).** `LiveStatus.svelte` + pure `lib/liveStatus.ts`
+  under the last block while activity ≠ idle; one timer, only while visible.
+- **Turn summary (UI-13).** After a prose block whose entry is the turn's
+  `result`, a muted line `✓ Done in 42s · 12 turns · 35.0k tokens · $0.18`
+  (`turnSummaryData` in `logGroups.ts`). Data comes from `session:result`
+  (`duration_ms`, `num_turns`, `usage`, `total_cost_usd`, `subtype`) and is
+  attached to the `result` log entry as `LogEntry.turn` by the store
+  (`attachTurn`). The two events have no guaranteed order, so whichever
+  arrives first is parked (`pendingTurn`) until the other shows up. Unknown
+  values are omitted, not zeroed: Hermes has no turns or cost, so its line is
+  duration + tokens. A non-`success` subtype or `stop_reason: error` renders a
+  red `✖ Failed: <subtype|text>`. Tokens = input + output + cache read + cache
+  creation, same total the rate limit meters.
+
+Covered by `live-status.spec.ts`, `tool-call-row.spec.ts`,
+`tool-display.spec.ts`, `turn-summary.spec.ts` (GUI-TESTS.md LS-26..29).
+
 ### Live Model Switching
 
 Lets the user change a **running** session's model from a small dropdown in
