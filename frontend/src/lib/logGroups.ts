@@ -25,6 +25,8 @@ export interface ToolsBlockSummary {
     // Display labels for every call, in order — used for the read-only
     // summary's file list and available to the non-read-only path too.
     callLabels: string[];
+    // Calls paired with their results (by tool_use_id, else by adjacency).
+    toolCalls: ToolCall[];
     // An error (level 'error') anywhere in the group — must surface on the
     // collapsed header, never hidden by collapsing.
     hasError: boolean;
@@ -44,6 +46,17 @@ export interface EditBlockSummary {
     lines: DiffLine[];
     // Further lines beyond config.DiffLineLimit that were dropped, 0 if none.
     truncated: number;
+}
+
+// One tool call paired with its result — VIEW-TASKS.md UI-08. `running` is a
+// call with no result yet; once the turn's `result` entry has arrived after it
+// the call is closed as `ok` without a duration, so an interrupted turn never
+// spins forever.
+export interface ToolCall {
+    call: LogEntry;
+    result?: LogEntry;
+    durationMs?: number;
+    state: 'running' | 'ok' | 'error';
 }
 
 export interface LogBlock {
@@ -92,7 +105,43 @@ export function fileBaseName(path: string): string {
     return parts.length > 0 ? parts[parts.length - 1] : truncate(trimmed);
 }
 
-function buildToolsSummary(entries: LogEntry[]): ToolsBlockSummary {
+// Pairs each call in a group with its result. `turnEnded(call)` says whether a
+// turn-level result entry followed the call, closing unanswered calls as ok.
+export function pairToolCalls(entries: LogEntry[], turnEnded: (call: LogEntry) => boolean): ToolCall[] {
+    const calls: ToolCall[] = [];
+    const byId = new Map<string, ToolCall>();
+    for (const e of entries) {
+        const level = (e.level ?? '').toLowerCase();
+        if (level === 'tool') {
+            const tc: ToolCall = { call: e, state: 'running' };
+            calls.push(tc);
+            if (e.tool_use_id) byId.set(e.tool_use_id, tc);
+        } else if (level === 'tool_result' || level === 'error') {
+            let tc: ToolCall | undefined;
+            if (e.tool_use_id) {
+                tc = byId.get(e.tool_use_id);
+            } else {
+                // No id: the nearest preceding open call that has none either.
+                for (let i = calls.length - 1; i >= 0; i--) {
+                    if (!calls[i].result && !calls[i].call.tool_use_id) {
+                        tc = calls[i];
+                        break;
+                    }
+                }
+            }
+            if (!tc || tc.result) continue;
+            tc.result = e;
+            tc.state = level === 'error' ? 'error' : 'ok';
+            if (e.duration_ms) tc.durationMs = e.duration_ms;
+        }
+    }
+    for (const tc of calls) {
+        if (tc.state === 'running' && turnEnded(tc.call)) tc.state = 'ok';
+    }
+    return calls;
+}
+
+function buildToolsSummary(entries: LogEntry[], turnEnded: (call: LogEntry) => boolean): ToolsBlockSummary {
     const calls = entries.filter((e) => (e.level ?? '').toLowerCase() === 'tool');
     const callLabels = calls.map(callLabel);
     const readOnly = calls.length > 0 && calls.every((e) => READ_TOOLS.has(e.tool_name ?? ''));
@@ -103,6 +152,7 @@ function buildToolsSummary(entries: LogEntry[]): ToolsBlockSummary {
         readOnly,
         callLabels,
         hasError,
+        toolCalls: pairToolCalls(entries, turnEnded),
     };
 }
 
@@ -136,6 +186,15 @@ function secondsBetween(from: LogEntry, to: LogEntry | undefined): number | null
 
 export function groupEntries(entries: LogEntry[]): LogBlock[] {
     const blocks: LogBlock[] = [];
+    // Index of the last turn-level `result` entry: a call before it that never
+    // got its own result is closed, not running.
+    let lastResultIdx = -1;
+    const indexOf = new Map<LogEntry, number>();
+    entries.forEach((e, i) => {
+        indexOf.set(e, i);
+        if ((e.level ?? '').toLowerCase() === 'result') lastResultIdx = i;
+    });
+    const turnEnded = (call: LogEntry) => (indexOf.get(call) ?? 0) < lastResultIdx;
     let cur: LogEntry[] | null = null;
     // Which kind the currently-open run will flush as. Only meaningful while
     // `cur` is non-null.
@@ -147,7 +206,7 @@ export function groupEntries(entries: LogEntry[]): LogBlock[] {
             if (curKind === 'edit') {
                 blocks.push({ kind: 'edit', seq: curSeq, entries: cur, editSummary: buildEditSummary(cur[0]) });
             } else {
-                blocks.push({ kind: 'tools', seq: curSeq, entries: cur, summary: buildToolsSummary(cur) });
+                blocks.push({ kind: 'tools', seq: curSeq, entries: cur, summary: buildToolsSummary(cur, turnEnded) });
             }
         }
         cur = null;

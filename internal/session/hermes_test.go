@@ -239,3 +239,23 @@ func TestDecodeInputLine_RoundTripsSendMessage(t *testing.T) {
 		t.Fatalf("text=%q imgs=%+v", text, imgs)
 	}
 }
+
+// TestHermesStream_ToolCallIDAndDuration: tool_call_id from the wire wins over
+// the synthetic hermes-N, and duration_ms reaches the result entry (UI-08).
+func TestHermesStream_ToolCallIDAndDuration(t *testing.T) {
+	h := newHermesStream()
+	var evs []ParsedEvent
+	for _, line := range []string{
+		`{"type":"tool_use","name":"terminal","tool_call_id":"call_1","input":{"command":"ls"}}`,
+		`{"type":"tool_result","name":"terminal","tool_call_id":"call_1","output":"ok","duration_ms":312}`,
+	} {
+		evs = append(evs, h.Parse(line)...)
+	}
+	call, res := evs[0].Entries[0], evs[1].Entries[0]
+	if call.ToolUseID != "call_1" || res.ToolUseID != "call_1" {
+		t.Errorf("ids = %q / %q, want call_1", call.ToolUseID, res.ToolUseID)
+	}
+	if res.DurationMs != 312 {
+		t.Errorf("DurationMs = %d, want 312", res.DurationMs)
+	}
+}

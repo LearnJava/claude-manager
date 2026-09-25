@@ -99,6 +99,16 @@ both runtimes — strings/numbers/bools as text, arrays/objects as `"N items"` /
 `"N fields"`, null skipped. Each value is capped at 300 runes, the map at ~2 KB
 (keys taken in sorted order). Live-only like `Diff`: not in `session_logs`.
 
+**Tool call duration (`config.LogEntry.DurationMs`, UI-08).** Set on the
+`tool_result`/`error` entry, live-only. Hermes sends `duration_ms` on
+`tool_result` and `tool_call_id` on both events (the synthetic `hermes-N` id is
+only a fallback when absent). Claude has no duration on the wire, so
+`Session.handleLine` runs each event through `toolTimer` (`tooltimer.go`):
+`tool_use` entry time → matching `tool_result` entry time; open starts are
+dropped on the turn's `result`. The frontend pairs calls with results
+(`logGroups.ts` `ToolCall`, state `running|ok|error`); an unanswered call
+followed by a turn `result` is closed as `ok` with no duration.
+
 **Linking a tool call to its result (`config.LogEntry.ToolUseID`, UI-01).**
 `tool_use`/`tool_result` are separate stream events with no positional
 relationship in the log — a `LogEntry` needs to carry the pairing itself so

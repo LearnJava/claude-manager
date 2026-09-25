@@ -308,8 +308,8 @@ type LogEntry struct {
 	ToolInput string    `json:"tool_input"` // salient input field, full text (UI collapses long values)
 	// ToolUseID links a "tool" entry to its "tool_result"/"error" entry: the
 	// Claude parser copies it from the tool_use block's id / the tool_result's
-	// tool_use_id; the Hermes parser (which has no id in its wire format)
-	// synthesizes one. Not persisted to session_logs — live-stream only.
+	// tool_use_id; the Hermes parser takes tool_call_id from the wire and
+	// only synthesizes one when the event has none. Not persisted to session_logs — live-stream only.
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	// Diff carries the added/removed lines for a file-editing tool_use (Claude
 	// Edit/MultiEdit/Write, Hermes patch/write_file) — VIEW-TASKS.md UI-04. Nil
@@ -321,6 +321,10 @@ type LogEntry struct {
 	// description, Read path/offset/limit, ...) — VIEW-TASKS.md UI-07. Values
 	// are capped at ~300 chars and the whole map at ~2 KB. Live-only, like Diff.
 	ToolArgs map[string]string `json:"tool_args,omitempty"`
+	// DurationMs is how long a tool call took, set on its "tool_result"/"error"
+	// entry — VIEW-TASKS.md UI-08. Hermes reports it on the wire; for Claude the
+	// session times tool_use→tool_result itself. Live-only, like Diff.
+	DurationMs int64 `json:"duration_ms,omitempty"`
 }
 
 // DiffLine is one line of a FileDiff, tagged whether it was added or removed.
