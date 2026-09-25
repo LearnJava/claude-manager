@@ -1022,7 +1022,9 @@ func TestSession_EmitInvokesCallback(t *testing.T) {
 			if id != "lumen/P1" {
 				t.Errorf("unexpected id %q", id)
 			}
-			got = append(got, ev)
+			if ev.Type == EvtStatus { // the error status also emits an idle activity
+				got = append(got, ev)
+			}
 		},
 	})
 	s.setStatus(config.StatusWorking)

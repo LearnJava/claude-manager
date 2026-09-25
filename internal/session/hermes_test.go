@@ -45,12 +45,23 @@ func TestHermesStream_ToolCallRecording(t *testing.T) {
 	if !slices.Equal(levels, want) {
 		t.Fatalf("log levels = %v, want %v", levels, want)
 	}
-	tool := evs[1].Entries[0]
+	entryAt := func(level string) config.LogEntry {
+		for _, ev := range evs {
+			for _, e := range ev.Entries {
+				if e.Level == level {
+					return e
+				}
+			}
+		}
+		t.Fatalf("no %s entry", level)
+		return config.LogEntry{}
+	}
+	tool := entryAt("tool")
 	if tool.ToolName != "terminal" || tool.ToolInput != "echo hello-cm" {
 		t.Errorf("tool entry = %+v, want terminal: echo hello-cm", tool)
 	}
 	// Streaming deltas "\n\ndone" + "." are coalesced into ONE text entry.
-	if got := evs[3].Entries[0].Message; got != "done." {
+	if got := entryAt("text").Message; got != "done." {
 		t.Errorf("coalesced text = %q, want %q", got, "done.")
 	}
 

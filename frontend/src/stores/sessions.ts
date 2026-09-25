@@ -71,6 +71,8 @@ export interface SessionState {
     rate_limit_until: string;
     tasks_done: number;
     current_task: string;
+    /** Latest transient session:activity (UI-09); absent until the first event. Not persisted. */
+    activity?: { kind: 'thinking' | 'tool' | 'writing' | 'idle'; tool?: string; since: string };
     task_source_description: string;
     prompt: string;
     todos: TodoItem[];
@@ -452,7 +454,12 @@ function subscribeEvents() {
         }));
     });
 
-    EventsOn('session:todo', (evt: { id: string; todos: TodoItem[] | null; current_task: string }) => {
+    EventsOn('session:activity', (evt: { id: string; kind: 'thinking' | 'tool' | 'writing' | 'idle'; tool?: string; since: string }) => {
+        if (!evt || !evt.id) return;
+        setSession(evt.id, (s) => ({ ...s, activity: { kind: evt.kind, tool: evt.tool, since: evt.since } }));
+    });
+
+    EventsOn('session:todo',(evt: { id: string; todos: TodoItem[] | null; current_task: string }) => {
         if (!evt || !evt.id) return;
         setSession(evt.id, (s) => ({
             ...s,

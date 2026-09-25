@@ -173,3 +173,12 @@ The manager substitutes a dedicated prompt containing "ad-hoc instruction",
 which this scenario matches instead of the session's configured `prompt`. A
 single init/assistant/result turn confirms the CLI actually launched (cost and
 turns are non-zero) and that the run ends in `idle` without looping.
+
+### activity-stream.json
+**State/Feature:** `session:activity` event (VIEW-TASKS.md UI-09)
+**Match:** `activity-demo`
+
+Emits `stream_event` partial messages (`--include-partial-messages` shape):
+thinking block start → `tool_use` block start
+(`Read`) → the full assistant/tool_result pair → `text` block start → `result`.
+Expected activity changes: `thinking`, `tool` (Read), `writing`, `idle`.

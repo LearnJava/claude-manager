@@ -41,6 +41,9 @@ type hermesStream struct {
 	// tool_result finds the most recent unclosed call with that name.
 	toolSeq       int
 	pendingByName map[string][]string
+	// activity is the last activity kind reported, so text deltas (one per
+	// token) yield a change event only when the kind actually flips.
+	activity string
 }
 
 func newHermesStream() *hermesStream {
@@ -87,6 +90,10 @@ func (h *hermesStream) Parse(line string) []ParsedEvent {
 
 	if ev.Type == "text" {
 		h.text.WriteString(ev.Text)
+		if h.activity != ActivityWriting {
+			h.activity = ActivityWriting
+			return []ParsedEvent{{EventType: EventUnknown, Activity: &Activity{Kind: ActivityWriting}}}
+		}
 		return nil
 	}
 	out := h.flush(now)
@@ -114,14 +121,16 @@ func (h *hermesStream) Parse(line string) []ParsedEvent {
 			id = fmt.Sprintf("hermes-%d", h.toolSeq)
 		}
 		h.pendingByName[ev.Name] = append(h.pendingByName[ev.Name], id)
-		return append(out, ParsedEvent{EventType: EventLog, Entries: []config.LogEntry{{
+		h.activity = ActivityTool
+		return append(out, ParsedEvent{EventType: EventLog, Activity: &Activity{Kind: ActivityTool, Tool: ev.Name}, Entries: []config.LogEntry{{
 			Time: now, Level: "tool", Source: "hermes",
 			Message: ev.Name + ": " + abbrev, ToolName: ev.Name, ToolInput: abbrev, ToolUseID: id,
 			Diff: BuildDiff(ev.Name, ev.Input), ToolArgs: BuildToolArgs(ev.Input),
 		}}})
 
 	case "tool_result":
-		pe := ParsedEvent{EventType: EventLog}
+		h.activity = ActivityThinking
+		pe := ParsedEvent{EventType: EventLog, Activity: &Activity{Kind: ActivityThinking}}
 		// todo_list's result is the authoritative full list after the call
 		// (its input may be a partial merge, or empty for a plain read), so
 		// the TaskPanel is fed from the output, not the input.
@@ -189,9 +198,11 @@ func (h *hermesStream) Parse(line string) []ParsedEvent {
 		if msg == "" {
 			msg = "Turn completed"
 		}
+		h.activity = ActivityIdle
 		return append(out, ParsedEvent{
 			EventType: EventResult,
 			Result:    res,
+			Activity:  &Activity{Kind: ActivityIdle},
 			Entries:   []config.LogEntry{{Time: now, Level: "result", Source: "hermes", Message: msg}},
 		})
 	}
