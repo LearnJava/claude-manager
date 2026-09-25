@@ -113,7 +113,7 @@ func (h *hermesStream) Parse(line string) []ParsedEvent {
 		return append(out, ParsedEvent{EventType: EventLog, Entries: []config.LogEntry{{
 			Time: now, Level: "tool", Source: "hermes",
 			Message: ev.Name + ": " + abbrev, ToolName: ev.Name, ToolInput: abbrev, ToolUseID: id,
-			Diff: BuildDiff(ev.Name, ev.Input),
+			Diff: BuildDiff(ev.Name, ev.Input), ToolArgs: BuildToolArgs(ev.Input),
 		}}})
 
 	case "tool_result":

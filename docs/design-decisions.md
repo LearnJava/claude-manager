@@ -92,6 +92,13 @@ Key event types to parse:
 - `{"type":"stream_event",...}` — partial-message deltas (from `--include-partial-messages`); dropped silently, the full `assistant` message follows
 - `{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"|"allowed_warning"|"rejected",...}}` — rate limit status. Real Claude emits an informational `status:"allowed"` event on **every** session; only a rejecting status (`rejected`/`exceeded`/…) pauses/restarts the run. `allowed_warning` (with utilization) is surfaced to the UI but does not abort.
 
+**Structured call arguments (`config.LogEntry.ToolArgs`, UI-07).** `ToolInput`
+keeps only one salient field; `BuildToolArgs` (`internal/session/toolargs.go`)
+additionally flattens the whole `tool_use` input into `map[string]string` for
+both runtimes — strings/numbers/bools as text, arrays/objects as `"N items"` /
+`"N fields"`, null skipped. Each value is capped at 300 runes, the map at ~2 KB
+(keys taken in sorted order). Live-only like `Diff`: not in `session_logs`.
+
 **Linking a tool call to its result (`config.LogEntry.ToolUseID`, UI-01).**
 `tool_use`/`tool_result` are separate stream events with no positional
 relationship in the log — a `LogEntry` needs to carry the pairing itself so

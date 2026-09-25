@@ -118,6 +118,9 @@ export interface LogEntry {
     // Added/removed line summary for a file-edit tool_use — see
     // config.LogEntry.Diff. Absent for every other tool call.
     diff?: FileDiff;
+    // Flat scalar tool arguments (Bash command/description, Read offset/limit, …)
+    // — see config.LogEntry.ToolArgs. Live-only.
+    tool_args?: Record<string, string>;
     // Client-side monotonic id assigned in appendLog. Stable across buffer
     // trimming and filtering — LogStream keys rows and expand-state on it.
     seq?: number;

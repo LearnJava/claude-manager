@@ -317,6 +317,10 @@ type LogEntry struct {
 	// as ToolUseID: it lives only on the in-memory/live-event LogEntry the feed
 	// view renders its diff card from.
 	Diff *FileDiff `json:"diff,omitempty"`
+	// ToolArgs is the flat scalar view of a tool_use's input (Bash command +
+	// description, Read path/offset/limit, ...) — VIEW-TASKS.md UI-07. Values
+	// are capped at ~300 chars and the whole map at ~2 KB. Live-only, like Diff.
+	ToolArgs map[string]string `json:"tool_args,omitempty"`
 }
 
 // DiffLine is one line of a FileDiff, tagged whether it was added or removed.
