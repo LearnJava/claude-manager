@@ -78,7 +78,7 @@ Markdown уже рендерится (`lib/markdown.ts`), длинные зап�
 | UI-09 | ✓ DONE (2026-09-25) | parser.go (stream_event), hermes_parser.go, session.go, manager.go, stores/sessions.ts |
 | UI-10 | ✓ DONE (2026-09-25) | lib/toolDisplay.ts, lib/formatters.ts, lib/logGroups.ts |
 | UI-11 | ✓ DONE (2026-09-25) | components/ToolCallRow.svelte, LogStream.svelte |
-| UI-12 | ○ TODO | components/LiveStatus.svelte, lib/liveStatus.ts, LogStream.svelte |
+| UI-12 | ✓ DONE (2026-09-25) | components/LiveStatus.svelte, lib/liveStatus.ts, LogStream.svelte |
 | UI-13 | ○ TODO | LogStream.svelte, lib/logGroups.ts, stores/sessions.ts |
 
 ---

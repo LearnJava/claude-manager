@@ -1,6 +1,6 @@
 <script lang="ts">
     import { tick, beforeUpdate, afterUpdate, onMount } from 'svelte';
-    import { sessionLogs, type LogEntry } from '../stores/sessions';
+    import { sessionLogs, sessions, type LogEntry } from '../stores/sessions';
     import { logSearch, logSearchText, logSearchFocus } from '../stores/logSearch';
     import { logMarkdown, logLayout } from '../stores/logView';
     import { t } from '../lib/i18n';
@@ -8,6 +8,9 @@
     import { formatTime } from '../lib/formatters';
     import LogEntryRow from './LogEntryRow.svelte';
     import ToolCallRow from './ToolCallRow.svelte';
+    import LiveStatus from './LiveStatus.svelte';
+    import LiveElapsed from './LiveElapsed.svelte';
+    import { lastOpenCall } from '../lib/liveStatus';
 
     export let sessionId: string;
     // Threshold (px) — if the user has scrolled further than this from the
@@ -76,6 +79,13 @@
     // filters rows — a group whose only surviving member matched the search
     // still shows correctly grouped instead of leaking raw entries around it.
     $: blocks = groupEntries(entries);
+
+    // Live status line (UI-12): only for a running session, never over the
+    // permission/question banners (those statuses are not in this list).
+    const LIVE_STATUSES = ['working', 'starting', 'analyzing', 'retrying'];
+    $: liveSession = $sessions[sessionId];
+    $: liveActivity = liveSession && LIVE_STATUSES.includes(liveSession.status) ? liveSession.activity : undefined;
+    $: openCall = liveActivity?.kind === 'tool' ? lastOpenCall(allEntries) : null;
 
     // A block matches the search if any of its entries do — used to
     // auto-expand the group containing a hit (UI-02 "Группа … раскрывается").
@@ -364,6 +374,9 @@
                                 {isOpen ? '−' : '＋'}
                             </span>
                             <span class="truncate">{label}</span>
+                            {#if block.thinkingSeconds === null || block.thinkingSeconds === undefined}
+                                <LiveElapsed since={block.entries[0].time} />
+                            {/if}
                         </button>
                         {#if isOpen}
                             <div class="pl-6 border-l border-bg-border ml-2">
@@ -383,6 +396,9 @@
                     </div>
                 {/if}
             {/each}
+        {/if}
+        {#if $logLayout === 'feed'}
+            <LiveStatus activity={liveActivity} {openCall} />
         {/if}
     </div>
 

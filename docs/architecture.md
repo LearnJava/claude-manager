@@ -208,6 +208,8 @@ claude-manager/
 │   │   │                            #   "Markdown" checkbox, "Лента" (feed) layout toggle: groups
 │   │   │                            #   tool calls via lib/logGroups.ts (UI-02); feed is the default
 │   │   │                            #   since UI-05, classic stays one click away and unchanged
+│   │   ├── LiveStatus.svelte        # Sticky live line under the feed (spinner, verb/tool phrase, time) from
+│   │   │                            #   session.activity; lib/liveStatus.ts holds text + ticking clock
 │   │   ├── LogEntryRow.svelte       # One log row (collapse, markdown render/raw, M override);
 │   │   │                            #   shared by LogStream's classic view and expanded feed groups
 │   │   ├── TaskPanel.svelte         # Right of the log, two tabs — "Task": current task
