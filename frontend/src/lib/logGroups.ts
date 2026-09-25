@@ -279,6 +279,21 @@ export function groupEntries(entries: LogEntry[]): LogBlock[] {
         // Anything else closes the open series (text and user rip it, per spec).
         flush();
 
+        // The CLI's `result` event repeats the turn's last assistant text
+        // verbatim. Swap it into that prose block instead of rendering the
+        // same text twice — the result entry is the one carrying `turn`, which
+        // the turn summary line reads.
+        const prev = blocks[blocks.length - 1];
+        if (
+            level === 'result' &&
+            prev?.kind === 'prose' &&
+            (prev.entries[0].level ?? '').toLowerCase() === 'text' &&
+            prev.entries[0].message.trim() === e.message.trim()
+        ) {
+            prev.entries = [e];
+            return;
+        }
+
         if (level === 'user') {
             blocks.push({ kind: 'user', seq: key, entries: [e] });
         } else if (level === 'text' || level === 'result') {

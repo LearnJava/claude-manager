@@ -227,3 +227,22 @@ test.describe('tool call pairs (UI-08)', () => {
         expect(tc[1].state).toBe('running');
     });
 });
+
+test.describe('groupEntries — turn result echoing the last text', () => {
+    test('a result repeating the preceding text replaces it instead of adding a second prose block', () => {
+        const text = entry({ level: 'text', message: 'Final answer' });
+        const result = entry({ level: 'result', message: 'Final answer\n' });
+        const blocks = groupEntries([text, result]);
+        expect(blocks).toHaveLength(1);
+        expect(blocks[0].kind).toBe('prose');
+        expect(blocks[0].entries).toEqual([result]);
+    });
+
+    test('a result with different text stays its own block', () => {
+        const blocks = groupEntries([
+            entry({ level: 'text', message: 'Working on it' }),
+            entry({ level: 'result', message: 'Done' }),
+        ]);
+        expect(blocks.map((b) => b.kind)).toEqual(['prose', 'prose']);
+    });
+});
