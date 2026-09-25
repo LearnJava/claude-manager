@@ -1,4 +1,4 @@
-# Вывод сессии в стиле Hermes — план работ (UI-01…UI-05)
+# Вывод сессии в стиле Hermes — план работ (UI-01…UI-13)
 
 Пользователю нравится, как Hermes Desktop показывает ход работы агента, и он
 хочет видеть так же вывод сессии в claude-manager. Этот блок задач переносит
@@ -73,6 +73,13 @@ Markdown уже рендерится (`lib/markdown.ts`), длинные зап�
 | UI-04 | ✓ DONE (2026-09-24) | internal/session/parser.go, hermes_parser.go, LogStream.svelte |
 | UI-05 | ✓ DONE (2026-09-24) | LogStream.svelte, GUI-TESTS.md, docs/design-decisions.md |
 | UI-06 | ✓ DONE (2026-09-24) | SessionCard.svelte, locales/{ru,en}/sessionCard.ts |
+| UI-07 | ○ TODO | internal/config/types.go, parser.go, hermes_parser.go |
+| UI-08 | ○ TODO | parser.go, hermes_parser.go, lib/logGroups.ts |
+| UI-09 | ○ TODO | parser.go (stream_event), hermes_parser.go, session.go, manager.go, stores/sessions.ts |
+| UI-10 | ○ TODO | lib/toolDisplay.ts, lib/formatters.ts, lib/logGroups.ts |
+| UI-11 | ○ TODO | components/ToolCallRow.svelte, LogStream.svelte |
+| UI-12 | ○ TODO | components/LiveStatus.svelte, lib/liveStatus.ts, LogStream.svelte |
+| UI-13 | ○ TODO | LogStream.svelte, lib/logGroups.ts, stores/sessions.ts |
 
 ---
 
@@ -288,3 +295,288 @@ fakeclaude и control-plane, см. `docs/testing-harness.md`; для Hermes —
 сессия с `runtime = "hermes"` в тестовом конфиге). Строка в `GUI-TESTS.md`
 со `✓`. Снимок экрана в светлой и тёмной теме приложен к итоговому отчёту
 задачи.
+
+---
+
+# Живой ход агента: статус, иконки, длительности (UI-07…UI-13)
+
+Пользователь 2026-09-25: «нет никаких динамических действий типа "думает" и
+крутится иконка, нет меняющихся строк… вывод не информативный, одни пути к
+файлам». Лента UI-01…06 сгруппировала записи, но осталась статичной: не видно,
+что агент делает прямо сейчас, инструмент показан одним полем (`ToolInput` —
+путь или команда) под общей 🔧, длительностей нет.
+
+## Что у Hermes CLI (по исходникам `NousResearch/hermes-agent`)
+
+Весь рендер — `agent/display.py`. Приёмы, которые переносим:
+
+1. **Живая строка со спиннером** (`KawaiiSpinner`, `display.py:802-937`):
+   кадры `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` раз в 0.12 с, справа — прошедшее время.
+   Думает: `⠹ (⌐■_■) pondering...  (3.2s)`, глаголы — `THINKING_VERBS`
+   (pondering, reasoning, analyzing, synthesizing, …). Работает инструмент:
+   `⠼ 💻 Running npm test  (5.2s)` — фраза из `_TOOL_VERBS`
+   (`display.py:503-514`): `Reading main.py L10-49`, `Searching the web for
+   foo`, `Editing src/x.py`. Пока модель генерирует аргументы —
+   `┊ 💻 preparing terminal…`.
+2. **Строка завершённого инструмента** (`get_cute_tool_message`,
+   `display.py:1106-1203`): `┊ {emoji} {глагол:9} {деталь}  {1.2s}{сбой}`:
+   ```
+   ┊ 📖 read      main.py L10-49   0.3s
+   ┊ 💻 $         npm test + 2 commands   3.4s [exit 1]
+   ┊ 🔎 grep      handleEvent   0.1s
+   ┊ 🔀 delegate  3x: goalA | goalB
+   ```
+   Деталь сжимается: shell — `summarize_shell_command` (`display.py:279`)
+   выкидывает `cd`/`export`/`source`, редиректы, хвосты `| head|tail|wc|sort`,
+   остаток — первая команда + `+ N commands`; файл — basename + диапазон
+   строк; пути обрезаются с начала (`…/tail`). Успех — без суффикса, сбой —
+   `[exit N]` / `[текст ошибки ≤48]`.
+3. **Итог хода и статус:** рамка ответа `╭─ ☤ Hermes ─╮`, строка статуса
+   `модель │ 12.3k/200k │ [██░░] 6% │ ⏱ 12s`.
+
+Спиннер у Hermes живёт только в интерактивном терминале; в `--format
+stream-json`, которым мы его ведём, приходят только события. Всё живое строим
+сами — из событий обоих рантаймов.
+
+## Что у нас теряется (на 2026-09-25)
+
+- **Claude:** `--include-partial-messages` включён, но `stream_event`
+  выбрасывается целиком (`parser.go:267`) — а в нём раньше полного сообщения
+  приходят `content_block_start{thinking|tool_use,name}`. `AbbreviateInput`
+  (`parser.go:558`) оставляет одно поле; `description` у Bash (готовое
+  человеческое описание), `offset/limit` у Read, `path/glob` у Grep, `url` у
+  WebFetch теряются, у остальных инструментов — сырой JSON.
+- **Hermes:** `tool_result.duration_ms` парсится и выбрасывается;
+  `tool_call_id` не читается — id синтетические, результат сопоставляется по
+  имени (`hermes_parser.go:50-145`).
+- **Фронт:** иконки (`lib/formatters.ts:130-191`) знают только имена Claude —
+  у Hermes всё 🔧, «Просмотрено:» не срабатывает; вызов и результат в группе
+  сопоставлены по соседству, а не по `tool_use_id`; ни одного таймера и
+  анимации в ленте; статус сессии остаётся `working` между ходами.
+
+## Инварианты блока (в дополнение к инвариантам выше — они в силе)
+
+- **Разница рантаймов — только в парсерах.** Claude и Hermes нормализуются в
+  одни и те же поля `LogEntry` и одно событие активности; фронт не ветвится по
+  `runtime`, кроме таблицы имён инструментов в `toolDisplay` (UI-10).
+- **Новые поля `LogEntry` — только живые**, как `ToolUseID` и `Diff`: в
+  `session_logs` колонок не добавлять, `History.svelte` не меняется. Размер
+  ограничивать (аргументы — не больше ~2 КБ на вызов).
+- **Классический вид не меняется.** Живая строка, построчные вызовы и итог
+  хода — только в ленте.
+- **Анимация не должна грузить WebView:** один таймер на видимую ленту (не на
+  запись), спиннер — CSS-анимация или смена кадра не чаще 8–10 раз в секунду;
+  на неактивной сессии таймеров нет.
+- **Чистая логика — в `frontend/src/lib/` с unit-spec'ами** (как
+  `logGroups.ts`), в `.svelte` — только рендер.
+
+---
+
+## UI-07: Структурированные аргументы вызова в `LogEntry`
+
+**Зависит от:** —
+**Files:** `internal/config/types.go` (`LogEntry`), `internal/session/parser.go`
+(`tool_use`, `AbbreviateInput`), `internal/session/hermes_parser.go`
+(`tool_use`, `hermesAbbreviateInput`), `frontend/src/stores/sessions.ts`,
+тесты парсеров, `docs/design-decisions.md` («Stream-JSON Events (stdout)»).
+
+**Что сделать.** Новое поле `ToolArgs map[string]string
+json:"tool_args,omitempty"` — плоские скалярные аргументы вызова (строки,
+числа, bool как строки; вложенные объекты/массивы — пропустить или заменить
+счётчиком вида `todos: "5 items"`). Каждое значение обрезать до ~300 символов,
+весь map — до ~2 КБ. Заполняют оба парсера из `input` у `tool_use`.
+`ToolInput` и `AbbreviateInput` остаются как есть — на них стоит классический
+вид, поиск и БД.
+
+**Готово когда:** Go-тесты — Claude `Bash` с `command` и `description` даёт оба
+ключа; `Read` с `offset/limit` — три ключа; огромный `Write` не раздувает
+`ToolArgs` сверх лимита (`content` обрезан); Hermes `terminal` и `read_file`
+— их ключи. Поле описано в «Stream-JSON Events (stdout)».
+
+---
+
+## UI-08: Длительность и статус каждого вызова
+
+**Зависит от:** —
+**Files:** `internal/config/types.go`, `internal/session/parser.go`,
+`internal/session/hermes_parser.go`, `frontend/src/stores/sessions.ts`,
+`frontend/src/lib/logGroups.ts`, `frontend/tests/log-groups.spec.ts`, тесты
+парсеров.
+
+**Что сделать.**
+
+- Hermes: читать `tool_call_id` из `tool_use`/`tool_result` и класть его в
+  `ToolUseID`; синтетический `hermes-N` оставить только как запасной путь, если
+  id в событии нет. `duration_ms` из `tool_result` — в новое поле
+  `LogEntry.DurationMs int64 json:"duration_ms,omitempty"`.
+- Claude: длительности на проводе нет — парсер держит `map[toolUseID]time.Time`
+  от `tool_use` и на `tool_result` пишет разницу в `DurationMs` (запись из map
+  удалять; map чистить на `result`, чтобы не течь).
+- `logGroups.ts`: внутри блока `tools` собрать пары по `tool_use_id` —
+  `ToolCall { call, result?, durationMs?, state: 'running'|'ok'|'error' }`.
+  Вызов без результата — `running`, пока в группе/после неё не пришёл
+  `result` хода (тогда — `ok` без длительности, чтобы оборванный ход не
+  «крутился» вечно). Без id — по соседству, как сейчас.
+
+**Готово когда:** Go-тест Hermes — `duration_ms: 312` доходит до записи
+результата, id берётся из `tool_call_id`; Claude — два вызова с разным
+временем результата получают свои длительности. `log-groups.spec.ts` — пары по
+id при перемешанном порядке результатов, `running` у незакрытого, `error` у
+`is_error`.
+
+---
+
+## UI-09: Событие активности сессии («думает» / «инструмент X» / «пишет»)
+
+**Зависит от:** —
+**Files:** `internal/session/parser.go` (ветка `stream_event`),
+`internal/session/hermes_parser.go`, `internal/session/session.go`
+(`handleEvent`), `internal/session/manager.go` (ретрансляция во фронт, рядом с
+`session:status`), `frontend/src/stores/sessions.ts`, тесты,
+`docs/design-decisions.md`, `docs/architecture.md` (если меняется список
+событий).
+
+**Что сделать.** Новое непостоянное Wails-событие `session:activity` с
+`{id, kind, tool?, since}`, где `kind` — `thinking | tool | writing | idle`,
+`since` — время начала текущей активности. В БД не пишется.
+
+- Claude: разобрать `stream_event` вместо выбрасывания —
+  `content_block_start` с `thinking` → `thinking`; с `tool_use` и `name` →
+  `tool` (это приходит до полного `assistant`-сообщения — аналог
+  «preparing terminal…»); с `text` → `writing`; `result` → `idle`. Дельты
+  (`*_delta`) не ретранслировать — только смены вида, иначе зальём IPC.
+- Hermes: `text` → `writing` (только при смене), `tool_use` → `tool`,
+  `tool_result` → `thinking` (модель снова думает), `result` → `idle`; после
+  запуска процесса до первого события — `thinking`.
+- Статус сессии: после `result` в интерактивной сессии Claude и после конца
+  хода Hermes сессия сейчас остаётся `working`. Разобраться, где выставлять
+  «ход окончен, ждём ввода», не ломая авто-рестарт и очереди задач (проверить
+  по `docs/design-decisions.md`); если это рискованно — ограничиться
+  `activity: idle` и описать решение в задаче.
+
+**Готово когда:** Go-тест Claude-парсера на фикстуре со `stream_event`
+(thinking → tool_use → text → result) даёт ровно четыре смены активности;
+Hermes — аналогично. Стор фронта хранит последнюю активность по id сессии.
+fakeclaude умеет слать `stream_event` (если не умеет — добавить, новый
+сценарий описать в `testdata/scenarios/scenarios_doc.md`).
+
+---
+
+## UI-10: `toolDisplay` — эмодзи, глагол и человеческое описание вызова
+
+**Зависит от:** UI-07 (без него работает на `tool_input`, с ним — полно)
+**Files:** новый `frontend/src/lib/toolDisplay.ts`, новый
+`frontend/tests/tool-display.spec.ts`, `frontend/src/lib/formatters.ts`
+(`READ_TOOLS`, `logEntryIcon`), `frontend/src/lib/logGroups.ts` (заголовок
+группы), `LogStream.svelte`, локали `logStream`.
+
+**Что сделать.** Чистая функция `toolDisplay(entry) → { emoji, verb, detail,
+running }`, где `verb` — короткий глагол для строки итога (`read`, `$`,
+`grep`), `running` — фраза для живой строки (`Читаю main.go L10-49` /
+`Reading main.go L10-49`). Таблица по образцу `_CUTE_LINES`/`_TOOL_VERBS`
+Hermes, **для имён обоих рантаймов**:
+
+| Claude | Hermes | emoji | verb | detail |
+|---|---|---|---|---|
+| Read | read_file | 📖 | read | basename + `L{offset}-{offset+limit}` |
+| Write | write_file | ✍️ | write | путь |
+| Edit, MultiEdit | patch | 🔧 | edit | путь |
+| Bash | terminal | 💻 | $ | `description`, иначе сжатая команда |
+| Grep | search_files | 🔎 | grep | pattern (+ `in path`) |
+| Glob | search_files (target=files) | 🔎 | find | pattern |
+| WebSearch | web_search | 🔍 | search | query |
+| WebFetch | web_extract | 📄 | fetch | домен |
+| TodoWrite | todo_list | 📋 | plan | `N задач` |
+| Agent, Task | delegate_task | 🔀 | delegate | description / goal |
+| Skill | skill_view | 📚 | skill | имя |
+| `mcp__srv__tool` | — | 🧩 | srv | tool + главный аргумент |
+| прочее | прочее | ⚡ | имя | первый из query/text/command/path/name/prompt |
+
+Сжатие shell-команды — порт `summarize_shell_command`: убрать сегменты
+`cd`/`export`/`source`/`true`, редиректы, хвосты `| head|tail|wc|sort|uniq`,
+несколько оставшихся — первая + `+ N`. Пути длиннее ~60 символов — обрезать с
+начала (`…/internal/session/parser.go`). `READ_TOOLS` дополнить именами
+Hermes. Заголовок свёрнутой группы в ленте и иконка строки в ленте берутся из
+`toolDisplay`; классический вид — без изменений.
+
+**Готово когда:** `tool-display.spec.ts` покрывает каждую строку таблицы для
+обоих рантаймов, сжатие команд (`cd x && npm test | tail -5` → `npm test`;
+три команды → `… + 2`), обрезку путей, MCP-имя, неизвестный инструмент.
+Группа из вызовов Hermes `read_file` даёт «Просмотрено: …».
+
+---
+
+## UI-11: Раскрытая группа — строка на каждый вызов
+
+**Зависит от:** UI-08, UI-10
+**Files:** новый `frontend/src/components/ToolCallRow.svelte`,
+`LogStream.svelte`, локали, Playwright-spec ленты, `GUI-TESTS.md` (раздел
+«LogStream — лента»).
+
+**Что сделать.** Раскрытая группа `tools` показывает не сырые записи, а по
+одной компактной строке на `ToolCall` (UI-08):
+`📖 read  main.go L10-49 · 0.3s ✓`. Длительность — `0.3s`, `12s`, `1m05s`;
+`✓` зелёный, у ошибки — красный `✖` и первые ~60 символов ошибки; у
+`running` — маленький спиннер вместо статуса и тикающее время с начала вызова.
+Клик по строке раскрывает её до сегодняшних `LogEntryRow` вызова и результата
+(полный вывод — как раньше, ни одна запись не теряется). Поиск Ctrl+F,
+совпавший с выводом, раскрывает и группу, и строку вызова. Заголовок
+свёрнутой группы, пока в ней есть `running`, тоже показывает спиннер.
+
+**Готово когда:** Playwright на сценарии fakeclaude с несколькими вызовами и
+одной ошибкой: строки с эмодзи, длительностью и ✓/✖; клик раскрывает вывод;
+поиск по тексту вывода находит и раскрывает. Светлая и тёмная тема. Строки в
+`GUI-TESTS.md` со `✓`.
+
+---
+
+## UI-12: Живая строка статуса внизу ленты
+
+**Зависит от:** UI-09, UI-10
+**Files:** новый `frontend/src/components/LiveStatus.svelte`, новый
+`frontend/src/lib/liveStatus.ts` (+ spec), `LogStream.svelte`, локали,
+`GUI-TESTS.md`.
+
+**Что сделать.** Под последним блоком ленты, пока активность сессии не
+`idle` (UI-09) и сессия запущена, — одна строка, прилипающая к низу при
+автопрокрутке:
+
+- `thinking`: `⠹ Размышляю… · 4s` — глагол меняется раз в несколько секунд из
+  локализованного списка (ru: размышляю, анализирую, прикидываю, сопоставляю,
+  формулирую…; en: pondering, reasoning, analyzing, synthesizing…);
+- `tool`: `⠼ 💻 Запускаю npm test · 12s` — фраза `running` из `toolDisplay`
+  по последнему незакрытому вызову, до прихода вызова — `💻 Готовлю Bash…`
+  по имени из активности;
+- `writing`: `⠧ ✍ Пишет ответ… · 2s`;
+- ожидание разрешения/вопроса — не дублировать, там свои баннеры.
+
+Спиннер — кадры `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, время считается от `since`. Выбор текста —
+чистая функция в `liveStatus.ts`. Блок `thinking` в ленте без следующей записи
+(«Думает…», UI-03) тоже показывает тикающие секунды — от того же таймера.
+
+**Готово когда:** spec на `liveStatus.ts` (каждый `kind`, смена глагола,
+формат времени); Playwright — в работающей fakeclaude-сессии строка видна и
+меняется с «думаю» на инструмент, после `result` исчезает. Проверено, что
+неактивная/скрытая сессия не держит таймеров.
+
+---
+
+## UI-13: Итог хода
+
+**Зависит от:** UI-09
+**Files:** `LogStream.svelte`, `frontend/src/lib/logGroups.ts` (+ spec),
+`frontend/src/stores/sessions.ts`, локали, `GUI-TESTS.md`,
+`docs/design-decisions.md` (раздел о ленте).
+
+**Что сделать.** После блока `prose` с `result` — приглушённая строка итога
+хода: `✓ Готово за 42s · 12 ходов · 35k токенов · $0.18` (у Hermes — что
+есть: длительность и токены; стоимость — только если известна). Неуспех —
+красный `✖` и подтип/ошибка. Данные уже приходят в `session:result`
+(`duration_ms`, `num_turns`, cost, tokens) — привязать их к записи `result` в
+сторе (по времени/последнему `result`), не меняя БД. В разделе о ленте в
+`docs/design-decisions.md` описать весь блок UI-07…13: источник активности
+для каждого рантайма, таблицу `toolDisplay`, почему поля живые.
+
+**Готово когда:** Playwright — после завершения хода fakeclaude строка итога
+видна с длительностью и числом ходов; сессия Hermes — с длительностью и
+токенами. Полный гейт зелёный, `GUI-TESTS.md` обновлён.
