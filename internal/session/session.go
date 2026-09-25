@@ -244,6 +244,8 @@ type HandoffFunc func(project, sessionName, projectPath, cliSessionID, taskDesc 
 // Session is a single Claude CLI process managed by a goroutine.
 // All fields are guarded by mu except where noted.
 type Session struct {
+	toolTimes toolTimer // Claude tool_use → tool_result durations (UI-08)
+
 	ID           string
 	ProjectName  string
 	ProjectPath  string
@@ -1446,7 +1448,9 @@ func (s *Session) sendInitialPrompt(ch chan<- []byte, prompt string) error {
 // pauses the run for a genuine human decision, with a timeout fallback (see
 // startQuestionTimeout) so an unattended run is never stuck forever.
 func (s *Session) handleLine(line string, autonomous bool) bool {
-	return s.handleEvent(ParseLine(line), autonomous)
+	ev := ParseLine(line)
+	s.toolTimes.stamp(&ev)
+	return s.handleEvent(ev, autonomous)
 }
 
 // handleEvent dispatches one already-parsed event. It is the runtime-agnostic

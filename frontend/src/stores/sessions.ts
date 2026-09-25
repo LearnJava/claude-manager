@@ -121,6 +121,9 @@ export interface LogEntry {
     // Flat scalar tool arguments (Bash command/description, Read offset/limit, …)
     // — see config.LogEntry.ToolArgs. Live-only.
     tool_args?: Record<string, string>;
+    // Tool call duration in ms, on the tool_result/error entry — see
+    // config.LogEntry.DurationMs. Live-only.
+    duration_ms?: number;
     // Client-side monotonic id assigned in appendLog. Stable across buffer
     // trimming and filtering — LogStream keys rows and expand-state on it.
     seq?: number;

@@ -182,3 +182,48 @@ test.describe('groupEntries', () => {
         expect(blocks.map((b) => b.kind)).toEqual(['tools', 'edit', 'tools']);
     });
 });
+
+test.describe('tool call pairs (UI-08)', () => {
+    const call = (id: string | undefined, extra: Partial<LogEntry> = {}) =>
+        entry({ level: 'tool', tool_name: 'Bash', tool_input: 'x', tool_use_id: id, ...extra } as any);
+    const res = (id: string | undefined, extra: Partial<LogEntry> = {}) =>
+        entry({ level: 'tool_result', tool_use_id: id, ...extra } as any);
+
+    test('pairs by tool_use_id when results arrive out of order', () => {
+        const [a, b] = [call('a'), call('b')];
+        const blocks = groupEntries([a, b, res('b', { duration_ms: 20 }), res('a', { duration_ms: 900 })]);
+        const tc = blocks[0].summary!.toolCalls;
+        expect(tc.map((t) => [t.call.tool_use_id, t.durationMs, t.state])).toEqual([
+            ['a', 900, 'ok'],
+            ['b', 20, 'ok'],
+        ]);
+    });
+
+    test('a call without a result is running', () => {
+        const blocks = groupEntries([call('a'), res('a'), call('b')]);
+        const tc = blocks[0].summary!.toolCalls;
+        expect(tc[0].state).toBe('ok');
+        expect(tc[1].state).toBe('running');
+        expect(tc[1].result).toBeUndefined();
+    });
+
+    test('a turn result after an unanswered call closes it as ok without duration', () => {
+        const blocks = groupEntries([call('a'), entry({ level: 'result', message: 'done' })]);
+        const tc = blocks[0].summary!.toolCalls;
+        expect(tc[0].state).toBe('ok');
+        expect(tc[0].durationMs).toBeUndefined();
+    });
+
+    test('error result gives state error', () => {
+        const blocks = groupEntries([call('a'), entry({ level: 'error', tool_use_id: 'a' } as any)]);
+        expect(blocks[0].summary!.toolCalls[0].state).toBe('error');
+    });
+
+    test('calls and results without ids pair by adjacency', () => {
+        const blocks = groupEntries([call(undefined), res(undefined, { duration_ms: 5 }), call(undefined)]);
+        const tc = blocks[0].summary!.toolCalls;
+        expect(tc[0].state).toBe('ok');
+        expect(tc[0].durationMs).toBe(5);
+        expect(tc[1].state).toBe('running');
+    });
+});

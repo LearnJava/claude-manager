@@ -54,6 +54,7 @@ type hermesRawEvent struct {
 	SessionID  string          `json:"session_id"`
 	Text       string          `json:"text"`
 	Name       string          `json:"name"`
+	ToolCallID string          `json:"tool_call_id"`
 	Input      json.RawMessage `json:"input"`
 	Output     string          `json:"output"`
 	IsError    bool            `json:"is_error"`
@@ -108,7 +109,10 @@ func (h *hermesStream) Parse(line string) []ParsedEvent {
 	case "tool_use":
 		abbrev := hermesAbbreviateInput(ev.Name, ev.Input)
 		h.toolSeq++
-		id := fmt.Sprintf("hermes-%d", h.toolSeq)
+		id := ev.ToolCallID
+		if id == "" {
+			id = fmt.Sprintf("hermes-%d", h.toolSeq)
+		}
 		h.pendingByName[ev.Name] = append(h.pendingByName[ev.Name], id)
 		return append(out, ParsedEvent{EventType: EventLog, Entries: []config.LogEntry{{
 			Time: now, Level: "tool", Source: "hermes",
@@ -136,12 +140,20 @@ func (h *hermesStream) Parse(line string) []ParsedEvent {
 		}
 		// Pop the most recent unclosed tool_use with this name — Hermes has
 		// no tool_use_id of its own to match on.
-		var id string
+		id := ev.ToolCallID
 		if q := h.pendingByName[ev.Name]; len(q) > 0 {
-			id = q[len(q)-1]
-			h.pendingByName[ev.Name] = q[:len(q)-1]
+			if id == "" {
+				id = q[len(q)-1]
+			}
+			// Drop the matching pending call (by id, else the newest).
+			for i := len(q) - 1; i >= 0; i-- {
+				if q[i] == id {
+					h.pendingByName[ev.Name] = append(q[:i:i], q[i+1:]...)
+					break
+				}
+			}
 		}
-		pe.Entries = []config.LogEntry{{Time: now, Level: level, Source: "hermes", Message: msg, ToolUseID: id}}
+		pe.Entries = []config.LogEntry{{Time: now, Level: level, Source: "hermes", Message: msg, ToolUseID: id, DurationMs: ev.DurationMs}}
 		return append(out, pe)
 
 	case "result":
