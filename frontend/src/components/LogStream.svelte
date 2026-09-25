@@ -4,8 +4,8 @@
     import { logSearch, logSearchText, logSearchFocus } from '../stores/logSearch';
     import { logMarkdown, logLayout } from '../stores/logView';
     import { t } from '../lib/i18n';
-    import { groupEntries, entryKey } from '../lib/logGroups';
-    import { formatTime } from '../lib/formatters';
+    import { groupEntries, entryKey, turnSummaryData } from '../lib/logGroups';
+    import { formatTime, formatCallDuration, formatTokens, formatCost } from '../lib/formatters';
     import LogEntryRow from './LogEntryRow.svelte';
     import ToolCallRow from './ToolCallRow.svelte';
     import LiveStatus from './LiveStatus.svelte';
@@ -390,6 +390,26 @@
                         title={formatTime(block.entries[0].time)}>
                         <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />
                     </div>
+                    {@const turn = turnSummaryData(block.entries[0].turn)}
+                    {#if turn}
+                        <div
+                            data-testid="turn-summary"
+                            class="text-[12px] py-px {turn.ok
+                                ? 'text-text-dim'
+                                : 'text-red-600 dark:text-status-error'}">
+                            {turn.ok ? '✓' : '✖'}
+                            {#if turn.ok}
+                                {$t('logStream.turnDone')}{turn.durationMs
+                                    ? ' ' + $t('logStream.turnIn', { d: formatCallDuration(turn.durationMs) })
+                                    : ''}
+                            {:else}
+                                {$t('logStream.turnFailed')}: {turn.error}
+                            {/if}
+                            {#if turn.numTurns}· {$t('logStream.turnCount', { n: turn.numTurns })}{/if}
+                            {#if turn.tokens}· {$t('logStream.turnTokens', { n: formatTokens(turn.tokens) })}{/if}
+                            {#if turn.costUsd}· {formatCost(turn.costUsd)}{/if}
+                        </div>
+                    {/if}
                 {:else}
                     <div title={formatTime(block.entries[0].time)}>
                         <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />

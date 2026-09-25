@@ -115,6 +115,7 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | LS-22 | A stored classic choice still wins | Set `cm.logLayout = 'classic'`, select session | "Feed" checkbox is unchecked | ✓ |
 | LS-23 | Ctrl+F finds and expands a hit inside a collapsed group | Push 2 tool-call pairs, collapse, Ctrl+F a term only in the 2nd result | Matching group auto-expands, term visible | ✓ |
 | LS-28 | Live status line follows activity (UI-12) | Set session working, push `session:activity` thinking → tool (+ tool entry) → idle | Line shows spinner + verb/time, then the tool's running phrase, then disappears | ✓ |
+| LS-29 | Turn summary line after a result (UI-13) | Push a `result` log entry and `session:result` (either order) with duration/turns/tokens/cost; then a Hermes-shaped one (duration + tokens only); then a failing subtype | Muted `✓ Done in 42s · 12 turns · 35.0k tokens · $0.18`; Hermes line has no turns/cost; failure is red `✖ Failed: <subtype>` | ✓ |
 | LS-24 | Error inside a tools series marks the collapsed header | Push a `tool` call then an `error` | Collapsed header shows `✖` | ✓ |
 | LS-25 | Autoscroll pins to bottom as feed blocks arrive | Push 30 `text` entries | Last entry visible, no "Jump to latest" button | ✓ |
 | LS-26 | Expanded group shows one row per tool call | Push 3 calls (ok, error, running), expand group | Rows with emoji, `0.3s`/`1m05s`, ✓/✖ + error text, spinner on running; group header spinner while collapsed | ✓ |

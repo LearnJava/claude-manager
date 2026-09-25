@@ -298,3 +298,38 @@ export function groupEntries(entries: LogEntry[]): LogBlock[] {
     flush();
     return blocks;
 }
+
+// What a turn-summary line shows — VIEW-TASKS.md UI-13. Only known values are
+// set: Hermes has no cost or turn count, so those stay undefined and the
+// component leaves them out. `error` is set on a failed turn (subtype, else
+// the result text, else the stop reason).
+export interface TurnSummaryData {
+    ok: boolean;
+    durationMs?: number;
+    numTurns?: number;
+    tokens?: number;
+    costUsd?: number;
+    error?: string;
+}
+
+export function turnSummaryData(turn: LogEntry['turn']): TurnSummaryData | null {
+    if (!turn) return null;
+    const failed =
+        (!!turn.subtype && turn.subtype !== 'success') || turn.stop_reason === 'error';
+    const pos = (n?: number) => (typeof n === 'number' && n > 0 ? n : undefined);
+    const u = turn.usage ?? {};
+    const tokens = pos(
+        (u.input_tokens ?? 0) +
+            (u.output_tokens ?? 0) +
+            (u.cache_read_input_tokens ?? 0) +
+            (u.cache_creation_input_tokens ?? 0),
+    );
+    return {
+        ok: !failed,
+        durationMs: pos(turn.duration_ms),
+        numTurns: pos(turn.num_turns),
+        tokens,
+        costUsd: pos(turn.total_cost_usd),
+        error: failed ? turn.subtype || turn.result || turn.stop_reason || 'error' : undefined,
+    };
+}
