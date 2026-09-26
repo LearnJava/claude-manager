@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"claude-manager/internal/config"
+	"claude-manager/internal/fsutil"
 	"claude-manager/internal/hooks"
 	"claude-manager/internal/logger"
 	"claude-manager/internal/optimization"
@@ -783,6 +784,12 @@ func (s *Session) Run(ctx context.Context) {
 			if !filepath.IsAbs(taskPath) {
 				taskPath = filepath.Join(s.ProjectPath, taskPath)
 			}
+			// A task_source typed/copied on a case-insensitive filesystem
+			// (Windows) can carry the wrong case for a case-sensitive one
+			// (Linux/macOS) — "STATUS-P3.MD" vs. the real "STATUS-P3.md".
+			// Left unresolved this reads as "file not found", which
+			// hasTasks treats identically to a genuinely empty queue.
+			taskPath = fsutil.ResolveCaseInsensitive(s.ProjectPath, taskPath)
 			if s.Config.StopWhenNoTasks && !hasTasks(taskPath) {
 				// No queued work: rather than silently refusing to start (which looks
 				// like a no-op from the UI), launch a plain interactive session so the
@@ -1145,6 +1152,7 @@ func resolveTaskSourceDescription(projectPath, taskPath string) string {
 	if !filepath.IsAbs(srcPath) {
 		srcPath = filepath.Join(projectPath, srcPath)
 	}
+	srcPath = fsutil.ResolveCaseInsensitive(projectPath, srcPath)
 	srcData, err := os.ReadFile(srcPath)
 	if err != nil {
 		return pointer

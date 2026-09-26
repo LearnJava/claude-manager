@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"claude-manager/internal/fsutil"
 )
 
 // This file is the read side of the roadmap: it turns a project's ROADMAP.md
@@ -153,6 +155,9 @@ func ReadRoadmap(projectPath, taskSource string) (*RoadmapView, error) {
 	if !filepath.IsAbs(statusPath) {
 		statusPath = filepath.Join(projectPath, statusPath)
 	}
+	// task_source may carry the case it was typed in on a case-insensitive
+	// filesystem (Windows) and now be read on a case-sensitive one.
+	statusPath = fsutil.ResolveCaseInsensitive(projectPath, statusPath)
 	statusData, err := os.ReadFile(statusPath)
 	if err != nil {
 		return nil, ErrNoRoadmap
@@ -172,6 +177,7 @@ func ReadRoadmap(projectPath, taskSource string) (*RoadmapView, error) {
 		if !filepath.IsAbs(roadmapPath) {
 			roadmapPath = filepath.Join(projectPath, roadmapPath)
 		}
+		roadmapPath = fsutil.ResolveCaseInsensitive(projectPath, roadmapPath)
 		data, err := os.ReadFile(roadmapPath)
 		if err != nil {
 			continue // a pointer into a file we can't read is not a roadmap
@@ -763,6 +769,7 @@ func ReadRoadmapTaskDetail(projectPath, relPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	full = fsutil.ResolveCaseInsensitive(projectPath, full)
 	data, err := os.ReadFile(full)
 	if err != nil {
 		return "", err
@@ -782,6 +789,7 @@ func ReadRoadmapRowDetail(projectPath, roadmapFile string, line int) (string, er
 	if err != nil {
 		return "", err
 	}
+	full = fsutil.ResolveCaseInsensitive(projectPath, full)
 	data, err := os.ReadFile(full)
 	if err != nil {
 		return "", err
