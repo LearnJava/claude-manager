@@ -102,6 +102,9 @@ type RoadmapNode struct {
 	// Wiring only, not serialized: the raw phase/parent cells buildTree uses.
 	phase  string
 	parent string
+	// statusCol: the row's table has a status column, so this node's status
+	// is read from it (curated model) rather than from the pointer file.
+	statusCol bool
 }
 
 // RoadmapView is the whole roadmap as the UI needs it.
@@ -301,6 +304,10 @@ type tableRow struct {
 	cells  []string
 	byName map[string]string
 	line   int
+	// hasStatus: the table's header carries a status column. Decided per
+	// table, not per file — one file can hold a curated inventory and a
+	// pointer-model queue side by side (lumen-browser's CSS-SPECS.md).
+	hasStatus bool
 }
 
 func (r tableRow) get(name string) string { return r.byName[name] }
@@ -362,6 +369,9 @@ func parseTables(content string) (rows []tableRow, title string, context []strin
 
 		row := tableRow{cells: cells, line: i + 1, byName: map[string]string{}}
 		for j, name := range header {
+			if name == "status" {
+				row.hasStatus = true
+			}
 			if name == "" || j >= len(cells) {
 				continue
 			}
@@ -407,10 +417,24 @@ func normalizeHeader(cells []string) []string {
 			name = "size"
 		case "bugs", "баги":
 			name = "bugs"
-		case "name", "title", "task", "subject", "название", "задача", "заголовок":
+		case "name", "title", "task", "subject",
+			"property / feature", "property/feature",
+			"название", "задача", "заголовок":
 			// "task" is the generated format's "**Name** -- summary" cell;
 			// "title" is the curated format's plain title. Both name the task,
 			// so they share a slot — a table with both is not a thing.
+			// "property / feature" is lumen-browser's CSS-SPECS.md "P4 Work
+			// Queue" table (`| # | Property / Feature | Effort | Blocker |`) —
+			// without this mapping the title cell is never found, every row's
+			// name falls back to its own row number, and the panel renders
+			// "1. 1", "2. 2" instead of the actual property name. Deliberately
+			// NOT matching bare "feature"/"property": those single-word
+			// headers belong to CSS-SPECS.md's per-tier "Full Property
+			// Inventory" tables, which have no id/number column at all and
+			// are meant to stay filtered out as detail-less rows (rowToNode's
+			// "both empty" check) — recognizing their header would flood the
+			// tree with hundreds of individual CSS properties instead of the
+			// curated ~30-item work queue.
 			name = "title"
 		}
 		out[i] = name
@@ -444,18 +468,17 @@ func parseRoadmap(content string, open map[int]bool, firstOpen int) *RoadmapView
 
 	var tasks []*RoadmapNode
 	var phaseCandidates []*RoadmapNode
-	curated := false
 
 	for _, row := range rows {
 		node, kind := rowToNode(row)
+		if node == nil {
+			node, kind = pointedRowToNode(row, open)
+		}
 		if node == nil {
 			continue
 		}
 		node.Current = node.Line == firstOpen
 		node.InQueue = open[node.Line]
-		if node.StatusRaw != "" {
-			curated = true
-		}
 		if kind == RoadmapNodePhase {
 			phaseCandidates = append(phaseCandidates, node)
 			continue
@@ -475,12 +498,30 @@ func parseRoadmap(content string, open map[int]bool, firstOpen int) *RoadmapView
 		return view
 	}
 
-	view.StatusModel = StatusModelPointer
-	if curated {
+	// The status model is decided per node, from its own table: a file may
+	// mix a status-column inventory with a pointer-model queue, and applying
+	// one model to both either marks every unpointed queue row done or
+	// ignores the inventory's own status column.
+	curatedCount := 0
+	for _, t := range tasks {
+		if t.statusCol {
+			curatedCount++
+		}
+	}
+	switch curatedCount {
+	case 0:
+		view.StatusModel = StatusModelPointer
+	case len(tasks):
 		view.StatusModel = StatusModelCurated
+	default:
+		view.StatusModel = StatusModelMixed
 	}
 	for _, t := range tasks {
-		t.Status = resolveStatus(t, view.StatusModel, open)
+		model := StatusModelPointer
+		if t.statusCol {
+			model = StatusModelCurated
+		}
+		t.Status = resolveStatus(t, model, open)
 	}
 
 	view.Nodes = buildTree(tasks, phaseCandidates)
@@ -512,6 +553,7 @@ func rowToNode(row tableRow) (*RoadmapNode, string) {
 		DependsOn: row.get("depends"),
 		Bugs:      row.get("bugs"),
 		Size:      row.get("size"),
+		statusCol: row.hasStatus,
 	}
 	if n, err := strconv.Atoi(numText); err == nil && n > 0 {
 		node.Number = n
@@ -562,6 +604,39 @@ func rowToNode(row tableRow) (*RoadmapNode, string) {
 	node.Kind = RoadmapNodeTask
 	// Carried on the node so buildTree can wire it up without re-reading rows.
 	node.phase, node.parent = phase, parent
+	return node, RoadmapNodeTask
+}
+
+// pointedRowToNode rescues a row rowToNode rejects for carrying no id, number
+// or title — a spec inventory keyed by its first column (lumen-browser's
+// CSS-SPECS.md: `| Property | Status | Notes |`, `| Feature | … |`,
+// `| Value | … |`, `| Rule | … |`) — but only when the status file points at
+// it. STATUS-P4.md queues exactly such rows; dropping them hid the whole P4
+// queue. Unpointed inventory rows stay out: recognizing those headers
+// wholesale would flood the tree with hundreds of individual properties.
+//
+// The first cell names the row regardless of its header, so no list of
+// inventory header names has to be kept in sync with the project.
+func pointedRowToNode(row tableRow, open map[int]bool) (*RoadmapNode, string) {
+	if !open[row.line] || len(row.byName) == 0 || len(row.cells) == 0 {
+		return nil, ""
+	}
+	name := strings.TrimSpace(strings.ReplaceAll(plainCell(row.cells[0]), "`", ""))
+	if name == "" {
+		return nil, ""
+	}
+	note := strings.TrimSpace(row.get("note"))
+	node := &RoadmapNode{
+		Kind:       RoadmapNodeTask,
+		ID:         name,
+		Name:       name,
+		Summary:    shortSummary(note),
+		Line:       row.line,
+		StatusRaw:  strings.ToLower(row.get("status")),
+		DetailPath: linkTarget(row.cells[0]),
+		statusCol:  row.hasStatus,
+	}
+	node.HasDetail = node.DetailPath != "" || note != ""
 	return node, RoadmapNodeTask
 }
 
@@ -632,6 +707,15 @@ func shortSummary(s string) string {
 func statusWord(raw string) string {
 	s := strings.ToLower(strings.TrimSpace(raw))
 	s = strings.Trim(s, "*_`")
+	// A marker glyph carries the status by itself — CSS-SPECS.md's legend
+	// (✅ implemented · 🟡 partial · ⬜ not started · 🚫 out of scope), often
+	// with nothing but a date after it. trimStatusGlyphs would strip it and
+	// leave "" or the date, which read as pending even for finished rows.
+	for _, g := range statusGlyphWords {
+		if strings.HasPrefix(s, g.glyph) {
+			return g.word
+		}
+	}
 	s = strings.TrimSpace(trimStatusGlyphs(s))
 	for _, multi := range []string{"in progress", "in-progress", "in_progress", "в работе", "не начат"} {
 		if strings.HasPrefix(s, multi) {
@@ -642,6 +726,15 @@ func statusWord(raw string) string {
 		s = s[:i]
 	}
 	return s
+}
+
+// statusGlyphWords maps a status cell that is only a marker glyph onto the
+// keyword resolveStatus understands.
+var statusGlyphWords = []struct{ glyph, word string }{
+	{"✅", "done"}, {"✔", "done"}, {"☑", "done"}, {"✓", "done"},
+	{"🚫", "blocked"}, {"⛔", "blocked"}, {"❌", "blocked"},
+	{"🟡", "partial"}, {"🚧", "partial"}, {"🟠", "partial"},
+	{"⬜", "todo"}, {"☐", "todo"}, {"○", "todo"},
 }
 
 // trimStatusGlyphs drops the leading marker a hand-maintained status column

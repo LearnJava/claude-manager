@@ -789,3 +789,120 @@ func TestStatusWord_StripsMarkers(t *testing.T) {
 		}
 	}
 }
+
+// ---- spec inventory queues (lumen-browser CSS-SPECS.md / STATUS-P4.md) ----
+
+// cssSpecsRoadmap mirrors lumen-browser's CSS-SPECS.md: per-module inventory
+// tables keyed by their first column (Property / Feature / Value) with a
+// glyph-only status, plus a numbered "P4 Work Queue" table without a status
+// column. Line numbers matter — the queue addresses inventory rows by line.
+const cssSpecsRoadmap = `# CSS Specifications & Property Roadmap
+
+Legend: ✅ implemented · 🟡 parsed/stored · ⬜ not started · 🚫 out of scope
+
+### [T2] Backgrounds & Images
+
+| Property | Status | Notes |
+|----------|--------|-------|
+| ` + "`background-color`" + ` | ✅ | |
+| ` + "`background-attachment`" + ` | 🟡 | parsed; scroll/fixed ⬜ |
+| ` + "`background-origin` / `background-clip`" + ` | 🟡 | parsed; text clip ⬜ |
+
+### [T1] @layer
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| ` + "`@import layer()`" + ` | ✅ | done |
+
+## P4 Work Queue
+
+| # | Property / Feature | Effort | Blocker |
+|---|-------------------|--------|---------|
+| 1 | ` + "`var()`" + ` full substitution | ✅ | done |
+| 2 | ` + "`@media`" + ` resize hook | S | shell event |
+`
+
+func writeCSSSpecs(t *testing.T, status string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "CSS-SPECS.md"), []byte(cssSpecsRoadmap), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "STATUS-P4.md"), []byte(status), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestReadRoadmap_PointedInventoryRowsAreTasks(t *testing.T) {
+	// Lines 10 and 11 are background-attachment / background-origin, line 17
+	// is @import layer(), line 24 is work-queue #2. A pointer into a source
+	// file (the queue carries a few) must be ignored, not break the view.
+	dir := writeCSSSpecs(t, "CSS-SPECS.md:10\nCSS-SPECS.md:11\nCSS-SPECS.md:17\n"+
+		"crates/engine/paint/src/lib.rs:311\nCSS-SPECS.md:24\n")
+	view, err := ReadRoadmap(dir, "STATUS-P4.md")
+	if err != nil {
+		t.Fatalf("ReadRoadmap: %v", err)
+	}
+
+	att := nodeByName(t, view, "background-attachment")
+	if !att.Current || att.Status != RoadmapTaskActive {
+		t.Errorf("background-attachment is the first pointer: current=%v status=%q", att.Current, att.Status)
+	}
+	if att.Summary != "parsed; scroll/fixed ⬜" || !att.HasDetail {
+		t.Errorf("summary from the notes column: %q has_detail=%v", att.Summary, att.HasDetail)
+	}
+	origin := nodeByName(t, view, "background-origin / background-clip")
+	if origin.Current || !origin.InQueue || origin.Status != RoadmapTaskPending {
+		t.Errorf("background-origin is queued: %+v", origin)
+	}
+	// A pointed row whose own status column says ✅ is done, even though the
+	// pointer is still in the queue.
+	if got := nodeByName(t, view, "@import layer()").Status; got != RoadmapTaskDone {
+		t.Errorf("@import layer() (✅) → %q, want done", got)
+	}
+
+	// Unpointed inventory rows stay out of the tree.
+	for _, n := range flattenNodes(view.Nodes) {
+		if n.Name == "background-color" {
+			t.Error("an unpointed inventory row must not become a task")
+		}
+	}
+
+	// The numbered work queue keeps its pointer model next to the inventory:
+	// #1 has no pointer → done, #2 is pointed → queued, not done.
+	if got := nodeByName(t, view, "1").Status; got != RoadmapTaskDone {
+		t.Errorf("work queue #1 → %q, want done", got)
+	}
+	wq2 := nodeByName(t, view, "2")
+	if wq2.Status != RoadmapTaskPending || !wq2.InQueue {
+		t.Errorf("work queue #2 → %q in_queue=%v", wq2.Status, wq2.InQueue)
+	}
+
+	if view.Total != 5 || view.Done != 2 {
+		t.Errorf("progress %d/%d, want 2/5", view.Done, view.Total)
+	}
+	if view.StatusModel != StatusModelMixed {
+		t.Errorf("status model %q, want mixed", view.StatusModel)
+	}
+}
+
+func TestStatusWord_GlyphOnlyStatus(t *testing.T) {
+	cases := map[string]string{
+		"✅": "done", "🟡": "partial", "⬜": "todo", "🚫": "blocked",
+		"✅ (2026-09-01)": "done",
+	}
+	for raw, want := range cases {
+		if got := statusWord(raw); got != want {
+			t.Errorf("statusWord(%q) = %q, want %q", raw, got, want)
+		}
+	}
+	node := &RoadmapNode{StatusRaw: "✅", Line: 3}
+	if got := resolveStatus(node, StatusModelCurated, map[int]bool{3: true}); got != RoadmapTaskDone {
+		t.Errorf("✅ → %q, want done", got)
+	}
+	node = &RoadmapNode{StatusRaw: "🚫", Line: 3}
+	if got := resolveStatus(node, StatusModelCurated, map[int]bool{}); got != RoadmapTaskBlocked {
+		t.Errorf("🚫 → %q, want blocked", got)
+	}
+}
