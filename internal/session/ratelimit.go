@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"claude-manager/internal/logger"
 )
 
 // rateLimitTextPattern matches the textual fallbacks emitted by Claude CLI
@@ -100,6 +102,41 @@ func (s *Session) onRateLimit(info *RateLimitInfo) {
 	}
 	s.rateLimitInf.Store(&cp)
 	s.emit(SessionEvent{Type: EvtRateLimit, RateLimit: &cp})
+}
+
+// applyFailure is the single place a classified TurnFailure (RT-04) becomes
+// session state: it sets exactly the one atomic the Kind maps to, mirroring
+// what each of the six old call sites used to do inline. runOnce/
+// runOnceHermes still read the individual atomics back (rateLimited,
+// authErrorHit, ...) — this only consolidates the SETTING side, not the
+// reading side, so their sentinel-error mapping is unchanged. A nil failure
+// or KindOther is a no-op: KindOther exists so a classifier can say "this was
+// a failure, but not one the Run loop treats specially" without silently
+// falling through.
+func (s *Session) applyFailure(f *TurnFailure) {
+	if f == nil {
+		return
+	}
+	switch f.Kind {
+	case KindRateLimit:
+		info := &RateLimitInfo{Status: "exceeded", RateLimitType: "text", Utilization: 1.0}
+		if !f.ResetsAt.IsZero() {
+			info.ResetsAt = f.ResetsAt.Unix()
+		}
+		s.onRateLimit(info)
+	case KindAuth:
+		s.authErrorHit.Store(true)
+		logger.L.Error("session.auth_error_detected", "id", s.ID, "line", f.Message)
+	case KindSessionNotFound:
+		s.sessionNotFoundHit.Store(true)
+	case KindStepLimit:
+		s.stepLimitHit.Store(true)
+	case KindContextRestart:
+		s.contextRestartHit.Store(true)
+	case KindOther:
+		// Recognized as a failure, but the Run loop has no special handling
+		// for it beyond the generic process-error path.
+	}
 }
 
 // waitRateLimit blocks until the rate-limit window expires or ctx is

@@ -188,8 +188,18 @@ type ParsedEvent struct {
 	Init       *InitInfo          // non-nil for EventInit
 	Permission *PermissionRequest // non-nil for EventPermission
 	Usage      *TokenUsage        // per-turn usage from assistant messages
-	Todos      []TodoItem         // non-nil when the turn contained a TodoWrite
-	Activity   *Activity          // non-nil when the event marks an activity change
+	// Failure is non-nil when the adapter classified this event as a
+	// turn-ending failure (RT-04): a result carrying an auth error or a
+	// step-limit subtype today, more Kinds as adapters grow them. Replaces
+	// the inline atomic-setting that used to live in handleEvent itself —
+	// see Session.applyFailure (ratelimit.go), the single place a
+	// TurnFailure becomes session state. Stderr lines are classified the
+	// same way via ClassifyStderrLine/ClassifyHermesStderrLine but never
+	// travel through ParsedEvent (they aren't stdout lines); both feed
+	// applyFailure directly.
+	Failure  *TurnFailure
+	Todos    []TodoItem // non-nil when the turn contained a TodoWrite
+	Activity *Activity  // non-nil when the event marks an activity change
 	// Questions is non-empty when the agent asked the user something,
 	// regardless of which mechanism raised it (RT-03): the ```ask-user```
 	// marker in a result's text (either runtime, autonomous runs only), a
@@ -621,6 +631,15 @@ func handleResult(ev rawStreamEvent, now time.Time) ParsedEvent {
 			Source:  "claude",
 			Message: msg,
 		}},
+	}
+	// RT-04: classify the two failure signals a Claude result line can
+	// carry — step_limit takes priority when both are somehow present,
+	// matching handleEvent's old evaluation order.
+	switch {
+	case ev.Subtype == "error_max_turns":
+		pe.Failure = &TurnFailure{Kind: KindStepLimit, Message: msg}
+	case isAuthError(ev.ResultText):
+		pe.Failure = &TurnFailure{Kind: KindAuth, Message: ev.ResultText}
 	}
 	if q := questionFromMarker(ev.ResultText); q != nil {
 		pe.Questions = []Question{*q}

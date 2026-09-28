@@ -312,3 +312,48 @@ Everything past `Question.Source` is runtime-agnostic: `pendingQuestionSet`
 asks both resolve through the same `PendingQuestion`/`AnswerQuestion` path in
 `session.go`, so the UI and `cm-mcp`/RPC layer never need to know which
 source produced a question.
+
+## 10. Исход хода (RT-04): `ParsedEvent.Failure` вместо шести атомиков
+
+§5 above listed six call sites that each set their own `atomic.Bool` inline.
+RT-04 keeps the six atomics on `Session` (`runOnce`/`runOnceHermes` still
+read them back individually into `errRateLimited`/`errAuthError`/
+`errSessionNotFound`/`errContextRestart` — that reading side is unchanged)
+but replaces every SETTING call site with one classified value and one
+consolidation point:
+
+- `TurnFailure{Kind, Message, ResetsAt}` (`turn_failure.go`) — `Kind` is one
+  of `rate_limit`\|`auth`\|`session_not_found`\|`context_restart`\|
+  `step_limit`\|`other`.
+- `ParsedEvent.Failure *TurnFailure` — an adapter fills this when the event
+  it just parsed carries a classified failure. Only `parser.go`'s
+  `handleResult` fills it today (Claude's two result-line signals: an
+  `error_max_turns` subtype, or 403 text in `result.result`); Hermes's
+  result line reports its own error through `hermesTurn.failed`/
+  `stream.lastError` instead (see below), not through `ParsedEvent.Failure`,
+  because a failed Hermes result still needs `dispatch`'s own rate-limit vs.
+  auth vs. plain-error branching before the process exits.
+- `Session.applyFailure(*TurnFailure)` (`ratelimit.go`) — the single place a
+  `TurnFailure` becomes session state: one `switch` on `Kind`, one atomic
+  `.Store(true)` per branch (`rate_limit` goes through the existing
+  `onRateLimit` so its `RateLimitInfo`/UI event/`rateLimitUntil` bookkeeping
+  is untouched). `nil` and `KindOther` are no-ops.
+- `ClassifyStderrLine`/`ClassifyHermesStderrLine` (`turn_failure.go`) —
+  stderr lines never go through `ParsedEvent` (they aren't stdout), so they
+  classify directly into a `*TurnFailure` that `drainStderr`/
+  `drainHermesStderr` feed straight into `applyFailure`. Hermes additionally
+  recognizes `session_not_found`, which Claude has no equivalent for.
+
+| Исход (`Kind`) | Кто определяет | Куда попадает | Что делает ядро |
+|---|---|---|---|
+| `rate_limit` | Claude: `handleRateLimit`→`EventRateLimit`→`onRateLimit` (structured `rate_limit_event`, unchanged, does not go through `TurnFailure`). Both runtimes' stderr: `detectRateLimitText` (unchanged, runs before classification — see `ClassifyStderrLine`'s comment). Hermes only: `hermesTurnHitRateLimit` (429-behind-401, `hermes_runtime.go`, log-scrape after process exit). | `s.onRateLimit` directly, or via `applyFailure{Kind:rate_limit}` when built from a `TurnFailure` (the 429-behind-401 path still calls `onRateLimit` directly, not through `applyFailure`, since it already has a `RateLimitInfo`) | `rateLimited`+`rateLimitInf` armed → `runOnce`/`runOnceHermes` return `errRateLimited` → `Run`'s pause/fallback-model logic |
+| `auth` | Claude: `handleResult` (`parser.go`) classifies 403 result text into `ParsedEvent.Failure`; both runtimes' stderr via `ClassifyStderrLine`/`ClassifyHermesStderrLine`; Hermes's `dispatch` closure for a failed result (`stream.lastError`). | `applyFailure{Kind:auth}` | `authErrorHit` armed → `errAuthError` → `Run` pauses 60s before retrying |
+| `session_not_found` | Hermes stderr only: `ClassifyHermesStderrLine` (`"Session not found: …"`) | `applyFailure{Kind:session_not_found}` | `sessionNotFoundHit` armed → `errSessionNotFound` → `Run` clears the stale resume id and retries as a fresh conversation |
+| `context_restart` | `checkContextRestart` (`session.go`), runtime-agnostic — reads `SessionResult.ModelUsage` from either adapter, only armed when `Config.ContextHandoff` is set | `applyFailure{Kind:context_restart}` | `contextRestartHit` armed → scanner loop closes stdin even for an interactive session → `errContextRestart` → `Run` rotates the CLI session id and resends the distilled handoff |
+| `step_limit` | Claude: `handleResult` classifies `subtype=="error_max_turns"` into `ParsedEvent.Failure`. Hermes: `hermesTurnHitStepLimit` (`task_outcome.go`, `state.db` tail scan after the process exits) | `applyFailure{Kind:step_limit}` | `stepLimitHit` armed → read by `Session.Run`'s task-outcome classification (`classifyTaskOutcome`'s "unfinished" reason string) |
+| `other` | Reserved — no adapter produces it today; exists so a future classifier can say "this was a failure, not a success" without silently mapping to one of the five specific Kinds above | `applyFailure` no-ops on it | nothing; the run still ends via its normal non-nil-error/non-zero-exit path |
+
+Continue-session (`KindContinueSession` on a `Question`, not a `TurnFailure`
+`Kind`) deliberately stays outside this table — RT-03 already covers it as
+an answered question, not a failure, and `continueMarkerHit` is untouched by
+RT-04.

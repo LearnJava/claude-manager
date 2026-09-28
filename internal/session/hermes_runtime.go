@@ -224,7 +224,7 @@ func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) erro
 			continue
 		}
 		if autonomous && turn.sessionID != "" && hermesTurnHitStepLimit(s.hermesStateDB(), turn.sessionID) {
-			s.stepLimitHit.Store(true)
+			s.applyFailure(&TurnFailure{Kind: KindStepLimit})
 			logger.L.Warn("session.hermes.step_limit", "id", s.ID, "conversation", turn.sessionID)
 			s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
 				Time: time.Now(), Level: "system", Source: "manager",
@@ -325,9 +325,7 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 				if info, ok := detectRateLimitText(stream.lastError); ok {
 					s.onRateLimit(info)
 				}
-				if isAuthError(stream.lastError) {
-					s.authErrorHit.Store(true)
-				}
+				s.applyFailure(ClassifyStderrLine(stream.lastError))
 			}
 			if s.handleEvent(ev, autonomous) {
 				turn.finished = true
@@ -505,12 +503,7 @@ func (s *Session) drainHermesStderr(r io.Reader) {
 		if info, ok := detectRateLimitText(line); ok {
 			s.onRateLimit(info)
 		}
-		if isAuthError(line) {
-			s.authErrorHit.Store(true)
-		}
-		if isSessionNotFoundError(line) {
-			s.sessionNotFoundHit.Store(true)
-		}
+		s.applyFailure(ClassifyHermesStderrLine(line))
 		s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
 			Time: time.Now(), Level: "system", Source: "hermes", Message: line,
 		}})
