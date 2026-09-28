@@ -357,3 +357,34 @@ Continue-session (`KindContinueSession` on a `Question`, not a `TurnFailure`
 `Kind`) deliberately stays outside this table — RT-03 already covers it as
 an answered question, not a failure, and `continueMarkerHit` is untouched by
 RT-04.
+
+## 11. Интерфейс `Runtime` (RT-05)
+
+`internal/session/runtime.go` defines the seam: `Runtime` (backend identity,
+process granularity, argv building, parser factory) and `Parser` (one
+process's stdout translator, matching `hermesStream`'s existing shape).
+`runtime_claude.go`/`runtime_hermes.go` are the two implementations —
+thin wrappers over the existing code, not a relocation of it:
+
+| Method | `claudeRuntime` | `hermesRuntime` |
+|---|---|---|
+| `Name()` | `"claude"` | `"hermes"` |
+| `PerTurnProcess()` | `false` — one process for the whole task/session (§4) | `true` — one process per turn, `--resume`'d by id |
+| `Args(s, autonomous, convID, imagePath)` | `s.buildCLIArgs(autonomous)`, ignores `convID`/`imagePath` (Claude keeps `resumeSessionID`/`CLISessionID` on `Session` itself and has no per-turn image flag) | `s.buildHermesArgs(convID, imagePath)`, ignores `autonomous` (the autonomous protocol text rides in front of the first turn's prompt via `hermesPreamble`, not an argv flag) |
+| `NewParser()` | `&claudeParser{}` wrapping the stateless `ParseLine` — `Flush()`/`LastError()` are no-ops | `&hermesParserAdapter{stream: newHermesStream()}` — a **fresh** `hermesStream` per call, required because it buffers text deltas and tracks synthetic tool-call ids scoped to one process |
+
+`Session.runtime` is set once in `New()` via `newRuntime(cfg
+config.SessionConfig)` — the only place code picks a `Runtime` by
+`Config.IsHermes()`; nothing else in `runOnce`/`runOnceHermes`/`handleEvent`
+branches on it today (that unification is RT-06's job — `runOnce` and
+`runOnceHermes` still call `buildCLIArgs`/`buildHermesArgs` and
+`ParseLine`/`hermesStream.Parse` directly, unchanged). `Session.runtime`
+exists now so a caller outside those two loops — a test, RT-07's future
+contract suite — can ask "which backend, what does a launch need" through
+one interface instead of re-deriving it from `Config.IsHermes()` and two
+separate arg-builder functions.
+
+**Готово когда:** existing tests unmodified and green (verified:
+`TestBuildCLIArgs_*`, `internal/session`'s full suite, `go build`/`go vet`
+across the module); this section describes each method's contract.
+

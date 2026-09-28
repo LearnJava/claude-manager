@@ -42,6 +42,10 @@ claude-manager/
 │   │   ├── input.go                 # Write to stdin: user_message, permission_response
 │   │   ├── hermes_parser.go         # Hermes CLI stream-json → the same ParsedEvent (HERMES-TASKS.md)
 │   │   ├── hermes_runtime.go        # runtime = "hermes": `hermes chat` per turn, --resume by id
+│   │   ├── runtime.go               # RT-05: Runtime/Parser interfaces — the seam between the
+│   │   │                            #   shared machinery and a specific CLI backend
+│   │   ├── runtime_claude.go        # RT-05: claudeRuntime — wraps buildCLIArgs/ParseLine
+│   │   ├── runtime_hermes.go        # RT-05: hermesRuntime — wraps buildHermesArgs/hermesStream
 │   │   ├── task_outcome.go          # Hermes turn → completed/slice/unfinished; 429 behind a 401 via agent.log
 │   │   └── ratelimit.go             # Rate limit detection, retry logic, timers
 │   ├── permission/

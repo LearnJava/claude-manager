@@ -263,6 +263,13 @@ type Session struct {
 
 	claudePath        string
 	hermesPath        string
+	// runtime is the Runtime implementation selected once in New() from
+	// Config.Runtime (RUNTIME-TASKS.md RT-05). runOnce/runOnceHermes don't
+	// consult it yet (RT-06 unifies the two loops onto it); today it just
+	// gives a caller outside those two loops (tests, a future contract
+	// suite) one place to ask "which backend, and what does it need" without
+	// branching on Config.IsHermes() itself.
+	runtime           Runtime
 	retryDelay        int
 	rateLimitPauseSec int
 	questionTimeout   time.Duration
@@ -397,6 +404,7 @@ func New(p Params) *Session {
 		CLISessionID:      uuid.NewString(),
 		claudePath:        p.ClaudePath,
 		hermesPath:        p.HermesPath,
+		runtime:           newRuntime(p.Config),
 		retryDelay:        p.RetryDelay,
 		rateLimitPauseSec: p.RateLimitPauseSec,
 		questionTimeout:   time.Duration(p.QuestionTimeoutSec) * time.Second,
