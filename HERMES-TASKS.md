@@ -83,6 +83,8 @@ stream-json` отвечает на **один** запрос и завершае
 `internal/session/hermes_runtime.go`) и общий `handleEvent(ParsedEvent)`, выделенный из
 `handleLine`. Путь `claude` не тронут: все прежние тесты зелёные. Полноценный интерфейс — если
 появится третий runtime.
+Продолжение — блок [RUNTIME-TASKS.md](./RUNTIME-TASKS.md): единый формат событий (RT-03/04),
+интерфейс `Runtime` (RT-05), общий цикл хода (RT-06).
 
 Выделить из `Session.runOnce`/`buildCLIArgs`/`handleLine` зависимость от CLI:
 ```go

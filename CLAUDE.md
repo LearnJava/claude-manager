@@ -16,6 +16,7 @@ Desktop app (Windows) to launch, monitor, and control parallel Claude Code CLI s
 | [MIXED-TASKS.md](./MIXED-TASKS.md) | Mixed programming task breakdown (MP-01..08) |
 | [LEARN-TASKS.md](./LEARN-TASKS.md) | Experience layer task breakdown (LN-01..18); queue in [LEARN-STATUS.md](./LEARN-STATUS.md) |
 | [VIEW-TASKS.md](./VIEW-TASKS.md) | Hermes-style session feed in `LogStream` (UI-01..06); queue in [STATUS-P1.md](./STATUS-P1.md) |
+| [RUNTIME-TASKS.md](./RUNTIME-TASKS.md) | Common runtime event format + `Runtime` interface (RT-01..08); queue in [STATUS-P1.md](./STATUS-P1.md). Its RT-01 creates `docs/runtimes.md` — how Claude/Hermes streams map to `ParsedEvent` |
 | [GUI-TESTS.md](./GUI-TESTS.md) | ~100 Playwright test-case descriptions across all Svelte components (✓ exists / ○ missing) |
 | [config.example.toml](./config.example.toml) | Annotated config reference |
 
@@ -43,7 +44,7 @@ prompt, which is why the prompt is one line.
 
 | Session | Queue (`task_source`) | Task specs | Branch prefix | Pool slot |
 |---|---|---|---|---|
-| `Developer 1` | `STATUS-P1.md` | `VIEW-TASKS.md` (UI-01..13) | `p1-` | `p1-work` |
+| `Developer 1` | `STATUS-P1.md` | `VIEW-TASKS.md` (UI-01..13, done), `RUNTIME-TASKS.md` (RT-01..08) | `p1-` | `p1-work` |
 
 Read the task file's own rules before starting — each breakdown carries
 invariants that are not repeated here (`LEARN-TASKS.md` §Инварианты: everything
@@ -96,7 +97,7 @@ Update docs **in the same change** as the code, not as a follow-up:
 | New stream-json event type or field the parser handles | "Stream-JSON Events (stdout)" section in `docs/design-decisions.md` |
 | New `cm-mcp` tool | "cm-mcp tools available to Claude" table in `docs/testing-harness.md` |
 | New fakeclaude/fakeworker scenario | `testdata/scenarios/scenarios_doc.md` entry describing state/feature covered and its `match` pattern |
-| New app-level task breakdown item done | Corresponding checkbox/row in `TASKS.md` / `HARNESS-TASKS.md` / `MIXED-TASKS.md` / `LEARN-TASKS.md` / `VIEW-TASKS.md` (+ delete its pointer line from the matching `*-STATUS.md` queue) |
+| New app-level task breakdown item done | Corresponding checkbox/row in `TASKS.md` / `HARNESS-TASKS.md` / `MIXED-TASKS.md` / `LEARN-TASKS.md` / `VIEW-TASKS.md` / `RUNTIME-TASKS.md` (+ delete its pointer line from the matching `*-STATUS.md` queue) |
 | New package or otherwise notable file under `internal/` | The architecture tree in `docs/architecture.md` |
 | Change to how a developer session takes/finishes a task | `docs/git-workflow.md` + the two skills under `.claude/skills/` — never a second copy of the steps here |
 
