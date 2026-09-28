@@ -237,3 +237,53 @@ actually required:
 
 RT-07's contract test suite (once it exists) is the actual acceptance bar —
 this checklist is a map to get there, not a substitute for passing it.
+
+## 8. `AskUserQuestion` у Claude Code (RT-02, checked on v2.1.280)
+
+Question RT-01 §6 left open: what happens when the model calls Anthropic's
+`AskUserQuestion` tool under `claude -p` with the exact flags `buildCLIArgs`
+builds (`-p --verbose --input-format stream-json --output-format stream-json
+--include-partial-messages --replay-user-messages --session-id <uuid>
+--model haiku --permission-mode bypassPermissions`)? Verified two ways: a
+recorded real run (`testdata/claude-stream/ask-user-question.jsonl`,
+replayed offline by `TestParseClaudeStream_AskUserQuestionUnavailable`,
+`internal/session/session_realclaude_test.go`) and a live opt-in probe
+(`TestRealClaude_AskUserQuestionUnavailable`, `CM_REAL_CLAUDE=1`).
+
+**Finding: the tool is simply not offered to the model in `-p` mode.** No
+`tool_use` block named `AskUserQuestion` ever appears, and — because the
+model never tries to call it — there's no `permission_request` either (a
+`permission_request` only fires for a tool call Claude Code actually
+attempts). The model instead:
+
+1. Runs `ToolSearch` looking for a matching deferred tool (Claude Code
+   exposes a large tool catalog behind a search-first indirection; the
+   system prompt's tool list omits `AskUserQuestion` entirely in `-p` mode).
+2. Gets `"No matching deferred tools found"` (or, if `--allowedTools
+   AskUserQuestion` is passed explicitly, a list of the *other* deferred
+   tools it *does* have — `AskUserQuestion` is excluded from that list too).
+3. Replies in plain text explaining it has no such tool and asks the caller
+   to either answer inline or restate the request.
+4. The turn ends completely normally: `stop_reason:"end_turn"`,
+   `result.subtype:"success"`, no error, no hang. Nothing about the turn's
+   lifecycle changes — `handleEvent`'s `EventResult` arm and
+   `runOnce`'s close-stdin-on-result logic behave exactly as for any other
+   turn.
+
+This matches a known, currently-open upstream regression: `AskUserQuestion`
+worked under `-p` in Claude Code 2.1.185 and was disabled in later versions
+(anthropics/claude-code#77994). It is not something this codebase's flags
+can turn back on — it was tried with `--allowedTools AskUserQuestion`
+explicitly and the tool was still absent from the model's tool list.
+
+**Chosen way to "answer" it (until upstream restores the tool): none needed.**
+Since Claude Code's own harness refuses the tool call before it happens, the
+manager never sees a `tool_use`/`permission_request`/hang to react to — the
+turn is indistinguishable from a normal text-only turn from `ParsedEvent`'s
+point of view. RT-03's shared `ParsedEvent.Questions`/`Question.Source`
+design should still add a `claude_ask_user_question` source (per RT-01 §6)
+for the day upstream re-enables it, but no adapter code is needed *today* to
+make Claude Code sessions behave correctly — they already do, because there
+is nothing to intercept. If upstream ships a fix, the two RT-02 tests above
+are what will start failing (`sawAskUserUse`/`sawAskUserToolUse` becoming
+true) and should be the trigger to implement real handling then.
