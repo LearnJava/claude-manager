@@ -1249,25 +1249,6 @@ func resolveTaskSourceDescription(projectPath, taskPath string) string {
 	return truncateRunes(desc, maxTaskDescLen)
 }
 
-// isAuthError reports whether a stderr line indicates a 403/authentication failure.
-func isAuthError(line string) bool {
-	lower := strings.ToLower(line)
-	return strings.Contains(line, "403") &&
-		(strings.Contains(lower, "forbidden") ||
-			strings.Contains(lower, "authenticate") ||
-			strings.Contains(lower, "unauthorized"))
-}
-
-// isSessionNotFoundError reports whether a Hermes stderr line is its
-// "Session not found: <id>" message — the --resume target does not exist in
-// the Hermes profile's own session store. Distinct from isAuthError: Hermes
-// exits non-zero the same way for both, but this one is not a credentials
-// problem and resuming the same id again only repeats it forever (see
-// errSessionNotFound).
-func isSessionNotFoundError(line string) bool {
-	return strings.Contains(line, "Session not found:")
-}
-
 // runOnce launches one Claude CLI process and pumps its I/O until exit.
 // forceInteractive overrides the autonomous (auto-restart / task-loop) mode
 // for this run: stdin stays open after the turn's result and a task-source
@@ -1602,15 +1583,10 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 			s.emit(SessionEvent{Type: EvtLog, Entry: &entry})
 		}
 		if ev.Result != nil {
-			if ev.Result.Subtype == "error_max_turns" {
-				s.stepLimitHit.Store(true)
-			}
-			// Auth failures surface as result text on stdout (e.g. "Failed to
-			// authenticate. API Error: 403 Request not allowed"), not on stderr.
-			if isAuthError(ev.Result.ResultText) {
-				s.authErrorHit.Store(true)
-				logger.L.Error("session.auth_error_detected", "id", s.ID, "line", ev.Result.ResultText)
-			}
+			// RT-04: the adapter already classified any failure this result
+			// carries (step_limit / auth) into ev.Failure; applyFailure is
+			// the single place that becomes session state.
+			s.applyFailure(ev.Failure)
 			if autonomous {
 				if len(ev.Questions) > 0 {
 					q := ev.Questions[0]
@@ -1754,7 +1730,7 @@ func (s *Session) checkContextRestart(res *SessionResult) {
 	s.mu.Lock()
 	s.pendingHandoff = handoff
 	s.mu.Unlock()
-	s.contextRestartHit.Store(true)
+	s.applyFailure(&TurnFailure{Kind: KindContextRestart})
 }
 
 // formatTodoLines renders the live TodoWrite state as plain checklist lines
@@ -1827,10 +1803,7 @@ func (s *Session) drainStderr(r io.Reader) {
 		if info, ok := detectRateLimitText(line); ok {
 			s.onRateLimit(info)
 		}
-		if isAuthError(line) {
-			s.authErrorHit.Store(true)
-			logger.L.Error("session.auth_error_detected", "id", s.ID, "line", line)
-		}
+		s.applyFailure(ClassifyStderrLine(line))
 		entry := config.LogEntry{
 			Time:    time.Now(),
 			Level:   "error",
