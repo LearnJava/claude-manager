@@ -278,39 +278,39 @@ func TestHermesStream_ClarifyQuestionsOnToolResult(t *testing.T) {
 	use := h.Parse(`{"type":"tool_use","name":"clarify","tool_call_id":"c1","input":{"questions":[` +
 		`{"question":"Route?","choices":["a","b"]},{"question":"  "},{"question":"Why?","multi_select":true}]}}`)
 	for _, ev := range use {
-		if ev.Clarify != nil {
+		if ev.Questions != nil {
 			t.Fatalf("tool_use must not carry the questions yet: %+v", ev)
 		}
 	}
 	res := h.Parse(`{"type":"tool_result","name":"clarify","tool_call_id":"c1","output":"{}"}`)
-	var got []ClarifyQuestion
+	var got []Question
 	for _, ev := range res {
-		got = append(got, ev.Clarify...)
+		got = append(got, ev.Questions...)
 	}
-	want := []ClarifyQuestion{
-		{Question: "Route?", Choices: []string{"a", "b"}},
-		{Question: "Why?", MultiSelect: true},
+	want := []Question{
+		{Text: "Route?", Choices: []string{"a", "b"}, Source: QuestionSourceHermesClarify},
+		{Text: "Why?", MultiSelect: true, Source: QuestionSourceHermesClarify},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("clarify = %+v, want %+v", got, want)
 	}
 	for i := range want {
-		if got[i].Question != want[i].Question || !slices.Equal(got[i].Choices, want[i].Choices) ||
-			got[i].MultiSelect != want[i].MultiSelect {
+		if got[i].Text != want[i].Text || !slices.Equal(got[i].Choices, want[i].Choices) ||
+			got[i].MultiSelect != want[i].MultiSelect || got[i].Source != want[i].Source {
 			t.Errorf("clarify[%d] = %+v, want %+v", i, got[i], want[i])
 		}
 	}
 	// A second result for the same id carries nothing: the questions were consumed.
 	for _, ev := range h.Parse(`{"type":"tool_result","name":"clarify","tool_call_id":"c1","output":"{}"}`) {
-		if ev.Clarify != nil {
-			t.Errorf("questions delivered twice: %+v", ev.Clarify)
+		if ev.Questions != nil {
+			t.Errorf("questions delivered twice: %+v", ev.Questions)
 		}
 	}
 }
 
 func TestParseClarifyInput(t *testing.T) {
 	legacy := parseClarifyInput(json.RawMessage(`{"question":"Go?","choices":["yes","no"]}`))
-	if len(legacy) != 1 || legacy[0].Question != "Go?" || !slices.Equal(legacy[0].Choices, []string{"yes", "no"}) {
+	if len(legacy) != 1 || legacy[0].Text != "Go?" || !slices.Equal(legacy[0].Choices, []string{"yes", "no"}) {
 		t.Errorf("legacy form = %+v", legacy)
 	}
 	for _, in := range []string{``, `not json`, `{}`, `{"questions":[{"question":""}]}`} {
@@ -321,8 +321,8 @@ func TestParseClarifyInput(t *testing.T) {
 }
 
 func TestClarifyAnswerMessage(t *testing.T) {
-	msg := clarifyAnswerMessage(&clarifyState{
-		questions: []ClarifyQuestion{{Question: "Route?"}, {Question: "Screen free?"}},
+	msg := clarifyAnswerMessage(&pendingQuestionSet{
+		questions: []Question{{Text: "Route?"}, {Text: "Screen free?"}},
 		answers:   []string{"direct", "yes"},
 	})
 	for _, want := range []string{"disregard", "1. Route?\n   Answer: direct", "2. Screen free?\n   Answer: yes"} {

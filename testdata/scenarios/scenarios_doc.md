@@ -182,3 +182,20 @@ Emits `stream_event` partial messages (`--include-partial-messages` shape):
 thinking block start → `tool_use` block start
 (`Read`) → the full assistant/tool_result pair → `text` block start → `result`.
 Expected activity changes: `thinking`, `tool` (Read), `writing`, `idle`.
+
+---
+
+### ask-user-marker.json
+**State/Feature:** Ask-user question, unified across sources (RUNTIME-TASKS.md RT-03)
+**Match:** `ask-user-marker`
+
+Exercises the ```` ```ask-user ```` marker source end to end on Claude CLI's
+own shape: a first turn's `result` carries the marker in its text
+(`ParsedEvent.Questions`, `Source: ask_user_marker`), the session pauses
+(`EvtQuestion`, status `waiting_for_user`) with stdin held open, and
+`AnswerQuestion` resumes the same process for a second turn whose `result`
+text confirms the answer was received. Used by
+`internal/session/session_askuser_test.go`'s
+`TestRun_AskUserMarker_FullRoundTrip` — the full-`Session.Run()` companion to
+the handleLine-level unit tests in `session_askuser_test.go`, which construct
+the marker's raw stream-json line directly instead of spawning a process.

@@ -362,6 +362,42 @@ func TestConformance_BudgetExceeded(t *testing.T) {
 	}
 }
 
+// TestConformance_AskUserMarker verifies the ask-user-marker scenario's first
+// result event carries a single Question sourced from the marker, matching
+// the RT-03 unified shape (also produced by the Hermes `clarify` path).
+func TestConformance_AskUserMarker(t *testing.T) {
+	s, err := testkit.LoadScenario(scenariosPath + "/ask-user-marker.json")
+	if err != nil {
+		t.Fatalf("load ask-user-marker: %v", err)
+	}
+
+	var found []session.Question
+	for _, step := range s.Steps {
+		if step.Type != "emit" {
+			continue
+		}
+		evt := session.ParseLine(string(step.Event))
+		if evt.EventType == session.EventResult && len(evt.Questions) > 0 {
+			found = evt.Questions
+			break
+		}
+	}
+
+	if len(found) != 1 {
+		t.Fatalf("Questions = %+v, want exactly 1", found)
+	}
+	q := found[0]
+	if q.Text != "Which budget?" {
+		t.Errorf("Text = %q, want %q", q.Text, "Which budget?")
+	}
+	if len(q.Choices) != 2 || q.Choices[0] != "Keep 2ms" || q.Choices[1] != "Relax to 16ms" {
+		t.Errorf("Choices = %v, want [Keep 2ms, Relax to 16ms]", q.Choices)
+	}
+	if q.Source != session.QuestionSourceAskUserMarker {
+		t.Errorf("Source = %v, want QuestionSourceAskUserMarker", q.Source)
+	}
+}
+
 // TestConformance_AllScenariosPresent ensures the full required scenario set
 // from PLAN.md §21.3.3 is present in the testdata directory.
 func TestConformance_AllScenariosPresent(t *testing.T) {
