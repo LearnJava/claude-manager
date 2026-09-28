@@ -126,6 +126,49 @@ Hermes-specific mechanics not present in Claude's format:
 | End of task (autonomous) | `classifyTaskOutcome` (`task_outcome.go:56`) compares the task-queue's top pointer before/after the run plus the continue-session marker; see HR-04a/`RUNTIME-TASKS.md` reference in RT-01 item 4 → this is the shared logic both runtimes funnel into from `Session.Run`'s `default:` case (`session.go:958`). | Same `classifyTaskOutcome` call, same place — `runOnceHermes` returning `nil` from an autonomous run (`turn.finished`) is what lets `Session.Run`'s loop reach that `default:` branch, identically to `runOnce` returning `nil`. |
 | Step/turn limit | `error_max_turns` result subtype → `s.stepLimitHit` (`handleEvent`, `session.go:1537`). | No such subtype on the wire — `hermesTurnHitStepLimit` (`task_outcome.go:161`) instead queries Hermes's own `state.db` after the turn, looking for the fixed "reached the maximum number of tool-calling iterations" message in the tail of the conversation. |
 
+RT-06 unified everything ABOVE this row across the two loops without
+collapsing the loops themselves — `PerTurnProcess()` is still the one
+property `runOnce` branches on directly to pick `runOnceHermes` (never
+`Config.IsHermes()` again, matching §11's invariant):
+
+- **Dispatch.** `runOnce`'s Hermes branch (`session.go`) now reads
+  `s.runtime.PerTurnProcess()` instead of `s.Config.IsHermes()` — the
+  `Runtime` value already encodes which process model a session needs, so
+  this is the only call site that still needs to know.
+- **Argv building.** Both loops call `s.runtime.Args(s, autonomous, convID,
+  imagePath)` instead of `s.buildCLIArgs`/`s.buildHermesArgs` directly —
+  `claudeRuntime`/`hermesRuntime` (`runtime_claude.go`/`runtime_hermes.go`)
+  still delegate to those same functions unchanged, so this is a
+  redirection, not a rewrite (RT-05's "готово когда" — those functions'
+  existing tests pass unmodified — still holds).
+- **Per-run atomics reset.** `resetRunAtomics()` (`session.go`) is the one
+  place `rateLimited`/`rateLimitInf`/`authErrorHit`/`sessionNotFoundHit`/
+  `contextRestartHit`/`continueMarkerHit`/`stepLimitHit` are zeroed at the
+  top of a fresh process — both `runOnce` and `runOnceHermes` call it
+  instead of repeating the same seven-line block.
+- **Outcome classification.** `classifySentinelError()` (`session.go`) reads
+  those same atomics back (auth > session_not_found > rate_limit >
+  context_restart priority) and returns the matching sentinel error, or nil
+  if none fired. Both loops call it first; each then falls back to its own
+  process-exit wrapping (`"claude exited: %w"` / `"hermes exited: %w"`,
+  which differ in wording and are NOT shared) only when it returns nil.
+- **What stayed loop-specific, deliberately:** `handleLine`'s signature
+  (`line string, autonomous bool`, `session.go`) is unchanged — every
+  existing test in `internal/session` calls it directly, and RT-06's
+  "готово когда" requires the whole suite green *without edits*. Claude's
+  scanner loop still calls `s.handleLine` per line (which internally uses
+  the package-level `ParseLine`, exactly what `claudeRuntime.NewParser()`
+  wraps — functionally identical, no behavior change). Hermes's
+  `hermesRunTurn` still builds its own `newHermesStream()`/dispatches
+  through `handleEvent` directly, since a `PerTurnProcess` runtime's
+  mid-turn cutoff (`clarify`, §6) has no equivalent in Claude's loop to
+  generalize into. `Parser`/`Runtime.NewParser()` (RT-05) exist as the
+  seam for a *future* caller (RT-07's contract suite) to drive either
+  runtime's stdout through one shared scanning loop; RT-06 does not need
+  that generalization to unify the two loops' shared *state machine*
+  (reset/dispatch/classify), only the argv-building and per-run bookkeeping
+  above.
+
 ## 5. Where turn outcome is decided today (pre-RT-04 inventory)
 
 This is the "list of debt" RT-01 item 5 asks for — every place a run's
@@ -375,16 +418,24 @@ thin wrappers over the existing code, not a relocation of it:
 
 `Session.runtime` is set once in `New()` via `newRuntime(cfg
 config.SessionConfig)` — the only place code picks a `Runtime` by
-`Config.IsHermes()`; nothing else in `runOnce`/`runOnceHermes`/`handleEvent`
-branches on it today (that unification is RT-06's job — `runOnce` and
-`runOnceHermes` still call `buildCLIArgs`/`buildHermesArgs` and
-`ParseLine`/`hermesStream.Parse` directly, unchanged). `Session.runtime`
-exists now so a caller outside those two loops — a test, RT-07's future
-contract suite — can ask "which backend, what does a launch need" through
-one interface instead of re-deriving it from `Config.IsHermes()` and two
-separate arg-builder functions.
+`Config.IsHermes()`. RT-06 (§4) is what routes `runOnce`/`runOnceHermes`
+through it: argv building (`Runtime.Args`), the per-run atomics reset
+(`resetRunAtomics`) and outcome classification (`classifySentinelError`) are
+now shared, and `runOnce`'s own Claude/Hermes dispatch reads
+`runtime.PerTurnProcess()` instead of re-checking `Config.IsHermes()`.
+`ParseLine`/`hermesStream.Parse` themselves are still called the way they
+were before RT-05/06 (`handleLine` for Claude, `newHermesStream()` directly
+in `hermesRunTurn` for Hermes) — see §4's "what stayed loop-specific"
+bullet for why unifying the scanning loop itself was not needed to satisfy
+RT-06's "готово когда".
 
-**Готово когда:** existing tests unmodified and green (verified:
+**Готово когда (RT-05):** existing tests unmodified and green (verified:
 `TestBuildCLIArgs_*`, `internal/session`'s full suite, `go build`/`go vet`
 across the module); this section describes each method's contract.
+
+**Готово когда (RT-06, §4):** one shared reset/dispatch/classify path for
+both runtimes, `runOnce`/`runOnceHermes` route argv building through
+`Runtime.Args`, the full test suite (`go build`/`go vet`/`go test ./...`,
+including `internal/control`'s fakeclaude e2e test and
+`hermes_runtime_test.go`) is green without editing any existing test.
 

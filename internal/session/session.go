@@ -264,11 +264,11 @@ type Session struct {
 	claudePath        string
 	hermesPath        string
 	// runtime is the Runtime implementation selected once in New() from
-	// Config.Runtime (RUNTIME-TASKS.md RT-05). runOnce/runOnceHermes don't
-	// consult it yet (RT-06 unifies the two loops onto it); today it just
-	// gives a caller outside those two loops (tests, a future contract
-	// suite) one place to ask "which backend, and what does it need" without
-	// branching on Config.IsHermes() itself.
+	// Config.Runtime (RUNTIME-TASKS.md RT-05). RT-06 routes runOnce's/
+	// runOnceHermes's argv building (Runtime.Args), atomics reset
+	// (resetRunAtomics) and outcome classification (classifySentinelError)
+	// through it, and the process-model dispatch itself now switches on
+	// runtime.PerTurnProcess() instead of Config.IsHermes() directly.
 	runtime           Runtime
 	retryDelay        int
 	rateLimitPauseSec int
@@ -1283,9 +1283,14 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 		}
 	}
 
-	// Hermes runtime (HERMES-TASKS.md HR-04): a different process model
-	// (one process per turn), same event pipeline from here on.
-	if s.Config.IsHermes() {
+	// Runtime dispatch (RUNTIME-TASKS.md RT-06): PerTurnProcess is the one
+	// structural property a caller is allowed to branch on directly
+	// (runtime.go's own doc comment) — one process per turn (Hermes) needs a
+	// different process-lifecycle loop than one process for the whole
+	// task/session (Claude). Everything else both loops need (argv via
+	// Runtime.Args, atomics reset via resetRunAtomics, outcome
+	// classification via classifySentinelError) is already shared.
+	if s.runtime.PerTurnProcess() {
 		return s.runOnceHermes(ctx, forceInteractive)
 	}
 
@@ -1298,7 +1303,7 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	// and no task loop) keep stdin open so the user can continue the conversation.
 	autonomous := (s.Config.AutoRestart || s.Config.StopWhenNoTasks) && !forceInteractive
 
-	args := s.buildCLIArgs(autonomous)
+	args := s.runtime.Args(s, autonomous, "", "")
 
 	logger.L.Debug("session.launch",
 		"id", s.ID,
@@ -1354,12 +1359,7 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	s.inputCh = inputCh
 	s.mu.Unlock()
 
-	s.rateLimited.Store(false)
-	s.rateLimitInf.Store(nil)
-	s.authErrorHit.Store(false)
-	s.contextRestartHit.Store(false)
-	s.continueMarkerHit.Store(false)
-	s.stepLimitHit.Store(false)
+	s.resetRunAtomics()
 
 	writerDone := make(chan struct{})
 	go func() {
@@ -1426,16 +1426,8 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	s.pendingQuestion = nil
 	s.mu.Unlock()
 
-	if s.authErrorHit.Load() {
-		logger.L.Error("session.process_exit.auth_error", "id", s.ID)
-		return errAuthError
-	}
-	if s.rateLimited.Load() {
-		return errRateLimited
-	}
-	if s.contextRestartHit.Load() {
-		logger.L.Info("session.process_exit.context_restart", "id", s.ID)
-		return errContextRestart
+	if err := s.classifySentinelError(); err != nil {
+		return err
 	}
 	if waitErr != nil {
 		logger.L.Error("session.process_exit", "id", s.ID, "error", waitErr)
@@ -1886,6 +1878,52 @@ func (s *Session) emitErr(err error) {
 		Message: err.Error(),
 	}
 	s.emit(SessionEvent{Type: EvtError, Err: err, Entry: &entry})
+}
+
+// resetRunAtomics clears the per-run outcome atomics (RUNTIME-TASKS.md
+// RT-06) at the top of a fresh process launch — shared by runOnce (Claude)
+// and runOnceHermes so the reset list lives in exactly one place instead of
+// being duplicated per runtime. sessionNotFoundHit is Hermes-only in
+// practice (Claude never sets it) but resetting it here too is harmless and
+// keeps this the single source of truth for "what a run starts clean on".
+func (s *Session) resetRunAtomics() {
+	s.rateLimited.Store(false)
+	s.rateLimitInf.Store(nil)
+	s.authErrorHit.Store(false)
+	s.sessionNotFoundHit.Store(false)
+	s.contextRestartHit.Store(false)
+	s.continueMarkerHit.Store(false)
+	s.stepLimitHit.Store(false)
+}
+
+// classifySentinelError maps this run's outcome atomics (set by handleEvent/
+// applyFailure while the process was running) into the sentinel error
+// Session.Run's big switch understands, or nil if none fired. Shared by
+// runOnce and runOnceHermes (RUNTIME-TASKS.md RT-06) — this is the
+// "обработка исходов" both loops used to inline separately. Priority order
+// (auth > session-not-found > rate limit > context restart) matches what
+// runOnceHermes checked before this consolidation; session_not_found is
+// never set on the Claude path, so runOnce's own (shorter) priority chain —
+// auth > rate limit > context restart — is unaffected by where it sits.
+// Exit-process errors (cmd.Wait/stdout scan) are NOT handled here — their
+// wording differs per runtime ("claude exited"/"hermes exited") — callers
+// check this first and fall back to their own wrapping when it returns nil.
+func (s *Session) classifySentinelError() error {
+	if s.authErrorHit.Load() {
+		logger.L.Error("session.process_exit.auth_error", "id", s.ID)
+		return errAuthError
+	}
+	if s.sessionNotFoundHit.Load() {
+		return errSessionNotFound
+	}
+	if s.rateLimited.Load() {
+		return errRateLimited
+	}
+	if s.contextRestartHit.Load() {
+		logger.L.Info("session.process_exit.context_restart", "id", s.ID)
+		return errContextRestart
+	}
+	return nil
 }
 
 // sleepCtx waits for d or ctx cancellation. Returns false if ctx was cancelled.

@@ -157,13 +157,7 @@ func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) erro
 		s.mu.Unlock()
 	}()
 
-	s.rateLimited.Store(false)
-	s.rateLimitInf.Store(nil)
-	s.authErrorHit.Store(false)
-	s.sessionNotFoundHit.Store(false)
-	s.contextRestartHit.Store(false)
-	s.continueMarkerHit.Store(false)
-	s.stepLimitHit.Store(false)
+	s.resetRunAtomics()
 
 	prompt := s.initialPromptText(forceInteractive)
 	var images []ImageAttachment
@@ -199,17 +193,8 @@ func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) erro
 		if ctx.Err() != nil {
 			return nil
 		}
-		if s.authErrorHit.Load() {
-			return errAuthError
-		}
-		if s.sessionNotFoundHit.Load() {
-			return errSessionNotFound
-		}
-		if s.rateLimited.Load() {
-			return errRateLimited
-		}
-		if s.contextRestartHit.Load() {
-			return errContextRestart
+		if sentinel := s.classifySentinelError(); sentinel != nil {
+			return sentinel
 		}
 		if err != nil {
 			return err
@@ -250,7 +235,7 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 	}
 	defer cleanup()
 
-	args := s.buildHermesArgs(convID, imagePath)
+	args := s.runtime.Args(s, autonomous, convID, imagePath)
 	turnStart := time.Now()
 	logger.L.Debug("session.launch", "id", s.ID, "hermes", s.hermesPath, "cwd", s.ProjectPath,
 		"args", strings.Join(args, " "))
