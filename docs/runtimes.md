@@ -244,43 +244,97 @@ explicitly wherever RT-03+ touch them:
   will likely need the same "structured event where available, text/log
   fallback otherwise" shape for Hermes specifically.
 
-## 7. How to add a runtime — draft checklist (finalized by RT-08)
+## 7. How to add a runtime — step-by-step (finalized by RT-08)
 
-This is intentionally rough; RT-08 is the task that turns it into a real
-walkthrough once RT-02..07 exist. For now, based on what Claude/Hermes
-actually required:
+This is the real walkthrough, written after RT-02..07 landed and checked
+against the actual files listed at each step. Do the steps in order; §11a's
+contract suite is the pass/fail bar, this is the map to get there. Call the
+new backend `foo` below as a stand-in name (e.g. Codex, Kimi).
 
-1. Write a parser/adapter (`parser.go`/`hermes_parser.go` pattern) that turns
-   the runtime's own wire format into `[]ParsedEvent` — reuse `ParsedEvent`
-   as-is; do not add runtime-specific fields to it (add a case to an existing
-   field's enum instead, e.g. a new `Question.Source`, once RT-03 lands).
-2. Decide the runtime's process model (§4) up front: one process for
-   the whole task, or one per turn. This changes how you wire `inputCh` and
-   what "the turn ended" means for your adapter.
-3. Add launch-arg building (`buildCLIArgs`/`buildHermesArgs` pattern) and any
-   environment scrubbing your CLI needs (see `hermesEnv`,
-   `hermes_runtime.go:69`, for why this mattered for Hermes specifically —
-   inherited parent-session environment variables broke path resolution).
-4. Wire stderr scanning for whatever your runtime's rate-limit/auth signals
-   look like (§5) — there is no structured contract to lean on if the
-   runtime doesn't emit one.
-5. Feed everything through the existing `Session.handleEvent` — do not
-   duplicate its logic. If your runtime needs something handleEvent doesn't
-   support yet (like Hermes's `clarify` early-kill), that's a sign the
-   *format* needs a §6-style adapter hook, which the later RT tasks are
-   meant to generalize, not a reason to bypass `handleEvent`.
-6. Add a fake binary under `cmd/` (see `cmd/fakeclaude`, `cmd/fakehermes`)
-   with scripted scenarios so the whole pipeline is testable without a real
-   API call — `CM_REAL_<RUNTIME>=1` opt-in tests are for occasional
-   real-wire verification only, never the default gate (RUNTIME-TASKS.md
-   §Инварианты).
-7. Update `internal/config.SessionConfig.Runtime`'s accepted values and
-   `Config.IsHermes()`-style helper, and the runtime picker in the session
-   card UI (`SetSessionRuntime`, `docs/architecture.md`'s Wails bindings
-   table).
-8. Update this document (RT-01 through RT-08's own "готово когда" clauses
-   all name `docs/runtimes.md` explicitly) plus the doc-sync matrix in
-   `CLAUDE.md`.
+1. **Add the config value.** `internal/config/types.go`:
+   `SessionConfig.Runtime string` already exists (`toml:"runtime"`) — add
+   `const RuntimeFoo = "foo"` next to `RuntimeHermes` and an `IsFoo()`
+   helper (or, if a third value makes the `if/else` in `newRuntime`
+   unwieldy, switch `newRuntime` to a real `switch` — either way, `New()` in
+   `internal/session/runtime.go` stays the **only** call site that branches
+   on the runtime name; everything downstream of it uses the `Runtime`
+   interface).
+2. **Decide the process model (§4) before writing any code.** One process
+   for the whole task/session (Claude's model), or one process per turn,
+   `--resume`d (Hermes' model)? This single decision determines how you
+   wire `inputCh`, what "the turn ended" means, and the answer to
+   `PerTurnProcess()` below — get it right first, the rest follows from it.
+3. **Write the parser/adapter** (`parser.go`/`hermes_parser.go` pattern):
+   turn `foo`'s own stdout wire format into `[]ParsedEvent`. Reuse
+   `ParsedEvent` (`parser.go:166`, §2 above) as-is — never add a
+   runtime-specific field to it. If the wire needs something the struct
+   doesn't represent yet, extend an existing enum instead (e.g. a new
+   `Question.Source` value, `turn_failure.go`'s `Kind`), the same way RT-03
+   added `hermes_clarify` and RT-04 added `session_not_found` without
+   touching any other runtime's code path.
+4. **Implement `Runtime`** (`internal/session/runtime.go`'s interface) in a
+   new `runtime_foo.go`, mirroring `runtime_claude.go`/`runtime_hermes.go`
+   (§11's table is the contract each method must satisfy):
+   - `Name() string` — `"foo"`, logging only.
+   - `PerTurnProcess() bool` — the answer from step 2.
+   - `Args(s, autonomous, convID, imagePath) []string` — argv building
+     (`buildCLIArgs`/`buildHermesArgs` pattern); ignore whichever of
+     `autonomous`/`convID`/`imagePath` your process model has no use for,
+     same as `claudeRuntime`/`hermesRuntime` each ignore one.
+   - `NewParser() Parser` — wrap step 3's adapter; return a **fresh**
+     instance per call if your parser holds any per-process state (buffered
+     text, synthetic ids), as `hermesParserAdapter` does.
+5. **Environment scrubbing**, if `foo` is sensitive to inherited variables
+   the manager's parent process sets (see `hermesEnv`, `hermes_runtime.go:69`
+   — Hermes broke on inherited `PATH`-adjacent vars until this was added).
+   Not every runtime needs this; check empirically before assuming it does.
+6. **Stderr classification** (§5, §10): add `ClassifyFooStderrLine` (or fold
+   into a shared classifier if the signal shapes overlap) covering at least
+   rate-limit and auth text patterns — there is no structured wire event to
+   lean on unless `foo` emits one (Claude's `rate_limit_event` is the only
+   structured example today; everything else, both runtimes, is text
+   matching against stderr or a log file). Feed it into
+   `Session.applyFailure` (`ratelimit.go`) exactly like
+   `drainStderr`/`drainHermesStderr` do — don't invent a parallel path.
+7. **Feed everything through `Session.handleEvent`** — never duplicate its
+   switch. If `foo` needs a mid-turn intervention `handleEvent` has no hook
+   for (Hermes' `clarify` early-kill is the existing example, §6/§9), that
+   is a sign the *shared format* needs a new §6-style adapter hook for the
+   next RT task to generalize, not a reason to bypass `handleEvent` in your
+   adapter.
+8. **Write a fake binary** under `cmd/fakefoo` (copy the shape of
+   `cmd/fakeclaude` — directory-mode scenario matching — or `cmd/fakehermes`
+   — prompt-substring matching, see either's doc comment for which fits
+   `foo`'s invocation style better) with scripted scenarios covering at
+   least: normal turn with tool use, a rate-limit signal, an auth-error
+   signal, and (if applicable) whatever `foo`-specific mid-turn hook step 7
+   needed. Add matching fixtures under `testdata/scenarios/` and a row in
+   `testdata/scenarios/scenarios_doc.md` for each new one (see the doc-sync
+   matrix in `CLAUDE.md`). `CM_REAL_FOO=1`-gated tests against the real `foo`
+   binary are for occasional manual verification only — never the default
+   gate (RUNTIME-TASKS.md §Инварианты).
+9. **Add one `contractCase` to `contractRuntimes`**
+   (`internal/session/runtime_contract_test.go`, §11a) with a `newSession`
+   closure pointing at your fake binary and enough prompts to steer it into
+   each scenario the suite drives. Leave any `TurnFailure.Kind` `foo`
+   genuinely cannot produce as `""` in that case's prompts — the matching
+   subtest skips cleanly rather than failing (see `stepLimitPrompt`'s
+   Hermes-side gap in §11a for the existing example of this). **This suite
+   passing, unedited, with your new case added, is the actual "the runtime
+   is connected" bar** — not any step above it.
+10. **Wire the UI runtime picker**: `SetSessionRuntime` (`app.go:852`)
+    currently only accepts `""`/`"claude"`/`config.RuntimeHermes` — extend
+    its validation, and check `docs/architecture.md`'s Wails-bindings table
+    plus the session-card picker component in `frontend/src/` for the same
+    hardcoded two-value list.
+11. **Update this document.** Every section above (§2-§6, §9-§11a) that
+    made a Claude/Hermes-specific claim now needs a `foo` row/branch added
+    where it genuinely differs, or an explicit "same as Claude/Hermes"
+    if it doesn't — a doc that silently omits the third runtime is worse
+    than no doc, because a future reader will assume the two-column tables
+    are exhaustive. Update the doc-sync matrix entries in `CLAUDE.md` for
+    any new Wails method, config field, or fake-binary scenario the steps
+    above introduced.
 
 RT-07's contract test suite (`internal/session/runtime_contract_test.go`,
 §11a above) is the actual acceptance bar — this checklist is a map to get
@@ -510,4 +564,14 @@ green on both runtimes, `testdata/scenarios/scenarios_doc.md` documents the
 three new fixtures it needed, `go build`/`go vet`/`go test ./...` green
 (pre-existing `internal/fsutil` case-sensitivity failures are unrelated to
 this block, observed on `master` before this task).
+
+**Готово когда (RT-08, §7):** §7 is a step-by-step walkthrough (not a rough
+draft) that names the exact files/interfaces/tests a third runtime touches;
+`HERMES-TASKS.md`'s HR-01 row points at RT-05 as where it was actually
+implemented; `docs/design-decisions.md` has a "Why a common event format"
+section citing the 2026-09-28 `clarify` incident and this document; every
+link into this file from `CLAUDE.md`/`docs/architecture.md`/`HERMES-TASKS.md`
+resolves to a section that still matches the current code (checked against
+`d88f196`.. `runtime_contract_test.go`'s merge, this task). Gate green:
+`go build ./...`, `go vet ./...`, `go test ./...`.
 
