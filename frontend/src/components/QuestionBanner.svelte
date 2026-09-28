@@ -38,13 +38,16 @@
         if (busy || !q || !text.trim()) return;
         busy = true;
         error = '';
+        const answeredId = q.id;
         try {
-            await AnswerQuestion(session.id, q.id, text.trim());
+            await AnswerQuestion(session.id, answeredId, text.trim());
             // Optimistically clear the banner — the backend doesn't emit a
             // "question cleared" event, only a subsequent status change.
+            // A follow-up question (the next one of a Hermes clarify call)
+            // may already have replaced it; that one stays.
             sessions.update((map) => {
                 const cur = map[session.id];
-                if (!cur) return map;
+                if (!cur || cur.pending_question?.id !== answeredId) return map;
                 return { ...map, [session.id]: { ...cur, pending_question: null } };
             });
             freeText = '';

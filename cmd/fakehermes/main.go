@@ -10,6 +10,9 @@
 //     deltas → result, in the exact shape hermes_cli/stream_json.py writes;
 //   - the reply is "echo: <first line of the query>", or, when the query
 //     contains "FAIL_429", a failed result with a rate-limit error;
+//   - "ASK_CLARIFY": before the reply, a `clarify` call with two questions
+//     and Hermes' headless auto-answer as its tool_result, the way a real
+//     single-query turn answers it;
 //   - "FAIL_429_THEN_401" (or FAKEHERMES_FAIL_429_THEN_401=1): the first
 //     invocation per $HERMES_HOME logs a 429 for its conversation to
 //     $HERMES_HOME/logs/agent.log and fails with a 401, like a real spent
@@ -92,6 +95,18 @@ func run(args []string, in io.Reader, out io.Writer) int {
 				return 1
 			}
 		}
+	}
+
+	if strings.Contains(q, "ASK_CLARIFY") {
+		emit(map[string]any{"type": "tool_use", "name": "clarify", "tool_call_id": "toolu_clarify", "input": map[string]any{
+			"questions": []map[string]any{
+				{"question": "Which route?", "choices": []string{"direct", "proxy"}},
+				{"question": "Anything else?"},
+			},
+		}})
+		emit(map[string]any{"type": "tool_result", "name": "clarify", "tool_call_id": "toolu_clarify",
+			"output": `{"responses": [{"user_response": "[single-query mode: no user available ...]"}]}`,
+			"duration_ms": 1, "is_error": false})
 	}
 
 	emit(map[string]any{"type": "tool_use", "name": "terminal", "input": map[string]any{"command": "echo hi"}})

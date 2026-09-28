@@ -301,3 +301,97 @@ func TestHermesRuntime_RateLimitBehind401_ResumesDespiteSoftStop(t *testing.T) {
 		t.Errorf("final status = %s, want idle (soft stop honoured at the task's end)", st)
 	}
 }
+
+// A clarify call in an interactive Hermes turn: Hermes answers it itself
+// ("no user available"), so the manager cuts the turn short, asks the user
+// each question through the pending-question banner, and resumes the same
+// conversation with the real answers. Nothing the agent did after the
+// auto-answer (here: the echo reply) reaches the session.
+func TestHermesRuntime_ClarifyAsksTheUserAndResumes(t *testing.T) {
+	bin := buildFakehermes(t)
+	logPath := filepath.Join(t.TempDir(), "calls.jsonl")
+	t.Setenv("FAKEHERMES_LOG", logPath)
+
+	questions := make(chan PendingQuestion, 8)
+	results := make(chan string, 8)
+	s := New(Params{
+		ID: "p/C", ProjectName: "p", ProjectPath: t.TempDir(), HermesPath: bin,
+		Config: config.SessionConfig{Name: "C", Runtime: "hermes", Prompt: "ASK_CLARIFY please"},
+		// Interactive: no timeout fallback may answer for the user.
+		QuestionTimeoutSec: 1,
+		OnEvent: func(_ string, ev SessionEvent) {
+			switch ev.Type {
+			case EvtQuestion:
+				questions <- *ev.Question
+			case EvtResult:
+				results <- ev.Result.ResultText
+			}
+		},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	go func() { s.Run(ctx); close(done) }()
+
+	next := func() PendingQuestion {
+		t.Helper()
+		select {
+		case q := <-questions:
+			return q
+		case r := <-results:
+			t.Fatalf("turn produced a result %q instead of asking", r)
+		case <-time.After(20 * time.Second):
+			t.Fatal("timed out waiting for a question")
+		}
+		return PendingQuestion{}
+	}
+	q1 := next()
+	if q1.Question != "(1/2) Which route?" || !slices.Equal(q1.Options, []string{"direct", "proxy"}) {
+		t.Fatalf("first question = %+v", q1)
+	}
+	if st := s.Status(); st != config.StatusWaitingForUser {
+		t.Errorf("status = %s, want waiting_for_user", st)
+	}
+	time.Sleep(1500 * time.Millisecond) // past QuestionTimeoutSec: must still be pending
+	if pq := s.PendingQuestion(); pq == nil || pq.ID != q1.ID {
+		t.Fatalf("interactive question was auto-answered: pending = %+v", pq)
+	}
+	if err := s.AnswerQuestion(q1.ID, "proxy"); err != nil {
+		t.Fatalf("AnswerQuestion 1: %v", err)
+	}
+	q2 := next()
+	if q2.Question != "(2/2) Anything else?" || len(q2.Options) != 0 {
+		t.Fatalf("second question = %+v", q2)
+	}
+	if err := s.AnswerQuestion(q2.ID, "no"); err != nil {
+		t.Fatalf("AnswerQuestion 2: %v", err)
+	}
+	select {
+	case r := <-results:
+		if !strings.HasPrefix(r, "echo: The user's answers") {
+			t.Fatalf("resumed turn result = %q", r)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("timed out waiting for the resumed turn")
+	}
+
+	s.Stop(false)
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run did not exit after Stop")
+	}
+
+	calls := readFakeHermesLog(t, logPath)
+	if len(calls) != 2 {
+		t.Fatalf("launched %d processes, want 2", len(calls))
+	}
+	if argValue(calls[1].Args, "--resume") == "" {
+		t.Errorf("answers must resume the conversation: %v", calls[1].Args)
+	}
+	for _, want := range []string{"1. Which route?\n   Answer: proxy", "2. Anything else?\n   Answer: no"} {
+		if !strings.Contains(calls[1].Query, want) {
+			t.Errorf("answer turn lacks %q:\n%s", want, calls[1].Query)
+		}
+	}
+}

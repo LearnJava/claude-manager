@@ -998,6 +998,22 @@ a session mid-task when the limit ran out after the user had asked it to
 stop *after* the task. `TestHermesRuntime_RateLimitBehind401_ResumesDespiteSoftStop`
 replays the incident via `FAKEHERMES_FAIL_429_THEN_401=1`.
 
+**`clarify` reaches the user.** A headless `hermes chat --query-file -`
+answers the agent's `clarify` tool itself (`[single-query mode: no user
+available … Pick the best option … and continue.]`), so the agent used to
+carry on with its own guess while the question never showed in the UI.
+`hermesStream` now attaches the call's questions (`{"questions":[{question,
+choices, multi_select}]}` or the legacy top-level form) to the matching
+`tool_result` as `ParsedEvent.Clarify`. On it `hermesRunTurn` stops reading and
+kills the process — Hermes has already persisted the call and its auto-answer
+before emitting `tool_result`, so the conversation stays resumable. The
+questions then go through the ordinary pending-question banner one at a time
+(`(i/n)` prefix, choices as buttons, free text allowed); after the last answer
+all of them are sent as one `--resume` turn that tells the agent to disregard
+the automatic reply. The 5-minute first-option fallback applies only to
+autonomous runs. Test: `TestHermesRuntime_ClarifyAsksTheUserAndResumes`
+(fakehermes `ASK_CLARIFY`).
+
 ### Auth Error Handling (403)
 `drainStderr()` detects lines containing `"403"` + `"forbidden"` / `"authenticate"` / `"unauthorized"`.
 On detection, `authErrorHit` atomic is set → `runOnce()` returns `errAuthError` → `Run()` pauses 60 seconds and retries.

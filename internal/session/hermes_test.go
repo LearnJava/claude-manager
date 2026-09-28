@@ -270,3 +270,67 @@ func TestHermesStream_ToolCallIDAndDuration(t *testing.T) {
 		t.Errorf("DurationMs = %d, want 312", res.DurationMs)
 	}
 }
+
+// A clarify call's questions ride on its tool_result, not its tool_use: by
+// then Hermes has persisted the call and its headless answer.
+func TestHermesStream_ClarifyQuestionsOnToolResult(t *testing.T) {
+	h := newHermesStream()
+	use := h.Parse(`{"type":"tool_use","name":"clarify","tool_call_id":"c1","input":{"questions":[` +
+		`{"question":"Route?","choices":["a","b"]},{"question":"  "},{"question":"Why?","multi_select":true}]}}`)
+	for _, ev := range use {
+		if ev.Clarify != nil {
+			t.Fatalf("tool_use must not carry the questions yet: %+v", ev)
+		}
+	}
+	res := h.Parse(`{"type":"tool_result","name":"clarify","tool_call_id":"c1","output":"{}"}`)
+	var got []ClarifyQuestion
+	for _, ev := range res {
+		got = append(got, ev.Clarify...)
+	}
+	want := []ClarifyQuestion{
+		{Question: "Route?", Choices: []string{"a", "b"}},
+		{Question: "Why?", MultiSelect: true},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("clarify = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i].Question != want[i].Question || !slices.Equal(got[i].Choices, want[i].Choices) ||
+			got[i].MultiSelect != want[i].MultiSelect {
+			t.Errorf("clarify[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	// A second result for the same id carries nothing: the questions were consumed.
+	for _, ev := range h.Parse(`{"type":"tool_result","name":"clarify","tool_call_id":"c1","output":"{}"}`) {
+		if ev.Clarify != nil {
+			t.Errorf("questions delivered twice: %+v", ev.Clarify)
+		}
+	}
+}
+
+func TestParseClarifyInput(t *testing.T) {
+	legacy := parseClarifyInput(json.RawMessage(`{"question":"Go?","choices":["yes","no"]}`))
+	if len(legacy) != 1 || legacy[0].Question != "Go?" || !slices.Equal(legacy[0].Choices, []string{"yes", "no"}) {
+		t.Errorf("legacy form = %+v", legacy)
+	}
+	for _, in := range []string{``, `not json`, `{}`, `{"questions":[{"question":""}]}`} {
+		if qs := parseClarifyInput(json.RawMessage(in)); qs != nil {
+			t.Errorf("parseClarifyInput(%q) = %+v, want nil", in, qs)
+		}
+	}
+}
+
+func TestClarifyAnswerMessage(t *testing.T) {
+	msg := clarifyAnswerMessage(&clarifyState{
+		questions: []ClarifyQuestion{{Question: "Route?"}, {Question: "Screen free?"}},
+		answers:   []string{"direct", "yes"},
+	})
+	for _, want := range []string{"disregard", "1. Route?\n   Answer: direct", "2. Screen free?\n   Answer: yes"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message lacks %q:\n%s", want, msg)
+		}
+	}
+	if strings.HasSuffix(msg, "\n") {
+		t.Errorf("message has a trailing newline: %q", msg)
+	}
+}

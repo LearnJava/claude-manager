@@ -285,6 +285,9 @@ type Session struct {
 	rateLimitUntil  time.Time
 	pendingPerm     *PermissionRequest
 	pendingQuestion *PendingQuestion
+	// clarify is the Hermes `clarify` call being answered question by
+	// question through pendingQuestion (see askClarify); nil otherwise.
+	clarify *clarifyState
 	questionTimer   *time.Timer
 
 	// Per-run state.
@@ -613,6 +616,16 @@ func (s *Session) AnswerQuestion(questionID, answer string) error {
 	if s.questionTimer != nil {
 		s.questionTimer.Stop()
 		s.questionTimer = nil
+	}
+	if c := s.clarify; c != nil {
+		c.answers = append(c.answers, answer)
+		if len(c.answers) < len(c.questions) {
+			s.mu.Unlock()
+			s.openClarifyQuestion()
+			return nil
+		}
+		s.clarify = nil
+		answer = clarifyAnswerMessage(c)
 	}
 	s.mu.Unlock()
 

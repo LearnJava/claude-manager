@@ -173,6 +173,9 @@ type ParsedEvent struct {
 	Usage      *TokenUsage        // per-turn usage from assistant messages
 	Todos      []TodoItem         // non-nil when the turn contained a TodoWrite
 	Activity   *Activity          // non-nil when the event marks an activity change
+	// Clarify is non-nil on the tool_result of a Hermes `clarify` call: the
+	// questions the agent asked (see hermesStream and runOnceHermes).
+	Clarify []ClarifyQuestion
 }
 
 // ---- Internal raw JSON structures ----

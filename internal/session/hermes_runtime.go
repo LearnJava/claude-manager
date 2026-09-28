@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"claude-manager/internal/config"
 	"claude-manager/internal/logger"
 	"claude-manager/internal/proc"
@@ -109,6 +111,9 @@ type hermesTurn struct {
 	finished  bool   // handleEvent reported the turn as finished
 	sessionID string // Hermes session id from the init line
 	failed    string // non-empty when the result reported an error
+	// clarify holds the questions of a `clarify` call the turn was cut
+	// short on (see hermesRunTurn); nil otherwise.
+	clarify []ClarifyQuestion
 }
 
 func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) error {
@@ -134,6 +139,7 @@ func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) erro
 			s.questionTimer = nil
 		}
 		s.pendingQuestion = nil
+		s.clarify = nil
 		s.mu.Unlock()
 	}()
 
@@ -197,6 +203,12 @@ func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) erro
 		if turn.failed != "" {
 			return fmt.Errorf("hermes turn failed: %s", turn.failed)
 		}
+		if len(turn.clarify) > 0 {
+			// The agent asked the user something: wait for the answers,
+			// which arrive on inputCh as the next turn's prompt.
+			s.askClarify(turn.clarify, autonomous)
+			continue
+		}
 		if autonomous && turn.sessionID != "" && hermesTurnHitStepLimit(s.hermesStateDB(), turn.sessionID) {
 			s.stepLimitHit.Store(true)
 			logger.L.Warn("session.hermes.step_limit", "id", s.ID, "conversation", turn.sessionID)
@@ -229,7 +241,10 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 	logger.L.Debug("session.launch", "id", s.ID, "hermes", s.hermesPath, "cwd", s.ProjectPath,
 		"args", strings.Join(args, " "))
 
-	cmd := exec.CommandContext(ctx, s.hermesPath, args...)
+	// turnCtx lets a `clarify` call end this one process without ending the run.
+	turnCtx, cancelTurn := context.WithCancel(ctx)
+	defer cancelTurn()
+	cmd := exec.CommandContext(turnCtx, s.hermesPath, args...)
 	proc.HideConsole(cmd)
 	if s.ProjectPath != "" {
 		cmd.Dir = s.ProjectPath
@@ -303,15 +318,29 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 			if s.handleEvent(ev, autonomous) {
 				turn.finished = true
 			}
+			if len(ev.Clarify) > 0 {
+				// Headless Hermes answers clarify itself ("no user available,
+				// pick the best option") and the agent carries on with its own
+				// guess. Hermes has already persisted the call and that
+				// answer, so the process is stopped here and the real answers
+				// continue the conversation via --resume.
+				turn.clarify = ev.Clarify
+				logger.L.Info("session.hermes.clarify", "id", s.ID, "questions", len(ev.Clarify))
+				cancelTurn()
+				_ = stdout.Close()
+				return
+			}
 		}
 	}
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
-	for scanner.Scan() {
+	for turn.clarify == nil && scanner.Scan() {
 		dispatch(stream.Parse(scanner.Text()))
 	}
-	dispatch(stream.Flush())
+	if turn.clarify == nil {
+		dispatch(stream.Flush())
+	}
 	scanErr := scanner.Err()
 	<-stderrDone
 	waitErr := cmd.Wait()
@@ -333,6 +362,11 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 		}
 	}
 
+	if turn.clarify != nil {
+		s.setActivity(Activity{Kind: ActivityIdle})
+		logger.L.Info("session.process_exit", "id", s.ID, "clarify", true, "runtime", "hermes")
+		return turn, nil
+	}
 	if waitErr != nil && turn.failed == "" && ctx.Err() == nil {
 		logger.L.Error("session.process_exit", "id", s.ID, "error", waitErr)
 		return turn, fmt.Errorf("hermes exited: %w", waitErr)
@@ -544,4 +578,65 @@ func writeHermesImage(images []ImageAttachment) (string, func(), error) {
 		return "", noop, fmt.Errorf("write image: %v %v", werr, cerr)
 	}
 	return filepath.Clean(path), func() { _ = os.Remove(path) }, nil
+}
+
+// clarifyState is a Hermes `clarify` call awaiting the user's answers.
+type clarifyState struct {
+	questions  []ClarifyQuestion
+	answers    []string
+	autonomous bool // arms the unattended-run timeout per question
+}
+
+// askClarify surfaces the questions of a `clarify` call the turn was cut
+// short on. They go to the UI one at a time as ordinary pending questions
+// (QuestionBanner); AnswerQuestion collects the answers and sends them all as
+// the next turn once the last one is in. Only an autonomous run falls back to
+// the first option on timeout — in an interactive one the user is there.
+func (s *Session) askClarify(qs []ClarifyQuestion, autonomous bool) {
+	s.mu.Lock()
+	s.clarify = &clarifyState{questions: qs, autonomous: autonomous}
+	s.mu.Unlock()
+	s.openClarifyQuestion()
+}
+
+// openClarifyQuestion makes the first unanswered clarify question pending.
+func (s *Session) openClarifyQuestion() {
+	s.mu.Lock()
+	c := s.clarify
+	if c == nil || len(c.answers) >= len(c.questions) {
+		s.mu.Unlock()
+		return
+	}
+	i := len(c.answers)
+	q := c.questions[i]
+	text := q.Question
+	if len(c.questions) > 1 {
+		text = fmt.Sprintf("(%d/%d) %s", i+1, len(c.questions), text)
+	}
+	pq := &PendingQuestion{ID: uuid.NewString(), Question: text, Options: q.Choices, AskedAt: time.Now()}
+	s.pendingQuestion = pq
+	autonomous := c.autonomous
+	s.mu.Unlock()
+
+	s.setStatus(config.StatusWaitingForUser)
+	logger.L.Info("session.question", "id", s.ID, "question", q.Question, "source", "hermes_clarify")
+	cp := *pq
+	s.emit(SessionEvent{Type: EvtQuestion, Question: &cp})
+	if autonomous {
+		s.startQuestionTimeout(pq)
+	}
+}
+
+// clarifyAnswerMessage is the next turn's prompt after a clarify call. The
+// conversation already holds Hermes' automatic "no user available" reply to
+// that call, so the message says these answers replace it.
+func clarifyAnswerMessage(c *clarifyState) string {
+	var b strings.Builder
+	b.WriteString("The user's answers to your clarify questions (the automatic " +
+		"\"no user available\" reply to that call was not from the user — disregard it " +
+		"and any choice you made from it):\n")
+	for i, q := range c.questions {
+		fmt.Fprintf(&b, "\n%d. %s\n   Answer: %s\n", i+1, q.Question, c.answers[i])
+	}
+	return strings.TrimRight(b.String(), "\n")
 }

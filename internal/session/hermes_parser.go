@@ -41,13 +41,17 @@ type hermesStream struct {
 	// tool_result finds the most recent unclosed call with that name.
 	toolSeq       int
 	pendingByName map[string][]string
+	// clarifyByID holds the questions of each open `clarify` call until its
+	// tool_result, which carries them out on ParsedEvent.Clarify.
+	clarifyByID map[string][]ClarifyQuestion
 	// activity is the last activity kind reported, so text deltas (one per
 	// token) yield a change event only when the kind actually flips.
 	activity string
 }
 
 func newHermesStream() *hermesStream {
-	return &hermesStream{now: time.Now, pendingByName: make(map[string][]string)}
+	return &hermesStream{now: time.Now, pendingByName: make(map[string][]string),
+		clarifyByID: make(map[string][]ClarifyQuestion)}
 }
 
 type hermesRawEvent struct {
@@ -121,6 +125,11 @@ func (h *hermesStream) Parse(line string) []ParsedEvent {
 			id = fmt.Sprintf("hermes-%d", h.toolSeq)
 		}
 		h.pendingByName[ev.Name] = append(h.pendingByName[ev.Name], id)
+		if ev.Name == "clarify" {
+			if qs := parseClarifyInput(ev.Input); len(qs) > 0 {
+				h.clarifyByID[id] = qs
+			}
+		}
 		h.activity = ActivityTool
 		return append(out, ParsedEvent{EventType: EventLog, Activity: &Activity{Kind: ActivityTool, Tool: ev.Name}, Entries: []config.LogEntry{{
 			Time: now, Level: "tool", Source: "hermes",
@@ -163,6 +172,10 @@ func (h *hermesStream) Parse(line string) []ParsedEvent {
 			}
 		}
 		pe.Entries = []config.LogEntry{{Time: now, Level: level, Source: "hermes", Message: msg, ToolUseID: id, DurationMs: ev.DurationMs}}
+		if qs, ok := h.clarifyByID[id]; ok {
+			delete(h.clarifyByID, id)
+			pe.Clarify = qs
+		}
 		return append(out, pe)
 
 	case "result":
@@ -270,4 +283,41 @@ func hermesAbbreviateInput(tool string, input json.RawMessage) string {
 		}
 	}
 	return string(input)
+}
+
+// ClarifyQuestion is one question of a Hermes `clarify` tool call.
+type ClarifyQuestion struct {
+	Question    string
+	Choices     []string
+	MultiSelect bool
+}
+
+// parseClarifyInput reads a `clarify` call's arguments: the documented
+// {"questions":[{"question","choices","multi_select"}]} form, or the legacy
+// single-question form with those keys at the top level. Questions with no
+// text are dropped.
+func parseClarifyInput(input json.RawMessage) []ClarifyQuestion {
+	type item struct {
+		Question    string   `json:"question"`
+		Choices     []string `json:"choices"`
+		MultiSelect bool     `json:"multi_select"`
+	}
+	var in struct {
+		Questions []item `json:"questions"`
+		item
+	}
+	if len(input) == 0 || json.Unmarshal(input, &in) != nil {
+		return nil
+	}
+	items := in.Questions
+	if len(items) == 0 {
+		items = []item{in.item}
+	}
+	var out []ClarifyQuestion
+	for _, it := range items {
+		if q := strings.TrimSpace(it.Question); q != "" {
+			out = append(out, ClarifyQuestion{Question: q, Choices: it.Choices, MultiSelect: it.MultiSelect})
+		}
+	}
+	return out
 }
