@@ -36,7 +36,9 @@ claude-manager/
 │   │   │                            #   for crash recovery; atomic write (tmp → rename)
 │   │   ├── parser.go                # Parse stream-json: assistant, tool_use, result,
 │   │   │                            #   permission_request, rate_limit_event, init,
-│   │   │                            #   TodoWrite todos (current task + progress)
+│   │   │                            #   TodoWrite todos (current task + progress);
+│   │   │                            #   see docs/runtimes.md for the full Claude<->Hermes
+│   │   │                            #   ParsedEvent mapping (RUNTIME-TASKS.md RT-01)
 │   │   ├── input.go                 # Write to stdin: user_message, permission_response
 │   │   ├── hermes_parser.go         # Hermes CLI stream-json → the same ParsedEvent (HERMES-TASKS.md)
 │   │   ├── hermes_runtime.go        # runtime = "hermes": `hermes chat` per turn, --resume by id
