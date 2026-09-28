@@ -285,10 +285,12 @@ type Session struct {
 	rateLimitUntil  time.Time
 	pendingPerm     *PermissionRequest
 	pendingQuestion *PendingQuestion
-	// clarify is the Hermes `clarify` call being answered question by
-	// question through pendingQuestion (see askClarify); nil otherwise.
-	clarify *clarifyState
-	questionTimer   *time.Timer
+	// questionSet is a multi-question ask (currently only Hermes `clarify`
+	// calls) being answered question by question through pendingQuestion
+	// (see askQuestions); nil otherwise. A single-question ask-user marker
+	// never sets this — it uses pendingQuestion directly.
+	questionSet   *pendingQuestionSet
+	questionTimer *time.Timer
 
 	// Per-run state.
 	cmd                *exec.Cmd
@@ -617,14 +619,14 @@ func (s *Session) AnswerQuestion(questionID, answer string) error {
 		s.questionTimer.Stop()
 		s.questionTimer = nil
 	}
-	if c := s.clarify; c != nil {
+	if c := s.questionSet; c != nil {
 		c.answers = append(c.answers, answer)
 		if len(c.answers) < len(c.questions) {
 			s.mu.Unlock()
-			s.openClarifyQuestion()
+			s.openQuestion()
 			return nil
 		}
-		s.clarify = nil
+		s.questionSet = nil
 		answer = clarifyAnswerMessage(c)
 	}
 	s.mu.Unlock()
@@ -638,6 +640,72 @@ func (s *Session) AnswerQuestion(questionID, answer string) error {
 	}
 	s.setStatus(config.StatusWorking)
 	return nil
+}
+
+// pendingQuestionSet is a multi-question ask (currently only Hermes
+// `clarify` calls) awaiting the user's answers one at a time. RT-03: this is
+// the single mechanism both runtimes' multi-question sources funnel into —
+// Hermes's clarify tool is the only one today, but a future multi-question
+// source needs no new plumbing beyond producing []Question.
+type pendingQuestionSet struct {
+	questions  []Question
+	answers    []string
+	autonomous bool // arms the unattended-run timeout per question
+}
+
+// askQuestions surfaces a set of questions (e.g. a Hermes `clarify` call the
+// turn was cut short on) one at a time as ordinary pending questions
+// (QuestionBanner); AnswerQuestion collects the answers and sends them all as
+// the next turn once the last one is in. Only an autonomous run falls back to
+// the first option on timeout — in an interactive one the user is there.
+func (s *Session) askQuestions(qs []Question, autonomous bool) {
+	s.mu.Lock()
+	s.questionSet = &pendingQuestionSet{questions: qs, autonomous: autonomous}
+	s.mu.Unlock()
+	s.openQuestion()
+}
+
+// openQuestion makes the first unanswered question of the current
+// questionSet pending.
+func (s *Session) openQuestion() {
+	s.mu.Lock()
+	c := s.questionSet
+	if c == nil || len(c.answers) >= len(c.questions) {
+		s.mu.Unlock()
+		return
+	}
+	i := len(c.answers)
+	q := c.questions[i]
+	text := q.Text
+	if len(c.questions) > 1 {
+		text = fmt.Sprintf("(%d/%d) %s", i+1, len(c.questions), text)
+	}
+	pq := &PendingQuestion{ID: uuid.NewString(), Question: text, Options: q.Choices, AskedAt: time.Now()}
+	s.pendingQuestion = pq
+	autonomous := c.autonomous
+	s.mu.Unlock()
+
+	s.setStatus(config.StatusWaitingForUser)
+	logger.L.Info("session.question", "id", s.ID, "question", q.Text, "source", q.Source)
+	cp := *pq
+	s.emit(SessionEvent{Type: EvtQuestion, Question: &cp})
+	if autonomous {
+		s.startQuestionTimeout(pq)
+	}
+}
+
+// clarifyAnswerMessage is the next turn's prompt after a clarify call. The
+// conversation already holds Hermes' automatic "no user available" reply to
+// that call, so the message says these answers replace it.
+func clarifyAnswerMessage(c *pendingQuestionSet) string {
+	var b strings.Builder
+	b.WriteString("The user's answers to your clarify questions (the automatic " +
+		"\"no user available\" reply to that call was not from the user — disregard it " +
+		"and any choice you made from it):\n")
+	for i, q := range c.questions {
+		fmt.Fprintf(&b, "\n%d. %s\n   Answer: %s\n", i+1, q.Text, c.answers[i])
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // startQuestionTimeout arms the timeout fallback for a newly pending
@@ -1544,17 +1612,18 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 				logger.L.Error("session.auth_error_detected", "id", s.ID, "line", ev.Result.ResultText)
 			}
 			if autonomous {
-				if q := ParseAskUserQuestion(ev.Result.ResultText); q != nil {
+				if len(ev.Questions) > 0 {
+					q := ev.Questions[0]
 					if q.Kind == KindContinueSession {
 						s.continueMarkerHit.Store(true)
-						logger.L.Info("session.question_auto", "id", s.ID, "question", q.Question)
+						logger.L.Info("session.question_auto", "id", s.ID, "question", q.Text)
 						s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
 							Time:   time.Now(),
 							Level:  "system",
 							Source: "manager",
 							Message: fmt.Sprintf(
 								"Session asked whether to continue in this session — always no: stopping now, a fresh session will pick up the next task: %s",
-								q.Question,
+								q.Text,
 							),
 						}})
 						s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
@@ -1563,15 +1632,15 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 
 					pq := &PendingQuestion{
 						ID:       uuid.NewString(),
-						Question: q.Question,
-						Options:  q.Options,
+						Question: q.Text,
+						Options:  q.Choices,
 						AskedAt:  time.Now(),
 					}
 					s.mu.Lock()
 					s.pendingQuestion = pq
 					s.mu.Unlock()
 					s.setStatus(config.StatusWaitingForUser)
-					logger.L.Info("session.question", "id", s.ID, "question", pq.Question)
+					logger.L.Info("session.question", "id", s.ID, "question", pq.Question, "source", q.Source)
 					cp := *pq
 					s.emit(SessionEvent{Type: EvtQuestion, Question: &cp})
 					s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})

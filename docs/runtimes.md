@@ -60,7 +60,7 @@ are adapter-internal and never leave `parser.go`/`hermes_parser.go`.
 | `Usage *TokenUsage` | Per-turn token counts | Claude: from `assistant.message.usage`; Hermes: synthesized once from the `result` line's `tokens` (§6) | `EvtUsage` |
 | `Todos []TodoItem` | Claude's `TodoWrite` tool_use input, or Hermes's `todo_list` tool_result output | both, different tool names (see §3) | `s.updateTodos` → `EvtTodo` → TaskPanel |
 | `Activity *Activity` | Transient "what's happening now" (`thinking`\|`tool`\|`writing`\|`idle`) | both — Claude from `stream_event.content_block_start`, Hermes from its own event types directly (§3) | `s.setActivity` → `EvtActivity` (never persisted) |
-| `Clarify []ClarifyQuestion` | Questions of a Hermes `clarify` tool call, attached to its `tool_result` | Hermes only | `hermesRunTurn`'s `dispatch` (not `handleEvent` — see §6 "known differences" and RT-03) |
+| `Questions []Question` | Ask-user question(s) pending, unified across sources (RT-03) | Claude: parsed from the ```` ```ask-user ```` marker in `Result.ResultText` (`parser.go`); Hermes: from the marker too, or from a `clarify` call's questions attached to its `tool_result` | `session.go`'s `handleEvent`/`hermesRunTurn` dispatch (§6 "known differences") route it into `pendingQuestionSet`/`PendingQuestion` |
 
 `SessionEvent` (`session.go:54`) is the next layer down — one `ParsedEvent`
 can produce several `SessionEvent`s (e.g. `EventLog` with both `Entries` and
@@ -93,7 +93,7 @@ see §4 and `internal/session/task_outcome.go`.
 | `{"type":"system","subtype":"init",...}` | `Parse` case `"system"` | flushed buffered text (if any) + `EventInit` |
 | `{"type":"text","text":"…"}` | `Parse` case `"text"` | buffered into `h.text`, **not emitted per line**; only an `Activity:writing` event on the *first* delta of a run of them (state `h.activity`), the accumulated text is emitted as one `EventLog` entry (`level:"text"`) on the next non-text event or `Flush()` at stream end |
 | `{"type":"tool_use",...}` | `Parse` case `"tool_use"` | flushed text + `EventLog` with one entry (`level:"tool"`), `Activity:{tool}`; if `name=="clarify"` its questions are parsed and stashed in `h.clarifyByID`, not emitted yet |
-| `{"type":"tool_result",...}` | `Parse` case `"tool_result"` | flushed text + `EventLog` with one entry (`level:"tool_result"`/`"error"`), `Activity:thinking`; `name=="todo_list"` fills `Todos` from the *output*; if this call's id matches a pending `clarify`, `Clarify` is filled here |
+| `{"type":"tool_result",...}` | `Parse` case `"tool_result"` | flushed text + `EventLog` with one entry (`level:"tool_result"`/`"error"`), `Activity:thinking`; `name=="todo_list"` fills `Todos` from the *output*; if this call's id matches a pending `clarify`, `Questions` is filled here (`Source: hermes_clarify`) |
 | `{"type":"result",...}` | `Parse` case `"result"` | flushed text + (if `Tokens != nil`) a bare `EventLog{Usage}` + (if `ExitCode!=0 \|\| Error!=""`) an error `EventLog` entry + `EventResult` with `Activity:idle` |
 | anything else / malformed JSON | fallback in `Parse` | flushed text + `EventLog`, one raw `level:"system"` entry |
 
@@ -108,7 +108,8 @@ Hermes-specific mechanics not present in Claude's format:
   processes.
 - **Text-delta buffering** (`h.text`, `h.flush`): avoids one log row per
   streamed token; `strings.Builder` accumulated, flushed as a single entry.
-- **`clarify` → `ParsedEvent.Clarify`**: see §6, "known differences".
+- **`clarify` → `ParsedEvent.Questions`** (`Source: hermes_clarify`): see §6,
+  "known differences".
 - **`todo_list` → TaskPanel**: unlike Claude's `TodoWrite` (an *input*, i.e.
   what the model is about to set), Hermes's `todo_list` tool is read from its
   *output* (`ev.Output`, the authoritative merged list after the call) since
@@ -160,16 +161,19 @@ explicitly wherever RT-03+ touch them:
   has no attached user, so when the agent calls `clarify` Hermes answers its
   own tool call ("no user available… pick the best option") and the agent
   carries on with that guess *before* the manager ever sees the questions.
-  The fix (already shipped, `2064fe0`) is adapter-side: `hermesStream`
-  attaches the questions to the `tool_result` as `ParsedEvent.Clarify`, and
-  `hermesRunTurn`'s `dispatch` (not `handleEvent`) reacts to a non-empty
-  `Clarify` by killing the process immediately (`cancelTurn()`, `hermes_runtime.go:329`)
-  before it can act on the bogus auto-answer, then resumes the same
-  conversation once the real answer is ready. Claude Code has an
-  `AskUserQuestion` tool that (per RT-02) needs its own, likely different,
-  handling — a single shared "Questions" field is the RT-03 goal, but *how*
-  each runtime stops itself to wait is adapter-specific by nature (Hermes:
-  kill the process; Claude: probably keep it alive on stdin, TBD by RT-02).
+  The fix (adapter-side): `hermesStream` attaches the questions to the
+  `tool_result` as `ParsedEvent.Questions` (`Source: hermes_clarify`), and
+  `hermesRunTurn`'s `dispatch` (not `handleEvent`) reacts to any such
+  question by killing the process immediately (`cancelTurn()`,
+  `hermes_runtime.go`) before it can act on the bogus auto-answer, then
+  resumes the same conversation once the real answer is ready. The ask-user
+  marker path is the opposite: the marker only ever arrives on the final
+  `result` line, where the process is already exiting on its own — no
+  mid-stream cut needed, `clarifyQuestions()` in `hermes_runtime.go` filters
+  by `Source` precisely so the marker case doesn't trip this cutoff. Claude
+  Code's `AskUserQuestion` tool is unavailable under headless `-p` (RT-02) so
+  it never reaches this path today; if upstream ever re-enables it, it would
+  need the same kind of adapter-specific stop-and-wait decision.
 - **One process per task vs. one process per turn** (§4) is not just an
   implementation detail — it changes what "close stdin to end the turn"
   means (Claude) vs. "the process exits on its own, no signal needed"
@@ -287,3 +291,24 @@ make Claude Code sessions behave correctly — they already do, because there
 is nothing to intercept. If upstream ships a fix, the two RT-02 tests above
 are what will start failing (`sawAskUserUse`/`sawAskUserToolUse` becoming
 true) and should be the trigger to implement real handling then.
+
+## 9. Вопросы пользователю (RT-03): единое событие, три источника
+
+`ParsedEvent.Questions []Question` (`parser.go`) is the one place a pending
+ask-user question surfaces, whichever adapter produced it. `Question.Source`
+names the mechanism so `session.go`/`hermes_runtime.go` can apply the
+source-specific stop-and-resume rule below; the rest of the pipeline
+(`pendingQuestionSet`, `PendingQuestion`, `AnswerQuestion`, the timeout
+fallback, `KindContinueSession`) is fully shared.
+
+| `Source` | Runtime(s) | Where it's produced | How the answer is delivered |
+|---|---|---|---|
+| `ask_user_marker` (`QuestionSourceAskUserMarker`) | Claude, Hermes | ```` ```ask-user ```` fenced block in a `result` turn's text, parsed by `questionFromMarker`/`ParseAskUserQuestion` (`parser.go`) and attached to `ParsedEvent.Questions` on the `EventResult` itself — never mid-stream. Autonomous runs only (see `session_askuser_test.go`). | The process is already exiting on its own when the marker arrives (it's on the final `result` line), so no process needs to be killed. `AnswerQuestion` just writes the answer to stdin as the next turn's prompt — same for both runtimes. `KindContinueSession` short-circuits this (auto-answered "no", never pauses) and a configurable timeout auto-picks the first listed option for any other kind. |
+| `hermes_clarify` (`QuestionSourceHermesClarify`) | Hermes only | The Hermes `clarify` tool: `parseClarifyInput` reads its `tool_use` input, `hermesStream` (`hermes_parser.go`) stashes the questions in `h.clarifyByID` and attaches them to `ParsedEvent.Questions` on the matching `tool_result` — mid-stream, not on `result`. | `hermes chat --query-file -` has no attached user, so Hermes answers `clarify` itself before the manager can react. `hermesRunTurn`'s `dispatch` (not `handleEvent`) filters `ev.Questions` down to this source with `clarifyQuestions()` and, on a non-empty match, kills the process immediately (`cancelTurn()`) so the agent's bogus self-answer never gets acted on, then resumes the conversation via `--resume` once the real answers are ready (`clarifyAnswerMessage`, `session.go`). |
+| `claude_ask_user_question` (`QuestionSourceClaudeAskUserQuestion`) | Claude (reserved) | Would come from Claude Code's `AskUserQuestion` tool — RT-02 found the tool is not offered to the model under `-p` in the current CLI version (anthropics/claude-code#77994), so no adapter code produces this source today. | Not implemented — no adapter fills it, so there is nothing to deliver an answer to yet. If upstream re-enables the tool, this is the source to route `tool_use`/`tool_result` handling through; §8 above has the trigger to watch for. |
+
+Everything past `Question.Source` is runtime-agnostic: `pendingQuestionSet`
+(multi-question sets, currently only `hermes_clarify`) and single-question
+asks both resolve through the same `PendingQuestion`/`AnswerQuestion` path in
+`session.go`, so the UI and `cm-mcp`/RPC layer never need to know which
+source produced a question.

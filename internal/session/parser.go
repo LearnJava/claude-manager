@@ -136,6 +136,23 @@ func ParseAskUserQuestion(resultText string) *AskUserQuestion {
 	return &q
 }
 
+// questionFromMarker wraps ParseAskUserQuestion into the shared Question
+// shape (RT-03), tagged Source: QuestionSourceAskUserMarker. Used by both
+// runtimes' result handlers (parser.go, hermes_parser.go) so the marker
+// parsing itself lives in one place instead of being re-run inside
+// handleEvent. Autonomous-only gating still happens downstream in
+// handleEvent, since neither adapter knows whether the run is autonomous.
+func questionFromMarker(resultText string) *Question {
+	q := ParseAskUserQuestion(resultText)
+	if q == nil {
+		return nil
+	}
+	return &Question{
+		Text: q.Question, Choices: q.Options,
+		Source: QuestionSourceAskUserMarker, Kind: q.Kind,
+	}
+}
+
 // Activity kinds for the transient session:activity event (UI-09).
 const (
 	ActivityThinking = "thinking"
@@ -173,10 +190,47 @@ type ParsedEvent struct {
 	Usage      *TokenUsage        // per-turn usage from assistant messages
 	Todos      []TodoItem         // non-nil when the turn contained a TodoWrite
 	Activity   *Activity          // non-nil when the event marks an activity change
-	// Clarify is non-nil on the tool_result of a Hermes `clarify` call: the
-	// questions the agent asked (see hermesStream and runOnceHermes).
-	Clarify []ClarifyQuestion
+	// Questions is non-empty when the agent asked the user something,
+	// regardless of which mechanism raised it (RT-03): the ```ask-user```
+	// marker in a result's text (either runtime, autonomous runs only), a
+	// Hermes `clarify` tool call (attached to its tool_result), or Claude's
+	// AskUserQuestion tool (reserved — see QuestionSourceClaudeAskUserQuestion
+	// doc comment; no adapter fills it today, RT-02 found the tool isn't
+	// offered to the model under `-p`). See docs/runtimes.md "Вопросы
+	// пользователю" for the full source/delivery table.
+	Questions []Question
 }
+
+// Question is one question the agent asked the user, unified across every
+// source that can raise one (RT-03 replaces the old Clarify/marker/
+// AskUserQuestion split with this single field).
+type Question struct {
+	Text        string
+	Choices     []string
+	MultiSelect bool
+	// Source identifies which mechanism produced this question — one of the
+	// QuestionSource* constants.
+	Source string
+	// Kind mirrors AskUserQuestion.Kind (e.g. KindContinueSession). Only
+	// meaningful for QuestionSourceAskUserMarker; empty otherwise.
+	Kind string
+}
+
+const (
+	// QuestionSourceAskUserMarker is a ```ask-user``` fenced block in a
+	// turn's result text (see ParseAskUserQuestion). Recognized for both
+	// runtimes, autonomous runs only.
+	QuestionSourceAskUserMarker = "ask_user_marker"
+	// QuestionSourceHermesClarify is a Hermes `clarify` tool call. Hermes
+	// only; recognized in both autonomous and interactive runs.
+	QuestionSourceHermesClarify = "hermes_clarify"
+	// QuestionSourceClaudeAskUserQuestion is Claude Code's AskUserQuestion
+	// tool. Reserved: per RT-02, the tool is not offered to the model under
+	// `-p` on the Claude Code version this codebase targets, so no adapter
+	// produces this source today — kept so the day upstream re-enables it,
+	// only a parser.go change (not a new Question shape) is needed.
+	QuestionSourceClaudeAskUserQuestion = "claude_ask_user_question"
+)
 
 // ---- Internal raw JSON structures ----
 
@@ -557,7 +611,7 @@ func handleResult(ev rawStreamEvent, now time.Time) ParsedEvent {
 	if ev.Subtype != "" && ev.Subtype != "success" {
 		msg = "[" + ev.Subtype + "] " + msg
 	}
-	return ParsedEvent{
+	pe := ParsedEvent{
 		EventType: EventResult,
 		Result:    result,
 		Activity:  &Activity{Kind: ActivityIdle},
@@ -568,6 +622,10 @@ func handleResult(ev rawStreamEvent, now time.Time) ParsedEvent {
 			Message: msg,
 		}},
 	}
+	if q := questionFromMarker(ev.ResultText); q != nil {
+		pe.Questions = []Question{*q}
+	}
+	return pe
 }
 
 func handleRateLimit(ev rawStreamEvent) ParsedEvent {

@@ -1004,15 +1004,16 @@ available … Pick the best option … and continue.]`), so the agent used to
 carry on with its own guess while the question never showed in the UI.
 `hermesStream` now attaches the call's questions (`{"questions":[{question,
 choices, multi_select}]}` or the legacy top-level form) to the matching
-`tool_result` as `ParsedEvent.Clarify`. On it `hermesRunTurn` stops reading and
-kills the process — Hermes has already persisted the call and its auto-answer
-before emitting `tool_result`, so the conversation stays resumable. The
-questions then go through the ordinary pending-question banner one at a time
-(`(i/n)` prefix, choices as buttons, free text allowed); after the last answer
-all of them are sent as one `--resume` turn that tells the agent to disregard
-the automatic reply. The 5-minute first-option fallback applies only to
-autonomous runs. Test: `TestHermesRuntime_ClarifyAsksTheUserAndResumes`
-(fakehermes `ASK_CLARIFY`).
+`tool_result` as `ParsedEvent.Questions` (each tagged `Source:
+hermes_clarify` — RT-03's shared ask-user-question shape, docs/runtimes.md
+§9). On it `hermesRunTurn` stops reading and kills the process — Hermes has
+already persisted the call and its auto-answer before emitting `tool_result`,
+so the conversation stays resumable. The questions then go through the
+ordinary pending-question banner one at a time (`(i/n)` prefix, choices as
+buttons, free text allowed); after the last answer all of them are sent as
+one `--resume` turn that tells the agent to disregard the automatic reply.
+The 5-minute first-option fallback applies only to autonomous runs. Test:
+`TestHermesRuntime_ClarifyAsksTheUserAndResumes` (fakehermes `ASK_CLARIFY`).
 
 ### Auth Error Handling (403)
 `drainStderr()` detects lines containing `"403"` + `"forbidden"` / `"authenticate"` / `"unauthorized"`.

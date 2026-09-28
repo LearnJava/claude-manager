@@ -1,0 +1,46 @@
+{
+  "name": "ask-user-marker",
+  "match": "(?i)\\bask-user-marker\\b",
+  "model": "claude-sonnet-4-6",
+  "context_window": 200000,
+  "exit_code": 0,
+  "steps": [
+    {
+      "type": "await_stdin",
+      "expect": "user",
+      "timeout_ms": 5000,
+      "store_as": "msg1"
+    },
+    {
+      "type": "emit",
+      "delay_ms": 0,
+      "event": {"type":"system","subtype":"init","session_id":"${session_id}","model":"${model}","tools":["Read","Edit","Bash"],"cwd":"${cwd}"}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 20,
+      "event": {"type":"assistant","message":{"content":[{"type":"text","text":"Investigated the options."}],"usage":{"input_tokens":900,"output_tokens":60,"cache_read_input_tokens":0}}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 20,
+      "event": {"type":"result","subtype":"success","result":"Investigated the options.\n\n```ask-user\n{\"question\": \"Which budget?\", \"options\": [\"Keep 2ms\", \"Relax to 16ms\"]}\n```","total_cost_usd":0.01,"num_turns":1,"usage":{"input_tokens":900,"output_tokens":60},"modelUsage":{"claude-sonnet-4-6":{"costUSD":0.01}}}
+    },
+    {
+      "type": "await_stdin",
+      "expect": "user",
+      "timeout_ms": 30000,
+      "store_as": "answer"
+    },
+    {
+      "type": "emit",
+      "delay_ms": 20,
+      "event": {"type":"assistant","message":{"content":[{"type":"text","text":"Got it, proceeding with the chosen budget."}],"usage":{"input_tokens":950,"output_tokens":40,"cache_read_input_tokens":0}}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 20,
+      "event": {"type":"result","subtype":"success","result":"Got it, proceeding with the chosen budget.","total_cost_usd":0.02,"num_turns":2,"usage":{"input_tokens":1850,"output_tokens":100},"modelUsage":{"claude-sonnet-4-6":{"costUSD":0.02}}}
+    }
+  ]
+}
