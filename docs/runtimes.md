@@ -282,8 +282,9 @@ actually required:
    all name `docs/runtimes.md` explicitly) plus the doc-sync matrix in
    `CLAUDE.md`.
 
-RT-07's contract test suite (once it exists) is the actual acceptance bar —
-this checklist is a map to get there, not a substitute for passing it.
+RT-07's contract test suite (`internal/session/runtime_contract_test.go`,
+§11a above) is the actual acceptance bar — this checklist is a map to get
+there, not a substitute for passing it.
 
 ## 8. `AskUserQuestion` у Claude Code (RT-02, checked on v2.1.280)
 
@@ -401,6 +402,71 @@ Continue-session (`KindContinueSession` on a `Question`, not a `TurnFailure`
 an answered question, not a failure, and `continueMarkerHit` is untouched by
 RT-04.
 
+## 11a. Контрактные тесты адаптеров (RT-07)
+
+`internal/session/runtime_contract_test.go` is one table-driven suite that
+runs the SAME assertions against every `Runtime` (`contractRuntimes`):
+`TestContract_InitCarriesConversationID`, `_ToolCallAndResultShareID`,
+`_AgentTextReachesLog`, `_QuestionDeliveredAndAnswerResumes`,
+`_TurnEndsWithTokenUsage`, `_FailureKinds` (one subtest per `TurnFailure.Kind`
+the runtime can produce — `context_restart` is deliberately excluded, see
+below), `_ConversationSurvivesRestart`. Each `contractCase` in
+`contractRuntimes` names the prompts that steer that runtime's fake binary
+(`cmd/fakeclaude` directory-mode scenario matching, `cmd/fakehermes`
+substring matching — see its own doc comment) into each scenario; a Kind
+with no prompt set for a runtime (e.g. Hermes has no `stepLimitPrompt` — its
+step limit is a `state.db` tail scan covered by `task_outcome_test.go`
+instead) skips that subtest for it rather than failing.
+
+New fixtures this task added: `testdata/scenarios/auth-error-demo.json`
+(403 in `result.result`, matches `claude/auth`), `step-limit-demo.json`
+(`subtype:"error_max_turns"`, matches `claude/step_limit`),
+`rate-limit-exceeded-demo.json` (`status:"exceeded"`, matches
+`claude/rate_limit`), `resume-demo.json` (a two-turn interactive exchange
+for `_ConversationSurvivesRestart`'s Claude case — the existing
+`multi-turn.json` needs three `await_stdin` steps, one more than this test
+sends). `cmd/fakehermes/main.go` gained two prompt substrings:
+`FAIL_403` (writes a 403/forbidden stderr line, exit 1) and
+`FAIL_SESSION_NOT_FOUND` (writes Hermes' own `"Session not found: <id>"`
+stderr line, exit 1) — both exercised only through
+`ClassifyHermesStderrLine`, no new scenario JSON needed since fakehermes is
+driven by query substrings, not scenario files.
+
+**Why `context_restart` is not in `_FailureKinds`:** `checkContextRestart`
+(§10's table) is runtime-agnostic — it reads `SessionResult.ModelUsage`
+identically from either adapter — so it has no per-runtime adapter behavior
+for this suite to contract-test; `session_contexthandoff_test.go` already
+covers it once, and duplicating it per runtime here would test the same
+shared code twice under a different name.
+
+**Why `_ConversationSurvivesRestart` doesn't assert on process count:**
+`PerTurnProcess()` (§11 below) is a property callers are allowed to branch
+on, not a shared contract — Hermes launches two processes for a two-turn
+exchange, Claude launches one. The shared assertion is behavioral: the
+second turn's reply reflects the first turn's content (Hermes via
+`--resume`, Claude via the same long-lived process), read off `EvtLog`
+`Level:"text"` entries rather than `EvtResult`, since Claude's single
+long-lived interactive process only emits one `EventResult` at the very end
+of the session while Hermes emits one per turn (§4) — asserting on
+`EvtResult` per turn would silently only test Hermes.
+
+**A pending retry's default 30 s pause (`retryDelay`) is not something a
+contract test should wait through** — every `contractRuntimes` session sets
+`RetryDelay: 1` (`RateLimitPauseSec: 1` too), the same pattern
+`TestHermesRuntime_RateLimitBehind401_ResumesDespiteSoftStop`
+(`hermes_runtime_test.go`) already used for Hermes; this file needed it for
+Claude too, since a killed `runOnce` returns a generic (non-sentinel) error
+that goes through the same `default:` retry-with-pause branch in `Run()`'s
+big `switch` (§5's table, "Generic process error" row).
+
+**How to add a runtime to the contract (RT-01 §7 point 6):** append one
+`contractCase` to `contractRuntimes` with a `newSession` closure and enough
+prompts to steer the new fake binary into each scenario this suite drives;
+any Kind the runtime genuinely cannot produce is left as `""` and skips
+cleanly. Passing this whole file with no per-runtime special-casing inside
+the test functions themselves (only inside `contractCase`'s data) is what
+"the runtime is connected" means.
+
 ## 11. Интерфейс `Runtime` (RT-05)
 
 `internal/session/runtime.go` defines the seam: `Runtime` (backend identity,
@@ -438,4 +504,10 @@ both runtimes, `runOnce`/`runOnceHermes` route argv building through
 `Runtime.Args`, the full test suite (`go build`/`go vet`/`go test ./...`,
 including `internal/control`'s fakeclaude e2e test and
 `hermes_runtime_test.go`) is green without editing any existing test.
+
+**Готово когда (RT-07, §11a):** `internal/session/runtime_contract_test.go`
+green on both runtimes, `testdata/scenarios/scenarios_doc.md` documents the
+three new fixtures it needed, `go build`/`go vet`/`go test ./...` green
+(pre-existing `internal/fsutil` case-sensitivity failures are unrelated to
+this block, observed on `master` before this task).
 

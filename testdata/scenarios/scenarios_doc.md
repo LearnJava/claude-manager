@@ -199,3 +199,56 @@ text confirms the answer was received. Used by
 `TestRun_AskUserMarker_FullRoundTrip` — the full-`Session.Run()` companion to
 the handleLine-level unit tests in `session_askuser_test.go`, which construct
 the marker's raw stream-json line directly instead of spawning a process.
+
+---
+
+### resume-demo.json
+**State/Feature:** interactive multi-turn continuity (RUNTIME-TASKS.md RT-07)
+**Match:** `resume-demo`
+
+A minimal two-turn interactive exchange: `init` → first `assistant` reply →
+a second `await_stdin` → second `assistant` reply ending in "step 2", with
+no `result` line (an interactive session's process stays open). Exists
+because `multi-turn.json` needs three `await_stdin` steps, one more than
+`internal/session/runtime_contract_test.go`'s
+`TestContract_ConversationSurvivesRestart` sends — that test proves a second
+turn's reply reflects the first turn's content, the same property Hermes's
+`--resume` guarantees across a fresh process per turn.
+
+---
+
+### auth-error-demo.json
+**State/Feature:** classified turn failure, `KindAuth` (RUNTIME-TASKS.md RT-07 §10)
+**Match:** `auth-error-demo`
+
+A single turn whose `result.result` carries "Failed to authenticate. API
+Error: 403 Request not allowed" — the same real-world text
+`session_authresult_test.go` already unit-tests `isAuthError` against.
+Drives `internal/session/runtime_contract_test.go`'s
+`TestContract_FailureKinds/claude/auth` subtest end to end through a real
+`Session.runOnce`, confirming `authErrorHit` is set from the classified
+`ParsedEvent.Failure` (not just from a hand-built `handleLine` call).
+
+---
+
+### step-limit-demo.json
+**State/Feature:** classified turn failure, `KindStepLimit` (RUNTIME-TASKS.md RT-07 §10)
+**Match:** `step-limit-demo`
+
+A single turn whose `result` carries `subtype:"error_max_turns"` — Claude's
+step-limit signal (`parser.go`'s `handleResult`). Drives
+`TestContract_FailureKinds/claude/step_limit`, confirming `stepLimitHit` is
+set end to end through a real process run.
+
+---
+
+### rate-limit-exceeded-demo.json
+**State/Feature:** classified turn failure, `KindRateLimit` via a genuinely
+rejecting `rate_limit_event` (RUNTIME-TASKS.md RT-07 §10)
+**Match:** `rate-limit-exceeded-demo`
+
+Unlike `rate-limit.json` (an `allowed_warning` the session recovers from
+mid-run), this scenario's `rate_limit_event` reports `status:"exceeded"`
+with `utilization:1.0` — the throttling case `onRateLimit`'s `throttled()`
+actually aborts the run for, so `runOnce` returns `errRateLimited`. Drives
+`TestContract_FailureKinds/claude/rate_limit`.

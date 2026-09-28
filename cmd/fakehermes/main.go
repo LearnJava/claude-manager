@@ -17,6 +17,12 @@
 //     invocation per $HERMES_HOME logs a 429 for its conversation to
 //     $HERMES_HOME/logs/agent.log and fails with a 401, like a real spent
 //     usage limit behind Hermes' credential rotation; later ones succeed.
+//   - "FAIL_403": exits 1 after writing a 403/forbidden line to stderr, the
+//     shape ClassifyHermesStderrLine recognizes as KindAuth
+//     (RUNTIME-TASKS.md RT-07's contract suite).
+//   - "FAIL_SESSION_NOT_FOUND": exits 1 after writing Hermes' own
+//     "Session not found: <id>" line to stderr, the shape
+//     ClassifyHermesStderrLine recognizes as KindSessionNotFound.
 //
 // FAKEHERMES_LOG, when set, is a file each invocation appends one JSON line
 // to ({"args":[…],"query":"…"}), so a test can assert on exactly what the
@@ -70,6 +76,20 @@ func run(args []string, in io.Reader, out io.Writer) int {
 	if strings.Contains(q, "FAIL_429") && !strings.Contains(q, "FAIL_429_THEN_401") {
 		emit(map[string]any{"type": "result", "session_id": sid, "exit_code": 1, "text": "",
 			"error": "HTTP 429: rate limit exceeded", "tokens": map[string]int{}, "duration_ms": 5})
+		return 1
+	}
+
+	if strings.Contains(q, "FAIL_403") {
+		emit(map[string]any{"type": "result", "session_id": sid, "exit_code": 1, "text": "",
+			"error": "forbidden", "tokens": map[string]int{}, "duration_ms": 5})
+		fmt.Fprintln(os.Stderr, "API Error: 403 Forbidden — not authenticated")
+		return 1
+	}
+
+	if strings.Contains(q, "FAIL_SESSION_NOT_FOUND") {
+		emit(map[string]any{"type": "result", "session_id": sid, "exit_code": 1, "text": "",
+			"error": "session not found", "tokens": map[string]int{}, "duration_ms": 5})
+		fmt.Fprintf(os.Stderr, "Session not found: %s\n", sid)
 		return 1
 	}
 
