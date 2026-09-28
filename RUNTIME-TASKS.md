@@ -90,7 +90,7 @@ hermes stdout ──hermesStream.Parse (hermes_parser.go)┘
 | RT-05 | ✓ DONE (2026-09-28) | internal/session/runtime.go, runtime_claude.go, runtime_hermes.go |
 | RT-06 | ✓ DONE (2026-09-28) | session.go, hermes_runtime.go, runtime.go, docs/runtimes.md |
 | RT-07 | ✓ DONE (2026-09-28) | internal/session/runtime_contract_test.go, cmd/fakehermes, testdata/scenarios/*-demo.json, testdata/scenarios/resume-demo.json, docs/runtimes.md |
-| RT-08 | ○ TODO | docs/runtimes.md, HERMES-TASKS.md, CLAUDE.md |
+| RT-08 | ✓ DONE (2026-09-29) | docs/runtimes.md, HERMES-TASKS.md, docs/design-decisions.md |
 
 ---
 

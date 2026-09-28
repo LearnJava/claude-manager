@@ -1015,6 +1015,58 @@ one `--resume` turn that tells the agent to disregard the automatic reply.
 The 5-minute first-option fallback applies only to autonomous runs. Test:
 `TestHermesRuntime_ClarifyAsksTheUserAndResumes` (fakehermes `ASK_CLARIFY`).
 
+### Why a Common Event Format (RUNTIME-TASKS.md RT-01..08)
+
+On 2026-09-28, in `Lumen browser/Chat` (Hermes runtime), the agent called
+`clarify` with three questions. Headless `hermes chat` has no attached user,
+so it answered its own tool call ("no user available… pick the best
+option") and the agent carried on with that guess — the user never saw the
+question at all. Fixed by commit `2064fe0`, but the deeper problem was
+structural: Claude's and Hermes' stdout streams were each handled by
+ad-hoc, adapter-specific logic, so a class of bug ("a question needs a
+human, but the two runtimes disagree on what a question even looks like on
+the wire") had nowhere shared to be caught.
+
+RUNTIME-TASKS.md (RT-01 through RT-08) is the fix at the format level, not
+just the one incident: both runtimes' stdout is translated into one
+`ParsedEvent` shape (`internal/session/parser.go`) before `Session.handleEvent`
+ever sees it, so the core (statuses, ask-user questions, failure
+classification, the log feed, token metrics) is written once and runs
+identically regardless of which CLI produced the bytes. Concretely:
+
+- `ParsedEvent.Questions`/`Question.Source` (RT-03) gives every
+  "this needs a human" signal — Claude's `ask-user` marker, Hermes' same
+  marker, Hermes' `clarify` tool — one shared pending-question/answer path,
+  so the exact incident above (a question silently answered by the runtime
+  itself before the user sees it) has a single place — `Question.Source`'s
+  per-source stop-and-resume rule — where a new runtime's own quirks are
+  handled, instead of a bespoke fix bolted onto one adapter.
+- `TurnFailure`/`ParsedEvent.Failure` (RT-04) does the same for rate-limit,
+  auth, session-not-found, context-restart and step-limit outcomes: one
+  classified value and one consolidation point (`Session.applyFailure`)
+  instead of six independent `atomic.Bool` writers scattered across two
+  files.
+- `Runtime`/`Parser` (RT-05) makes the seam explicit as a Go interface
+  (`internal/session/runtime.go`) instead of an `if Config.IsHermes()`
+  sprinkled through the run loop; RT-06 finishes the job by routing the two
+  process loops' shared bookkeeping (argv building, per-run atomics reset,
+  outcome classification) through it.
+- `internal/session/runtime_contract_test.go` (RT-07) is the resulting
+  payoff: one table-driven suite asserts the same behavioral contract
+  (questions reach the user, failures classify correctly, tool
+  calls/results share an id, usage arrives once) against *every* `Runtime`
+  implementation, so a third runtime is "connected" exactly when it passes
+  this suite unedited — not when someone eyeballs its adapter code.
+
+`docs/runtimes.md` is the living map of this format: §§1-6 describe the
+current pipeline and the two adapters' known differences, §7 is the
+step-by-step guide for plugging in a third runtime, §§9-11a document each
+RT task's contribution. Any future runtime-visible bug of this shape (a
+signal one adapter produces that the shared core doesn't know how to route)
+should be fixed by extending `ParsedEvent`'s existing fields/enums and this
+document, the same pattern RT-03/04 used — not by adding another
+adapter-local workaround like the one `2064fe0` had to patch over.
+
 ### Auth Error Handling (403)
 `drainStderr()` detects lines containing `"403"` + `"forbidden"` / `"authenticate"` / `"unauthorized"`.
 On detection, `authErrorHit` atomic is set → `runOnce()` returns `errAuthError` → `Run()` pauses 60 seconds and retries.
