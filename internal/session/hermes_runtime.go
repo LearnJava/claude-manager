@@ -92,7 +92,7 @@ func hermesEnv(parent []string, projectPath string) []string {
 // this account (session_runs.model).
 var hermesModelAliases = map[string]string{
 	"opus":   "claude-opus-5-5",
-	"sonnet": "claude-sonnet-5",
+	"sonnet": "claude-sonnet-5-5",
 	"haiku":  "claude-haiku-4-5",
 }
 
