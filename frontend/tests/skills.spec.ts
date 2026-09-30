@@ -219,7 +219,9 @@ test.describe('Skills tab — candidates (LN-08)', () => {
                 description: 'Stage after checking status.',
               }),
               MD: 'body',
-              SourceJSON: JSON.stringify((candidate as { Sig: string[] }).Sig),
+              // Go's json.Marshal escapes < and > — mirror it (regression: the
+              // "already distilled" match used to compare raw strings).
+              SourceJSON: JSON.stringify((candidate as { Sig: string[] }).Sig).replace(/</g, '\\u003c').replace(/>/g, '\\u003e'),
               CreatedAt: new Date().toISOString(),
               ApprovedAt: null,
               ArchivedAt: null,
@@ -249,6 +251,7 @@ test.describe('Skills tab — candidates (LN-08)', () => {
     expect(calls.length).toBe(1);
     expect(calls[0][0]).toBe('test');
     expect(calls[0][1].Sig).toEqual(['Bash:git status', 'Bash:git add <ARG>']);
+    await expect(modal.getByText(/Already distilled → git-status-then-add/)).toBeVisible();
   });
 });
 

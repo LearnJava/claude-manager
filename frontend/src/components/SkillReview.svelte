@@ -5,7 +5,7 @@
     // is meaningfully bigger than the Actions/Permissions/Timing tabs' plain
     // tables — doesn't balloon that file.
     import { get } from 'svelte/store';
-    import { onDestroy, onMount } from 'svelte';
+    import { onDestroy, onMount, tick } from 'svelte';
     import { formatPercent, formatTime, formatTokens } from '../lib/formatters';
     import { renderMarkdown } from '../lib/markdown';
     import { t } from '../lib/i18n';
@@ -75,18 +75,30 @@
     // A candidate stays in the mined list even after it's been distilled
     // (see the "Nothing here persists the mined list" note in CLAUDE.md —
     // the pattern may still be worth re-mining later), so the row alone
-    // never says "already done". SourceJSON is JSON.stringify(candidate.Sig)
-    // on the backend (app.go:skillDistillInputFromCandidate) — matching it
-    // the same way here is the only way to tell "this exact sequence
-    // already has a skill" without a new Wails call.
+    // never says "already done". SourceJSON is the candidate's Sig encoded
+    // by Go's json.Marshal (app.go:skillDistillInputFromCandidate), which
+    // escapes <, > and & as </>/& — unlike JSON.stringify, so
+    // comparing the raw strings never matched any "<ARG>" signature. Both
+    // sides are therefore normalized through parse + stringify; that also
+    // keeps rows stored before any encoder change matching. An archived
+    // skill never shadows a live one for the same sequence.
+    function sigKey(json: string): string {
+        try {
+            return JSON.stringify(JSON.parse(json));
+        } catch {
+            return json;
+        }
+    }
     $: distilledNameBySig = skills.reduce<Record<string, { name: string; status: string }>>(
         (acc, sk) => {
-            acc[sk.SourceJSON] = { name: sk.Name, status: sk.Status };
+            const k = sigKey(sk.SourceJSON);
+            if (sk.Status === 'archived' && acc[k]) return acc;
+            acc[k] = { name: sk.Name, status: sk.Status };
             return acc;
         },
         {},
     );
-    $: alreadyDistilled = (c: SkillCandidate) => distilledNameBySig[JSON.stringify(c.Sig)];
+    $: alreadyDistilled = (c: SkillCandidate) => distilledNameBySig[sigKey(JSON.stringify(c.Sig))];
 
     // A candidate's Kind (experience.CandidateKind) says what it is actually
     // worth turning into — a lone recurring command outranks every sequence
@@ -181,8 +193,17 @@
         distillProgress = '';
         distillErrorByKey = { ...distillErrorByKey, [key]: '' };
         try {
-            await distillSkill(project, c, gates, distillModel, distillMinScore);
+            const sk = await distillSkill(project, c, gates, distillModel, distillMinScore);
             await load();
+            // The draft lands in the table below the (long) candidates list,
+            // out of sight — open it and bring it into view so the click
+            // visibly produced something.
+            if (sk?.ID) {
+                expandedId = sk.ID;
+                editedMdById = { ...editedMdById, [sk.ID]: sk.MD };
+                await tick();
+                document.getElementById(`skill-row-${sk.ID}`)?.scrollIntoView({ block: 'center' });
+            }
         } catch (e: any) {
             const msg = e?.message ?? String(e);
             distillErrorByKey = {
@@ -448,6 +469,7 @@
                 {@const expanded = expandedId === sk.ID}
                 {@const draft = parseSkillDraft(sk.DraftJSON)}
                 <tr
+                    id="skill-row-{sk.ID}"
                     class="border-t border-bg-border cursor-pointer
                            {expanded ? 'bg-bg-elevated' : 'hover:bg-bg-elevated/60'}"
                     on:click={() => toggleExpand(sk)}>
