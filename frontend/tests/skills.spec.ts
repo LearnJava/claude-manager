@@ -252,6 +252,15 @@ test.describe('Skills tab — candidates (LN-08)', () => {
     expect(calls[0][0]).toBe('test');
     expect(calls[0][1].Sig).toEqual(['Bash:git status', 'Bash:git add <ARG>']);
     await expect(modal.getByText(/Already distilled → git-status-then-add/)).toBeVisible();
+    // The new draft is opened for review, and the candidate row now offers
+    // "Open draft" instead of a second Distill.
+    await expect(modal.locator('textarea')).toBeVisible();
+    await expect(modal.getByRole('button', { name: 'Open draft' })).toBeVisible();
+    // Re-distilling is two-click: the first click only arms the button.
+    await modal.getByRole('button', { name: 'Distill again' }).click();
+    expect((await page.evaluate(() => (window as any).__distillCalls)).length).toBe(1);
+    await modal.getByRole('button', { name: 'Click again to confirm' }).click();
+    await expect.poll(() => page.evaluate(() => (window as any).__distillCalls.length)).toBe(2);
   });
 });
 

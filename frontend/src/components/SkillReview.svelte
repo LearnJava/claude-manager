@@ -89,11 +89,11 @@
             return json;
         }
     }
-    $: distilledNameBySig = skills.reduce<Record<string, { name: string; status: string }>>(
+    $: distilledNameBySig = skills.reduce<Record<string, { id: number; name: string; status: string }>>(
         (acc, sk) => {
             const k = sigKey(sk.SourceJSON);
             if (sk.Status === 'archived' && acc[k]) return acc;
-            acc[k] = { name: sk.Name, status: sk.Status };
+            acc[k] = { id: sk.ID, name: sk.Name, status: sk.Status };
             return acc;
         },
         {},
@@ -186,6 +186,38 @@
 
     $: if (project) load();
 
+    // Re-distilling a sequence that already has a skill costs another
+    // analyst call and leaves a second draft behind, so it takes a second
+    // click (window.confirm() is dead in WebView2): the first click arms the
+    // button, the second within a few seconds runs it.
+    let redistillArmedKey: string | null = null;
+    let redistillTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function onRedistill(c: SkillCandidate) {
+        const key = candidateKey(c);
+        if (redistillArmedKey === key) {
+            redistillArmedKey = null;
+            if (redistillTimer) clearTimeout(redistillTimer);
+            onDistill(c);
+            return;
+        }
+        redistillArmedKey = key;
+        if (redistillTimer) clearTimeout(redistillTimer);
+        redistillTimer = setTimeout(() => (redistillArmedKey = null), 4000);
+    }
+
+    // Open a skill's review panel and bring its row into view — the
+    // candidates list is long, the skills table sits below it.
+    async function revealSkill(id: number) {
+        const sk = skills.find((s) => s.ID === id);
+        if (!sk) return;
+        expandedId = id;
+        conflictId = null;
+        if (editedMdById[id] === undefined) editedMdById = { ...editedMdById, [id]: sk.MD };
+        await tick();
+        document.getElementById(`skill-row-${id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+
     async function onDistill(c: SkillCandidate) {
         if (distillBusyKey !== null) return;
         const key = candidateKey(c);
@@ -198,12 +230,7 @@
             // The draft lands in the table below the (long) candidates list,
             // out of sight — open it and bring it into view so the click
             // visibly produced something.
-            if (sk?.ID) {
-                expandedId = sk.ID;
-                editedMdById = { ...editedMdById, [sk.ID]: sk.MD };
-                await tick();
-                document.getElementById(`skill-row-${sk.ID}`)?.scrollIntoView({ block: 'center' });
-            }
+            if (sk?.ID) await revealSkill(sk.ID);
         } catch (e: any) {
             const msg = e?.message ?? String(e);
             distillErrorByKey = {
@@ -401,7 +428,9 @@
                     {#each visibleCandidates as c (candidateKey(c))}
                         {@const key = candidateKey(c)}
                         {@const distilled = alreadyDistilled(c)}
-                        <tr class="border-t border-bg-border align-top">
+                        <tr
+                            class="border-t border-bg-border align-top
+                                   {distilled?.status === 'approved' ? 'bg-status-working/10' : distilled ? 'bg-status-waiting/10' : ''}">
                             <td class="px-3 py-1 text-text font-mono">
                                 {c.Sig.join(' → ')}
                                 {#if c.ContextLossSuspect}
@@ -426,13 +455,31 @@
                             </td>
                             <td class="px-3 py-1 text-right text-text-muted font-mono">{c.Score.toFixed(1)}</td>
                             <td class="px-3 py-1 text-right">
-                                <button
-                                    type="button"
-                                    disabled={distillBusyKey !== null}
-                                    on:click={() => onDistill(c)}
-                                    class="px-2 py-0.5 rounded bg-status-working/80 hover:bg-status-working text-white disabled:opacity-50 whitespace-nowrap">
-                                    {distillBusyKey === key ? $t('skillReview.distilling') : $t('skillReview.distillButton')}
-                                </button>
+                                {#if distilled && distillBusyKey !== key}
+                                    <button
+                                        type="button"
+                                        on:click={() => revealSkill(distilled.id)}
+                                        class="px-2 py-0.5 rounded border border-bg-border bg-bg-elevated text-text hover:bg-bg whitespace-nowrap">
+                                        {distilled.status === 'approved' ? $t('skillReview.viewSkill') : $t('skillReview.reviewDraft')}
+                                    </button>
+                                    <div class="mt-1">
+                                        <button
+                                            type="button"
+                                            disabled={distillBusyKey !== null}
+                                            on:click={() => onRedistill(c)}
+                                            class="text-text-muted hover:text-text underline decoration-dotted disabled:opacity-50 whitespace-nowrap">
+                                            {redistillArmedKey === key ? $t('skillReview.redistillConfirm') : $t('skillReview.redistill')}
+                                        </button>
+                                    </div>
+                                {:else}
+                                    <button
+                                        type="button"
+                                        disabled={distillBusyKey !== null}
+                                        on:click={() => onDistill(c)}
+                                        class="px-2 py-0.5 rounded bg-status-working/80 hover:bg-status-working text-white disabled:opacity-50 whitespace-nowrap">
+                                        {distillBusyKey === key ? $t('skillReview.distilling') : $t('skillReview.distillButton')}
+                                    </button>
+                                {/if}
                                 {#if distillBusyKey === key && distillProgress}
                                     <div class="mt-1 text-text-muted italic truncate max-w-[220px]" title={distillProgress}>
                                         {distillProgress}
