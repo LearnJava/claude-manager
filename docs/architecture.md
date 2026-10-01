@@ -71,6 +71,7 @@ claude-manager/
 │   │   ├── skill.go                 # LN-09: DistillSkill — sonnet distillation of one LN-08
 │   │   │                            #   SkillCandidate (+ related failures, gates) into a
 │   │   │                            #   SkillDraft; RenderSkillMarkdown renders the SKILL.md body
+│   │   ├── skillreview.go           # LN-25: ReviewSkill — second-model verdict on an autopilot draft
 │   │   └── schema.go                # JSON Schema for analyst structured output + brief output
 │   ├── optimization/
 │   │   ├── routing.go               # ModelRouter: auto model routing by task complexity, now
@@ -152,6 +153,8 @@ claude-manager/
 │   │   │                            #   (unused in the last 20 runs, or no token drop after
 │   │   │                            #   >=5 post-approval runs) as a suggestion, never an
 │   │   │                            #   auto-archive.
+│   │   ├── skillusage.go            # LN-24: BuildSkillUsage — Skill/skill_view loads per skill
+│   │   ├── skillpilot.go            # LN-25/26: SkillPilot — distill → review → trial → keep/switch off
 │   │   ├── attribution.go           # LN-12: EstimateTokens (chars/4) + BuildAttributionReport —
 │   │   │                            #   per-signature/per-tool estimated-token cut of
 │   │   │                            #   action_signatures.result_chars, most expensive first;
@@ -354,9 +357,13 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetSkillCandidates(project)` | Mine a project's recent `action_signatures` into ranked skill candidates — the Skills tab's "Candidates" list, and the only source of an `experience.SkillCandidate` to pass to `DistillSkill` below (LEARN-TASKS.md LN-08) |
 | `DistillSkill(project, candidate, gates, model, minScore)` | Distill one LN-08 skill candidate into a draft `SKILL.md`, persisted to the `skills` table (status=draft); streams `skill:progress`; `minScore <= 0` resolves to a relative threshold over the project's current candidates rather than a fixed score (LEARN-TASKS.md LN-23); returns `analysis.ErrBelowThreshold`, naming the score and threshold, when the candidate doesn't clear it (LN-09) |
 | `GetSkills(project)` | List every skill row (draft/approved/archived) for a project — the "Skills" tab (LEARN-TASKS.md LN-10) |
-| `ApproveSkill(id, md, overwrite)` | Write a (possibly edited) draft's markdown to `<project>/.claude/skills/<name>/SKILL.md`, mark it approved; returns `experience.ErrSkillFileExists` when the file is already there and `overwrite` is false |
-| `ArchiveSkill(id)` | Mark a skill row archived — never touches any file already written into the project |
-| `GetSkillQuality(project)` | Before/after-approval effect (median tokens/turns/completed-rate) per approved skill, plus a "protuhla" (stale) suggestion — the Skills tab's effect table (LEARN-TASKS.md LN-11) |
+| `ApproveSkill(id, md, overwrite)` | Write a (possibly edited) draft's markdown to `<project>/.claude/skills/<name>/SKILL.md`; status becomes `trial` when the project's autopilot is on, else `approved`; returns `experience.ErrSkillFileExists` when the file is already there and `overwrite` is false |
+| `ArchiveSkill(id)` | Switch a skill off: moves its folder out of `.claude/skills/` into `<project>/.claude-manager/archived-skills/<name>-<id>/` (the CLI stops seeing it), marks the row archived (LEARN-TASKS.md LN-24) |
+| `RestoreSkill(id, overwrite)` | Bring an archived skill back (the archived copy, hand edits included) or apply a rejected one anyway; starts a new trial or marks it approved (LN-24) |
+| `GetSkillQuality(project)` | Before/after-approval effect (median tokens/turns/completed-rate) per applied skill, plus a stale suggestion: "unused" now means not loaded by any agent (`Skill`/`skill_view` tool calls), not signature overlap (LN-11, LN-24) |
+| `GetSkillUsage(project)` | Loads, runs-with-load, runs since last load per skill, keyed by skill ID (LN-24) |
+| `GetSkillAutopilot(project)` / `SetSkillAutopilot(project, enabled, dailyBudgetUSD)` | Read / persist the project's skill-autopilot switch and daily budget (private `config.local.toml`; turning it on also turns on `experience_tracking`) (LN-27) |
+| `RunSkillAutopilot(project)` | One autopilot step now: decide finished trials, then distill, review and apply at most one candidate; errors if the autopilot is off (LN-25/26) |
 | `ImportProjectLogs(project, dir)` | Bulk-import a directory of saved CLI logs into `action_signatures` (empty `dir` = the project's own `.claude-manager/logs/`); streams `experience:import` progress — the "Import logs" button (LEARN-TASKS.md LN-20) |
 | `GetRateLimitStatus()` | Current rate limit info |
 | `ExportLog(id, entries, format)` | Save log as MD/JSON/TXT via native dialog |
@@ -404,7 +411,7 @@ No DI frameworks, no ORMs. Standard library for everything else.
 - `ingest_state` — per-CLI-session transcript byte offset, so re-indexing never re-inserts rows (LN-02)
 - `imported_logfiles` — bulk-import dedup for `IngestDir`, keyed by (project, name, size, mtime) (LN-17)
 - `permission_events` — one row per resolved permission_request (auto-decided or human), source for the Permissions tab's rule suggestions (LN-04)
-- `skills` — one row per distilled procedure (draft/approved/archived), source_json holds the candidate signatures LN-11 checks against later runs (LN-09/10/11)
+- `skills` — one row per distilled procedure (draft/rejected/trial/approved/archived), source_json holds the candidate signatures (LN-09/10/11); `origin` (manual/auto), `reason` (JSON `SkillReason`: why it is in its status), `cost_usd`, `updated_at` added by the skill autopilot (LN-24..27)
 
 
 ## File Logging

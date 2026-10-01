@@ -1422,7 +1422,7 @@ func TestUpdateSkillApproved(t *testing.T) {
 	}
 
 	approvedAt := time.Now().UTC().Truncate(time.Second)
-	if err := s.UpdateSkillApproved(sk.ID, "edited body", approvedAt); err != nil {
+	if err := s.UpdateSkillApproved(sk.ID, "edited body", SkillStatusApproved, "", approvedAt); err != nil {
 		t.Fatalf("UpdateSkillApproved: %v", err)
 	}
 

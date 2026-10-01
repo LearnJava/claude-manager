@@ -25,7 +25,7 @@ func mkApprovedSkill(t *testing.T, s *store.Store, project, name string, sigs []
 	if err := s.InsertSkill(sk); err != nil {
 		t.Fatalf("InsertSkill: %v", err)
 	}
-	if err := s.UpdateSkillApproved(sk.ID, "body", approvedAt); err != nil {
+	if err := s.UpdateSkillApproved(sk.ID, "body", store.SkillStatusApproved, "", approvedAt); err != nil {
 		t.Fatalf("UpdateSkillApproved: %v", err)
 	}
 	got, err := s.GetSkill(sk.ID)
@@ -175,18 +175,19 @@ func TestBuildSkillQualityReport_InsufficientData(t *testing.T) {
 	}
 }
 
-// TestBuildSkillQualityReport_NeverUsed: a skill whose signature never
-// occurs in any project run must be flagged stale/unused, not merely
+// TestBuildSkillQualityReport_NeverUsed: a skill no agent loaded during
+// StaleRunWindow indexed runs must be flagged stale/unused, not merely
 // insufficient data — this is the "не сработал ни разу" case (LEARN-TASKS.md
-// LN-11 "тест на скилл ни разу не сработал").
+// LN-11 "тест на скилл ни разу не сработал"; "used" means loaded since LN-24).
 func TestBuildSkillQualityReport_NeverUsed(t *testing.T) {
 	s := newTestStore(t)
 	approvedAt := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	mkApprovedSkill(t, s, "proj", "unused-skill", []string{"Bash:some-command-nobody-runs"}, approvedAt)
 
-	// Unrelated runs exist in the project (so the recent-run window is
-	// non-empty), but none of them ever calls the skill's signature.
-	mkRunWithSig(t, s, "proj", approvedAt.Add(time.Hour), 1000, 2, "completed", "Bash:git status")
+	// A full window of indexed runs after approval, none of which loads it.
+	for i := 0; i < StaleRunWindow; i++ {
+		mkRunWithSig(t, s, "proj", approvedAt.Add(time.Duration(i+1)*time.Hour), 1000, 2, "completed", "Bash:git status")
+	}
 
 	report, err := BuildSkillQualityReport(s, "proj")
 	if err != nil {
@@ -271,5 +272,40 @@ func TestBuildSkillQualityReport_ImportedRunsExcluded(t *testing.T) {
 	}
 	if !eff.InsufficientData {
 		t.Error("InsufficientData = false, want true (no real before-side evidence)")
+	}
+}
+
+// TestBuildSkillQualityReport_LoadedIsNotUnused: a skill whose source
+// signature never occurs again but that agents do load is in use — the
+// LN-24 fix for "unused" being judged by signature overlap.
+func TestBuildSkillQualityReport_LoadedIsNotUnused(t *testing.T) {
+	s := newTestStore(t)
+	approvedAt := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	mkApprovedSkill(t, s, "proj", "loaded-skill", []string{"Bash:some-command-nobody-runs"}, approvedAt)
+	for i := 0; i < StaleRunWindow; i++ {
+		r := mkRunWithSig(t, s, "proj", approvedAt.Add(time.Duration(i+1)*time.Hour), 1000, 2, "completed", "Bash:git status")
+		if i == StaleRunWindow-3 {
+			mkSkillLoad(t, s, "proj", r, "loaded-skill", r.StartedAt.Add(time.Minute))
+		}
+	}
+
+	report, err := BuildSkillQualityReport(s, "proj")
+	if err != nil {
+		t.Fatalf("BuildSkillQualityReport: %v", err)
+	}
+	if len(report) != 1 || report[0].Stale {
+		t.Fatalf("report = %+v, want one non-stale entry", report)
+	}
+}
+
+// mkSkillLoad records one Claude Code `Skill` tool call loading name in run r.
+func mkSkillLoad(t *testing.T, s *store.Store, project string, r *store.SessionRun, name string, at time.Time) {
+	t.Helper()
+	row := store.ActionRow{
+		Project: project, Session: r.Session, RunID: &r.ID, StepIndex: 1,
+		Tool: "Skill", Sig: "Skill:" + name, Arg: `{"skill":"` + name + `"}`, Timestamp: at,
+	}
+	if err := s.InsertActions([]store.ActionRow{row}); err != nil {
+		t.Fatalf("InsertActions: %v", err)
 	}
 }

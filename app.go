@@ -43,6 +43,7 @@ type App struct {
 	ctrlServer   *control.Server
 	closeLog     func() // shuts down the file logger on exit
 	trayEnabled  bool   // set by main() before wails.Run; see main.go for why
+	skillPilot   *experience.SkillPilot // nil without a store (LEARN-TASKS.md LN-27)
 }
 
 // NewApp creates a new App with the default config path.
@@ -194,6 +195,34 @@ func (a *App) startup(ctx context.Context) {
 				return nil, err
 			}
 			return &session.RegressionResult{Factor: res.Factor, Hint: res.Hint}, nil
+		})
+	}
+
+	// Wire the skill autopilot (LEARN-TASKS.md LN-27): finishRun calls it
+	// after a run's transcript is indexed, and only for a project with
+	// AutoSkills on, so wiring it unconditionally is safe.
+	if a.store != nil {
+		a.skillPilot = experience.NewSkillPilot(experience.SkillPilotDeps{
+			Store: a.store,
+			Distill: func(ctx context.Context, projectPath string, in analysis.SkillDistillInput) (*analysis.SkillDraft, error) {
+				// The autopilot picks only candidates that already cleared
+				// the relative threshold, so the distiller's own gate is
+				// passed trivially (score == threshold).
+				return analysis.DistillSkill(ctx, projectPath, in, 1, 1, a.analysisConfig(""), nil)
+			},
+			Review: func(ctx context.Context, projectPath string, in analysis.SkillReviewInput) (*analysis.SkillReview, error) {
+				return analysis.ReviewSkill(ctx, projectPath, in, a.analysisConfig(analysis.DefaultSkillReviewModel))
+			},
+		})
+		a.manager.SetSkillAutopilot(func(project, projectPath string, gates []string, budget float64) (bool, error) {
+			rep, err := a.skillPilot.Tick(context.Background(), experience.SkillPilotParams{
+				Project: project, ProjectPath: projectPath, Gates: gates, DailyBudgetUSD: budget,
+			})
+			if rep.Changed() || err != nil {
+				logger.L.Info("experience.skill_autopilot", "project", project,
+					"applied", rep.Applied, "kept", rep.Kept, "archived", rep.Archived, "rejected", rep.Rejected, "error", err)
+			}
+			return rep.Changed(), err
 		})
 	}
 
@@ -1077,6 +1106,10 @@ func adoptExistingOverlay(p config.ProjectConfig) (config.ProjectConfig, error) 
 	}
 	p.Journal = p.Journal || ov.Journal
 	p.JournalCommit = p.JournalCommit || ov.JournalCommit
+	p.AutoSkills = p.AutoSkills || ov.AutoSkills
+	if p.AutoSkillsDailyBudgetUSD == 0 {
+		p.AutoSkillsDailyBudgetUSD = ov.AutoSkillsDailyBudgetUSD
+	}
 	return p, nil
 }
 
@@ -1484,25 +1517,7 @@ func (a *App) resolveSkillMinScore(project string, minScore float64) float64 {
 // enough context for the distillation prompt without re-exporting
 // FailureCluster's full shape.
 func skillDistillInputFromCandidate(c experience.SkillCandidate, gates []string) (analysis.SkillDistillInput, string, error) {
-	in := analysis.SkillDistillInput{
-		Sig:   append([]string(nil), c.Sig...),
-		Gates: append([]string(nil), gates...),
-	}
-	for _, s := range c.Samples {
-		in.Samples = append(in.Samples, analysis.SkillSample{Command: s.Arg})
-	}
-	for _, f := range c.RelatedFailures {
-		if len(f.Examples) == 0 {
-			continue
-		}
-		ex := f.Examples[0]
-		in.RelatedFailures = append(in.RelatedFailures, analysis.SkillFailureSummary{
-			ErrorKey:  f.ErrorKey,
-			FailedArg: ex.FailedArg,
-			FixedArg:  ex.FixedArg,
-		})
-	}
-
+	in := experience.SkillDistillInputFromCandidate(c, gates)
 	srcJSON, err := json.Marshal(c.Sig)
 	if err != nil {
 		return in, "", fmt.Errorf("distill skill: encode source signatures: %w", err)
@@ -1535,28 +1550,20 @@ func (a *App) ImportProjectLogs(project, dir string) (session.ImportStats, error
 }
 
 // ApproveSkill writes a draft's (possibly reviewer-edited) markdown to
-// <project>/.claude/skills/<name>/SKILL.md and marks the row approved
-// (LEARN-TASKS.md LN-10). md need not be byte-identical to the skill's
-// stored draft — the reviewer may have fixed something in
-// SkillReview.svelte before accepting. name is fixed to the row's own
-// Skill.Name (not a parameter): the invariant is "an unsafe name can never
-// be written", regardless of what a caller passes, and experience.WriteSkillFile
-// enforces that by construction. Refuses to overwrite an existing file
-// unless overwrite is true (experience.ErrSkillFileExists), so the UI has
-// something to catch for its inline "already exists — overwrite?" banner —
-// window.confirm() is disabled in Wails WebView2.
+// <project>/.claude/skills/<name>/SKILL.md (LEARN-TASKS.md LN-10). md need
+// not be byte-identical to the skill's stored draft — the reviewer may have
+// fixed something in SkillReview.svelte before accepting. name is fixed to
+// the row's own Skill.Name (not a parameter): the invariant is "an unsafe
+// name can never be written", regardless of what a caller passes, and
+// experience.WriteSkillFile enforces that by construction. Refuses to
+// overwrite an existing file unless overwrite is true
+// (experience.ErrSkillFileExists), so the UI has something to catch for its
+// inline "already exists — overwrite?" banner — window.confirm() is
+// disabled in Wails WebView2. With the project's skill autopilot on, the
+// skill starts a trial the autopilot will judge (LN-26); otherwise it is
+// simply approved.
 func (a *App) ApproveSkill(id int64, md string, overwrite bool) (string, error) {
-	if a.store == nil {
-		return "", fmt.Errorf("no store")
-	}
-	sk, err := a.store.GetSkill(id)
-	if err != nil {
-		return "", err
-	}
-	if sk == nil {
-		return "", fmt.Errorf("skill %d not found", id)
-	}
-	path, err := a.projectPath(sk.Project)
+	sk, path, err := a.skillAndProjectPath(id)
 	if err != nil {
 		return "", err
 	}
@@ -1564,21 +1571,205 @@ func (a *App) ApproveSkill(id int64, md string, overwrite bool) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	if err := a.store.UpdateSkillApproved(id, md, time.Now()); err != nil {
+	status := a.appliedSkillStatus(sk.Project)
+	reason := experience.SkillReason{Code: experience.ReasonAppliedManual}.Encode()
+	if err := a.store.UpdateSkillApproved(id, md, status, reason, time.Now()); err != nil {
 		return "", err
 	}
 	return written, nil
 }
 
-// ArchiveSkill marks a skill row archived — a rejected draft, or later a
-// skill LN-11 proposes as stale (LEARN-TASKS.md LN-10/11). Never touches a
-// file already written into the project; archiving only removes the row
-// from the "Skills" tab's active list.
+// ArchiveSkill switches a skill off (LEARN-TASKS.md LN-10/24): an applied
+// skill's folder is moved out of <project>/.claude/skills/ into
+// <project>/.claude-manager/archived-skills/ so the CLI stops seeing it —
+// archiving only the row used to leave the skill fully active. A draft or
+// rejected row has no file and is just marked archived.
 func (a *App) ArchiveSkill(id int64) error {
-	if a.store == nil {
-		return fmt.Errorf("no store")
+	sk, path, err := a.skillAndProjectPath(id)
+	if err != nil {
+		return err
 	}
-	return a.store.UpdateSkillArchived(id, time.Now())
+	if err := experience.ArchiveSkillFile(path, sk.Name, sk.ID); err != nil {
+		return err
+	}
+	reason := experience.SkillReason{Code: experience.ReasonArchivedManual}.Encode()
+	return a.store.UpdateSkillStatus(id, store.SkillStatusArchived, reason, time.Now())
+}
+
+// RestoreSkill brings an archived skill back into
+// <project>/.claude/skills/<name>/ (LEARN-TASKS.md LN-24) — the archived
+// copy, hand edits included, or the row's markdown when there is none — and
+// starts a new trial (autopilot on) or marks it approved. A rejected row is
+// applied the same way ("apply anyway"). overwrite works like ApproveSkill's.
+func (a *App) RestoreSkill(id int64, overwrite bool) (string, error) {
+	sk, path, err := a.skillAndProjectPath(id)
+	if err != nil {
+		return "", err
+	}
+	written, err := experience.RestoreSkillFile(path, sk.Name, sk.ID, sk.MD, overwrite)
+	if err != nil {
+		return "", err
+	}
+	status := a.appliedSkillStatus(sk.Project)
+	reason := experience.SkillReason{Code: experience.ReasonRestoredManual}.Encode()
+	if err := a.store.UpdateSkillApproved(id, sk.MD, status, reason, time.Now()); err != nil {
+		return "", err
+	}
+	return written, nil
+}
+
+// GetSkillUsage returns how much each of a project's skills is actually
+// loaded by agents, keyed by skill ID (LEARN-TASKS.md LN-24).
+func (a *App) GetSkillUsage(project string) (map[int64]experience.SkillUsage, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no store")
+	}
+	return experience.BuildSkillUsage(a.store, project)
+}
+
+// SkillAutopilotState is the Skills tab's autopilot header.
+type SkillAutopilotState struct {
+	Enabled bool `json:"enabled"`
+	// Tracking mirrors [optimization] experience_tracking: without it no
+	// transcript is indexed and the autopilot never runs.
+	Tracking       bool    `json:"tracking"`
+	DailyBudgetUSD float64 `json:"daily_budget_usd"`
+	SpentTodayUSD  float64 `json:"spent_today_usd"`
+	SpentTotalUSD  float64 `json:"spent_total_usd"`
+	// TrialRuns is experience.SkillTrialRuns, so the UI can show trial
+	// progress as "N of TrialRuns runs".
+	TrialRuns int `json:"trial_runs"`
+}
+
+// GetSkillAutopilot reports a project's skill-autopilot state (LN-27).
+func (a *App) GetSkillAutopilot(project string) (SkillAutopilotState, error) {
+	st := SkillAutopilotState{TrialRuns: experience.SkillTrialRuns}
+	if a.cfg == nil {
+		return st, fmt.Errorf("no config")
+	}
+	st.Tracking = a.cfg.Optimization.ExperienceTracking
+	for _, p := range a.cfg.Projects {
+		if p.Name == project {
+			st.Enabled = p.AutoSkills
+			st.DailyBudgetUSD = p.AutoSkillsDailyBudgetUSD
+		}
+	}
+	if a.store == nil {
+		return st, nil
+	}
+	skills, err := a.store.ListSkills(project)
+	if err != nil {
+		return st, err
+	}
+	today := time.Now().Format("2006-01-02")
+	for _, sk := range skills {
+		if sk.Origin != store.SkillOriginAuto {
+			continue
+		}
+		st.SpentTotalUSD += sk.CostUSD
+		if sk.CreatedAt.Local().Format("2006-01-02") == today {
+			st.SpentTodayUSD += sk.CostUSD
+		}
+	}
+	return st, nil
+}
+
+// SetSkillAutopilot turns a project's skill autopilot on or off and sets its
+// daily budget (0 = no cap), persisting both to the project's private
+// config.local.toml (LN-27). Turning it on also turns on
+// experience_tracking: the autopilot sees nothing without it.
+func (a *App) SetSkillAutopilot(project string, enabled bool, dailyBudgetUSD float64) error {
+	if a.cfg == nil {
+		return fmt.Errorf("no config")
+	}
+	if dailyBudgetUSD < 0 {
+		return fmt.Errorf("daily budget must not be negative")
+	}
+	cfg := *a.cfg
+	cfg.Projects = append([]config.ProjectConfig(nil), a.cfg.Projects...)
+	found := false
+	for i := range cfg.Projects {
+		if cfg.Projects[i].Name == project {
+			cfg.Projects[i].AutoSkills = enabled
+			cfg.Projects[i].AutoSkillsDailyBudgetUSD = dailyBudgetUSD
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("project %q not found", project)
+	}
+	if enabled {
+		cfg.Optimization.ExperienceTracking = true
+	}
+	return a.UpdateConfig(cfg)
+}
+
+// RunSkillAutopilot runs one autopilot step for project right now instead
+// of waiting for the next finished run (the Skills tab's "Run now"). Errors
+// when the project has the autopilot off.
+func (a *App) RunSkillAutopilot(project string) (experience.SkillPilotReport, error) {
+	if a.skillPilot == nil || a.cfg == nil {
+		return experience.SkillPilotReport{}, fmt.Errorf("no store")
+	}
+	var pcfg *config.ProjectConfig
+	for i := range a.cfg.Projects {
+		if a.cfg.Projects[i].Name == project {
+			pcfg = &a.cfg.Projects[i]
+		}
+	}
+	if pcfg == nil {
+		return experience.SkillPilotReport{}, fmt.Errorf("project %q not found", project)
+	}
+	if !pcfg.AutoSkills {
+		return experience.SkillPilotReport{}, fmt.Errorf("skill autopilot is off for %s", project)
+	}
+	return a.skillPilot.Tick(context.Background(), experience.SkillPilotParams{
+		Project: project, ProjectPath: pcfg.Path, Gates: pcfg.Gates, DailyBudgetUSD: pcfg.AutoSkillsDailyBudgetUSD,
+	})
+}
+
+// skillAndProjectPath loads skill id and its project's folder.
+func (a *App) skillAndProjectPath(id int64) (*store.Skill, string, error) {
+	if a.store == nil {
+		return nil, "", fmt.Errorf("no store")
+	}
+	sk, err := a.store.GetSkill(id)
+	if err != nil {
+		return nil, "", err
+	}
+	if sk == nil {
+		return nil, "", fmt.Errorf("skill %d not found", id)
+	}
+	path, err := a.projectPath(sk.Project)
+	if err != nil {
+		return nil, "", err
+	}
+	return sk, path, nil
+}
+
+// appliedSkillStatus is the status a manually applied skill gets: a trial
+// when the project's autopilot will judge it, approved otherwise.
+func (a *App) appliedSkillStatus(project string) string {
+	if a.cfg != nil {
+		for _, p := range a.cfg.Projects {
+			if p.Name == project && p.AutoSkills {
+				return store.SkillStatusTrial
+			}
+		}
+	}
+	return store.SkillStatusApproved
+}
+
+// analysisConfig is the one-shot analyst config for the skill autopilot:
+// the app-wide CLI path and per-call budget, with model overriding the
+// call's own default when non-empty.
+func (a *App) analysisConfig(model string) analysis.AnalysisConfig {
+	cfg := analysis.AnalysisConfig{Model: model}
+	if a.cfg != nil {
+		cfg.ClaudePath = a.cfg.Settings.ClaudePath
+		cfg.MaxBudgetUSD = a.cfg.Settings.PreflightMaxBudget
+	}
+	return cfg
 }
 
 // GetSkillQuality measures the before/after-approval effect of every

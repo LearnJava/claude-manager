@@ -97,6 +97,10 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-21 | ✓ DONE (2026-09-15) | internal/session/session.go (EvtTaskDone rotation-order fix), internal/experience/indexer.go (IngestRun md fallback), internal/session/manager.go |
 | LN-22 | ✓ DONE (2026-09-15) | internal/experience/candidate.go (stepOccurrenceWeight, outcomeWeight) |
 | LN-23 | ✓ DONE (2026-09-15) | internal/experience/candidate.go (RelativeScoreThreshold, ResolveSkillMinScore), internal/analysis/skill.go, app.go (resolveSkillMinScore), SkillReview.svelte |
+| LN-24 | ✓ DONE (2026-10-01) | internal/experience/skillusage.go, skillfiles.go (ArchiveSkillFile/RestoreSkillFile), skillquality.go, internal/store (skills columns, ListSkillLoads), app.go |
+| LN-25 | ✓ DONE (2026-10-01) | internal/analysis/skillreview.go, internal/experience/skillpilot.go |
+| LN-26 | ✓ DONE (2026-10-01) | internal/experience/skillpilot.go (evaluate, trial rules) |
+| LN-27 | ✓ DONE (2026-10-01) | internal/session/manager.go (SetSkillAutopilot), app.go, internal/config, SkillReview.svelte |
 
 > LN-17 и LN-18 дописаны после разведки корпуса. LN-17 по приоритету идёт
 > **третьим**, сразу за LN-02 (без него нечего анализировать); LN-18 — после
@@ -116,7 +120,9 @@ use_worktree = false   # worktree заводит сам протокол (script
    `internal/worker` — там другой privacy-контур (см. `mixed_programming`).
 4. **Ничего не пишется в репозиторий пользователя без аппрува.** Скиллы,
    правила разрешений, строки в `CLAUDE.md` — только после явного «Принять» в
-   UI. Автоматически пишутся лишь файлы под `<project>/.claude-manager/`
+   UI. **Исключение (LN-24..27):** скиллы пишет автопилот, но только в проекте,
+   где пользователь явно включил `auto_skills` (приватный слой, по умолчанию
+   выключено); всё им записанное обратимо (архив, а не удаление) и измеряется. Автоматически пишутся лишь файлы под `<project>/.claude-manager/`
    (гитигнорятся через `config.EnsureGitignore`).
 5. **Любая фича, меняющая промпт, обязана быть измеримой.** Замер — через
    `session_runs` (LN-11, LN-16). Фича без замера не принимается: молча
@@ -133,7 +139,7 @@ use_worktree = false   # worktree заводит сам протокол (script
 - Векторную БД «всего подряд» и семантический поиск по истории — в таких
   системах не окупается: растит инфраструктуру, а выигрыш даёт та же верхушка
   частотного распределения, которую видно простым счётчиком.
-- Автоматическую правку `CLAUDE.md` и автоприменение скиллов без человека.
+- Автоматическую правку `CLAUDE.md`. (Автоприменение скиллов — только через автопилот LN-24..27 по явному флагу проекта.)
 - Обучение на лупах: три и более **идентичных** вызова (`tool` + `arg`) в одном
   прогоне — это дефект (`LoopDetector.Observe` матчит ровно tool+input) или
   симптом потери контекста, а не паттерн. Кандидат обязан встречаться в разных
@@ -1376,3 +1382,61 @@ p50 = 782, максимум 8692). Абсолютный порог над вел
 кандидатов); тест, что явный `minScore` из UI перекрывает относительный; тест
 сообщения об ошибке (содержит и оценку, и порог); проверка на импортированном
 корпусе lumen — в шортлисте остаётся десяток кандидатов, а не 378.
+
+## LN-24: Реальное использование скиллов и настоящая архивация
+
+**Depends on:** LN-11
+**Files:** `internal/experience/skillusage.go`, `skillfiles.go`, `skillquality.go`,
+`internal/store/{store,migrations}.go`, `app.go`
+
+Две дыры, без которых автоматика невозможна. (1) «Не используется» в LN-11
+считалось по совпадению сигнатур `source_json`: навык из частой команды
+(`sed -n`) совпадает всегда, загружен он или нет. Прямой сигнал — вызов `Skill`
+(Claude Code) / `skill_view` (Hermes) в `action_signatures`; теперь «используется»
+= загружен. (2) `ArchiveSkill` менял только статус в БД, `SKILL.md` оставался в
+`.claude/skills/` и продолжал работать. Теперь папка переносится в
+`.claude-manager/archived-skills/<name>-<id>/`, `RestoreSkill` возвращает её
+(с ручными правками). Статусы: `draft | rejected | trial | approved | archived`;
+колонки `origin`, `reason` (JSON `SkillReason`), `cost_usd`, `updated_at`.
+Считаются только прогоны с проиндексированным транскриптом: непроиндексированный
+не может свидетельствовать, что навык не загружали.
+
+## LN-25: Рецензент черновиков
+
+**Depends on:** LN-09, LN-24
+**Files:** `internal/analysis/skillreview.go`, `internal/experience/skillpilot.go`
+
+Вторая модель (по умолчанию opus, не модель-дистиллятор: свой текст она судит
+снисходительно) получает черновик, кандидата и список уже имеющихся навыков
+проекта и отвечает `accept` + причина. Отсекает дубли, тривиальные шаги, общие
+советы и опасные шаги. Отклонённое пишется строкой `rejected` с причиной и
+повторно не дистиллируется.
+
+## LN-26: Испытание и решение
+
+**Depends on:** LN-24, LN-25
+**Files:** `internal/experience/skillpilot.go`
+
+Принятый черновик пишется в проект со статусом `trial`. Один эксперимент за раз
+(иначе до/после двух навыков не разделить). Через `SkillTrialRuns = 10`
+проиндексированных прогонов: ни одной загрузки → в архив; загружался, но медиана
+токенов выросла >20% или доля завершённых упала ≥0.2 → в архив; иначе → `approved`.
+Принятый, но не загружавшийся `StaleRunWindow = 20` прогонов → в архив. Между
+двумя автодистилляциями ≥ `AutoDistillGapRuns = 5` прогонов; дневной бюджет
+`auto_skills_daily_budget_usd` (0 = без лимита). Вручную применённый навык
+проекта с автопилотом тоже идёт на испытание. Уже лежащие черновики автопилот
+разбирает первыми, без новой дистилляции.
+
+## LN-27: Автопилот и вкладка «Навыки»
+
+**Depends on:** LN-26
+**Files:** `internal/session/manager.go` (`SetSkillAutopilot`, `skills:changed`),
+`internal/config`, `app.go`, `frontend/src/components/SkillReview.svelte`
+
+Флаг `auto_skills` (приватный `config.local.toml`, выкл. по умолчанию; включение
+из UI включает и `experience_tracking`). Шаг автопилота запускается после
+индексации каждого прогона проекта; есть кнопка «Запустить сейчас». Вкладка:
+переключатель и бюджет, библиотека навыков (статус, использование: загрузок и в
+скольких прогонах, эффект до→после, «почему» словами, стоимость), фильтры,
+кнопки «Выключить» / «Вернуть» / «Применить всё равно»; ручная дистилляция
+кандидатов сворачивается под автопилотом.

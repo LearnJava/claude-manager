@@ -101,6 +101,12 @@ func applyProjectOverlays(cfg *AppConfig) error {
 		if ov.JournalCommit {
 			p.JournalCommit = true
 		}
+		if ov.AutoSkills {
+			p.AutoSkills = true
+		}
+		if ov.AutoSkillsDailyBudgetUSD != 0 {
+			p.AutoSkillsDailyBudgetUSD = ov.AutoSkillsDailyBudgetUSD
+		}
 		if len(ov.Workers) > 0 {
 			cfg.Workers = mergeWorkers(cfg.Workers, ov.Workers)
 		}
@@ -161,6 +167,12 @@ func mergeOverlay(dst *ProjectOverlay, src ProjectOverlay) {
 	}
 	if src.JournalCommit {
 		dst.JournalCommit = true
+	}
+	if src.AutoSkills {
+		dst.AutoSkills = true
+	}
+	if src.AutoSkillsDailyBudgetUSD != 0 {
+		dst.AutoSkillsDailyBudgetUSD = src.AutoSkillsDailyBudgetUSD
 	}
 	if len(src.Workers) > 0 {
 		dst.Workers = mergeWorkers(dst.Workers, src.Workers)
@@ -230,12 +242,16 @@ func SaveProjectOverlay(projectPath string, p ProjectConfig, localWorkers []Work
 		MixedMaxRounds   int            `toml:"mixed_max_rounds"`
 		Journal          bool           `toml:"journal"`
 		JournalCommit    bool           `toml:"journal_commit"`
+		AutoSkills       bool           `toml:"auto_skills"`
+		AutoSkillsBudget float64        `toml:"auto_skills_daily_budget_usd"`
 		Workers          []WorkerConfig `toml:"worker"`
 	}{
 		MixedProgramming: p.MixedProgramming,
 		MixedMaxRounds:   p.MixedMaxRounds,
 		Journal:          p.Journal,
 		JournalCommit:    p.JournalCommit,
+		AutoSkills:       p.AutoSkills,
+		AutoSkillsBudget: p.AutoSkillsDailyBudgetUSD,
 		Workers:          localWorkers,
 	}
 	if err := encodeAtomic(ProjectLocalConfigPath(projectPath), local); err != nil {
