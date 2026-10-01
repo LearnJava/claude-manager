@@ -81,6 +81,16 @@ path = 'D:\RustProjects\lumen-browser'
 # journal = true
 # journal_commit = false
 
+# Skill autopilot (LEARN-TASKS.md LN-25..27): after finished runs the manager
+# distills recurring patterns into skills, has a second model review them,
+# writes accepted ones to <project>/.claude/skills/ on trial, and after 10
+# runs keeps those agents actually load / switches off the rest (moved to
+# .claude-manager/archived-skills/, restorable from the Skills tab). Private
+# layer: it spends money and writes into the repository. Needs
+# [optimization] experience_tracking (the UI switch turns it on too).
+# auto_skills = true
+# auto_skills_daily_budget_usd = 0       # 0 = no cap
+
 # Seeds permission_mode for sessions newly added to this project from now on
 # (empty = built-in default, bypassPermissions). Never touches an existing
 # session's already-saved permission_mode.

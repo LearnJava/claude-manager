@@ -18,6 +18,11 @@ import {
     GetTokenAttribution,
     GetTopActions,
     ImportProjectLogs,
+    GetSkillAutopilot,
+    GetSkillUsage,
+    RestoreSkill,
+    RunSkillAutopilot,
+    SetSkillAutopilot,
 } from '../../wailsjs/go/main/App';
 import { experience as experienceModel } from '../../wailsjs/go/models';
 
@@ -257,13 +262,103 @@ export interface Skill {
     ID: number;
     Project: string;
     Name: string;
-    Status: string; // draft | approved | archived
+    Status: SkillStatus;
     DraftJSON: string;
     MD: string;
     SourceJSON: string;
     CreatedAt: string;
     ApprovedAt: string | null;
     ArchivedAt: string | null;
+    // LEARN-TASKS.md LN-24..27 (skill autopilot).
+    Origin: 'manual' | 'auto';
+    Reason: string; // JSON SkillReason, '' for rows older than the autopilot
+    CostUSD: number;
+    UpdatedAt: string | null;
+}
+
+// SkillStatus mirrors store.SkillStatus*: draft/rejected were never written
+// into the project, trial/approved are live in .claude/skills, archived has
+// had its folder moved to .claude-manager/archived-skills.
+export type SkillStatus = 'draft' | 'rejected' | 'trial' | 'approved' | 'archived';
+
+// SkillReason mirrors experience.SkillReason — why a row is in its status.
+export interface SkillReason {
+    code: string;
+    text?: string;
+    runs?: number;
+    loads?: number;
+    before?: number;
+    after?: number;
+    duplicate_of?: string;
+}
+
+// parseSkillReason decodes Skill.Reason; null for an empty/garbled value.
+export function parseSkillReason(reason: string): SkillReason | null {
+    if (!reason) return null;
+    try {
+        const r = JSON.parse(reason) as SkillReason;
+        return r && typeof r.code === 'string' ? r : null;
+    } catch {
+        return null;
+    }
+}
+
+// SkillUsage mirrors experience.SkillUsage — how much agents actually load
+// a skill (LEARN-TASKS.md LN-24).
+export interface SkillUsage {
+    skill_id: number;
+    name: string;
+    loads: number;
+    last_loaded_at?: string;
+    runs_since_applied: number;
+    runs_with_load: number;
+    runs_since_last_load: number;
+}
+
+// fetchSkillUsage returns usage keyed by skill ID.
+export async function fetchSkillUsage(project: string): Promise<Record<number, SkillUsage>> {
+    const raw = (await GetSkillUsage(project)) as Record<number, SkillUsage> | null;
+    return raw ?? {};
+}
+
+// SkillAutopilotState mirrors main.SkillAutopilotState.
+export interface SkillAutopilotState {
+    enabled: boolean;
+    tracking: boolean;
+    daily_budget_usd: number;
+    spent_today_usd: number;
+    spent_total_usd: number;
+    trial_runs: number;
+}
+
+export async function fetchSkillAutopilot(project: string): Promise<SkillAutopilotState> {
+    return (await GetSkillAutopilot(project)) as SkillAutopilotState;
+}
+
+// setSkillAutopilot persists the project's autopilot switch and daily budget
+// (0 = no cap); turning it on also turns on experience_tracking.
+export async function setSkillAutopilot(project: string, enabled: boolean, dailyBudgetUSD: number): Promise<void> {
+    await SetSkillAutopilot(project, enabled, dailyBudgetUSD);
+}
+
+// SkillPilotReport mirrors experience.SkillPilotReport.
+export interface SkillPilotReport {
+    applied?: string[];
+    kept?: string[];
+    archived?: string[];
+    rejected?: string[];
+    idle?: string;
+}
+
+// runSkillAutopilot runs one autopilot step now ("Run now").
+export async function runSkillAutopilot(project: string): Promise<SkillPilotReport> {
+    return (await RunSkillAutopilot(project)) as SkillPilotReport;
+}
+
+// restoreSkill brings an archived skill back (or applies a rejected one)
+// into .claude/skills. Throws /already exists/i like approveSkill.
+export async function restoreSkill(id: number, overwrite: boolean): Promise<string> {
+    return await RestoreSkill(id, overwrite);
 }
 
 // SkillDraftStep/SkillDraft mirror analysis.SkillStep/SkillDraft — decoded
@@ -312,8 +407,9 @@ export async function approveSkill(id: number, md: string, overwrite: boolean): 
     return await ApproveSkill(id, md, overwrite);
 }
 
-// archiveSkill marks a skill row archived — never touches any file already
-// written into the project.
+// archiveSkill switches a skill off: an applied skill's folder is moved out
+// of .claude/skills into .claude-manager/archived-skills (restoreSkill
+// brings it back).
 export async function archiveSkill(id: number): Promise<void> {
     await ArchiveSkill(id);
 }

@@ -186,7 +186,11 @@ CREATE TABLE IF NOT EXISTS skills (
     source_json TEXT NOT NULL,
     created_at  DATETIME NOT NULL,
     approved_at DATETIME,
-    archived_at DATETIME
+    archived_at DATETIME,
+    origin      TEXT NOT NULL DEFAULT 'manual',
+    reason      TEXT NOT NULL DEFAULT '',
+    cost_usd    REAL NOT NULL DEFAULT 0,
+    updated_at  DATETIME
 )`
 
 	sqlIdxLogsRun        = `CREATE INDEX IF NOT EXISTS idx_logs_run ON session_logs(run_id)`
@@ -254,6 +258,14 @@ func migrate(db *sql.DB) error {
 		// optimization.OutcomeStats (internal/store/store.go) had no way to
 		// report it. Same additive pattern as above.
 		`ALTER TABLE session_runs ADD COLUMN effort TEXT`,
+		// skills predates the skill autopilot (LEARN-TASKS.md LN-24..27):
+		// who produced the row (a manual click or the autopilot), why it is
+		// in its current status, what its distillation+review cost, and
+		// when that status was last decided. Same additive pattern.
+		`ALTER TABLE skills ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual'`,
+		`ALTER TABLE skills ADD COLUMN reason TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE skills ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE skills ADD COLUMN updated_at DATETIME`,
 	} {
 		if _, err := db.Exec(col); err != nil {
 			if !strings.Contains(err.Error(), "duplicate column") {

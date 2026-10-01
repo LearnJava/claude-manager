@@ -136,6 +136,18 @@ type ProjectOverlay struct {
 	// journal-archive-*.md rotated out of it) so a project that wants its
 	// journal reviewed and committed like any other doc can do so.
 	JournalCommit bool `toml:"journal_commit"`
+	// AutoSkills turns on the skill autopilot (LEARN-TASKS.md LN-25..27):
+	// after finished runs the manager distills recurring patterns into
+	// skills, has a second model review them, writes accepted ones to
+	// <project>/.claude/skills/ on trial, and switches off (moves to
+	// .claude-manager/archived-skills/) the ones agents don't load or that
+	// make runs worse. Private layer: it spends money and writes into the
+	// repository, which a teammate cloning it should opt into themselves.
+	// Needs [optimization] experience_tracking.
+	AutoSkills bool `toml:"auto_skills"`
+	// AutoSkillsDailyBudgetUSD caps the autopilot's distill+review spend per
+	// day in this project; 0 = no cap.
+	AutoSkillsDailyBudgetUSD float64 `toml:"auto_skills_daily_budget_usd"`
 }
 
 type ProjectConfig struct {
@@ -165,6 +177,11 @@ type ProjectConfig struct {
 	// (LEARN-TASKS.md LN-06). Private-layer opt-in, default off.
 	Journal       bool `toml:"journal"`
 	JournalCommit bool `toml:"journal_commit"`
+
+	// AutoSkills / AutoSkillsDailyBudgetUSD — see ProjectOverlay's fields of
+	// the same name (LEARN-TASKS.md LN-25..27). Private-layer opt-in, off.
+	AutoSkills               bool    `toml:"auto_skills"`
+	AutoSkillsDailyBudgetUSD float64 `toml:"auto_skills_daily_budget_usd"`
 }
 
 type SessionConfig struct {

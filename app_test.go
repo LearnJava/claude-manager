@@ -917,33 +917,101 @@ func TestApproveSkill_UnknownID(t *testing.T) {
 	}
 }
 
-// TestArchiveSkill_RemovesFromActiveListButKeepsAnyWrittenFile: archiving is
-// metadata-only — it must not touch a file already approved onto disk.
-func TestArchiveSkill_RemovesFromActiveListButKeepsAnyWrittenFile(t *testing.T) {
-	a, st, _ := newSkillApp(t)
+// TestArchiveSkill_MovesTheFileOutOfTheCLIsReach: archiving an applied
+// skill must actually switch it off — its folder leaves .claude/skills (the
+// CLI no longer offers it) but is kept under .claude-manager/archived-skills,
+// and RestoreSkill brings the same file back (LEARN-TASKS.md LN-24).
+func TestArchiveSkill_MovesTheFileOutOfTheCLIsReach(t *testing.T) {
+	a, st, dir := newSkillApp(t)
 	sk := insertDraftSkill(t, st, "git-session-preamble")
 
 	path, err := a.ApproveSkill(sk.ID, "approved body", false)
 	if err != nil {
 		t.Fatalf("ApproveSkill: %v", err)
 	}
+	if got, _ := st.GetSkill(sk.ID); got.Status != store.SkillStatusApproved {
+		t.Errorf("Status after approve = %q, want approved (autopilot off)", got.Status)
+	}
 
 	if err := a.ArchiveSkill(sk.ID); err != nil {
 		t.Fatalf("ArchiveSkill: %v", err)
 	}
-
 	got, err := st.GetSkill(sk.ID)
 	if err != nil {
 		t.Fatalf("GetSkill: %v", err)
 	}
-	if got.Status != "archived" {
-		t.Errorf("Status = %q, want archived", got.Status)
+	if got.Status != store.SkillStatusArchived || got.ArchivedAt == nil {
+		t.Errorf("row = %+v, want archived with ArchivedAt", got)
 	}
-	if got.ArchivedAt == nil {
-		t.Error("ArchivedAt is nil after archiving")
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("archived skill is still in .claude/skills: %v", err)
 	}
-	if _, err := os.Stat(path); err != nil {
-		t.Errorf("archiving removed the approved file: %v", err)
+	archived, _ := experience.ArchivedSkillPath(dir, "git-session-preamble", sk.ID)
+	if _, err := os.Stat(filepath.Join(archived, "SKILL.md")); err != nil {
+		t.Errorf("archived copy missing: %v", err)
+	}
+
+	if _, err := a.RestoreSkill(sk.ID, false); err != nil {
+		t.Fatalf("RestoreSkill: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "approved body" {
+		t.Errorf("restored file = %q, %v; want the approved body back", data, err)
+	}
+	if got, _ := st.GetSkill(sk.ID); got.Status != store.SkillStatusApproved || got.ArchivedAt != nil {
+		t.Errorf("row after restore = %+v, want approved, ArchivedAt cleared", got)
+	}
+}
+
+// TestApproveSkill_StartsTrialWhenAutopilotOn: with the project's autopilot
+// on, a manually applied skill is put on trial so the autopilot judges it
+// like its own (LEARN-TASKS.md LN-26).
+func TestApproveSkill_StartsTrialWhenAutopilotOn(t *testing.T) {
+	a, st, _ := newSkillApp(t)
+	a.cfg.Projects[0].AutoSkills = true
+	sk := insertDraftSkill(t, st, "git-session-preamble")
+	if _, err := a.ApproveSkill(sk.ID, "body", false); err != nil {
+		t.Fatalf("ApproveSkill: %v", err)
+	}
+	if got, _ := st.GetSkill(sk.ID); got.Status != store.SkillStatusTrial {
+		t.Errorf("Status = %q, want trial", got.Status)
+	}
+}
+
+// TestGetSkillAutopilot_ReportsSpend: only autopilot rows count toward its
+// spend; today's spend is a subset of the total.
+func TestGetSkillAutopilot_ReportsSpend(t *testing.T) {
+	a, st, _ := newSkillApp(t)
+	a.cfg.Projects[0].AutoSkills = true
+	a.cfg.Projects[0].AutoSkillsDailyBudgetUSD = 2
+	now := time.Now()
+	for _, r := range []store.Skill{
+		{Project: "lumen", Name: "a", Status: store.SkillStatusRejected, Origin: store.SkillOriginAuto, CostUSD: 0.5, CreatedAt: now},
+		{Project: "lumen", Name: "b", Status: store.SkillStatusRejected, Origin: store.SkillOriginAuto, CostUSD: 0.25, CreatedAt: now.AddDate(0, 0, -2)},
+		{Project: "lumen", Name: "c", Status: store.SkillStatusDraft, Origin: store.SkillOriginManual, CostUSD: 9, CreatedAt: now},
+	} {
+		r := r
+		r.DraftJSON, r.MD, r.SourceJSON = "{}", "", "[]"
+		if err := st.InsertSkill(&r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := a.GetSkillAutopilot("lumen")
+	if err != nil {
+		t.Fatalf("GetSkillAutopilot: %v", err)
+	}
+	if !got.Enabled || got.DailyBudgetUSD != 2 || got.SpentTodayUSD != 0.5 || got.SpentTotalUSD != 0.75 {
+		t.Errorf("state = %+v, want enabled, budget 2, today 0.5, total 0.75", got)
+	}
+}
+
+// TestRunSkillAutopilot_RefusesWhenOff: "Run now" must not spend anything
+// for a project that has not opted in.
+func TestRunSkillAutopilot_RefusesWhenOff(t *testing.T) {
+	a, st, _ := newSkillApp(t)
+	a.skillPilot = experience.NewSkillPilot(experience.SkillPilotDeps{Store: st})
+	if _, err := a.RunSkillAutopilot("lumen"); err == nil {
+		t.Error("RunSkillAutopilot with the autopilot off: err = nil, want an error")
 	}
 }
 

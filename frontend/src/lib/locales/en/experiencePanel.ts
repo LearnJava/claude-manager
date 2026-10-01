@@ -89,5 +89,5 @@ export default {
     'experiencePanel.footer.cost':
         'Est. tokens are chars/4, an order-of-magnitude approximation — there is no exact tokenizer without hitting the API.',
     'experiencePanel.footer.skills':
-        'Click a skill to review/edit its markdown. Accepting writes it to <project>/.claude/skills/<name>/SKILL.md.',
+        'Click a skill to see its markdown. Active skills live in <project>/.claude/skills/; switched-off ones in .claude-manager/archived-skills/.',
 } as Record<string, string>;

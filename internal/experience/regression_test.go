@@ -192,7 +192,7 @@ func TestDetectRegression_HintReflectsSkillGrowth(t *testing.T) {
 	if err := s.InsertSkill(sk); err != nil {
 		t.Fatalf("InsertSkill: %v", err)
 	}
-	if err := s.UpdateSkillApproved(sk.ID, "body", base); err != nil {
+	if err := s.UpdateSkillApproved(sk.ID, "body", store.SkillStatusApproved, "", base); err != nil {
 		t.Fatalf("UpdateSkillApproved: %v", err)
 	}
 

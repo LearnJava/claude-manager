@@ -90,5 +90,5 @@ export default {
     'experiencePanel.footer.cost':
         'Оцен. токены = символы/4, приближение по порядку величины — точного токенайзера без обращения к API нет.',
     'experiencePanel.footer.skills':
-        'Кликните по навыку, чтобы просмотреть/отредактировать его markdown. Принятие запишет его в <project>/.claude/skills/<name>/SKILL.md.',
+        'Кликните по навыку, чтобы увидеть его markdown. Работающие навыки лежат в <project>/.claude/skills/, выключенные — в .claude-manager/archived-skills/.',
 } as Record<string, string>;

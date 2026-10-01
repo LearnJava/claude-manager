@@ -101,26 +101,62 @@ type MixedBrief struct {
 }
 
 // Skill represents a row in `skills` — a distilled procedure candidate
-// (LEARN-TASKS.md LN-09/10/11). Status is draft (just distilled, not yet
-// written into the project), approved (written to
-// <project>/.claude/skills/<name>/SKILL.md by LN-10) or archived (rejected or
-// protuhla per LN-11). DraftJSON is the SkillDraft the distiller produced; MD
-// is its rendered form (analysis.RenderSkillMarkdown) — kept alongside the
-// JSON so LN-10 can offer the exact text for review/edit without re-rendering.
-// SourceJSON is the candidate's signature sequence (LN-08's
-// SkillCandidate.Sig) — LN-11 uses it to check whether this skill's pattern
-// still occurs in later runs.
+// (LEARN-TASKS.md LN-09/10/11, autopilot LN-24..27). Status is one of the
+// SkillStatus* constants below. DraftJSON is the SkillDraft the distiller
+// produced; MD is its rendered form (analysis.RenderSkillMarkdown) — kept
+// alongside the JSON so LN-10 can offer the exact text for review/edit
+// without re-rendering. SourceJSON is the candidate's signature sequence
+// (LN-08's SkillCandidate.Sig) — LN-11 uses it to find comparable runs, and
+// the autopilot uses it to never distill the same sequence twice.
+//
+// ApprovedAt is when the skill file was (last) written into the project —
+// the start of its trial window. Origin says who created the row
+// (SkillOriginManual/SkillOriginAuto); Reason is a JSON-encoded
+// experience.SkillReason explaining the current status; CostUSD is what the
+// distillation (+ autopilot review) cost.
 type Skill struct {
 	ID         int64
 	Project    string
 	Name       string
-	Status     string // draft | approved | archived
+	Status     string
 	DraftJSON  string
 	MD         string
 	SourceJSON string
 	CreatedAt  time.Time
 	ApprovedAt *time.Time
 	ArchivedAt *time.Time
+	Origin     string
+	Reason     string
+	CostUSD    float64
+	UpdatedAt  *time.Time
+}
+
+// Skill statuses. draft and rejected were never written into the project;
+// trial and approved have <project>/.claude/skills/<name>/SKILL.md on disk;
+// archived has had that file moved to the project's archived-skills folder
+// (experience.ArchiveSkillFile), so the CLI no longer sees it.
+const (
+	SkillStatusDraft    = "draft"    // distilled, waiting for a click (manual flow)
+	SkillStatusRejected = "rejected" // the autopilot's reviewer turned it down
+	SkillStatusTrial    = "trial"    // applied, being measured by the autopilot
+	SkillStatusApproved = "approved" // applied and kept
+	SkillStatusArchived = "archived" // switched off, file moved out of .claude/skills
+)
+
+// Skill origins.
+const (
+	SkillOriginManual = "manual"
+	SkillOriginAuto   = "auto"
+)
+
+// SkillLoad is one recorded load of a skill by an agent — a `Skill` tool
+// call (Claude Code) or `skill_view` (Hermes) in action_signatures. Arg is
+// the raw recorded input; experience.SkillNameFromLoad extracts the name.
+type SkillLoad struct {
+	Tool  string
+	Arg   string
+	RunID *int64
+	TS    time.Time
 }
 
 // ActionRow represents a row in action_signatures — one normalized tool call
@@ -795,9 +831,10 @@ func (s *Store) ListBriefs(project string, limit int) ([]*MixedBrief, error) {
 
 func scanSkill(row rowScanner) (*Skill, error) {
 	var sk Skill
-	var approvedAt, archivedAt sql.NullTime
+	var approvedAt, archivedAt, updatedAt sql.NullTime
 	err := row.Scan(&sk.ID, &sk.Project, &sk.Name, &sk.Status,
-		&sk.DraftJSON, &sk.MD, &sk.SourceJSON, &sk.CreatedAt, &approvedAt, &archivedAt)
+		&sk.DraftJSON, &sk.MD, &sk.SourceJSON, &sk.CreatedAt, &approvedAt, &archivedAt,
+		&sk.Origin, &sk.Reason, &sk.CostUSD, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -807,17 +844,32 @@ func scanSkill(row rowScanner) (*Skill, error) {
 	if archivedAt.Valid {
 		sk.ArchivedAt = &archivedAt.Time
 	}
+	if updatedAt.Valid {
+		sk.UpdatedAt = &updatedAt.Time
+	}
 	return &sk, nil
 }
 
-// InsertSkill inserts a Skill draft and sets sk.ID to the generated row ID.
-// Status is expected to be "draft" — the distiller (LEARN-TASKS.md LN-09)
-// never writes anything else; approval/archival (LN-10/11) update the row in
-// place instead of inserting a new one.
+const selectSkillCols = `id, project, name, status, draft_json, md, source_json, created_at,
+	approved_at, archived_at, origin, reason, cost_usd, updated_at`
+
+// InsertSkill inserts a skill row and sets sk.ID to the generated row ID.
+// The manual distiller (LEARN-TASKS.md LN-09) inserts drafts; the autopilot
+// (LN-25) inserts rejected or trial rows directly, the latter with
+// ApprovedAt already set. An empty Origin is stored as SkillOriginManual.
 func (s *Store) InsertSkill(sk *Skill) error {
-	const q = `INSERT INTO skills (project, name, status, draft_json, md, source_json, created_at)
-	    VALUES (?, ?, ?, ?, ?, ?, ?)`
-	res, err := s.db.Exec(q, sk.Project, sk.Name, sk.Status, sk.DraftJSON, sk.MD, sk.SourceJSON, sk.CreatedAt)
+	if sk.Origin == "" {
+		sk.Origin = SkillOriginManual
+	}
+	var approvedAt any
+	if sk.ApprovedAt != nil {
+		approvedAt = *sk.ApprovedAt
+	}
+	const q = `INSERT INTO skills (project, name, status, draft_json, md, source_json, created_at,
+	    approved_at, origin, reason, cost_usd, updated_at)
+	    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	res, err := s.db.Exec(q, sk.Project, sk.Name, sk.Status, sk.DraftJSON, sk.MD, sk.SourceJSON,
+		sk.CreatedAt, approvedAt, sk.Origin, sk.Reason, sk.CostUSD, sk.CreatedAt)
 	if err != nil {
 		return err
 	}
@@ -827,23 +879,19 @@ func (s *Store) InsertSkill(sk *Skill) error {
 
 // GetSkill returns a Skill by ID, or nil if not found.
 func (s *Store) GetSkill(id int64) (*Skill, error) {
-	const q = `SELECT id, project, name, status, draft_json, md, source_json, created_at, approved_at, archived_at
-	    FROM skills WHERE id=?`
-	sk, err := scanSkill(s.db.QueryRow(q, id))
+	sk, err := scanSkill(s.db.QueryRow(`SELECT `+selectSkillCols+` FROM skills WHERE id=?`, id))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	return sk, err
 }
 
-// ListSkills returns every skill row for a project — draft, approved and
-// archived alike, newest first — so the "Skills" tab (LEARN-TASKS.md LN-10)
-// can filter by status client-side (e.g. show an "already approved —
-// overwrite?" banner for a draft whose name collides with an approved one).
+// ListSkills returns every skill row for a project — every status alike,
+// newest first — so the "Skills" tab (LEARN-TASKS.md LN-10) can filter by
+// status client-side.
 func (s *Store) ListSkills(project string) ([]Skill, error) {
-	const q = `SELECT id, project, name, status, draft_json, md, source_json, created_at, approved_at, archived_at
-	    FROM skills WHERE project=? ORDER BY created_at DESC`
-	rows, err := s.db.Query(q, project)
+	rows, err := s.db.Query(`SELECT `+selectSkillCols+` FROM skills WHERE project=?
+	    ORDER BY created_at DESC, id DESC`, project)
 	if err != nil {
 		return nil, err
 	}
@@ -860,26 +908,72 @@ func (s *Store) ListSkills(project string) ([]Skill, error) {
 	return out, rows.Err()
 }
 
-// UpdateSkillApproved marks a skill row approved (LEARN-TASKS.md LN-10): md
-// is the reviewed/possibly-edited body actually written to
-// <project>/.claude/skills/<name>/SKILL.md, kept alongside draft_json so a
-// later view of the row shows what was really approved, not the original
-// distillation.
-func (s *Store) UpdateSkillApproved(id int64, md string, approvedAt time.Time) error {
-	const q = `UPDATE skills SET status='approved', md=?, approved_at=? WHERE id=?`
-	_, err := s.db.Exec(q, md, approvedAt, id)
+// UpdateSkillApproved records that a skill's file was written into the
+// project (LEARN-TASKS.md LN-10): md is the reviewed/possibly-edited body
+// actually written, kept alongside draft_json so a later view of the row
+// shows what was really applied, not the original distillation. status is
+// SkillStatusApproved, or SkillStatusTrial when the project's autopilot is
+// going to judge it (LN-26). approved_at restarts the trial window and
+// archived_at is cleared — the same call serves a restore from the archive.
+func (s *Store) UpdateSkillApproved(id int64, md, status, reason string, approvedAt time.Time) error {
+	const q = `UPDATE skills SET status=?, md=?, reason=?, approved_at=?, archived_at=NULL, updated_at=?
+	    WHERE id=?`
+	_, err := s.db.Exec(q, status, md, reason, approvedAt, approvedAt, id)
 	return err
 }
 
-// UpdateSkillArchived marks a skill row archived (LEARN-TASKS.md LN-10/11) —
-// a rejected draft or a skill LN-11 later proposes as stale. Does not touch
-// any file already written into the project; archiving only removes the row
-// from the active list.
-func (s *Store) UpdateSkillArchived(id int64, archivedAt time.Time) error {
-	const q = `UPDATE skills SET status='archived', archived_at=? WHERE id=?`
-	_, err := s.db.Exec(q, archivedAt, id)
+// UpdateSkillStatus moves a skill to status with reason, without touching
+// approved_at or md — trial→approved keeps its trial start, and a rejected
+// row stays unapplied. SkillStatusArchived also sets archived_at.
+func (s *Store) UpdateSkillStatus(id int64, status, reason string, at time.Time) error {
+	if status == SkillStatusArchived {
+		const q = `UPDATE skills SET status=?, reason=?, archived_at=?, updated_at=? WHERE id=?`
+		_, err := s.db.Exec(q, status, reason, at, at, id)
+		return err
+	}
+	const q = `UPDATE skills SET status=?, reason=?, updated_at=? WHERE id=?`
+	_, err := s.db.Exec(q, status, reason, at, id)
 	return err
 }
+
+// ListSkillLoads returns every recorded skill load in project — `Skill`
+// (Claude Code) and `skill_view` (Hermes) tool calls in action_signatures —
+// oldest first (LEARN-TASKS.md LN-24). A load is the only direct evidence
+// that an agent pulled a skill's body into its context; overlap with the
+// skill's source signatures says nothing about that.
+func (s *Store) ListSkillLoads(project string) ([]SkillLoad, error) {
+	const q = `SELECT tool, COALESCE(arg, ''), run_id, ts FROM action_signatures
+	    WHERE project=? AND tool IN ('Skill', 'skill_view') ORDER BY ts, id`
+	rows, err := s.db.Query(q, project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []SkillLoad
+	for rows.Next() {
+		var l SkillLoad
+		var runID sql.NullInt64
+		if err := rows.Scan(&l.Tool, &l.Arg, &runID, &l.TS); err != nil {
+			return nil, err
+		}
+		if runID.Valid {
+			id := runID.Int64
+			l.RunID = &id
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// UpdateSkillArchived marks a skill row archived with an empty reason —
+// shorthand for UpdateSkillStatus(id, SkillStatusArchived, "", at). Moving an
+// applied skill's file out of .claude/skills is the caller's job
+// (experience.ArchiveSkillFile): the store never touches the filesystem.
+func (s *Store) UpdateSkillArchived(id int64, archivedAt time.Time) error {
+	return s.UpdateSkillStatus(id, SkillStatusArchived, "", archivedAt)
+}
+
 
 // --- action_signatures / ingest_state (LEARN-TASKS.md LN-02) ---
 
@@ -1451,4 +1545,34 @@ func nullFloat64(v *float64) sql.NullFloat64 {
 		return sql.NullFloat64{}
 	}
 	return sql.NullFloat64{Float64: *v, Valid: true}
+}
+
+// IndexedRunIDs returns the IDs of project's runs that have at least one
+// action_signatures row — runs whose transcript was actually indexed. The
+// skill autopilot (LEARN-TASKS.md LN-26) counts only these toward a trial:
+// a run whose transcript was never read cannot testify that a skill went
+// unused.
+func (s *Store) IndexedRunIDs(project string) (map[int64]bool, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT run_id FROM action_signatures
+	    WHERE project=? AND run_id IS NOT NULL`, project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int64]bool)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
+// AddSkillCost adds usd to a skill row's recorded cost — the autopilot's
+// review of an already-distilled draft (LEARN-TASKS.md LN-25).
+func (s *Store) AddSkillCost(id int64, usd float64) error {
+	_, err := s.db.Exec(`UPDATE skills SET cost_usd = cost_usd + ? WHERE id=?`, usd, id)
+	return err
 }

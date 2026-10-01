@@ -188,6 +188,14 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         // GetSkillQuality (LEARN-TASKS.md LN-11) reads from the same store as
         // GetSkills above — same reason, same empty stub.
         GetSkillQuality: () => Promise.resolve([]),
+        // Skill autopilot (LEARN-TASKS.md LN-24..27): usage, switch state,
+        // restore — same empty/off stubs; tests override per-test.
+        GetSkillUsage: () => Promise.resolve({}),
+        GetSkillAutopilot: () =>
+          Promise.resolve({ enabled: false, tracking: false, daily_budget_usd: 0, spent_today_usd: 0, spent_total_usd: 0, trial_runs: 10 }),
+        SetSkillAutopilot: () => Promise.resolve(undefined),
+        RunSkillAutopilot: () => Promise.resolve({}),
+        RestoreSkill: () => Promise.resolve(''),
         // GetSkillCandidates/DistillSkill (LEARN-TASKS.md LN-08/09) read/write
         // the same store as GetSkills above — same reason, same empty stub.
         // Tests that need a populated candidate list override both per-test.

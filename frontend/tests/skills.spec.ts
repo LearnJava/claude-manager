@@ -83,7 +83,7 @@ test.describe('Skills tab', () => {
     expect(calls).toEqual([[1, '---\nname: git-session-preamble\n---\nedited body', false]]);
 
     // Approving closes the review panel and reloads — the row now shows Approved.
-    await expect(modal.getByText('Approved')).toBeVisible({ timeout: 5_000 });
+    await expect(modal.getByText('Active', { exact: true })).toBeVisible({ timeout: 5_000 });
   });
 
   test('re-approving an existing file shows the overwrite banner, and overwriting succeeds', async ({
@@ -264,54 +264,93 @@ test.describe('Skills tab — candidates (LN-08)', () => {
   });
 });
 
-// LEARN-TASKS.md LN-11 — the before/after-approval effect table.
-test.describe('Skills tab — effect table (LN-11)', () => {
-  test('renders the quality row with its verdict', async ({ page }) => {
+// LEARN-TASKS.md LN-11 — the before/after-approval effect, shown in the
+// library's "Effect" column of each live skill.
+test.describe('Skills tab — effect column (LN-11)', () => {
+  test('shows before → after tokens, stale hints and "not enough data"', async ({ page }) => {
     const modal = await openSkillsTab(page);
 
     await page.evaluate(() => {
       const w = window as any;
       const App = w.go.main.App;
+      const row = (id: number, name: string) => ({
+        ID: id, Project: 'test', Name: name, Status: 'approved',
+        DraftJSON: JSON.stringify({ name, description: 'Desc ' + name }),
+        MD: 'body', SourceJSON: '[]', CreatedAt: new Date().toISOString(),
+        ApprovedAt: new Date().toISOString(), ArchivedAt: null,
+        Origin: 'manual', Reason: '', CostUSD: 0, UpdatedAt: null,
+      });
+      const stats = (runs: number, tok: number, rate: number) =>
+        ({ runs, median_input_tokens: tok, median_num_turns: 5, completed_rate: rate });
+      App.GetSkills = () => Promise.resolve([row(1, 'run-go-tests'), row(2, 'stale-no-improvement'), row(3, 'unused-skill')]);
       App.GetSkillQuality = () =>
         Promise.resolve([
-          {
-            skill_id: 1,
-            skill_name: 'run-go-tests',
-            approved_at: new Date().toISOString(),
-            before: { runs: 3, median_input_tokens: 11000, median_num_turns: 12, completed_rate: 0.67 },
-            after: { runs: 3, median_input_tokens: 4000, median_num_turns: 5, completed_rate: 1 },
-            insufficient_data: false,
-            stale: false,
-          },
-          {
-            skill_id: 2,
-            skill_name: 'stale-no-improvement',
-            approved_at: new Date().toISOString(),
-            before: { runs: 3, median_input_tokens: 5000, median_num_turns: 8, completed_rate: 1 },
-            after: { runs: 5, median_input_tokens: 6000, median_num_turns: 9, completed_rate: 1 },
-            insufficient_data: false,
-            stale: true,
-            stale_reason: 'no_improvement',
-          },
-          {
-            skill_id: 3,
-            skill_name: 'unused-skill',
-            approved_at: new Date().toISOString(),
-            before: { runs: 0, median_input_tokens: 0, median_num_turns: 0, completed_rate: 0 },
-            after: { runs: 0, median_input_tokens: 0, median_num_turns: 0, completed_rate: 0 },
-            insufficient_data: true,
-            stale: true,
-            stale_reason: 'unused',
-          },
+          { skill_id: 1, skill_name: 'run-go-tests', approved_at: '', before: stats(3, 11000, 0.67), after: stats(3, 4000, 1),
+            insufficient_data: false, stale: false },
+          { skill_id: 2, skill_name: 'stale-no-improvement', approved_at: '', before: stats(3, 5000, 1), after: stats(5, 6000, 1),
+            insufficient_data: false, stale: true, stale_reason: 'no_improvement' },
+          { skill_id: 3, skill_name: 'unused-skill', approved_at: '', before: stats(0, 0, 0), after: stats(0, 0, 0),
+            insufficient_data: true, stale: true, stale_reason: 'unused' },
         ]);
     });
     await modal.getByRole('button', { name: 'Refresh' }).click();
 
-    await expect(modal.getByText('run-go-tests')).toBeVisible({ timeout: 5_000 });
-    await expect(modal.getByText('OK', { exact: true })).toBeVisible();
-    await expect(modal.getByText('stale-no-improvement')).toBeVisible();
-    await expect(modal.getByText(/Suggest archiving/i)).toBeVisible();
-    await expect(modal.getByText('unused-skill')).toBeVisible();
-    await expect(modal.getByText(/Not enough data/i)).toBeVisible();
+    await expect(modal.getByText('run-go-tests', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(modal.getByText('11.0k → 4.0k')).toBeVisible();
+    await expect(modal.getByText(/Suggest archiving \(no token improvement/i)).toBeVisible();
+    await expect(modal.getByText(/Suggest archiving \(unused/i)).toBeVisible();
+  });
+});
+
+// LEARN-TASKS.md LN-24..27 — the autopilot header and the skill library.
+test.describe('Skills tab — autopilot (LN-27)', () => {
+  test('toggle persists via SetSkillAutopilot; library shows status, usage and reason', async ({ page }) => {
+    const modal = await openSkillsTab(page);
+
+    await page.evaluate(() => {
+      const w = window as any;
+      w.__setCalls = [] as unknown[];
+      let enabled = false;
+      const App = w.go.main.App;
+      App.GetSkillAutopilot = () =>
+        Promise.resolve({ enabled, tracking: true, daily_budget_usd: 0, spent_today_usd: 0.3, spent_total_usd: 0.5, trial_runs: 10 });
+      App.SetSkillAutopilot = (p: string, on: boolean, b: number) => {
+        w.__setCalls.push([p, on, b]);
+        enabled = on;
+        return Promise.resolve(undefined);
+      };
+      const row = (id: number, name: string, status: string, reason: object) => ({
+        ID: id, Project: 'test', Name: name, Status: status,
+        DraftJSON: JSON.stringify({ name, description: 'Desc ' + name }),
+        MD: 'body', SourceJSON: '[]', CreatedAt: new Date().toISOString(),
+        ApprovedAt: new Date().toISOString(), ArchivedAt: null,
+        Origin: 'auto', Reason: JSON.stringify(reason), CostUSD: 0.25, UpdatedAt: null,
+      });
+      App.GetSkills = () =>
+        Promise.resolve([
+          row(1, 'kept-skill', 'approved', { code: 'kept', loads: 4, runs: 10 }),
+          row(2, 'dead-skill', 'archived', { code: 'unused_trial', runs: 10 }),
+        ]);
+      App.GetSkillUsage = () =>
+        Promise.resolve({
+          1: { skill_id: 1, name: 'kept-skill', loads: 7, runs_since_applied: 12, runs_with_load: 4, runs_since_last_load: 1 },
+        });
+    });
+    await modal.getByRole('button', { name: 'Refresh' }).click();
+
+    await expect(modal.getByTestId('skill-autopilot')).toContainText('off');
+    await expect(modal.getByText('kept-skill', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(modal.getByText('Kept: loaded in 4 of 10 trial runs')).toBeVisible();
+    await expect(modal.getByText('loaded 7×')).toBeVisible();
+    await expect(modal.getByText('Switched off: not loaded once in 10 trial runs')).toBeVisible();
+
+    await modal.getByRole('switch').click();
+    await expect(modal.getByTestId('skill-autopilot')).toContainText('on');
+    const calls = await page.evaluate(() => (window as any).__setCalls);
+    expect(calls).toEqual([['test', true, 0]]);
+
+    // Filter: only live skills.
+    await modal.getByRole('button', { name: /^Active/ }).click();
+    await expect(modal.getByText('dead-skill', { exact: true })).toHaveCount(0);
   });
 });

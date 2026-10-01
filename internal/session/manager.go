@@ -361,6 +361,11 @@ type SessionManager struct {
 	// cfg.Optimization.ExperienceTracking — see SetLogImporter.
 	importLogsFn ImportLogsFunc
 
+	// skillPilotFn is nil unless app.go has wired the skill autopilot
+	// (LEARN-TASKS.md LN-27); finishRun also gates every call on
+	// experience_tracking and the project's own AutoSkills flag.
+	skillPilotFn SkillAutopilotFunc
+
 	runtimeRules *permission.RuntimeRuleSet
 	queue        *permission.PendingQueue
 
@@ -486,6 +491,50 @@ func (m *SessionManager) SetRegressionDetector(fn RegressionFunc) {
 	m.mu.Lock()
 	m.regressionFn = fn
 	m.mu.Unlock()
+}
+
+// SkillAutopilotFunc runs one skill-autopilot step for a project (see
+// experience.SkillPilot.Tick) and reports whether any skill row changed.
+// internal/session cannot import internal/experience, so app.go supplies it.
+type SkillAutopilotFunc func(project, projectPath string, gates []string, dailyBudgetUSD float64) (changed bool, err error)
+
+// EventNameSkillsChanged tells the frontend the skill autopilot changed a
+// project's skills (applied, kept, switched off, rejected) — the Skills tab
+// reloads on it.
+const EventNameSkillsChanged = "skills:changed"
+
+// SkillsChangedEvent is the payload of EventNameSkillsChanged.
+type SkillsChangedEvent struct {
+	Project string `json:"project"`
+}
+
+// SetSkillAutopilot wires the skill autopilot (LEARN-TASKS.md LN-27). Pass
+// nil to disable it entirely. Even wired, it only runs after a run of a
+// project with AutoSkills on, once that run's transcript has been indexed —
+// its trial counts are built from the index.
+func (m *SessionManager) SetSkillAutopilot(fn SkillAutopilotFunc) {
+	m.mu.Lock()
+	m.skillPilotFn = fn
+	m.mu.Unlock()
+}
+
+// runSkillAutopilot runs the autopilot for project if it is wired and the
+// project opted in, emitting EventNameSkillsChanged when something changed.
+func (m *SessionManager) runSkillAutopilot(project, projectPath string) {
+	m.mu.Lock()
+	fn := m.skillPilotFn
+	m.mu.Unlock()
+	pcfg := m.findProjectConfig(project)
+	if fn == nil || pcfg == nil || !pcfg.AutoSkills {
+		return
+	}
+	changed, err := fn(project, projectPath, append([]string(nil), pcfg.Gates...), pcfg.AutoSkillsDailyBudgetUSD)
+	if err != nil {
+		logger.L.Error("manager.skill_autopilot_failed", "project", project, "error", err)
+	}
+	if changed {
+		m.emit(EventNameSkillsChanged, SkillsChangedEvent{Project: project})
+	}
 }
 
 // Shutdown stops every session and waits briefly. Safe to call multiple times.
@@ -1856,6 +1905,7 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 					"rows", res.Rows,
 					"reason", res.Reason,
 				)
+				m.runSkillAutopilot(project, projectPath)
 			}
 		}()
 	}

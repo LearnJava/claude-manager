@@ -479,6 +479,43 @@ func TestSaveProjectOverlayJournalRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSaveProjectOverlayAutoSkillsRoundTrip: the skill autopilot opt-in and
+// its budget live in the private layer (LEARN-TASKS.md LN-27) and survive a
+// save/load; switching it off really switches it off.
+func TestSaveProjectOverlayAutoSkillsRoundTrip(t *testing.T) {
+	proj := t.TempDir()
+	p := ProjectConfig{Name: "demo", Path: proj, AutoSkills: true, AutoSkillsDailyBudgetUSD: 1.5}
+	if err := SaveProjectOverlay(proj, p, nil); err != nil {
+		t.Fatalf("SaveProjectOverlay: %v", err)
+	}
+	shared, err := os.ReadFile(ProjectConfigPath(proj))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(shared), "auto_skills") {
+		t.Errorf("committed config leaks the private autopilot opt-in:\n%s", shared)
+	}
+	cfg, err := Load(writeGlobalWithProject(t, proj))
+	if err != nil {
+		t.Fatalf("Load after save: %v", err)
+	}
+	if got := cfg.Projects[0]; !got.AutoSkills || got.AutoSkillsDailyBudgetUSD != 1.5 {
+		t.Errorf("autopilot settings round-trip mismatch: %+v", got)
+	}
+
+	p.AutoSkills = false
+	if err := SaveProjectOverlay(proj, p, nil); err != nil {
+		t.Fatalf("SaveProjectOverlay: %v", err)
+	}
+	cfg, err = Load(writeGlobalWithProject(t, proj))
+	if err != nil {
+		t.Fatalf("Load after save: %v", err)
+	}
+	if cfg.Projects[0].AutoSkills {
+		t.Error("AutoSkills still on after saving it off")
+	}
+}
+
 func TestEnsureGitignoreIdempotent(t *testing.T) {
 	proj := t.TempDir()
 	p := ProjectConfig{Name: "d", Path: proj}

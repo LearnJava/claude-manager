@@ -15,9 +15,10 @@ import (
 // not a measurement.
 const MinSkillEffectRuns = 3
 
-// StaleRunWindow is how many of a project's most recent runs are checked for
-// whether a skill's signatures occur at all (LEARN-TASKS.md LN-11: "ни одна
-// сигнатура не встретилась за последние 20 прогонов проекта").
+// StaleRunWindow is how many of a project's indexed runs may pass without a
+// single load of a skill before it counts as unused (LEARN-TASKS.md LN-11,
+// reworked by LN-24 from "its signatures did not occur" to "it was not
+// loaded").
 const StaleRunWindow = 20
 
 // StaleMinRunsAfter is the number of post-approval comparable runs required
@@ -74,10 +75,19 @@ func BuildSkillQualityReport(st *store.Store, project string) ([]SkillEffect, er
 	if err != nil {
 		return nil, err
 	}
-	recentWindow := runs
-	if len(recentWindow) > StaleRunWindow {
-		recentWindow = recentWindow[:StaleRunWindow]
+	// "Unused" is judged by actual loads of the skill (LEARN-TASKS.md
+	// LN-24), not by whether its source signatures still occur: a skill
+	// distilled from a common command matches that command forever, loaded
+	// or not.
+	loads, err := st.ListSkillLoads(project)
+	if err != nil {
+		return nil, err
 	}
+	indexed, err := indexedRuns(st, project)
+	if err != nil {
+		return nil, err
+	}
+	usage := computeSkillUsage(skills, loads, indexed)
 
 	var out []SkillEffect
 	for _, sk := range skills {
@@ -97,14 +107,7 @@ func BuildSkillQualityReport(st *store.Store, project string) ([]SkillEffect, er
 
 		eff := measureSkillEffect(sk, runs, runsWithSig)
 
-		usedRecently := false
-		for _, r := range recentWindow {
-			if runsWithSig[r.ID] {
-				usedRecently = true
-				break
-			}
-		}
-		evaluateStale(&eff, usedRecently)
+		evaluateStale(&eff, usage[sk.ID].RunsSinceLastLoad < StaleRunWindow)
 
 		out = append(out, eff)
 	}
@@ -163,9 +166,9 @@ func computeSkillStats(runs []*store.SessionRun) SkillStats {
 }
 
 // evaluateStale marks eff.Stale/StaleReason per LEARN-TASKS.md LN-11's
-// "протухание" rule. usedRecently reports whether any of the project's last
-// StaleRunWindow runs was comparable for this skill (its signatures occurred
-// at all) — false means the skill's pattern has stopped coming up. Otherwise,
+// "протухание" rule. usedRecently reports whether the skill was loaded within
+// the last StaleRunWindow indexed runs (LN-24) — false means agents have
+// stopped (or never started) pulling it in. Otherwise,
 // a skill with enough post-approval evidence whose median input-token cost
 // did not drop is flagged as not having paid for itself. Requires Before.Runs
 // > 0 to compare against — with no pre-approval baseline at all there is
