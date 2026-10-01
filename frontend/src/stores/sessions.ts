@@ -405,6 +405,8 @@ export async function initSessions(): Promise<void> {
 
 // ---- Wails event subscriptions ----
 function subscribeEvents() {
+    // Backend finished startup(): a snapshot taken before that came back empty.
+    EventsOn('app:ready', () => { void refreshSessions(); });
 
     EventsOn('session:status', (evt: { id: string; status: SessionStatus }) => {
         if (!evt || !evt.id) return;

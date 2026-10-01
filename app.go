@@ -266,6 +266,37 @@ func (a *App) startup(ctx context.Context) {
 
 	logger.L.Info("startup.complete")
 	runtime.LogInfo(ctx, "Claude Session Manager started")
+	runtime.EventsEmit(ctx, "app:ready")
+
+	go func() {
+		defer logger.Recover("window.ensure_on_screen")
+		// Give the native window a moment to settle before reading its position.
+		time.Sleep(1500 * time.Millisecond)
+		a.ensureWindowOnScreen()
+	}()
+}
+
+// windowOffScreen reports whether a window position is the Windows
+// "minimised" parking spot (-32000,-32000) or otherwise far outside any monitor.
+func windowOffScreen(x, y int) bool {
+	return x <= -10000 || y <= -10000
+}
+
+// ensureWindowOnScreen recovers a window that was created at the off-screen
+// minimised position without being iconic (invisible yet "running").
+func (a *App) ensureWindowOnScreen() {
+	if a.ctx == nil {
+		return
+	}
+	x, y := runtime.WindowGetPosition(a.ctx)
+	if !windowOffScreen(x, y) {
+		return
+	}
+	logger.L.Warn("window.off_screen", "x", x, "y", y)
+	runtime.WindowShow(a.ctx)
+	runtime.WindowUnminimise(a.ctx)
+	runtime.WindowCenter(a.ctx)
+	runtime.WindowMaximise(a.ctx)
 }
 
 // shutdown is called by Wails when the application is about to quit.
@@ -940,6 +971,11 @@ func setSessionRuntimeInConfig(cfg *config.AppConfig, project, name, runtime str
 // ---- State / history / metrics ----
 
 func (a *App) GetAllSessions() []session.SessionState {
+	// The frontend can call this before startup() has built the manager;
+	// the "app:ready" event makes it re-fetch once the manager exists.
+	if a.manager == nil {
+		return nil
+	}
 	return a.manager.GetAllSessions()
 }
 

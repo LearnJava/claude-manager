@@ -1356,3 +1356,22 @@ func TestSetSessionRuntimeInConfig(t *testing.T) {
 		t.Error(`"claude" and "" are the same runtime`)
 	}
 }
+
+func TestGetAllSessions_NilManager(t *testing.T) {
+	a := &App{}
+	if got := a.GetAllSessions(); got != nil {
+		t.Fatalf("want nil before startup, got %v", got)
+	}
+}
+
+func TestWindowOffScreen(t *testing.T) {
+	cases := []struct {
+		x, y int
+		want bool
+	}{{-32000, -32000, true}, {0, 0, false}, {-8, -8, false}, {100, -32000, true}, {1920, 50, false}}
+	for _, c := range cases {
+		if got := windowOffScreen(c.x, c.y); got != c.want {
+			t.Errorf("windowOffScreen(%d,%d)=%v want %v", c.x, c.y, got, c.want)
+		}
+	}
+}
