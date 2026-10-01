@@ -58,7 +58,7 @@ are adapter-internal and never leave `parser.go`/`hermes_parser.go`.
 | `Init *InitInfo` | Session id, model, tools, cwd from the `system/init` line | both (Hermes only fills `SessionID`/`Model`) | `EvtInit`; `s.CLISessionID` rotation; crash-recovery state save |
 | `Permission *PermissionRequest` | A `permission_request` line | Claude only — Hermes has no such event (one process per turn, no mid-turn approval protocol) | `EvtPermission` |
 | `Usage *TokenUsage` | Per-turn token counts | Claude: from `assistant.message.usage`; Hermes: synthesized once from the `result` line's `tokens` (§6) | `EvtUsage` |
-| `Todos []TodoItem` | Claude's `TodoWrite` tool_use input, or Hermes's `todo_list` tool_result output | both, different tool names (see §3) | `s.updateTodos` → `EvtTodo` → TaskPanel |
+| `Todos []TodoItem` | Claude's `TodoWrite` tool_use input, or Hermes's `todo_list` tool_result output | both, different tool names (see §3) | `s.updateTodos` → `EvtTodo` → QueuePanel / QueueBoard (live step) |
 | `Activity *Activity` | Transient "what's happening now" (`thinking`\|`tool`\|`writing`\|`idle`) | both — Claude from `stream_event.content_block_start`, Hermes from its own event types directly (§3) | `s.setActivity` → `EvtActivity` (never persisted) |
 | `Questions []Question` | Ask-user question(s) pending, unified across sources (RT-03) | Claude: parsed from the ```` ```ask-user ```` marker in `Result.ResultText` (`parser.go`); Hermes: from the marker too, or from a `clarify` call's questions attached to its `tool_result` | `session.go`'s `handleEvent`/`hermesRunTurn` dispatch (§6 "known differences") route it into `pendingQuestionSet`/`PendingQuestion` |
 
@@ -110,7 +110,7 @@ Hermes-specific mechanics not present in Claude's format:
   streamed token; `strings.Builder` accumulated, flushed as a single entry.
 - **`clarify` → `ParsedEvent.Questions`** (`Source: hermes_clarify`): see §6,
   "known differences".
-- **`todo_list` → TaskPanel**: unlike Claude's `TodoWrite` (an *input*, i.e.
+- **`todo_list` → live step in QueuePanel**: unlike Claude's `TodoWrite` (an *input*, i.e.
   what the model is about to set), Hermes's `todo_list` tool is read from its
   *output* (`ev.Output`, the authoritative merged list after the call) since
   the input may be a partial merge or absent for a read-only call.
