@@ -11,6 +11,7 @@ import sessionView from './en/sessionView';
 import sessionInput from './en/sessionInput';
 import statusBar from './en/statusBar';
 import taskPanel from './en/taskPanel';
+import queue from './en/queue';
 import permissionBanner from './en/permissionBanner';
 import permissionQueue from './en/permissionQueue';
 import questionBanner from './en/questionBanner';
@@ -38,6 +39,7 @@ export default {
     ...sessionInput,
     ...statusBar,
     ...taskPanel,
+    ...queue,
     ...permissionBanner,
     ...permissionQueue,
     ...questionBanner,

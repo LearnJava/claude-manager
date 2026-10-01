@@ -12,6 +12,9 @@
     } from '../stores/sessions';
     import { projects } from '../stores/projects';
     import { formatTime } from '../lib/formatters';
+    import QueueBoard from './QueueBoard.svelte';
+    import { queues, syncQueue } from '../stores/queues';
+    import { EMPTY_QUEUE, hasQueue } from '../lib/queue';
     import { t } from '../lib/i18n';
     import {
         StopSession,
@@ -134,6 +137,19 @@
         });
     }
 
+    // Log | Board: the board replaces the log stream and is only offered when
+    // the session has a queue; the log stays the default for every session.
+    let viewMode: 'log' | 'board' = 'log';
+    let viewForSession = '';
+    $: if (session.id !== viewForSession) {
+        viewForSession = session.id;
+        viewMode = 'log';
+    }
+    $: syncQueue(session);
+    $: queueModel = $queues[session.id]?.model ?? EMPTY_QUEUE;
+    $: boardAvailable = hasQueue(queueModel);
+    $: showBoard = boardAvailable && viewMode === 'board';
+
     // Button enabled states — Stop/Stop after task require an active process,
     // Restart works whenever we know the session id.
     $: isRunning =
@@ -178,7 +194,27 @@
                     <div class="px-3 py-1 text-xs text-status-error">{gitInitError}</div>
                 {/if}
             {/if}
-            <LogStream sessionId={session.id} />
+            {#if boardAvailable}
+                <div class="px-3 py-1 border-b border-bg-border flex items-center gap-1" data-testid="view-toggle">
+                    {#each ['log', 'board'] as m}
+                        <button
+                            type="button"
+                            data-testid="view-{m}"
+                            on:click={() => (viewMode = m === 'board' ? 'board' : 'log')}
+                            class="px-1.5 py-0.5 text-xs uppercase tracking-wide rounded
+                                   {(showBoard ? 'board' : 'log') === m
+                                ? 'text-text font-semibold bg-bg-elevated'
+                                : 'text-text-muted hover:text-text'}">
+                            {$t(m === 'board' ? 'queue.view.board' : 'queue.view.log')}
+                        </button>
+                    {/each}
+                </div>
+            {/if}
+            {#if showBoard}
+                <QueueBoard {session} />
+            {:else}
+                <LogStream sessionId={session.id} />
+            {/if}
         </div>
         <TaskPanel {session} />
     </div>
