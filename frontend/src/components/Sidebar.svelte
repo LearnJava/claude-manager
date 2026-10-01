@@ -4,6 +4,8 @@
     import ModelPicker from './ModelPicker.svelte';
     import ResumePrompt from './ResumePrompt.svelte';
     import AlienCrew from './AlienCrew.svelte';
+    import QueueMiniBar from './QueueMiniBar.svelte';
+    import { syncQueue } from '../stores/queues';
     import { MODELS, normalizeModel } from '../lib/models';
     import { t } from '../lib/i18n';
 
@@ -218,6 +220,7 @@
     $: {
         for (const g of $projectGroups) {
             for (const s of g.sessions) {
+                syncQueue(s);
                 if (seenStatus[s.id] === s.status) continue;
                 seenStatus[s.id] = s.status;
                 if (isRunning(s)) forgetState(s.id);
@@ -524,6 +527,9 @@
                                     type="button">
                                     {s.stop_requested ? '⏳' : isRunning(s) ? '■' : '▶'}
                                 </button>
+                            </div>
+                            <div class="pl-4">
+                                <QueueMiniBar session={s} running={isRunning(s)} />
                             </div>
                             {#if modelError[s.id]}
                                 <div class="text-status-error pl-4" style="font-size: 10px">{modelError[s.id]}</div>

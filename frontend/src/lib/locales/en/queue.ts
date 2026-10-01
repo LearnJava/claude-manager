@@ -1,0 +1,28 @@
+// Translation fragment: queue (en). Keys are namespaced 'queue.xxx' — see frontend/src/lib/i18n.ts.
+
+export default {
+    'queue.tab': 'Queue',
+    'queue.empty': 'The queue is empty — nothing is pointed at in this session’s task source.',
+    'queue.loading': 'Loading queue…',
+    'queue.now': 'Now · {position} of {total}',
+    'queue.next': 'Up next · {position} of {total}',
+    'queue.upcoming': 'Next',
+    'queue.waitsFor': 'waits for {ids}',
+    'queue.blocked': 'blocked',
+    'queue.doneInRoadmap': '✓ Done in the roadmap: {count}',
+    'queue.sizeTitle': 'Size: {size}',
+    'queue.step': 'step',
+    'queue.mini.done': '{count} done',
+    'queue.mini.running': '{count} in progress',
+    'queue.mini.next': '{count} up next',
+    'queue.mini.queued': '{count} queued',
+    'queue.mini.toggleTitle': 'Show the queue',
+    'queue.view.log': 'Log',
+    'queue.view.board': 'Board',
+    'queue.board.queue': 'Queue',
+    'queue.board.running': 'In progress',
+    'queue.board.blocked': 'Blocked',
+    'queue.board.done': 'Done',
+    'queue.board.more': '+{count} more',
+    'queue.board.emptyColumn': '—',
+} as Record<string, string>;

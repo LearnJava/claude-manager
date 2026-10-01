@@ -194,6 +194,9 @@ claude-manager/
 │   ├── stores/
 │   │   ├── sessions.ts              # Session state, Wails event subscriptions
 │   │   ├── projects.ts              # Projects state
+│   │   ├── queues.ts                # Per-session queue snapshot (one GetSessionRoadmap call feeds
+│   │   │                            #   the mini-bar, Queue tab and board); syncQueue() re-reads on
+│   │   │                            #   task_source_description / tasks_done change
 │   │   ├── theme.ts                 # Dark/light theme toggle, localStorage persistence
 │   │   ├── logSearch.ts             # Log filter store, Ctrl+F focus
 │   │   ├── logView.ts               # Log rendering mode: markdown vs raw + layout: feed vs
@@ -221,9 +224,16 @@ claude-manager/
 │   │   │                            #   session.activity; lib/liveStatus.ts holds text + ticking clock
 │   │   ├── LogEntryRow.svelte       # One log row (collapse, markdown render/raw, M override);
 │   │   │                            #   shared by LogStream's classic view and expanded feed groups
-│   │   ├── TaskPanel.svelte         # Right of the log, two tabs — "Task": current task
+│   │   ├── TaskPanel.svelte         # Right of the log, tabs — "Task": current task
 │   │   │                            #   (TodoWrite), checklist, progress %, session prompt;
-│   │   │                            #   "Roadmap": RoadmapTree (default for task_source sessions)
+│   │   │                            #   "Queue · N": QueuePanel (only when the session has a queue,
+│   │   │                            #   then the default); "Roadmap": RoadmapTree
+│   │   ├── QueuePanel.svelte        # Queue tab: current-row card (live TodoWrite step) + numbered
+│   │   │                            #   "Next" list with size chips and "waits for" dependencies
+│   │   ├── QueueMiniBar.svelte      # Sidebar row footer: done/current/queued segments + counts,
+│   │   │                            #   click unfolds what is still ahead (no session switch)
+│   │   ├── QueueBoard.svelte        # Read-only board replacing the log (SessionView "Log | Board"
+│   │   │                            #   toggle): Queue / In progress / Blocked (if any) / Done
 │   │   ├── RoadmapTree.svelte       # ROADMAP.md as a tree: header (progress, curated/pointer
 │   │   │                            #   model, hide-done), project context, phase roots
 │   │   ├── RoadmapNode.svelte       # One tree node, recursive via <svelte:self>: collapse,
@@ -258,6 +268,8 @@ claude-manager/
 │   └── lib/
 │       ├── formatters.ts            # Log formatting, time, cost, tokens, percent;
 │       │                            #   log colours are light/dark class pairs
+│       ├── queue.ts                 # Pure queue model from a RoadmapView: in_queue rows (current
+│       │                            #   first), waitsFor from depends_on, recent done, segments
 │       ├── markdown.ts              # Dependency-free markdown → safe HTML for the log
 │       │                            #   (hasMarkdown/renderMarkdown, escapes everything)
 │       └── models.ts                # Model catalog: MODELS/EFFORTS + normalizeModel/modelLabel

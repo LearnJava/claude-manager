@@ -1,0 +1,28 @@
+// Translation fragment: queue (ru). Keys are namespaced 'queue.xxx' — see frontend/src/lib/i18n.ts.
+
+export default {
+    'queue.tab': 'Очередь',
+    'queue.empty': 'Очередь пуста — в источнике задач этой сессии нет указателей.',
+    'queue.loading': 'Загрузка очереди…',
+    'queue.now': 'Сейчас · {position} из {total}',
+    'queue.next': 'Следующая · {position} из {total}',
+    'queue.upcoming': 'Дальше',
+    'queue.waitsFor': 'ждёт {ids}',
+    'queue.blocked': 'заблокирована',
+    'queue.doneInRoadmap': '✓ Готово в roadmap: {count}',
+    'queue.sizeTitle': 'Размер: {size}',
+    'queue.step': 'шаг',
+    'queue.mini.done': '{count} готово',
+    'queue.mini.running': '{count} идёт',
+    'queue.mini.next': '{count} следующая',
+    'queue.mini.queued': '{count} в очереди',
+    'queue.mini.toggleTitle': 'Показать очередь',
+    'queue.view.log': 'Лог',
+    'queue.view.board': 'Доска',
+    'queue.board.queue': 'Очередь',
+    'queue.board.running': 'В работе',
+    'queue.board.blocked': 'Заблокировано',
+    'queue.board.done': 'Готово',
+    'queue.board.more': 'ещё {count}',
+    'queue.board.emptyColumn': '—',
+} as Record<string, string>;

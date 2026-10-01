@@ -123,6 +123,22 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 
 ---
 
+## Task queue views — QueueMiniBar / QueuePanel / QueueBoard
+
+`frontend/tests/queue-ui.spec.ts` stubs `GetSessionRoadmap` in the page (playwright-server has no roadmap on disk); the pure model is covered by `frontend/tests/queue.spec.ts`.
+
+| ID | Title | Steps | Assert | Status |
+|----|-------|-------|--------|--------|
+| QU-01 | Sidebar mini-bar shows counts and unfolds the list | Select a session with a queue; click the mini-bar | "1 up next · 3 queued"; list with current + queued rows; the click does not change the selection | ✓ |
+| QU-02 | Queue tab is the default and shows dependencies | Open a session with a queue | Current card, numbered "Next" list, "waits for RT-05", blocked mark, "Done in the roadmap: 3", tab label `Queue · 4` | ✓ |
+| QU-03 | Roadmap tab stays reachable | Click "Roadmap" | Queue panel gone, roadmap title visible | ✓ |
+| QU-04 | Board replaces the log and Log comes back | Click "Board", then "Log" | Queue / In progress / Blocked / Done columns hold the right rows; board gone after "Log"; log is the default | ✓ |
+| QU-05 | No queue — no queue UI | Roadmap is null | No Log/Board toggle, no Queue tab, no mini-bar; Roadmap tab present | ✓ |
+| QU-06 | Running session shows the live step and progress | Session working with a TodoWrite plan | Queue card shows `step N/M` + bar; board "In progress" card shows bar and step | ○ |
+| QU-07 | Queue refreshes when a task finishes | Emit `session:task_done` | Counts shift: one more done, next row becomes current | ○ |
+
+---
+
 ## SessionCard.svelte — KPI Display
 
 | ID | Title | Steps | Assert | Status |

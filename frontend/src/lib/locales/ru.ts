@@ -10,6 +10,7 @@ import sessionView from './ru/sessionView';
 import sessionInput from './ru/sessionInput';
 import statusBar from './ru/statusBar';
 import taskPanel from './ru/taskPanel';
+import queue from './ru/queue';
 import permissionBanner from './ru/permissionBanner';
 import permissionQueue from './ru/permissionQueue';
 import questionBanner from './ru/questionBanner';
@@ -37,6 +38,7 @@ export default {
     ...sessionInput,
     ...statusBar,
     ...taskPanel,
+    ...queue,
     ...permissionBanner,
     ...permissionQueue,
     ...questionBanner,
