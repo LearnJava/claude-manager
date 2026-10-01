@@ -328,7 +328,7 @@
     aria-modal="true"
     tabindex="-1">
     <div
-        class="bg-bg-panel border border-bg-border rounded-md shadow-xl w-[1000px] max-w-[96vw] h-[680px] max-h-[94vh] flex flex-col"
+        class="bg-bg-panel border border-bg-border rounded-md shadow-xl w-[1400px] max-w-[96vw] h-[900px] max-h-[94vh] flex flex-col"
         role="document"
         on:click|stopPropagation
         on:keydown|stopPropagation>
