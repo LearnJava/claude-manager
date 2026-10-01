@@ -224,10 +224,9 @@ claude-manager/
 │   │   │                            #   session.activity; lib/liveStatus.ts holds text + ticking clock
 │   │   ├── LogEntryRow.svelte       # One log row (collapse, markdown render/raw, M override);
 │   │   │                            #   shared by LogStream's classic view and expanded feed groups
-│   │   ├── TaskPanel.svelte         # Right of the log, tabs — "Task": current task
-│   │   │                            #   (TodoWrite), checklist, progress %, session prompt;
-│   │   │                            #   "Queue · N": QueuePanel (only when the session has a queue,
-│   │   │                            #   then the default); "Roadmap": RoadmapTree
+│   │   ├── TaskPanel.svelte         # Right of the log, two tabs — "Queue · N": QueuePanel (only
+│   │   │                            #   when the session has a queue, then the default);
+│   │   │                            #   "Roadmap": RoadmapTree
 │   │   ├── QueuePanel.svelte        # Queue tab: current-row card (live TodoWrite step) + numbered
 │   │   │                            #   "Next" list with size chips and "waits for" dependencies
 │   │   ├── QueueMiniBar.svelte      # Sidebar row footer: done/current/queued segments + counts,

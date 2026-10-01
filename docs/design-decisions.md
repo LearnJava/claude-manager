@@ -221,7 +221,7 @@ the auto-restart loop, so the user must stop it manually (the Stop button) or
 it exits when the CLI process does. Covered by the `no-tasks-interactive` e2e
 scenario (`testdata/e2e/`, `testdata/scenarios/`, `testdata/configs/`).
 
-**Task description resolution (TaskPanel).** Once `hasTasks()` confirms work
+**Task description resolution.** Once `hasTasks()` confirms work
 remains, `resolveTaskSourceDescription()` (`internal/session/session.go`)
 mirrors `orchestrator.py`'s `resolve_pointer_desc()`: it takes the first bare
 pointer line (`ROADMAP.md:92`) and reads the exact text of that line from the
@@ -230,10 +230,9 @@ ROADMAP.md table row or a task-file heading. Legacy-format files fall back to
 the text following `"In progress:"` or the first `"- ["` item under
 `"Next:"`. The result is stored on the session (`setTaskSourceDesc`, emits
 `session:task_source` only when it changes) and exposed as
-`SessionState.task_source_description`. `TaskPanel.svelte` shows it under
-"Now" whenever Claude hasn't yet emitted a `TodoWrite` for the new task —
-`current_task` (from TodoWrite) always takes precedence once available, since
-it's more specific and reflects Claude's own live breakdown. This only
+`SessionState.task_source_description`. The frontend no longer shows it as text (the
+TaskPanel "Task" tab was removed); a change of it is the signal that a pointer line was
+consumed, so `stores/queues.ts` and `RoadmapTree.svelte` re-read the roadmap on it. This only
 resolves the *description* of the top task; it does not change which task
 `hasTasks()`/Claude picks.
 
