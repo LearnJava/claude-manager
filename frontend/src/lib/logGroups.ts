@@ -176,9 +176,10 @@ function buildEditSummary(callEntry: LogEntry): EditBlockSummary {
 }
 
 // Levels that, once a tools/edit group is open, extend it instead of closing
-// it — "Внутри серии записи system и thinking не рвут группу" (VIEW-TASKS.md
-// UI-02).
-const TOOLS_PASSTHROUGH = new Set(['system', 'thinking']);
+// it (VIEW-TASKS.md UI-02). `thinking` is deliberately not here: models with
+// interleaved thinking often answer the user's question in a thinking block
+// mid-run, and absorbing it hid that answer inside a collapsed tools group.
+const TOOLS_PASSTHROUGH = new Set(['system']);
 
 // Seconds between two entries' `time` fields, or null if either is missing/
 // invalid — the caller treats null as "still thinking" (no next entry yet).

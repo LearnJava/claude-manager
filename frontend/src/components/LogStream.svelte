@@ -373,9 +373,16 @@
                             <span class="shrink-0 select-none w-4 text-center font-bold leading-5">
                                 {isOpen ? '−' : '＋'}
                             </span>
-                            <span class="truncate">{label}</span>
+                            <span class="shrink-0">{label}</span>
                             {#if block.thinkingSeconds === null || block.thinkingSeconds === undefined}
                                 <LiveElapsed since={block.entries[0].time} />
+                            {/if}
+                            {#if !isOpen}
+                                <!-- First line of the thought, so a reply the model gave
+                                     in a thinking block is readable without a click. -->
+                                <span data-testid="thinking-preview" class="truncate min-w-0">
+                                    {block.entries[0].message.trim().split('\n', 1)[0]}
+                                </span>
                             {/if}
                         </button>
                         {#if isOpen}

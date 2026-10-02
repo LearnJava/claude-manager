@@ -68,11 +68,15 @@ for (const theme of ['dark', 'light'] as const) {
 
             const thinkingRow = page.locator('button', { hasText: /Thought for|Thinking/ }).first();
             await expect(thinkingRow).toBeVisible({ timeout: 5_000 });
-            // Collapsed by default — the raw thinking text is not in the DOM yet.
-            await expect(page.locator('text=Let me look at the failing test first.')).toHaveCount(0);
+            // Collapsed by default — only the first line shows, as a preview
+            // in the header (a reply given in thinking must stay findable).
+            const thought = page.getByText('Let me look at the failing test first.');
+            await expect(page.getByTestId('thinking-preview')).toHaveText('Let me look at the failing test first.');
+            await expect(thought).toHaveCount(1);
 
             await thinkingRow.click();
-            await expect(page.locator('text=Let me look at the failing test first.')).toBeVisible();
+            await expect(page.getByTestId('thinking-preview')).toHaveCount(0);
+            await expect(thought).toBeVisible();
             void now;
         });
 

@@ -108,16 +108,27 @@ test.describe('groupEntries', () => {
         expect(blocks.map((b) => b.kind)).toEqual(['user', 'prose', 'thinking', 'other']);
     });
 
-    test('system and thinking entries inside an open tools series do not break it', () => {
+    test('a system entry inside an open tools series does not break it', () => {
         const call1 = entry({ level: 'tool', tool_name: 'Bash', tool_input: 'echo 1' });
         const sys = entry({ level: 'system', message: 'note' });
-        const th = entry({ level: 'thinking', message: 'hmm' });
         const call2 = entry({ level: 'tool', tool_name: 'Bash', tool_input: 'echo 2' });
 
-        const blocks = groupEntries([call1, sys, th, call2]);
+        const blocks = groupEntries([call1, sys, call2]);
         expect(blocks).toHaveLength(1);
         expect(blocks[0].kind).toBe('tools');
-        expect(blocks[0].entries).toHaveLength(4);
+        expect(blocks[0].entries).toHaveLength(3);
+    });
+
+    test('a thinking entry splits a tools series and stays visible in the feed', () => {
+        // Interleaved thinking can carry the reply to the user's question —
+        // it must not be buried inside a collapsed tools group.
+        const call1 = entry({ level: 'tool', tool_name: 'Bash', tool_input: 'echo 1' });
+        const th = entry({ level: 'thinking', message: 'the containers were never up' });
+        const call2 = entry({ level: 'tool', tool_name: 'Bash', tool_input: 'echo 2' });
+
+        const blocks = groupEntries([call1, th, call2]);
+        expect(blocks.map((b) => b.kind)).toEqual(['tools', 'thinking', 'tools']);
+        expect(blocks[1].entries[0]).toBe(th);
     });
 
     test('entryKey falls back to a negative index when seq is missing', () => {
