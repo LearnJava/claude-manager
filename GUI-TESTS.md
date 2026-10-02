@@ -77,6 +77,8 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | SI-05 | Send button disabled for empty input | Session working, empty textarea | Send button disabled | ○ |
 | SI-06 | Sending state shown during flight | Intercept RPC, click Send | Button shows "Sending…" while in flight | ○ |
 | SI-07 | Error message shown on send failure | Make backend return error, click Send | Error message rendered above input | ○ |
+| SI-08 | "/" opens the command menu | Session working, type `/compa`, press Tab, then `/` + Esc | Menu lists `/compact` under "Claude Code"; Tab inserts `/compact `; Esc closes, text kept | **✓** |
+| SI-09 | Hermes session lists only Hermes skills | Hermes session, type `/` | Header "Hermes skills"; no Claude built-ins | ○ |
 
 ---
 

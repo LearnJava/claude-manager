@@ -178,6 +178,16 @@ func (s *Server) buildRegistry() map[string]handler {
 		return nil, m.SendMessage(args.ID, args.Message)
 	}
 
+	reg["ListSlashCommands"] = func(p json.RawMessage) (any, error) {
+		var args struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(p, &args); err != nil {
+			return nil, err
+		}
+		return m.ListSlashCommands(args.ID)
+	}
+
 	reg["RespondPermission"] = func(p json.RawMessage) (any, error) {
 		var args struct {
 			ID        string `json:"id"`

@@ -1068,6 +1068,16 @@ func (m *SessionManager) SendMessage(id, message string) error {
 	return ms.session.SendMessage(message)
 }
 
+// ListSlashCommands returns the "/" autocomplete catalog for a session,
+// filtered to what its runtime can run (see slashcmds.go).
+func (m *SessionManager) ListSlashCommands(id string) ([]SlashCommand, error) {
+	ms := m.get(id)
+	if ms == nil {
+		return nil, fmt.Errorf("session %q not found", id)
+	}
+	return ms.session.ListSlashCommands(), nil
+}
+
 // SendMessageWithImages writes a user message — optionally with image
 // attachments pasted into the message box — to the running session's stdin.
 func (m *SessionManager) SendMessageWithImages(id, message string, images []ImageAttachment) error {

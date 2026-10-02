@@ -395,3 +395,62 @@ func TestHermesRuntime_ClarifyAsksTheUserAndResumes(t *testing.T) {
 		}
 	}
 }
+
+// A user message starting with a known "/skill" (the "/" autocomplete's
+// pick) reaches Hermes as `-s <skill>` plus the remaining text: Hermes' -Q
+// path would otherwise hand "/skill" to the model as plain text. An unknown
+// "/name" is left in the query untouched.
+func TestHermesRuntime_SlashSkillBecomesPreload(t *testing.T) {
+	bin := buildFakehermes(t)
+	logPath := filepath.Join(t.TempDir(), "calls.jsonl")
+	t.Setenv("FAKEHERMES_LOG", logPath)
+	home := t.TempDir()
+	t.Setenv("HERMES_HOME", home)
+	writeFile(t, filepath.Join(home, "skills", "dev", "plan", "SKILL.md"), "---\nname: plan\ndescription: Plan it\n---\n")
+
+	results := make(chan string, 8)
+	s := New(Params{
+		ID: "p/S", ProjectName: "p", ProjectPath: t.TempDir(), HermesPath: bin,
+		Config: config.SessionConfig{Name: "S", Runtime: "hermes", Model: "m1", Prompt: "/plan add login"},
+		OnEvent: func(_ string, ev SessionEvent) {
+			if ev.Type == EvtResult {
+				results <- ev.Result.ResultText
+			}
+		},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	go func() { s.Run(ctx); close(done) }()
+
+	wait := func() {
+		t.Helper()
+		select {
+		case <-results:
+		case <-time.After(20 * time.Second):
+			t.Fatal("timed out waiting for a result")
+		}
+	}
+	wait()
+	if err := s.SendMessage("/nope keep me"); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	wait()
+	s.Stop(false)
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run did not exit after Stop")
+	}
+
+	calls := readFakeHermesLog(t, logPath)
+	if len(calls) != 2 {
+		t.Fatalf("launched %d processes, want 2", len(calls))
+	}
+	if argValue(calls[0].Args, "-s") != "plan" || calls[0].Query != "add login" {
+		t.Errorf("turn 1: args=%v query=%q; want -s plan and query %q", calls[0].Args, calls[0].Query, "add login")
+	}
+	if slices.Contains(calls[1].Args, "-s") || calls[1].Query != "/nope keep me" {
+		t.Errorf("turn 2: args=%v query=%q; an unknown /name must pass through", calls[1].Args, calls[1].Query)
+	}
+}

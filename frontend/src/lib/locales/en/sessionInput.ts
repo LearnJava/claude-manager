@@ -10,4 +10,10 @@ export default {
     'sessionInput.placeholder.inactive': 'Session is not active',
     'sessionInput.sending': 'Sending…',
     'sessionInput.send': 'Send ▶',
+    'sessionInput.slash.header.claude': 'Claude Code commands and skills',
+    'sessionInput.slash.header.hermes': 'Hermes skills',
+    'sessionInput.slash.hint': '↑↓ select · Enter/Tab insert · Esc close',
+    'sessionInput.slash.empty': 'No matching commands',
+    'sessionInput.slash.skill': 'skill',
+    'sessionInput.slash.command': 'command',
 } as Record<string, string>;

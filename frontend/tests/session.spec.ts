@@ -72,6 +72,41 @@ test.describe('SessionInput and LogStream', () => {
     await ctrl.rpc('StopSession', { id: SESSION_ID, soft: false }).catch(() => {/* ignore */});
   });
 
+  test('typing "/" opens the command menu and Tab inserts the pick', async ({ page, ctrl }) => {
+    await page.goto('/');
+    await ctrl.rpc('StartSession', { project: PROJECT, session: SESSION });
+    await ctrl.wait('session:status', { id: SESSION_ID, status: 'working' }, 12_000);
+
+    const sessionRow = page.locator('[role="button"]', { hasText: SESSION }).first();
+    await expect(sessionRow).toBeVisible({ timeout: 5_000 });
+    await sessionRow.click();
+
+    const textarea = page.locator('textarea[placeholder*="Type a message"]');
+    await expect(textarea).not.toBeDisabled({ timeout: 5_000 });
+    await textarea.click();
+    await textarea.pressSequentially('/compa');
+
+    // A Claude session offers Claude Code commands; "compact" is a built-in.
+    const menu = page.getByTestId('slash-menu');
+    await expect(menu).toBeVisible({ timeout: 5_000 });
+    await expect(menu).toContainText('Claude Code');
+    await expect(page.getByTestId('slash-item').first()).toContainText('/compact');
+
+    await textarea.press('Tab');
+    await expect(textarea).toHaveValue('/compact ');
+    await expect(menu).toBeHidden();
+
+    // Esc closes the menu without touching the text.
+    await textarea.fill('');
+    await textarea.pressSequentially('/');
+    await expect(menu).toBeVisible();
+    await textarea.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(textarea).toHaveValue('/');
+
+    await ctrl.rpc('StopSession', { id: SESSION_ID, soft: false }).catch(() => {/* ignore */});
+  });
+
   test('Send button is disabled when session is idle', async ({ page }) => {
     await page.goto('/');
 

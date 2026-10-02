@@ -10,4 +10,10 @@ export default {
     'sessionInput.placeholder.inactive': 'Сессия не активна',
     'sessionInput.sending': 'Отправка…',
     'sessionInput.send': 'Отправить ▶',
+    'sessionInput.slash.header.claude': 'Команды и скиллы Claude Code',
+    'sessionInput.slash.header.hermes': 'Скиллы Hermes',
+    'sessionInput.slash.hint': '↑↓ выбор · Enter/Tab вставить · Esc закрыть',
+    'sessionInput.slash.empty': 'Нет подходящих команд',
+    'sessionInput.slash.skill': 'скилл',
+    'sessionInput.slash.command': 'команда',
 } as Record<string, string>;
