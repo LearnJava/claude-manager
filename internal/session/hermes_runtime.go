@@ -236,6 +236,17 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 	defer cleanup()
 
 	args := s.runtime.Args(s, autonomous, convID, imagePath)
+	// A leading "/skill" is the "/" autocomplete's pick: Hermes' -Q path
+	// would pass it to the model as text, so it becomes `-s` instead. The
+	// log below keeps showing what the user typed.
+	shown := prompt
+	if strings.HasPrefix(prompt, "/") {
+		var skills []string
+		prompt, skills = expandHermesSkills(prompt, hermesSkillCommands(hermesHome(s.Config.HermesProfile)))
+		for _, sk := range skills {
+			args = append(args, "-s", sk)
+		}
+	}
 	turnStart := time.Now()
 	logger.L.Debug("session.launch", "id", s.ID, "hermes", s.hermesPath, "cwd", s.ProjectPath,
 		"args", strings.Join(args, " "))
@@ -285,9 +296,9 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 		s.mu.Unlock()
 	}()
 
-	if prompt != "" {
+	if shown != "" {
 		s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
-			Time: time.Now(), Level: "user", Source: "hermes", Message: prompt,
+			Time: time.Now(), Level: "user", Source: "hermes", Message: shown,
 		}})
 	}
 

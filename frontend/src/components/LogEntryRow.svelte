@@ -13,6 +13,9 @@
         renderMarkdown,
     } from '../lib/markdown';
     import { formatTime, logEntryColor, logEntryIcon } from '../lib/formatters';
+    import { copyText, COPY_FEEDBACK_MS } from '../lib/clipboard';
+    import { codeCopy } from '../lib/codeCopy';
+    import { onDestroy } from 'svelte';
 
     export let entry: LogEntry;
     // Stable key for this row (seq, or a synthesized negative fallback) —
@@ -74,15 +77,29 @@
         return mdCacheHtml;
     }
 
+    // Hover copy button: always the full message source (markdown as
+    // written), even when the row is collapsed to its summary.
+    let copyState: 'idle' | 'ok' | 'fail' = 'idle';
+    let copyTimer: ReturnType<typeof setTimeout> | undefined;
+
+    async function copyEntry() {
+        copyState = (await copyText(msg)) ? 'ok' : 'fail';
+        clearTimeout(copyTimer);
+        copyTimer = setTimeout(() => (copyState = 'idle'), COPY_FEEDBACK_MS);
+    }
+
+    onDestroy(() => clearTimeout(copyTimer));
+
     $: msg = entry.message ?? '';
     $: mdSrc = mdForced ?? autoMarkdown(entry);
     $: md = $logMarkdown && mdSrc;
     $: offered = $logMarkdown && offersMarkdown(entry);
     $: collapsible = isCollapsible(msg);
     $: isOpen = collapsible ? openForced ?? mdSrc : true;
+    $: html = md && isOpen ? renderCached(msg) : '';
 </script>
 
-<div class="flex items-start gap-2 py-px {logEntryColor(entry)}">
+<div class="group/row relative flex items-start gap-2 py-px {logEntryColor(entry)}">
     {#if showTime}
         <span class="text-text-dim shrink-0 select-none">
             [{formatTime(entry.time)}]
@@ -118,12 +135,46 @@
         <span class="shrink-0 w-4 select-none"></span>
     {/if}
     {#if md && isOpen}
-        <div class="md-body min-w-0 flex-1 break-words">
-            {@html renderCached(msg)}
+        <div
+            class="md-body min-w-0 flex-1 break-words"
+            use:codeCopy={{
+                html,
+                label: $t('logStream.copyCode'),
+                copied: $t('logStream.copied'),
+                failed: $t('logStream.copyFailed'),
+            }}>
+            {@html html}
         </div>
     {:else}
         <span class="whitespace-pre-wrap break-words">
             {collapsible && !isOpen ? summarize(msg) : msg}
         </span>
+    {/if}
+    {#if msg}
+        <button
+            type="button"
+            data-testid="entry-copy"
+            on:click={copyEntry}
+            title={copyState === 'ok'
+                ? $t('logStream.copied')
+                : copyState === 'fail'
+                  ? $t('logStream.copyFailed')
+                  : $t('logStream.copyEntry')}
+            class="absolute top-0 right-0 select-none p-0.5 rounded border border-bg-border
+                   bg-bg-panel shadow-sm group-hover/row:visible focus-visible:visible
+                   {copyState === 'idle' ? 'invisible text-text-dim hover:text-text' : ''}
+                   {copyState === 'ok' ? 'text-green-600 dark:text-status-working' : ''}
+                   {copyState === 'fail' ? 'text-red-600 dark:text-status-error' : ''}">
+            {#if copyState === 'ok'}
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+            {:else if copyState === 'fail'}
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+            {:else}
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+            {/if}
+        </button>
     {/if}
 </div>

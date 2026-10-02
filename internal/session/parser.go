@@ -71,6 +71,11 @@ type InitInfo struct {
 	PermissionMode    string      `json:"permissionMode"`
 	ClaudeCodeVersion string      `json:"claude_code_version"`
 	CWD               string      `json:"cwd"`
+	// SlashCommands/Skills/TerminalSlashCommands feed the message box's "/"
+	// autocomplete (slashcmds.go); terminal ones do not work headless.
+	SlashCommands         []string `json:"slash_commands,omitempty"`
+	Skills                []string `json:"skills,omitempty"`
+	TerminalSlashCommands []string `json:"terminal_slash_commands,omitempty"`
 }
 
 // TodoItem is one entry of Claude's own todo list, captured from a TodoWrite
@@ -256,6 +261,9 @@ type rawStreamEvent struct {
 	PermissionMode    string      `json:"permissionMode"`
 	ClaudeCodeVersion string      `json:"claude_code_version"`
 	CWD               string      `json:"cwd"`
+	SlashCommands         []string `json:"slash_commands"`
+	Skills                []string `json:"skills"`
+	TerminalSlashCommands []string `json:"terminal_slash_commands"`
 
 	// assistant fields
 	Message *rawAssistantMessage `json:"message"`
@@ -406,6 +414,10 @@ func handleSystem(ev rawStreamEvent, now time.Time) ParsedEvent {
 		PermissionMode:    ev.PermissionMode,
 		ClaudeCodeVersion: ev.ClaudeCodeVersion,
 		CWD:               ev.CWD,
+
+		SlashCommands:         ev.SlashCommands,
+		Skills:                ev.Skills,
+		TerminalSlashCommands: ev.TerminalSlashCommands,
 	}
 	msg := "Session initialized"
 	if info.Model != "" {

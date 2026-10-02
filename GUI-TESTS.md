@@ -77,6 +77,8 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | SI-05 | Send button disabled for empty input | Session working, empty textarea | Send button disabled | ○ |
 | SI-06 | Sending state shown during flight | Intercept RPC, click Send | Button shows "Sending…" while in flight | ○ |
 | SI-07 | Error message shown on send failure | Make backend return error, click Send | Error message rendered above input | ○ |
+| SI-08 | "/" opens the command menu | Session working, type `/compa`, press Tab, then `/` + Esc | Menu lists `/compact` under "Claude Code"; Tab inserts `/compact `; Esc closes, text kept | **✓** |
+| SI-09 | Hermes session lists only Hermes skills | Hermes session, type `/` | Header "Hermes skills"; no Claude built-ins | ○ |
 
 ---
 
@@ -120,6 +122,10 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | LS-25 | Autoscroll pins to bottom as feed blocks arrive | Push 30 `text` entries | Last entry visible, no "Jump to latest" button | ✓ |
 | LS-26 | Expanded group shows one row per tool call | Push 3 calls (ok, error, running), expand group | Rows with emoji, `0.3s`/`1m05s`, ✓/✖ + error text, spinner on running; group header spinner while collapsed | ✓ |
 | LS-27 | Click on call row reveals call + result; search on output opens group and row | Click row / Ctrl+F a term only in output | Output text visible | ✓ |
+| LS-30 | Entry copy button on hover | Push a markdown `text` entry, hover it, click the ⧉ button | Hidden until hover; clipboard gets the markdown source; title → `Copied`, then reverts and hides | ✓ |
+| LS-31 | Collapsed row copies the full message | Classic view, push a multi-line `tool_result`, hover, click ⧉ | Clipboard gets all lines, not the `…` summary | ✓ |
+| LS-32 | Code block header copies only the code | Push an entry with a ```` ```go ```` fence | One `.code-head` showing `go`; `Copy` puts just the fence body on the clipboard, shows `Copied` | ✓ |
+| LS-33 | Code header survives re-render, failures are shown | Toggle Markdown off/on; separately make `clipboard.writeText` reject | Still exactly one header; buttons show `Copy failed` | ✓ |
 
 ---
 

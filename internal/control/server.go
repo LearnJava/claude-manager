@@ -32,6 +32,7 @@ type ManagerAPI interface {
 	StartProject(project string) error
 	StopProject(project string) error
 	SendMessage(id, message string) error
+	ListSlashCommands(id string) ([]session.SlashCommand, error)
 	RespondPermission(id, requestID, decision string) error
 	GetPendingPermissions() []permission.PermissionRequest
 	GetAllSessions() []session.SessionState

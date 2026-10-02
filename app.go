@@ -804,6 +804,12 @@ func (a *App) SendMessageWithImages(id, message string, images []session.ImageAt
 	return a.manager.SendMessageWithImages(id, message, images)
 }
 
+// ListSlashCommands returns the skills and commands the message box offers
+// after "/" — Claude Code's for a Claude session, Hermes skills for a Hermes one.
+func (a *App) ListSlashCommands(id string) ([]session.SlashCommand, error) {
+	return a.manager.ListSlashCommands(id)
+}
+
 func (a *App) RespondPermission(id, requestID, decision string) error {
 	return a.manager.RespondPermission(id, requestID, decision)
 }

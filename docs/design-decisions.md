@@ -86,11 +86,36 @@ stdin otherwise.
 
 ### Stream-JSON Events (stdout)
 Key event types to parse:
-- `{"type":"system","subtype":"init",...}` — session info, model, tools, version
+- `{"type":"system","subtype":"init",...}` — session info, model, tools, version. Its `slash_commands`, `skills` and `terminal_slash_commands` are kept on the `Session` (`initCommands`) for the message box's "/" autocomplete — see "Slash-Command Autocomplete" below
 - `{"type":"assistant","message":{"content":[...],"usage":{...}}}` — text/tool_use with per-turn token usage
 - `{"type":"result","total_cost_usd":...,"usage":{...},"modelUsage":{...}}` — final metrics. In autonomous runs, its `result` text is also scanned for the ```` ```ask-user ```` marker (see "Ask-User Questions" below) before being treated as a finished turn.
 - `{"type":"stream_event",...}` — partial-message events (from `--include-partial-messages`). No log entry (the full `assistant` message follows). A `content_block_start` becomes a transient `session:activity` event `{id, kind, tool?, since}` (`thinking` | `tool` | `writing`; `result` → `idle`); deltas are dropped so a long answer does not flood IPC. Hermes maps `text`→`writing` (on change only), `tool_use`→`tool`, `tool_result`→`thinking`, `result`→`idle`. Emitted only on a change of kind/tool (`Session.setActivity`), never stored in SQLite; a non-running status (idle/error/stopping/rate_limited) also resets it to `idle`. UI-09 decision: the session *status* stays `working` after `result` — changing it risks auto-restart and task queues, so "turn over" is expressed only as `activity: idle`.
 - `{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"|"allowed_warning"|"rejected",...}}` — rate limit status. Real Claude emits an informational `status:"allowed"` event on **every** session; only a rejecting status (`rejected`/`exceeded`/…) pauses/restarts the run. `allowed_warning` (with utilization) is surfaced to the UI but does not abort.
+
+**Slash-Command Autocomplete.** Typing `/` as the first character of the
+message box (`SessionInput.svelte`) opens a list from
+`ListSlashCommands(id)` (`internal/session/slashcmds.go`), filtered by the
+session's runtime:
+
+- *Claude Code* gets `/name args` as a plain stream-json user message and
+  expands skills, custom commands and headless-capable built-ins itself, so
+  the pick is sent verbatim. Once the run's `system/init` arrived, its
+  `slash_commands` ∪ `skills` minus `terminal_slash_commands` (and `__…`
+  internals) is the authoritative list; before that the catalog is rebuilt
+  from the same files Claude reads — `~/.claude` and `<project>/.claude`
+  `skills/*/SKILL.md` and `commands/**/*.md`, plus every plugin in
+  `~/.claude/plugins/installed_plugins.json` namespaced by its `plugin.json`
+  name — plus a fixed list of built-ins. Descriptions come from the
+  frontmatter.
+- *Hermes* runs `hermes chat -Q --format stream-json` per turn, and that path
+  passes the query to the model verbatim — none of Hermes' interactive slash
+  commands is dispatched there, so none is offered. Skills still work through
+  `-s`: the catalog is `<HERMES_HOME>/skills/**/SKILL.md` (named by Hermes'
+  slug rule), and `hermesRunTurn` turns leading known `/skill` tokens (up to
+  5, Hermes' own stack limit) into `-s <skill>` for that turn and strips them
+  from the query (`expandHermesSkills`). Only names found by the scan are
+  taken — Hermes fails the turn on a fully unknown `-s` — so `/usr/bin …`
+  passes through as text. The user log entry keeps the original text.
 
 **Structured call arguments (`config.LogEntry.ToolArgs`, UI-07).** `ToolInput`
 keeps only one salient field; `BuildToolArgs` (`internal/session/toolargs.go`)

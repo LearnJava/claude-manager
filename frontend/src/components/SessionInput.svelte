@@ -1,7 +1,14 @@
 <script lang="ts">
     import type { SessionState } from '../stores/sessions';
     import { t } from '../lib/i18n';
-    import { SendMessage, SendMessageWithImages } from '../../wailsjs/go/main/App';
+    import { tick } from 'svelte';
+    import { ListSlashCommands, SendMessage, SendMessageWithImages } from '../../wailsjs/go/main/App';
+    import {
+        applySlashCommand,
+        filterSlashCommands,
+        slashQuery,
+        type SlashCommand,
+    } from '../lib/slashCommands';
 
     export let session: SessionState;
 
@@ -20,6 +27,61 @@
         session.status !== 'idle' &&
         session.status !== 'stopping' &&
         session.status !== 'error';
+
+    // ── "/" autocomplete ─────────────────────────────────────────────────────
+    // The catalog is per runtime (Claude Code commands+skills, Hermes skills)
+    // and is refetched every time the popup opens: a Claude session's list
+    // becomes exact once its run reports the init line.
+    const MAX_MATCHES = 50;
+    let commands: SlashCommand[] = [];
+    let commandsLoaded = false;
+    let caret = 0;
+    let menuIndex = 0;
+    let menuDismissed = false;
+    let prevQuery: string | null = null;
+    let menuEl: HTMLUListElement | undefined;
+
+    $: query = canSend ? slashQuery(value, caret) : null;
+    $: {
+        if (query !== null && prevQuery === null) loadCommands(session.id);
+        if (query === null) menuDismissed = false;
+        prevQuery = query;
+    }
+    $: matches = query === null ? [] : filterSlashCommands(commands, query).slice(0, MAX_MATCHES);
+    $: menuOpen = query !== null && !menuDismissed && commandsLoaded;
+    $: query, (menuIndex = 0);
+    $: isHermes = session?.runtime === 'hermes';
+
+    async function loadCommands(id: string) {
+        commandsLoaded = false;
+        try {
+            const list = (await ListSlashCommands(id)) ?? [];
+            if (session.id === id) commands = list;
+        } catch {
+            if (session.id === id) commands = [];
+        }
+        if (session.id === id) commandsLoaded = true;
+    }
+
+    function syncCaret() {
+        caret = textarea?.selectionStart ?? value.length;
+    }
+
+    async function pickCommand(cmd: SlashCommand) {
+        value = applySlashCommand(value, cmd.name);
+        const pos = cmd.name.length + 2; // "/" + name + " "
+        await tick();
+        textarea?.focus();
+        textarea?.setSelectionRange(pos, pos);
+        caret = pos;
+    }
+
+    async function moveSelection(delta: number) {
+        if (matches.length === 0) return;
+        menuIndex = (menuIndex + delta + matches.length) % matches.length;
+        await tick();
+        menuEl?.querySelector<HTMLElement>(`[data-index="${menuIndex}"]`)?.scrollIntoView({ block: 'nearest' });
+    }
 
     function readAsDataURL(file: File): Promise<string> {
         return new Promise((resolve, reject) => {
@@ -85,6 +147,23 @@
     }
 
     function onKeydown(e: KeyboardEvent) {
+        if (menuOpen) {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                moveSelection(e.key === 'ArrowDown' ? 1 : -1);
+                return;
+            }
+            if (((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') && matches.length > 0) {
+                e.preventDefault();
+                pickCommand(matches[menuIndex]);
+                return;
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                menuDismissed = true;
+                return;
+            }
+        }
         // Enter sends, Shift+Enter inserts a newline.
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -119,10 +198,54 @@
         </div>
     {/if}
     <div class="flex items-end gap-2">
+        <div class="relative flex-1 flex">
+        {#if menuOpen}
+            <div
+                class="absolute bottom-full left-0 right-0 mb-1 z-20 bg-bg-panel border border-bg-border
+                       rounded shadow-lg text-sm"
+                data-testid="slash-menu">
+                <div class="flex justify-between gap-2 px-2 py-1 text-[11px] text-text-dim border-b border-bg-border">
+                    <span>{isHermes ? $t('sessionInput.slash.header.hermes') : $t('sessionInput.slash.header.claude')}</span>
+                    <span>{$t('sessionInput.slash.hint')}</span>
+                </div>
+                {#if matches.length === 0}
+                    <div class="px-2 py-1.5 text-text-dim text-xs">{$t('sessionInput.slash.empty')}</div>
+                {:else}
+                    <ul bind:this={menuEl} class="max-h-64 overflow-y-auto py-0.5" role="listbox">
+                        {#each matches as cmd, idx (cmd.name)}
+                            <li
+                                role="option"
+                                aria-selected={idx === menuIndex}
+                                data-index={idx}
+                                data-testid="slash-item"
+                                on:mousedown|preventDefault={() => pickCommand(cmd)}
+                                on:mousemove={() => (menuIndex = idx)}
+                                class="flex items-baseline gap-2 px-2 py-1 cursor-pointer
+                                       {idx === menuIndex ? 'bg-status-starting/20' : ''}">
+                                <span class="font-mono text-text shrink-0">/{cmd.name}</span>
+                                <span
+                                    class="text-[10px] uppercase tracking-wide shrink-0
+                                           {cmd.kind === 'skill' ? 'text-purple-600 dark:text-purple-300' : 'text-text-dim'}">
+                                    {cmd.kind === 'skill' ? $t('sessionInput.slash.skill') : $t('sessionInput.slash.command')}
+                                </span>
+                                {#if cmd.description}
+                                    <span class="text-text-dim text-xs truncate" title={cmd.description}>{cmd.description}</span>
+                                {/if}
+                            </li>
+                        {/each}
+                    </ul>
+                {/if}
+            </div>
+        {/if}
         <textarea
             bind:this={textarea}
             bind:value
             on:keydown={onKeydown}
+            on:input={syncCaret}
+            on:keyup={syncCaret}
+            on:click={syncCaret}
+            on:blur={() => (menuDismissed = true)}
+            on:focus={() => (menuDismissed = false)}
             on:paste={onPaste}
             disabled={!canSend || sending}
             rows="2"
@@ -134,6 +257,7 @@
                    focus:outline-none focus:border-status-starting
                    disabled:opacity-50 disabled:cursor-not-allowed"
         ></textarea>
+        </div>
         <button
             type="button"
             on:click={onSend}

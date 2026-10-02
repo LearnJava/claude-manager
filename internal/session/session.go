@@ -323,6 +323,9 @@ type Session struct {
 	// checkContextRestart just before it kills the current process. Cleared
 	// by initialPromptText once consumed.
 	pendingHandoff string
+	// initCommands is the slash-command list of the last Claude init line
+	// (protected by mu); nil until one arrives. See ListSlashCommands.
+	initCommands *claudeInitCommands
 
 	// inputCh carries already-marshalled JSON lines that the inputWriter
 	// goroutine writes to stdin. A nil value is a sentinel to flush/exit.
@@ -1556,6 +1559,11 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 				if s.crashRecovery && s.stateStore != nil {
 					s.stateStore.UpdateSessionID(s.ProjectName, s.Config.Name, ev.Init.SessionID)
 				}
+			}
+			if c := newClaudeInitCommands(ev.Init.SlashCommands, ev.Init.Skills, ev.Init.TerminalSlashCommands); c != nil {
+				s.mu.Lock()
+				s.initCommands = c
+				s.mu.Unlock()
 			}
 			s.emit(SessionEvent{Type: EvtInit, Init: ev.Init})
 		}

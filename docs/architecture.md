@@ -47,6 +47,7 @@ claude-manager/
 │   │   ├── runtime_claude.go        # RT-05: claudeRuntime — wraps buildCLIArgs/ParseLine
 │   │   ├── runtime_hermes.go        # RT-05: hermesRuntime — wraps buildHermesArgs/hermesStream
 │   │   ├── task_outcome.go          # Hermes turn → completed/slice/unfinished; 429 behind a 401 via agent.log
+│   │   ├── slashcmds.go             # "/" autocomplete catalog per runtime; Hermes `/skill` → `-s`
 │   │   └── ratelimit.go             # Rate limit detection, retry logic, timers
 │   ├── permission/
 │   │   ├── handler.go               # Handle permission_request: auto-approve rules -> UI queue -> stdin
@@ -346,6 +347,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `StopProject(project)` | Stop all sessions in a project |
 | `StopAll()` | Stop every session |
 | `SendMessage(id, message)` | Write user_message to stdin |
+| `ListSlashCommands(id)` | `[]session.SlashCommand{name, description, kind}` for the message box's "/" autocomplete — Claude Code commands+skills for a Claude session, Hermes skills for a Hermes one (`internal/session/slashcmds.go`) |
 | `SendMessageWithImages(id, message, images)` | Write a user turn with pasted image attachments (`session.ImageAttachment{media_type, data_base64}`) as an Anthropic content-block array |
 | `RespondPermission(id, requestID, decision)` | Write permission response to stdin |
 | `GetPendingPermissions()` | All sessions with pending permission requests |

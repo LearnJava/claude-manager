@@ -114,6 +114,7 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         ResumeSession: (id: string) => rpc('ResumeSession', { id }),
         StopAll: () => rpc('StopAll', {}),
         SendMessage: (id: string, message: string) => rpc('SendMessage', { id, message }),
+        ListSlashCommands: (id: string) => rpc('ListSlashCommands', { id }),
         RespondPermission: (id: string, requestId: string, decision: string) =>
           rpc('RespondPermission', { id, request_id: requestId, decision }),
         GetPendingPermissions: () => rpc('GetPendingPermissions', {}),
