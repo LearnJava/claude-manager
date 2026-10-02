@@ -7,7 +7,7 @@ default_permission_mode = ""
   max_tasks = 0
   stop_when_no_tasks = false
   task_source = ""
-  model = "sonnet"
+  model = "opus"
   fallback_model = ""
   fallback_model_on_rate_limit = false
   effort = "medium"
@@ -26,6 +26,10 @@ default_permission_mode = ""
   crash_recovery_prompt = ""
   context_primer = false
   context_handoff = false
+  runtime = ""
+  hermes_provider = ""
+  hermes_profile = ""
+  hermes_max_turns = 0
 
 [[session]]
   name = "Developer 1"
@@ -53,3 +57,7 @@ default_permission_mode = ""
   crash_recovery_prompt = ""
   context_primer = true
   context_handoff = false
+  runtime = "hermes"
+  hermes_provider = ""
+  hermes_profile = ""
+  hermes_max_turns = 0
