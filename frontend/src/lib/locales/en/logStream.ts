@@ -24,4 +24,8 @@ export default {
     'logStream.turnCount': '{n} turns',
     'logStream.turnTokens': '{n} tokens',
     'logStream.turnFailed': 'Failed',
+    'logStream.copyEntry': 'Copy this entry (markdown source)',
+    'logStream.copyCode': 'Copy',
+    'logStream.copied': 'Copied',
+    'logStream.copyFailed': 'Copy failed',
 } as Record<string, string>;

@@ -24,4 +24,8 @@ export default {
     'logStream.turnCount': '{n} ходов',
     'logStream.turnTokens': '{n} токенов',
     'logStream.turnFailed': 'Ошибка',
+    'logStream.copyEntry': 'Копировать запись (исходный markdown)',
+    'logStream.copyCode': 'Копировать',
+    'logStream.copied': 'Скопировано',
+    'logStream.copyFailed': 'Не удалось скопировать',
 } as Record<string, string>;
