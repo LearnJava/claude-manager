@@ -448,10 +448,26 @@ func (s *Session) hermesPreamble(autonomous bool) string {
 		parts = append(parts, a)
 	}
 	if autonomous {
-		parts = append(parts, askUserProtocolPrompt, backgroundTaskWarningPrompt)
+		parts = append(parts, askUserProtocolPrompt, hermesBackgroundTaskWarningPrompt)
 	}
 	return strings.Join(parts, "\n\n")
 }
+
+// hermesBackgroundTaskWarningPrompt is Hermes's counterpart of
+// backgroundTaskWarningPrompt, whose premise ("killed the moment your reply
+// ends, you will never be notified") is false here: a one-shot `hermes chat`
+// lingers after the final reply for every notify_on_complete process still
+// running (terminal.oneshot_completion_wait_seconds, 600s by default) and
+// feeds each completion back as one more turn. Observed on S4: a baseline
+// run left in the background held the process ~20 minutes past the agent's
+// continue_session marker, then produced an extra reply without the marker.
+const hermesBackgroundTaskWarningPrompt = "A background process still running when your reply ends keeps this " +
+	"session alive until it finishes, and its completion notice comes back to you as one more turn — time spent " +
+	"waiting, not working, and the next task cannot start meanwhile. So before you end your turn, and always " +
+	"before the continue_session block: wait (process tool, action \"wait\") for any background process whose " +
+	"result you still need, and kill (action \"kill\") every one you no longer need. If some work genuinely " +
+	"cannot finish in this session, record its progress in a file your next session (a fresh process) can read " +
+	"and resume from, instead of leaving it running."
 
 // warnUnsupportedHermesOptions logs, once per run, the Claude-only session
 // options a Hermes session silently cannot honour, so the user sees why.

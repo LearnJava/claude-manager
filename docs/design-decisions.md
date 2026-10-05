@@ -1458,6 +1458,19 @@ persist progress to a file the *next* session can pick up — never end a
 turn assuming background work will still be running or will be reported
 back later.
 
+Hermes sessions get `hermesBackgroundTaskWarningPrompt`
+(`internal/session/hermes_runtime.go`) instead, sent in `hermesPreamble`: the
+Claude premise is false there. A one-shot `hermes chat` *lingers* after the
+final reply for every `notify_on_complete` process still running (Hermes's
+`terminal.oneshot_completion_wait_seconds`, 600s by default) and feeds each
+completion back as one more turn. Observed on Lumen S4: a baseline run left
+in the background held the process ~20 minutes past the agent's
+`continue_session` marker, then produced an extra reply without the marker
+(which `hermesStream.continueSeen` now carries over, so the run still counts
+as a finished slice). The Hermes text tells the agent to `wait` for or `kill`
+its background processes before ending the turn, and to persist unfinished
+work to a file rather than leave it running.
+
 ### Mixed Programming (MIXED-TASKS.md, MP-01..08)
 
 Claude prepares self-contained briefs; external free models write the code as

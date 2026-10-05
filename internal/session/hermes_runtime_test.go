@@ -454,3 +454,25 @@ func TestHermesRuntime_SlashSkillBecomesPreload(t *testing.T) {
 		t.Errorf("turn 2: args=%v query=%q; an unknown /name must pass through", calls[1].Args, calls[1].Query)
 	}
 }
+
+// hermesPreamble carries the Hermes-specific background warning, not
+// Claude's "you will never be notified" one (false under Hermes, which
+// lingers for notify_on_complete processes), and nothing at all for a
+// non-autonomous session without a configured append.
+func TestHermesPreamble(t *testing.T) {
+	s := &Session{Config: config.SessionConfig{SystemPromptAppend: "  custom rule  "}}
+	got := s.hermesPreamble(true)
+	want := "custom rule\n\n" + askUserProtocolPrompt + "\n\n" + hermesBackgroundTaskWarningPrompt
+	if got != want {
+		t.Errorf("autonomous preamble = %q, want %q", got, want)
+	}
+	if strings.Contains(got, backgroundTaskWarningPrompt) {
+		t.Errorf("Hermes preamble carries Claude's background warning")
+	}
+	if got := s.hermesPreamble(false); got != "custom rule" {
+		t.Errorf("interactive preamble = %q, want only the configured append", got)
+	}
+	if got := (&Session{}).hermesPreamble(false); got != "" {
+		t.Errorf("empty preamble = %q, want empty", got)
+	}
+}

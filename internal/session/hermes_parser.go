@@ -45,6 +45,13 @@ type hermesStream struct {
 	// tool_result, which carries them out on ParsedEvent.Questions (RT-03;
 	// each tagged Source: QuestionSourceHermesClarify).
 	clarifyByID map[string][]Question
+	// continueSeen is a continue_session marker seen in any text this process
+	// streamed. Hermes keeps one process for the whole query and can feed the
+	// agent more input after it already declared its work done (a background
+	// process's completion notice); the agent then answers again, and the
+	// final `result` carries only that last reply — without the marker. The
+	// result falls back to this so the run still counts as a finished slice.
+	continueSeen *Question
 	// activity is the last activity kind reported, so text deltas (one per
 	// token) yield a change event only when the kind actually flips.
 	activity string
@@ -221,6 +228,8 @@ func (h *hermesStream) Parse(line string) []ParsedEvent {
 		}
 		if q := questionFromMarker(ev.Text); q != nil {
 			pe.Questions = []Question{*q}
+		} else if h.continueSeen != nil {
+			pe.Questions = []Question{*h.continueSeen}
 		}
 		return append(out, pe)
 	}
@@ -241,6 +250,9 @@ func (h *hermesStream) flush(now time.Time) []ParsedEvent {
 	h.text.Reset()
 	if strings.TrimSpace(text) == "" {
 		return nil
+	}
+	if q := questionFromMarker(text); q != nil && q.Kind == KindContinueSession {
+		h.continueSeen = q
 	}
 	return []ParsedEvent{{EventType: EventLog, Entries: []config.LogEntry{{
 		Time: now, Level: "text", Source: "hermes", Message: strings.TrimSpace(text),

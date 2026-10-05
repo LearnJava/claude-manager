@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -332,5 +333,48 @@ func TestClarifyAnswerMessage(t *testing.T) {
 	}
 	if strings.HasSuffix(msg, "\n") {
 		t.Errorf("message has a trailing newline: %q", msg)
+	}
+}
+
+// The S4 incident: the agent ends its reply on the continue_session marker,
+// then Hermes feeds it a background process's completion notice in the same
+// process and the agent answers again. The result carries only that last
+// reply, so the marker must be remembered from the streamed text — otherwise
+// the run reads as unfinished and a pending soft stop never fires.
+func TestHermesStream_ContinueMarkerBeforeTrailingReply(t *testing.T) {
+	marker := "Done.\n```ask-user\n{\"question\": \"Next?\", \"options\": [\"Continue in this session\", \"Stop\"], \"kind\": \"continue_session\"}\n```"
+	tail := "That notice was the background baseline run; nothing changes."
+	lines := []string{
+		`{"type":"text","text":` + strconv.Quote(marker) + `}`,
+		`{"type":"text","text":` + strconv.Quote(tail) + `}`,
+		`{"type":"result","exit_code":0,"text":` + strconv.Quote(tail) + `}`,
+	}
+	h := newHermesStream()
+	var got []Question
+	for _, line := range lines {
+		for _, ev := range h.Parse(line) {
+			if ev.EventType == EventResult {
+				got = ev.Questions
+			}
+		}
+	}
+	if len(got) != 1 || got[0].Kind != KindContinueSession {
+		t.Fatalf("result questions = %+v, want the earlier continue_session marker", got)
+	}
+
+	// A plain ask-user (not continue_session) earlier in the stream is not
+	// carried over: it was superseded by the agent's later reply.
+	h = newHermesStream()
+	plain := "```ask-user\n{\"question\": \"Route?\", \"options\": [\"a\", \"b\"]}\n```"
+	for _, line := range []string{
+		`{"type":"text","text":` + strconv.Quote(plain) + `}`,
+		`{"type":"tool_use","name":"terminal","input":{"command":"ls"}}`,
+		`{"type":"result","exit_code":0,"text":"ok"}`,
+	} {
+		for _, ev := range h.Parse(line) {
+			if ev.EventType == EventResult && ev.Questions != nil {
+				t.Errorf("plain ask-user carried onto the result: %+v", ev.Questions)
+			}
+		}
 	}
 }
