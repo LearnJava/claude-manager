@@ -37,6 +37,12 @@ func main() {
 		// must start before wails.Run (which blocks main) and is torn down
 		// from app.shutdown via systray.Quit().
 		go func() {
+			// The library's init() only locks the *main* goroutine's thread.
+			// Running here, the hidden tray window is created on one OS thread
+			// while GetMessage may pump on another after goroutine migration —
+			// Windows delivers window messages only to the owning thread, so
+			// tray clicks never reach showMenu. Pin this goroutine.
+			runtime.LockOSThread()
 			defer logger.Recover("systray.run")
 			systray.Run(app.onTrayReady, func() {})
 		}()
