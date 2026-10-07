@@ -449,6 +449,8 @@ func (s *Session) hermesPreamble(autonomous bool) string {
 	}
 	if autonomous {
 		parts = append(parts, askUserProtocolPrompt, hermesBackgroundTaskWarningPrompt)
+	} else if s.Config.AskUserMarker {
+		parts = append(parts, askUserInteractivePrompt)
 	}
 	return strings.Join(parts, "\n\n")
 }

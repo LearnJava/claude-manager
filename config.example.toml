@@ -178,6 +178,12 @@ path = 'D:\RustProjects\lumen-browser'
   # uses --resume.
   context_handoff = false
 
+  # Ask-user marker in interactive sessions: teach the model the ```ask-user
+  # JSON block and show it as a question with option buttons (no timeout —
+  # you are there). Autonomous sessions always have this. Off by default; with
+  # it false an interactive session's prompt is unchanged.
+  ask_user_marker = false
+
   # Runtime (HERMES-TASKS.md): "claude" (default) or "hermes". A hermes
   # session runs `hermes chat --query-file - --format stream-json`, one
   # process per turn, resuming the conversation by id. `model` is then any

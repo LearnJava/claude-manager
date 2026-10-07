@@ -109,8 +109,8 @@ func TestHandleLine_AskUserMarker_DefaultKindPausesTurn(t *testing.T) {
 }
 
 func TestHandleLine_AskUserMarker_IgnoredWhenNotAutonomous(t *testing.T) {
-	// Interactive sessions already have a human reading every reply directly,
-	// so the marker convention is not worth pausing (or auto-resolving) for.
+	// With ask_user_marker off, interactive sessions are unchanged: the user
+	// reads every reply directly, so the marker is not worth pausing for.
 	s := New(Params{ID: "p/s", Config: config.SessionConfig{Name: "s"}})
 
 	done := s.handleLine(resultLineWithAskUser("Which budget?"), false)
@@ -119,6 +119,46 @@ func TestHandleLine_AskUserMarker_IgnoredWhenNotAutonomous(t *testing.T) {
 	}
 	if s.PendingQuestion() != nil {
 		t.Error("non-autonomous run must not set a pending question")
+	}
+}
+
+func TestHandleLine_AskUserMarker_InteractiveOptIn(t *testing.T) {
+	s := New(Params{ID: "p/s", Config: config.SessionConfig{Name: "s", AskUserMarker: true}})
+
+	if !s.handleLine(resultLineWithAskUser("Which budget?"), false) {
+		t.Error("interactive result must still report the turn as finished")
+	}
+	pq := s.PendingQuestion()
+	if pq == nil || pq.Question != "Which budget?" {
+		t.Fatalf("pending question = %+v, want \"Which budget?\"", pq)
+	}
+	if s.Status() != config.StatusWaitingForUser {
+		t.Errorf("status = %s, want waiting_for_user", s.Status())
+	}
+	if s.questionTimer != nil {
+		t.Error("interactive question must not arm the auto-answer timeout")
+	}
+
+	// continue_session is an autonomous-only convention: never a question here.
+	s2 := New(Params{ID: "p/s2", Config: config.SessionConfig{Name: "s2", AskUserMarker: true}})
+	s2.handleLine(resultLineWithAskUserKind("More?", KindContinueSession), false)
+	if s2.PendingQuestion() != nil {
+		t.Error("continue_session must not become a pending question")
+	}
+}
+
+func TestBuildCLIArgs_InteractiveAskUserPrompt(t *testing.T) {
+	has := func(args []string) bool {
+		i := slices.Index(args, "--append-system-prompt")
+		return i >= 0 && strings.Contains(args[i+1], "```ask-user")
+	}
+	off := New(Params{ID: "p/s", Config: config.SessionConfig{Name: "s"}})
+	if has(off.buildCLIArgs(false)) {
+		t.Error("flag off: interactive args must not carry the ask-user prompt")
+	}
+	on := New(Params{ID: "p/s", Config: config.SessionConfig{Name: "s", AskUserMarker: true}})
+	if !has(on.buildCLIArgs(false)) {
+		t.Error("flag on: interactive args must carry the ask-user prompt")
 	}
 }
 

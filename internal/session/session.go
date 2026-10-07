@@ -567,15 +567,30 @@ func (s *Session) SendMessage(msg string) error {
 func (s *Session) SendMessageWithImages(msg string, images []ImageAttachment) error {
 	s.mu.Lock()
 	st := s.status
+	// A free-text message typed while a question is pending is the answer.
+	answering := st == config.StatusWaitingForUser && s.pendingQuestion != nil
 	s.mu.Unlock()
-	if st != config.StatusWorking && st != config.StatusWaitingPermission {
+	if st != config.StatusWorking && st != config.StatusWaitingPermission && !answering {
 		return fmt.Errorf("session %s is not active (status=%s)", s.ID, st)
 	}
 	data, err := json.Marshal(userMessageWithImages(msg, images))
 	if err != nil {
 		return err
 	}
-	return s.queueInput(append(data, '\n'))
+	if err := s.queueInput(append(data, '\n')); err != nil {
+		return err
+	}
+	if answering {
+		s.mu.Lock()
+		s.pendingQuestion = nil
+		if s.questionTimer != nil {
+			s.questionTimer.Stop()
+			s.questionTimer = nil
+		}
+		s.mu.Unlock()
+		s.setStatus(config.StatusWorking)
+	}
+	return nil
 }
 
 // RespondPermission writes a permission_response for the given request to
@@ -1636,6 +1651,28 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 					return false
 				}
 			}
+			if !autonomous && s.Config.AskUserMarker && len(ev.Questions) > 0 && ev.Questions[0].Kind != KindContinueSession {
+				// Interactive run with ask_user_marker: the user is at the
+				// keyboard, so the question waits for them with no timeout
+				// fallback. The process stays alive either way; the answer
+				// (AnswerQuestion, or any typed message) is the next turn.
+				q := ev.Questions[0]
+				pq := &PendingQuestion{
+					ID:       uuid.NewString(),
+					Question: q.Text,
+					Options:  q.Choices,
+					AskedAt:  time.Now(),
+				}
+				s.mu.Lock()
+				s.pendingQuestion = pq
+				s.mu.Unlock()
+				s.setStatus(config.StatusWaitingForUser)
+				logger.L.Info("session.question", "id", s.ID, "question", pq.Question, "source", q.Source, "interactive", true)
+				cp := *pq
+				s.emit(SessionEvent{Type: EvtQuestion, Question: &cp})
+				s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
+				return true
+			}
 			s.checkContextRestart(ev.Result)
 			s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
 		}
@@ -1975,6 +2012,21 @@ const askUserProtocolPrompt = "This session follows a strict one-task-per-sessio
 	"actually want them tried. Use this ONLY when genuinely blocked, not for routine status updates, and not " +
 	"when you can reasonably pick a sensible default and keep working."
 
+// askUserInteractivePrompt is appended to an interactive run's system prompt
+// when Config.AskUserMarker is set. The user is at the keyboard, so unlike
+// askUserProtocolPrompt there is no one-task-per-session rule and no timeout
+// fallback — it only teaches the block's JSON schema, which the manager
+// renders as a question with option buttons.
+const askUserInteractivePrompt = "When you need a decision from the user, end your reply with a fenced block " +
+	"instead of asking in plain text:\n" +
+	"```ask-user\n" +
+	`{"question": "<the decision, one sentence>", "options": ["<short option 1>", "<short option 2>"]}` + "\n" +
+	"```\n" +
+	"The body MUST be exactly one JSON object with a \"question\" string and an \"options\" array of short " +
+	"labels — never prose or a numbered list, or the block is not recognized. End your turn immediately after " +
+	"the block; the user's answer arrives as the next message. Use it only for a genuine decision, not for " +
+	"status updates."
+
 // backgroundTaskWarningPrompt is appended alongside askUserProtocolPrompt for
 // every autonomous run. This session's process is killed the moment your
 // reply ends (the manager closes stdin as soon as it sees your result event,
@@ -2065,13 +2117,16 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 	if len(s.Config.DisallowedTools) > 0 {
 		args = append(args, "--disallowedTools", strings.Join(s.Config.DisallowedTools, " "))
 	}
-	if s.Config.SystemPromptAppend != "" || autonomous {
+	interactiveAsk := !autonomous && s.Config.AskUserMarker
+	if s.Config.SystemPromptAppend != "" || autonomous || interactiveAsk {
 		combined := strings.TrimSpace(s.Config.SystemPromptAppend)
+		if (autonomous || interactiveAsk) && combined != "" {
+			combined += "\n\n"
+		}
 		if autonomous {
-			if combined != "" {
-				combined += "\n\n"
-			}
 			combined += askUserProtocolPrompt + "\n\n" + backgroundTaskWarningPrompt
+		} else if interactiveAsk {
+			combined += askUserInteractivePrompt
 		}
 		args = append(args, "--append-system-prompt", combined)
 	}

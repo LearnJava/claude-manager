@@ -1389,6 +1389,20 @@ checked when the run is autonomous (`(AutoRestart || StopWhenNoTasks) &&
 !forceInteractive`, the same flag that gates closing stdin) — an interactive
 session's user is already reading every reply directly.
 
+**Interactive opt-in (`ask_user_marker`).** An interactive session (Chat) used
+to get none of this: no prompt teaching the JSON schema, so a project
+`CLAUDE.md` saying "end with an `ask-user` block" made the model improvise
+prose inside the fence (`ParseAskUserQuestion` → `nil`, shown as a plain code
+block). With `SessionConfig.AskUserMarker` (default off, prompt byte-identical
+when off) an interactive run gets `askUserInteractivePrompt` (schema only — no
+one-task rule, no timeout wording; Hermes via `hermesPreamble`), and
+`handleEvent` turns the marker into a `PendingQuestion` + `session:question`
+with status `WaitingForUser` and **no timeout** — the user is there. The result
+still reports a finished turn; the process stays alive. The answer is either
+`AnswerQuestion` or any message typed in the box (`SendMessageWithImages`
+accepts `WaitingForUser` while a question is pending and clears it).
+`continue_session` is ignored here.
+
 **`Kind == KindContinueSession` (`"continue_session"`)** (`handleLine`,
 `internal/session/session.go`): logs a `system`-level entry naming the
 question and returns `true` (finished turn) exactly as it would without the

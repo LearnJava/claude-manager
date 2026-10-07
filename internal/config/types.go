@@ -242,6 +242,13 @@ type SessionConfig struct {
 	// default; crash recovery is unaffected — it still always uses --resume.
 	ContextHandoff bool `toml:"context_handoff"`
 
+	// AskUserMarker makes an interactive (non-autonomous) session teach the
+	// model the ```ask-user JSON block and render it as a question with
+	// option buttons, waiting for the user with no timeout. Autonomous runs
+	// always have this. Off by default; with it false an interactive prompt
+	// is byte-identical to before this flag existed.
+	AskUserMarker bool `toml:"ask_user_marker"`
+
 	// Runtime selects the agent CLI the session drives (HERMES-TASKS.md
 	// HR-02): "claude" (default, also when empty) or "hermes" (`hermes chat
 	// --format stream-json`, one process per turn). With it empty or
