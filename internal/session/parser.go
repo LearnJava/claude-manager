@@ -123,22 +123,60 @@ const KindContinueSession = "continue_session"
 
 var askUserPattern = regexp.MustCompile("(?s)```ask-user\\s*\\n(.*?)\\n?```")
 
+// askUserOptionLine matches a list item inside a prose ask-user block:
+// "- x", "* x", "• x", "1. x", "1) x".
+var askUserOptionLine = regexp.MustCompile(`^\s*(?:[-*•]|\d+[.)])\s+(.+?)\s*$`)
+
 // ParseAskUserQuestion extracts an ask-user marker from a result turn's text.
-// Returns nil when absent or malformed — a malformed marker must not hang the
-// session forever, so it silently falls back to normal turn completion.
+// When several blocks are present the last recognizable one wins — the
+// question a turn ends with is the one pending. The body is normally the JSON
+// schema, but a model that was never taught it writes prose ("question line,
+// then a bulleted list of options"); that is parsed too (parseProseAskUser),
+// since how the question is phrased is not the asker's problem. Returns nil
+// when absent or unrecognizable — such a marker must not hang the session, so
+// it silently falls back to normal turn completion.
 func ParseAskUserQuestion(resultText string) *AskUserQuestion {
-	m := askUserPattern.FindStringSubmatch(resultText)
-	if m == nil {
-		return nil
+	ms := askUserPattern.FindAllStringSubmatch(resultText, -1)
+	for i := len(ms) - 1; i >= 0; i-- {
+		if q := parseAskUserBody(ms[i][1]); q != nil {
+			return q
+		}
 	}
+	return nil
+}
+
+func parseAskUserBody(body string) *AskUserQuestion {
 	var q AskUserQuestion
-	if err := json.Unmarshal([]byte(m[1]), &q); err != nil {
-		return nil
+	if err := json.Unmarshal([]byte(strings.TrimSpace(body)), &q); err != nil {
+		return parseProseAskUser(body)
 	}
 	if strings.TrimSpace(q.Question) == "" {
 		return nil
 	}
 	return &q
+}
+
+// parseProseAskUser reads a non-JSON ask-user body: list items become the
+// options, every other non-empty line is joined into the question. Accepted
+// only when it has at least one option or the text ends with "?", so stray
+// non-JSON (e.g. "not valid json") is still rejected.
+func parseProseAskUser(body string) *AskUserQuestion {
+	var text []string
+	var opts []string
+	for _, line := range strings.Split(body, "\n") {
+		if m := askUserOptionLine.FindStringSubmatch(line); m != nil {
+			opts = append(opts, m[1])
+			continue
+		}
+		if l := strings.TrimSpace(line); l != "" {
+			text = append(text, l)
+		}
+	}
+	question := strings.Join(text, " ")
+	if question == "" || (len(opts) == 0 && !strings.HasSuffix(question, "?")) {
+		return nil
+	}
+	return &AskUserQuestion{Question: question, Options: opts}
 }
 
 // questionFromMarker wraps ParseAskUserQuestion into the shared Question

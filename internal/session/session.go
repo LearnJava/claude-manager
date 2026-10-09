@@ -1651,11 +1651,14 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 					return false
 				}
 			}
-			if !autonomous && s.Config.AskUserMarker && len(ev.Questions) > 0 && ev.Questions[0].Kind != KindContinueSession {
-				// Interactive run with ask_user_marker: the user is at the
-				// keyboard, so the question waits for them with no timeout
-				// fallback. The process stays alive either way; the answer
-				// (AnswerQuestion, or any typed message) is the next turn.
+			if !autonomous && len(ev.Questions) > 0 && ev.Questions[0].Source == QuestionSourceAskUserMarker && ev.Questions[0].Kind != KindContinueSession {
+				// Interactive run: a marker is a question whether or not
+				// ask_user_marker taught the schema (a project CLAUDE.md
+				// can ask for the block too) — recognizing it is the
+				// manager's job, the flag only adds the prompt. The user is
+				// at the keyboard, so no timeout fallback. The process stays
+				// alive either way; the answer (AnswerQuestion, or any typed
+				// message) is the next turn.
 				q := ev.Questions[0]
 				pq := &PendingQuestion{
 					ID:       uuid.NewString(),

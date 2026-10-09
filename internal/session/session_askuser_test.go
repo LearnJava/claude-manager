@@ -108,17 +108,21 @@ func TestHandleLine_AskUserMarker_DefaultKindPausesTurn(t *testing.T) {
 	}
 }
 
-func TestHandleLine_AskUserMarker_IgnoredWhenNotAutonomous(t *testing.T) {
-	// With ask_user_marker off, interactive sessions are unchanged: the user
-	// reads every reply directly, so the marker is not worth pausing for.
+func TestHandleLine_AskUserMarker_InteractiveWithoutFlag(t *testing.T) {
+	// ask_user_marker only adds the schema prompt; a marker the model wrote
+	// anyway (e.g. because the project CLAUDE.md asks for it) is still a
+	// question — recognizing it is the manager's job.
 	s := New(Params{ID: "p/s", Config: config.SessionConfig{Name: "s"}})
 
 	done := s.handleLine(resultLineWithAskUser("Which budget?"), false)
 	if !done {
 		t.Error("non-autonomous result must still report the turn as finished")
 	}
-	if s.PendingQuestion() != nil {
-		t.Error("non-autonomous run must not set a pending question")
+	if pq := s.PendingQuestion(); pq == nil || pq.Question != "Which budget?" {
+		t.Fatalf("pending question = %+v, want \"Which budget?\"", pq)
+	}
+	if s.questionTimer != nil {
+		t.Error("interactive question must not arm the auto-answer timeout")
 	}
 }
 

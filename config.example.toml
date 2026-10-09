@@ -179,9 +179,10 @@ path = 'D:\RustProjects\lumen-browser'
   context_handoff = false
 
   # Ask-user marker in interactive sessions: teach the model the ```ask-user
-  # JSON block and show it as a question with option buttons (no timeout —
-  # you are there). Autonomous sessions always have this. Off by default; with
-  # it false an interactive session's prompt is unchanged.
+  # JSON block in the system prompt. A marker is shown as a question with
+  # option buttons (no timeout — you are there) either way; this flag only
+  # adds the schema so the model writes it reliably. Autonomous sessions
+  # always have it. Off by default; with it false the prompt is unchanged.
   ask_user_marker = false
 
   # Runtime (HERMES-TASKS.md): "claude" (default) or "hermes". A hermes

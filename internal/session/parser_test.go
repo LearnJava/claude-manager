@@ -840,6 +840,40 @@ func TestParseAskUserQuestion_MalformedJSONFallsBackToNil(t *testing.T) {
 	}
 }
 
+func TestParseAskUserQuestion_ProseBody(t *testing.T) {
+	// Observed live: a model not taught the schema wrote the question as text
+	// with a bulleted option list inside the fence.
+	text := "Analysis.\n\n```ask-user\n" +
+		"Сопоставить этот список с CAPABILITIES.md?\n" +
+		"- Да, сделай gap-анализ\n" +
+		"- Нет, списка достаточно\n" +
+		"```"
+	q := ParseAskUserQuestion(text)
+	if q == nil {
+		t.Fatal("expected a question from a prose body, got nil")
+	}
+	if q.Question != "Сопоставить этот список с CAPABILITIES.md?" {
+		t.Errorf("Question = %q", q.Question)
+	}
+	if len(q.Options) != 2 || q.Options[0] != "Да, сделай gap-анализ" || q.Options[1] != "Нет, списка достаточно" {
+		t.Errorf("Options = %+v", q.Options)
+	}
+
+	q = ParseAskUserQuestion("```ask-user\nWhich one?\n1. Alpha\n2) Beta\n```")
+	if q == nil || q.Question != "Which one?" || len(q.Options) != 2 || q.Options[1] != "Beta" {
+		t.Errorf("numbered list: got %+v", q)
+	}
+}
+
+func TestParseAskUserQuestion_LastBlockWins(t *testing.T) {
+	text := "```ask-user\nbroken prose without options\n```\n\nRetry:\n\n```ask-user\n" +
+		`{"question": "Second?", "options": ["A"]}` + "\n```"
+	q := ParseAskUserQuestion(text)
+	if q == nil || q.Question != "Second?" {
+		t.Errorf("got %+v, want the last recognizable block", q)
+	}
+}
+
 func TestParseAskUserQuestion_EmptyQuestionRejected(t *testing.T) {
 	text := "```ask-user\n" + `{"question": "  ", "options": []}` + "\n```"
 	if q := ParseAskUserQuestion(text); q != nil {

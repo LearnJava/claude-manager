@@ -1382,26 +1382,32 @@ tried in listed order — so list them by actual preference.
 
 **Detection** (`ParseAskUserQuestion`, `internal/session/parser.go`): a plain
 regex extracts the fenced block from the `result` event's text and decodes
-the JSON into `AskUserQuestion{Question, Options, Kind}`. A missing marker or
-malformed JSON returns `nil` — silently falling back to normal turn
-completion, since a false positive must never hang the session forever. Only
-checked when the run is autonomous (`(AutoRestart || StopWhenNoTasks) &&
-!forceInteractive`, the same flag that gates closing stdin) — an interactive
-session's user is already reading every reply directly.
+the JSON into `AskUserQuestion{Question, Options, Kind}` (prose fallback
+below). A missing or unrecognizable marker returns `nil` — silently falling back to normal turn
+completion, since a false positive must never hang the session forever. Autonomous
+runs (`(AutoRestart || StopWhenNoTasks) && !forceInteractive`, the same flag
+that gates closing stdin) get the timeout handling below; interactive runs
+are covered under "Interactive sessions".
 
-**Interactive opt-in (`ask_user_marker`).** An interactive session (Chat) used
-to get none of this: no prompt teaching the JSON schema, so a project
-`CLAUDE.md` saying "end with an `ask-user` block" made the model improvise
-prose inside the fence (`ParseAskUserQuestion` → `nil`, shown as a plain code
-block). With `SessionConfig.AskUserMarker` (default off, prompt byte-identical
-when off) an interactive run gets `askUserInteractivePrompt` (schema only — no
-one-task rule, no timeout wording; Hermes via `hermesPreamble`), and
-`handleEvent` turns the marker into a `PendingQuestion` + `session:question`
-with status `WaitingForUser` and **no timeout** — the user is there. The result
-still reports a finished turn; the process stays alive. The answer is either
-`AnswerQuestion` or any message typed in the box (`SendMessageWithImages`
-accepts `WaitingForUser` while a question is pending and clears it).
-`continue_session` is ignored here.
+**Interactive sessions.** Recognizing the marker is the manager's job, not the
+asker's: in an interactive run (Chat) `handleEvent` turns any `ask-user`
+marker into a `PendingQuestion` + `session:question` with status
+`WaitingForUser` and **no timeout** (the user is there) — regardless of
+`ask_user_marker`, since a project `CLAUDE.md` can ask for the block on its
+own. The result still reports a finished turn; the process stays alive. The
+answer is either `AnswerQuestion` or any message typed in the box
+(`SendMessageWithImages` accepts `WaitingForUser` while a question is pending
+and clears it). `continue_session` is ignored here. `SessionConfig.AskUserMarker`
+(default off, prompt byte-identical when off) only adds
+`askUserInteractivePrompt` — the JSON schema, no one-task rule, no timeout
+wording (Hermes via `hermesPreamble`).
+
+**Prose bodies.** A model never taught the schema writes prose inside the
+fence ("question line, then `- option` lines"). `ParseAskUserQuestion` falls
+back to `parseProseAskUser` when the body is not JSON: list items (`-`, `*`,
+`•`, `1.`, `1)`) become options, the remaining lines the question; accepted
+only with at least one option or a trailing `?`. With several blocks in one
+turn the last recognizable one wins (a model often re-asks after a broken one).
 
 **`Kind == KindContinueSession` (`"continue_session"`)** (`handleLine`,
 `internal/session/session.go`): logs a `system`-level entry naming the
