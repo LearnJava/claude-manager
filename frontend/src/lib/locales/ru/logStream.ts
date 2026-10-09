@@ -28,4 +28,6 @@ export default {
     'logStream.copyCode': 'Копировать',
     'logStream.copied': 'Скопировано',
     'logStream.copyFailed': 'Не удалось скопировать',
+    'logStream.doneMarker': 'Сессия завершена, следующую задачу возьмёт новая сессия',
+    'logStream.doneMarkerWith': 'Сессия завершена: {s} — следующую задачу возьмёт новая сессия',
 } as Record<string, string>;

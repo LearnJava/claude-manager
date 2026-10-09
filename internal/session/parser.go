@@ -102,11 +102,12 @@ type PermissionRequest struct {
 // recognized in autonomous (task_source/auto_restart) runs.
 //
 // Kind distinguishes two situations (see askUserProtocolPrompt):
-//   - "continue_session": Claude is checking whether to keep working in this
-//     same session (e.g. after finishing its assigned task). Per the
-//     one-session-per-task rule the answer is always "no" — this is resolved
-//     instantly without waiting for anyone, the same as if no marker had been
-//     emitted at all.
+//   - "continue_session": the end-of-session "done" marker — the agent's
+//     work in this session (a task or one slice of it) is finished. The kind
+//     name is historical (it used to be phrased as "continue in this
+//     session?", always answered "no"); the prompt now tells the model not
+//     to ask that at all. Resolved instantly, nothing waits on it, and it
+//     tells classifyTaskOutcome a still-queued task ended on a finished slice.
 //   - "" (default): a genuine external decision Claude cannot resolve on its
 //     own. This pauses the run and keeps stdin open for a human answer, with
 //     a timeout fallback (see PendingQuestion) so an unattended run is never

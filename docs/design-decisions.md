@@ -1359,9 +1359,10 @@ that just blocks on any question sits there forever with nobody to answer it
 session?" and idled in `waiting_for_user` all night). Two different fixes
 apply depending on *what* is being asked:
 
-- **Session/task boundary questions** ("should I keep working in this same
-  session?") have a deterministic answer per the one-session-per-task rule —
-  always no — so they are resolved instantly, without waiting for anyone.
+- **Session/task boundary** ("should I keep working in this same
+  session?") has a deterministic answer per the one-session-per-task rule —
+  always no — so it is not asked at all: the model is told to end its last
+  reply with a "done" marker instead, resolved instantly.
 - **Genuine external decisions** (an ambiguous requirement, a stuck
   investigation) still pause the run for a human, but with a 5-minute timeout
   that auto-picks the first listed option so the run is never stuck forever.
@@ -1372,11 +1373,11 @@ apply depending on *what* is being asked:
 never replacing it. It teaches Claude both forms of the fenced block:
 ````
 ```ask-user
-{"question": "<one sentence>", "options": ["Continue in this session", "Stop — a new session will pick up the next task"], "kind": "continue_session"}
+{"question": "<one-line summary of what was done>", "options": [], "kind": "continue_session"}
 ```
 ````
-for the session-boundary case (end the turn immediately after emitting it —
-never keep working in the same reply), and the same block without `"kind"`
+as the end-of-session "done" marker (end the turn immediately after emitting
+it — never keep working in the same reply), and the same block without `"kind"`
 for a genuine decision, with the instruction that unanswered options are
 tried in listed order — so list them by actual preference.
 
@@ -1408,6 +1409,16 @@ back to `parseProseAskUser` when the body is not JSON: list items (`-`, `*`,
 `•`, `1.`, `1)`) become options, the remaining lines the question; accepted
 only with at least one option or a trailing `?`. With several blocks in one
 turn the last recognizable one wins (a model often re-asks after a broken one).
+
+**Why a "done" marker, not a question.** The marker used to be phrased as a
+question ("Continue in this session" / "Stop" options, always auto-answered
+"no"). In the log it then read as a question nobody answered, and it invited
+the model to propose the next task at all. The prompt now says outright *do
+not ask whether to continue* and the block carries only a summary of what was
+done; the kind name `continue_session` stays for compatibility (the parser,
+`classifyTaskOutcome`'s slice detection and Hermes' `continueSeen` key off
+it). The log view (`LogEntryRow.svelte` via `lib/askUserMarker.ts`) folds the
+block into one "✓ Session done: …" line; copy still yields the raw text.
 
 **`Kind == KindContinueSession` (`"continue_session"`)** (`handleLine`,
 `internal/session/session.go`): logs a `system`-level entry naming the
@@ -1450,8 +1461,9 @@ drives `QuestionBanner.svelte` (rendered in `SessionView.svelte` next to
 anything else, both calling `AnswerQuestion(id, questionID, answer)`.
 `waitingSessions` (`stores/sessions.ts`) and the sidebar/status-bar "waiting"
 indicators treat `waiting_for_user` the same as `waiting_permission`. A
-`continue_session` marker never reaches the frontend at all — it's fully
-resolved on the backend before any event is emitted.
+`continue_session` marker never reaches the frontend as a question — it's
+fully resolved on the backend; only the reply text carrying it is displayed,
+folded to one line.
 
 Not wired into the control-plane/MCP tools yet (see "cm-mcp tools" below) —
 only the Wails binding exists so far.

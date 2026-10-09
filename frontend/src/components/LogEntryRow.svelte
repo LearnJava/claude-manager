@@ -15,6 +15,7 @@
     import { formatTime, logEntryColor, logEntryIcon } from '../lib/formatters';
     import { copyText, COPY_FEEDBACK_MS } from '../lib/clipboard';
     import { codeCopy } from '../lib/codeCopy';
+    import { foldDoneMarkers } from '../lib/askUserMarker';
     import { onDestroy } from 'svelte';
 
     export let entry: LogEntry;
@@ -90,13 +91,19 @@
 
     onDestroy(() => clearTimeout(copyTimer));
 
+    // Full source (copy button) vs. what the row displays: the
+    // end-of-session "done" marker block is folded into one line
+    // (lib/askUserMarker.ts) — it is not a question, nothing answers it.
     $: msg = entry.message ?? '';
+    $: shown = foldDoneMarkers(msg, (s) =>
+        '✓ ' + (s ? $t('logStream.doneMarkerWith', { s }) : $t('logStream.doneMarker')),
+    );
     $: mdSrc = mdForced ?? autoMarkdown(entry);
     $: md = $logMarkdown && mdSrc;
     $: offered = $logMarkdown && offersMarkdown(entry);
-    $: collapsible = isCollapsible(msg);
+    $: collapsible = isCollapsible(shown);
     $: isOpen = collapsible ? openForced ?? mdSrc : true;
-    $: html = md && isOpen ? renderCached(msg) : '';
+    $: html = md && isOpen ? renderCached(shown) : '';
 </script>
 
 <div class="group/row relative flex items-start gap-2 py-px {logEntryColor(entry)}">
@@ -147,7 +154,7 @@
         </div>
     {:else}
         <span class="whitespace-pre-wrap break-words">
-            {collapsible && !isOpen ? summarize(msg) : msg}
+            {collapsible && !isOpen ? summarize(shown) : shown}
         </span>
     {/if}
     {#if msg}

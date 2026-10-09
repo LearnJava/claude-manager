@@ -28,4 +28,6 @@ export default {
     'logStream.copyCode': 'Copy',
     'logStream.copied': 'Copied',
     'logStream.copyFailed': 'Copy failed',
+    'logStream.doneMarker': 'Session done, a fresh session picks up the next task',
+    'logStream.doneMarkerWith': 'Session done: {s} — a fresh session picks up the next task',
 } as Record<string, string>;

@@ -77,6 +77,26 @@ func TestHandleLine_AskUserMarker_ContinueSessionAutoResolvesInstantly(t *testin
 	}
 }
 
+// TestAskUserProtocolPrompt_DoneMarkerIsNotAQuestion guards the wording of
+// the end-of-session marker: the model must be told not to ask whether to
+// continue, and the example block must not offer "continue" options — that
+// phrasing is what made the marker look like an unanswered question.
+func TestAskUserProtocolPrompt_DoneMarkerIsNotAQuestion(t *testing.T) {
+	if strings.Contains(askUserProtocolPrompt, "Continue in this session") {
+		t.Error("prompt still offers a \"Continue in this session\" option")
+	}
+	if !strings.Contains(askUserProtocolPrompt, "Do NOT ask whether to continue") {
+		t.Error("prompt must tell the model not to ask whether to continue")
+	}
+	if q := ParseAskUserQuestion(askUserProtocolPrompt); q == nil {
+		t.Error("prompt examples must stay parseable as ask-user blocks")
+	}
+	example := "```ask-user\n" + `{"question": "<one-line summary of what was done>", "options": [], "kind": "continue_session"}` + "\n```"
+	if q := ParseAskUserQuestion(example); q == nil || q.Kind != KindContinueSession {
+		t.Errorf("done-marker example parsed as %+v, want kind %q", q, KindContinueSession)
+	}
+}
+
 func TestHandleLine_AskUserMarker_DefaultKindPausesTurn(t *testing.T) {
 	var questionEvents []SessionEvent
 	s := New(Params{

@@ -1621,7 +1621,7 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 							Level:  "system",
 							Source: "manager",
 							Message: fmt.Sprintf(
-								"Session asked whether to continue in this session — always no: stopping now, a fresh session will pick up the next task: %s",
+								"Turn ended with the done marker — this session stops, a fresh session picks up the next task: %s",
 								q.Text,
 							),
 						}})
@@ -1991,17 +1991,19 @@ func (s *Session) sleepCtx(ctx context.Context, d time.Duration) bool {
 
 // askUserProtocolPrompt is appended to the system prompt of every autonomous
 // (task_source/auto_restart) run. This session runs one-session-per-task and
-// mostly unattended, so it distinguishes two situations: whether to keep
-// working in this same session (always auto-answered "no", instantly — see
-// KindContinueSession) versus a genuine external decision (paused for a
-// human, with a timeout fallback so the run is never stuck forever).
+// mostly unattended, so it distinguishes two situations: the end of this
+// session's work (a "done" marker, KindContinueSession — not a question,
+// nobody answers it; the model is told not to ask "shall I continue?" at all)
+// versus a genuine external decision (paused for a human, with a timeout
+// fallback so the run is never stuck forever).
 const askUserProtocolPrompt = "This session follows a strict one-task-per-session rule, and there are two " +
 	"situations where you should end your reply with a fenced block instead of deciding silently:\n\n" +
-	"1. Whether to keep working on more in THIS session (e.g. you just finished your assigned task and a " +
-	"natural next step is available). The answer is always no — a fresh session always handles the next " +
-	"task — so this is resolved automatically and instantly, nobody is waiting for it. Use:\n" +
+	"1. Your work in this session is done (the assigned task, or one slice of a multi-slice task, is " +
+	"finished). Do NOT ask whether to continue or take the next task — in prose or otherwise; a fresh " +
+	"session picks up the next task automatically. Just end your reply with this end-of-turn block. It is " +
+	"not a question and nobody answers it: the manager reads it as your \"done\" signal. Use:\n" +
 	"```ask-user\n" +
-	`{"question": "<one sentence>", "options": ["Continue in this session", "Stop — a new session will pick up the next task"], "kind": "continue_session"}` + "\n" +
+	`{"question": "<one-line summary of what was done>", "options": [], "kind": "continue_session"}` + "\n" +
 	"```\n" +
 	"End your turn immediately after emitting this — never keep working in the same reply.\n\n" +
 	"2. A genuine external decision you cannot resolve yourself (an ambiguous requirement, a trade-off with " +
