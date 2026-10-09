@@ -27,6 +27,7 @@ import experiencePanel from './ru/experiencePanel';
 import mixedRun from './ru/mixedRun';
 import settings from './ru/settings';
 import alienCrew from './ru/alienCrew';
+import contextMenu from './ru/contextMenu';
 
 export default {
     ...common,
@@ -55,4 +56,5 @@ export default {
     ...mixedRun,
     ...settings,
     ...alienCrew,
+    ...contextMenu,
 } as Record<string, string>;

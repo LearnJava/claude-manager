@@ -28,6 +28,7 @@ import experiencePanel from './en/experiencePanel';
 import mixedRun from './en/mixedRun';
 import settings from './en/settings';
 import alienCrew from './en/alienCrew';
+import contextMenu from './en/contextMenu';
 
 export default {
     ...common,
@@ -56,4 +57,5 @@ export default {
     ...mixedRun,
     ...settings,
     ...alienCrew,
+    ...contextMenu,
 } as Record<string, string>;

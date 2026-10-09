@@ -264,12 +264,17 @@ claude-manager/
 │   │   │                            #   LN-11: before/after-approval effect table above the
 │   │   │                            #   list, per-row "OK"/"Suggest archiving"/"Not enough
 │   │   │                            #   data" verdict
+│   │   ├── ContextMenu.svelte       # App-wide right-click menu (mounted once in App.svelte):
+│   │   │                            #   cut/copy/paste/select all in fields, copy selection,
+│   │   │                            #   open/copy link, copy code block
 │   │   └── RateLimitBanner.svelte   # Rate limit countdown banner
 │   └── lib/
 │       ├── formatters.ts            # Log formatting, time, cost, tokens, percent;
 │       │                            #   log colours are light/dark class pairs
 │       ├── queue.ts                 # Pure queue model from a RoadmapView: in_queue rows (current
 │       │                            #   first), waitsFor from depends_on, recent done, segments
+│       ├── contextMenu.ts           # ContextMenu.svelte logic: target → menu items, clipboard
+│       │                            #   (navigator.clipboard with Wails runtime fallback), BrowserOpenURL
 │       ├── markdown.ts              # Dependency-free markdown → safe HTML for the log
 │       │                            #   (hasMarkdown/renderMarkdown, escapes everything)
 │       └── models.ts                # Model catalog: MODELS/EFFORTS + normalizeModel/modelLabel

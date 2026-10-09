@@ -9,6 +9,7 @@
     import CostDashboard from './components/CostDashboard.svelte';
     import MixedRun from './components/MixedRun.svelte';
     import ExperiencePanel from './components/ExperiencePanel.svelte';
+    import ContextMenu from './components/ContextMenu.svelte';
     import { initSessions, selectedSessionId, sessions, sessionList, waitingSessions } from './stores/sessions';
     import { initProjects } from './stores/projects';
     // Importing the store has the side effect of subscribing to localStorage
@@ -118,6 +119,8 @@
 </script>
 
 <svelte:window on:keydown={onKeyDown} on:mousemove={onWindowMouseMove} on:mouseup={onWindowMouseUp} />
+
+<ContextMenu />
 
 <div class="h-screen w-screen flex flex-col bg-bg text-text">
     <!-- Title bar -->
