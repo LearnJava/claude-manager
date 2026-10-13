@@ -689,6 +689,18 @@ Crash-loop protection: at most `MAX_RESTARTS` (10) consecutive failures, with a
 The backoff uses `ping -n`, not `timeout`, which refuses to wait when stdin is
 redirected — i.e. whenever the launcher is started by another process.
 
+**Update on launch.** Before the relaunch loop, the launcher runs
+`git fetch`, fast-forwards (`pull --ff-only --autostash`) if `origin` is ahead,
+and rebuilds when `HEAD` differs from the commit recorded in
+`build/bin/claude-manager.commit` (written after a successful build). So
+"update" is just starting the launcher again — no deleting the exe. It happens
+only at launch, never mid-run: the manager's restart kills every session (Job
+Object), so the moment is the user's. Not a git checkout, offline, or a failed
+pull/build all fall back to the existing binary. Uncommitted local edits are
+not detected; delete the stamp to force a rebuild. The step is a single
+parenthesised block ending in `goto :launch` because a pull may rewrite the
+`.bat` itself and cmd reads batch files by byte offset.
+
 `watchdog_test.go` drives the real `.bat` with a stand-in binary (restart,
 clean exit, zero-exit-without-marker, stale marker);
 `internal/session/guard_hook_test.go` drives the real hook. Both are part of

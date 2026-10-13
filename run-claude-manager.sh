@@ -19,13 +19,35 @@ if ! command -v wails >/dev/null 2>&1; then
     export PATH="$PATH:$(go env GOPATH)/bin"
 fi
 
-if [ ! -x "$EXE" ]; then
+# Auto-update on every start: fetch origin, fast-forward if it is ahead, and
+# rebuild when the checked-out commit differs from the one the binary was built
+# from (recorded in STAMP). Skipped outside a git checkout or when offline.
+# Delete STAMP to force a rebuild (uncommitted local edits are not detected).
+STAMP="$SCRIPT_DIR/build/bin/claude-manager.commit"
+if git -C "$SCRIPT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    git -C "$SCRIPT_DIR" fetch --quiet origin >/dev/null 2>&1 || true
+    behind=$(git -C "$SCRIPT_DIR" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)
+    if [ "$behind" -gt 0 ]; then
+        echo "Updating: $behind new commit(s) on origin..."
+        git -C "$SCRIPT_DIR" pull --ff-only --autostash             || echo "WARNING: git pull failed, keeping the local copy." >&2
+    fi
+    head_rev=$(git -C "$SCRIPT_DIR" rev-parse HEAD)
+    built=$(cat "$STAMP" 2>/dev/null || true)
+    if [ ! -x "$EXE" ] || [ "$head_rev" != "$built" ]; then
+        echo "Building claude-manager at $head_rev..."
+        if (cd "$SCRIPT_DIR" && CGO_ENABLED=1 wails build -tags webkit2_41); then
+            echo "$head_rev" > "$STAMP"
+        else
+            echo "WARNING: build failed." >&2
+        fi
+    fi
+elif [ ! -x "$EXE" ]; then
     echo "claude-manager not found, building..."
     (cd "$SCRIPT_DIR" && CGO_ENABLED=1 wails build -tags webkit2_41)
-    if [ ! -x "$EXE" ]; then
-        echo "Build failed: claude-manager still missing." >&2
-        exit 1
-    fi
+fi
+if [ ! -x "$EXE" ]; then
+    echo "Build failed: claude-manager still missing." >&2
+    exit 1
 fi
 
 # Relaunch loop. Sessions are children of the manager and die with it, so an

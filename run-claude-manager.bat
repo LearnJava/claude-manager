@@ -21,30 +21,65 @@ set "MAX_RESTARTS=10"
 set "HEALTHY_SECONDS=60"
 set "RESTARTS=0"
 
-if not exist "%EXE%" (
-    echo claude-manager.exe not found, updating from GitHub before building...
-    pushd "%~dp0"
-    rem --autostash keeps local edits (config.toml, this script) out of the
-    rem way; --ff-only never creates a merge commit. A failed pull (offline,
-    rem diverged history) is not fatal -- we just build what is on disk.
-    git pull --ff-only --autostash
-    if errorlevel 1 echo WARNING: git pull failed, building the local copy.
-    rem Not `wails build`: the Wails v2.12 CLI crashes on Go 1.27+ with
-    rem "package ... without types". Bindings are committed, so build directly.
-    pushd frontend
-    rem The pull may have brought new frontend dependencies.
-    call npm install --no-audit --no-fund
-    call npm run build
+rem Auto-update on every start: fetch origin, fast-forward if it is ahead,
+rem and rebuild when the checked-out commit differs from the one the exe was
+rem built from (recorded in STAMP). Outside a git checkout, or offline, this
+rem is skipped and the existing exe is used. Delete STAMP to force a rebuild
+rem (e.g. after uncommitted local edits, which are not detected).
+rem
+rem The whole step is one parenthesised block on purpose: a pull may rewrite
+rem this very script, and cmd reads .bat files by byte offset, so the block
+rem is parsed before the pull and ends in a jump by label.
+set "STAMP=%~dp0build\bin\claude-manager.commit"
+pushd "%~dp0"
+git rev-parse --git-dir >nul 2>&1
+if errorlevel 1 (
     popd
-    go build -tags desktop,production -ldflags "-H windowsgui -w -s" -o build\bin\claude-manager.exe .
+    goto :launch
+)
+(
+    git fetch --quiet origin >nul 2>&1
+    set "BEHIND=0"
+    for /f %%n in ('git rev-list --count HEAD..@{u} 2^>nul') do set "BEHIND=%%n"
+    if !BEHIND! gtr 0 (
+        echo Updating: !BEHIND! new commit^(s^) on origin...
+        rem --autostash keeps local edits out of the way; --ff-only never
+        rem creates a merge commit. A failed pull is not fatal.
+        git pull --ff-only --autostash
+        if errorlevel 1 echo WARNING: git pull failed, keeping the local copy.
+    )
+    set "HEADREV="
+    for /f %%h in ('git rev-parse HEAD') do set "HEADREV=%%h"
+    set "BUILT="
+    if exist "%STAMP%" set /p BUILT=<"%STAMP%"
+    set "NEEDBUILD="
+    if not exist "%EXE%" set "NEEDBUILD=1"
+    if not "!HEADREV!"=="!BUILT!" set "NEEDBUILD=1"
+    if defined NEEDBUILD (
+        echo Building claude-manager at !HEADREV!...
+        rem Not `wails build`: the Wails v2.12 CLI crashes on Go 1.27+ with
+        rem "package ... without types". Bindings are committed, so build directly.
+        pushd frontend
+        rem The pull may have brought new frontend dependencies.
+        call npm install --no-audit --no-fund
+        call npm run build
+        popd
+        go build -tags desktop,production -ldflags "-H windowsgui -w -s" -o build\bin\claude-manager.exe .
+        if errorlevel 1 (
+            echo WARNING: build failed.
+        ) else (
+            >"%STAMP%" echo !HEADREV!
+        )
+    )
     popd
     if not exist "%EXE%" (
         echo Build failed: claude-manager.exe still missing.
         exit /b 1
     )
-    rem The pull may have rewritten this very script; cmd reads .bat files
-    rem by byte offset, so jump by label instead of falling through.
     goto :launch
+)
+
+:launch
 )
 
 :launch
