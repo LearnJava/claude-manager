@@ -27,7 +27,7 @@ $ARGUMENTS — короткое имя задачи в kebab-case (наприм�
 ## Шаг 1 — Синхронизируйся и посмотри, что уже занято
 
 ```bash
-git pull origin master
+git pull -q origin master
 git branch -a
 ```
 

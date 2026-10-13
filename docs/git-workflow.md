@@ -72,7 +72,7 @@ right after use.
 
 ## Session start
 
-1. **`git pull origin master` first**, before reading any `*-STATUS.md` or
+1. **`git pull -q origin master` first**, before reading any `*-STATUS.md` or
    creating a branch. Starting stale means acting on stale pointers.
 2. **`git branch -a`.** If a `p<N>-…` branch already exists for you — that is
    your own interrupted task. **Continue it**; do not start a new one and do not
