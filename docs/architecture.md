@@ -54,6 +54,11 @@ claude-manager/
 │   │   ├── runtime_hermes.go        # RT-05: hermesRuntime — wraps buildHermesArgs/hermesStream
 │   │   ├── task_outcome.go          # Hermes turn → completed/slice/unfinished; 429 behind a 401 via agent.log
 │   │   ├── handoff_budget.go        # LN-28: mid-turn "context budget reached" note (handoff_context_tokens)
+│   │   ├── launch_tuning.go         # [optimization] → launch flags: --exclude-dynamic-system-prompt-sections,
+│   │   │                            #   adaptive --max-turns (1.6 × longest recent run, ≥ max_turns_default)
+│   │   ├── permission_timeout.go    # permission_timeout/_action auto-answer; notify/sound flags on session:permission
+│   │   ├── budget_alerts.go         # daily/weekly_budget_alert → alert:budget once per day/week (after finishRun)
+│   │   ├── preflight_gate.go        # PreflightMode + SessionPreflight: pre-flight on a UI start (PLAN.md §17.6)
 │   │   ├── launch_env.go            # utf8Env: PYTHONUTF8/PYTHONIOENCODING for Claude processes (python_utf8)
 │   │   ├── slashcmds.go             # "/" autocomplete catalog per runtime; Hermes `/skill` → `-s`
 │   │   └── ratelimit.go             # Rate limit detection, retry logic, timers
@@ -331,6 +336,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetAutoModelRouting()` | Whether auto_model_routing is enabled |
 | `GetModelRecommendation(project, name)` | Run preflight analysis, return ModelRecommendation or null |
 | `RunPreflight(project, task)` | Run analyst on an ad-hoc task, persist and return draft TaskPlan |
+| `SessionPreflight(project, name)` | Pre-flight gate for a UI start: runs the analyst on the session's prompt when `preflight_analysis` + its `preflight` mode call for it; returns the plan to review, or nil to start at once |
 | `ApprovePlan(plan)` | Persist an (edited) plan as approved; returns plan with store ID |
 | `ExecutePlan(planID)` | Execute persisted plan (one-shot CLI per subtask, context handoff) |
 | `GetPlan(planID)` | Load persisted plan with subtasks (poll during execution) |

@@ -160,6 +160,11 @@ type RateLimitEvent struct {
 type PermissionEvent struct {
 	ID      string                       `json:"id"`
 	Request permission.PermissionRequest `json:"request"`
+	// Notify / Sound carry permission_native_notification and
+	// permission_sound from the live config, so the frontend honours them
+	// without its own copy of the settings (permission_timeout.go).
+	Notify bool `json:"notify"`
+	Sound  bool `json:"sound"`
 }
 
 // QuestionEvent carries a blocking ask-user question (see PendingQuestion) to
@@ -355,6 +360,10 @@ type SessionManager struct {
 	// when cfg.Optimization.ExperienceTracking is on — see
 	// SetRegressionDetector.
 	regressionFn RegressionFunc
+
+	// budgetAlerts dedups alert:budget per day/week (budget_alerts.go);
+	// guarded by mu.
+	budgetAlerts budgetAlertState
 
 	// importLogsFn is nil unless app.go has wired the bulk log importer
 	// (LEARN-TASKS.md LN-20); ImportProjectLogs also independently gates on
@@ -673,6 +682,8 @@ func (m *SessionManager) StartSession(project, name string) error {
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
 		Optimization:      &m.cfg.Optimization,
+		MaxTurns:          m.adaptiveMaxTurns(project, name),
+		ExcludeDynamic:    m.excludeDynamicSystemPrompt(),
 		HandoffFn:         handoffFn,
 		OnEvent: func(sid string, ev SessionEvent) {
 			m.onSessionEvent(sid, ev)
@@ -750,6 +761,8 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
 		Optimization:      &m.cfg.Optimization,
+		MaxTurns:          m.adaptiveMaxTurns(project, name),
+		ExcludeDynamic:    m.excludeDynamicSystemPrompt(),
 		HandoffFn:         handoffFn,
 		OnEvent:           func(sid string, ev SessionEvent) { m.onSessionEvent(sid, ev) },
 	})
@@ -973,6 +986,8 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
 		Optimization:      &m.cfg.Optimization,
+		MaxTurns:          m.adaptiveMaxTurns(project, name),
+		ExcludeDynamic:    m.excludeDynamicSystemPrompt(),
 		HandoffFn:         handoffFn,
 		ResumeSessionID:   resumeID,
 		OnEvent:           func(sid string, ev SessionEvent) { m.onSessionEvent(sid, ev) },
@@ -1942,6 +1957,10 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 			TotalRuns:                1,
 			TotalTasks:               tasks,
 		})
+		go func() {
+			defer logger.Recover("manager.budget_alerts", "id", ms.session.ID)
+			m.checkBudgetAlerts(now)
+		}()
 	}
 
 	// Check whether this run broke out of its session's own recent cost/
@@ -2109,7 +2128,9 @@ func (m *SessionManager) handlePermission(ms *managedSession, req *PermissionReq
 
 	// Otherwise queue + notify the UI.
 	m.queue.Add(permReq)
-	m.emit(EventNamePermission, PermissionEvent{ID: ms.session.ID, Request: permReq})
+	notify, sound := m.permissionAlertFlags()
+	m.emit(EventNamePermission, PermissionEvent{ID: ms.session.ID, Request: permReq, Notify: notify, Sound: sound})
+	m.schedulePermissionTimeout(ms.session.ID, permReq.ID)
 }
 
 // recordPermissionEvent persists one resolved permission request into

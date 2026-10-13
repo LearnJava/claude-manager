@@ -71,6 +71,10 @@
     // apply, and the final action writes ROADMAP.md/STATUS-P1.md to the
     // project instead of running subtasks immediately.
     export let mode: 'execute' | 'roadmap' = 'execute';
+    // When set (pre-flight on a session start, Sidebar.svelte), an extra
+    // button dispatches 'startSession' so the user can skip the plan and
+    // start the session on its own prompt.
+    export let startSessionLabel = '';
 
     const dispatch = createEventDispatcher();
 
@@ -837,6 +841,17 @@
                         {busy === 'execute' ? $t('planReview.writingEllipsis') : $t('planReview.writeRoadmapButton')}
                     </button>
                 {:else}
+                    {#if startSessionLabel}
+                        <button
+                            type="button"
+                            on:click={() => dispatch('startSession')}
+                            disabled={busy !== ''}
+                            data-testid="plan-start-session"
+                            class="px-3 py-1 text-sm rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg
+                                   disabled:opacity-50 disabled:cursor-not-allowed">
+                            {startSessionLabel}
+                        </button>
+                    {/if}
                     <button
                         type="button"
                         on:click={onExecute}

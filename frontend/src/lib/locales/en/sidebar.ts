@@ -29,6 +29,8 @@ export default {
     'sidebar.modelTooltip': "Model: {model}. Switching applies on the next task for autonomous sessions; interactive ones restart now (same conversation). The choice is remembered as this session's default.",
     'sidebar.hermesTooltip': "Hermes CLI session — model: {model}. Remembered as this session's default; the next Hermes turn already uses it.",
     'sidebar.runtimeTooltip': "Agent CLI for this session: Claude Code CLI or Hermes CLI. Saved to the session's settings and used on the next start.",
+    'sidebar.preflightRunning': 'Pre-flight analysis of the task is running…',
+    'sidebar.preflightStartAnyway': 'Start the session as is',
     'sidebar.runtimeLockedTooltip': 'Session is running — stop it to switch the CLI.',
     'sidebar.stopRequestedTooltip': 'Stop requested — will stop once the current task finishes',
     'sidebar.stopTooltip': 'Stop (finishes current task first)',

@@ -233,6 +233,14 @@ type Params struct {
 	// restart path regardless of Config.ContextHandoff (e.g. before app.go
 	// has wired it).
 	HandoffFn HandoffFunc
+
+	// ExcludeDynamic adds --exclude-dynamic-system-prompt-sections
+	// to Claude launches ([optimization] exclude_dynamic_system_prompt).
+	ExcludeDynamic bool
+	// MaxTurns is passed as --max-turns to Claude launches; 0 = no cap.
+	// Resolved by the manager from max_turns_auto_adjust and run history
+	// (launch_tuning.go).
+	MaxTurns int
 }
 
 // PrimerFunc builds the context-primer text prepended to a fresh run's
@@ -265,8 +273,8 @@ type Session struct {
 	Config       config.SessionConfig
 	CLISessionID string // UUID passed via --session-id; reused on --resume
 
-	claudePath        string
-	hermesPath        string
+	claudePath string
+	hermesPath string
 	// runtime is the Runtime implementation selected once in New() from
 	// Config.Runtime (RUNTIME-TASKS.md RT-05). RT-06 routes runOnce's/
 	// runOnceHermes's argv building (Runtime.Args), atomics reset
@@ -318,6 +326,11 @@ type Session struct {
 	// reset per run and read by Run to classify the task outcome.
 	continueMarkerHit atomic.Bool
 	stepLimitHit      atomic.Bool
+
+	// Launch tuning from [optimization], fixed for the session's lifetime
+	// (see Params.ExcludeDynamic / Params.MaxTurns).
+	excludeDynamic bool
+	maxTurns       int
 	// lastHermesConv is the Hermes conversation the last runOnceHermes left
 	// off in (protected by mu). A run that dies on a rate limit or an API
 	// error resumes it instead of starting the task over in a fresh one.
@@ -436,6 +449,8 @@ func New(p Params) *Session {
 		stateStore:        p.StateStore,
 		crashRecovery:     p.CrashRecovery,
 		pythonUTF8:        p.PythonUTF8,
+		excludeDynamic:    p.ExcludeDynamic,
+		maxTurns:          p.MaxTurns,
 		activeModel:       p.Config.Model,
 		resumeSessionID:   p.ResumeSessionID,
 	}
@@ -2134,6 +2149,12 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 	}
 	if s.Config.MaxBudgetUSD > 0 {
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(s.Config.MaxBudgetUSD, 'f', -1, 64))
+	}
+	if s.maxTurns > 0 {
+		args = append(args, "--max-turns", strconv.Itoa(s.maxTurns))
+	}
+	if s.excludeDynamic {
+		args = append(args, "--exclude-dynamic-system-prompt-sections")
 	}
 	if s.Config.UseWorktree {
 		// Pass an explicit name only when configured. A bare `--worktree` lets the

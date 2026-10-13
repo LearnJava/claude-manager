@@ -454,6 +454,14 @@ func (a *App) StartSessionWithModel(project, name, model, effort string) error {
 
 // ---- Pre-flight plan bindings (PLAN.md section 17) ----
 
+// SessionPreflight runs the pre-flight analysis a UI start of project/name
+// calls for (preflight_analysis + the session's preflight mode, PLAN.md
+// §17.6) and returns the plan to review, or nil when the session should
+// simply start. See internal/session/preflight_gate.go.
+func (a *App) SessionPreflight(project, name string) (*analysis.TaskPlan, error) {
+	return a.manager.SessionPreflight(project, name)
+}
+
 // RunPreflight runs the analyst on an ad-hoc task and returns the persisted
 // draft plan for review in PlanReview.svelte.
 func (a *App) RunPreflight(project, task string) (*analysis.TaskPlan, error) {

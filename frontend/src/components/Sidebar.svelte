@@ -3,6 +3,8 @@
     import { projectGroups, collapsedProjects, toggleProject, initProjects } from '../stores/projects';
     import ModelPicker from './ModelPicker.svelte';
     import ResumePrompt from './ResumePrompt.svelte';
+    import SessionFeatures from './SessionFeatures.svelte';
+    import PlanReview from './PlanReview.svelte';
     import AlienCrew from './AlienCrew.svelte';
     import QueueMiniBar from './QueueMiniBar.svelte';
     import { syncQueue } from '../stores/queues';
@@ -27,6 +29,7 @@
         StartAdHocChatSession,
         GetSessionState,
         ClearSessionState,
+        SessionPreflight,
     } from '../../wailsjs/go/main/App';
 
     // Live model switch (small dropdown under each running session's name).
@@ -180,6 +183,13 @@
 
     // Session for which the ModelPicker is currently open: "project/name" or null
     let pickerFor: { project: string; name: string } | null = null;
+    // Session whose "Features" popup is open (the ⚙ icon on its row).
+    let featuresFor: { project: string; name: string } | null = null;
+    // Pre-flight analysis on start (PLAN.md §17, preflight_gate.go):
+    // analyzing marks rows whose analysis is running, planFor holds a plan
+    // the user has to review before anything starts.
+    let analyzing: Record<string, boolean> = {};
+    let planFor: { project: string; name: string; plan: any } | null = null;
 
     // Crash-recovery state per session id. A state file that still carries a CLI
     // session id means the previous run never reported a finished task — it was
@@ -284,7 +294,25 @@
 
     // Start path shared by the plain ▶ click and by the resume prompt's
     // Continue / Start fresh buttons.
-    async function beginStart(project: string, name: string) {
+    async function beginStart(project: string, name: string, skipPreflight = false) {
+        if (!skipPreflight) {
+            const id = `${project}/${name}`;
+            analyzing = { ...analyzing, [id]: true };
+            let plan: any = null;
+            try {
+                plan = await SessionPreflight(project, name);
+            } catch (err) {
+                // The analysis is advisory: a failed analyst run must not
+                // keep the session from starting.
+                console.warn('pre-flight failed, starting without it:', err);
+            } finally {
+                analyzing = { ...analyzing, [id]: false };
+            }
+            if (plan) {
+                planFor = { project, name, plan };
+                return;
+            }
+        }
         if (autoModelRouting) {
             pickerFor = { project, name };
             return;
@@ -457,7 +485,21 @@
                                     class="w-2.5 h-2.5 rounded-full mr-2 shrink-0 {statusColor(s.status)} {isBlinking(s.status) ? 'dot-blink' : ''}
                                            {s.stop_requested ? 'ring-2 ring-amber-400' : ''}"
                                     title={statusLabel(s, $t)}></span>
+                                <button
+                                    type="button"
+                                    class="mr-1.5 shrink-0 leading-none text-text-muted hover:text-text"
+                                    style="font-size: 13px"
+                                    data-testid="session-features-button-{s.id}"
+                                    title={$t('sessionFeatures.buttonTitle')}
+                                    aria-label={$t('sessionFeatures.button')}
+                                    on:click|stopPropagation={() => (featuresFor = { project: s.project, name: s.name })}
+                                    on:keydown|stopPropagation>⚙</button>
                                 <span class="text-text truncate flex-1" style="font-size: 13px">{s.name}</span>
+                                {#if analyzing[s.id]}
+                                    <span class="mr-1 shrink-0" style="font-size: 11px"
+                                          data-testid="preflight-busy-{s.id}"
+                                          title={$t('sidebar.preflightRunning')}>🔎</span>
+                                {/if}
                                 {#if unfinished[s.id]}
                                     <span
                                         class="text-amber-400 mr-1 shrink-0"
@@ -563,6 +605,28 @@
             catch (err) { console.warn('start with model failed:', err); }
         }}
         on:cancel={() => { pickerFor = null; }}
+    />
+{/if}
+
+{#if planFor}
+    <PlanReview
+        plan={planFor.plan}
+        startSessionLabel={$t('sidebar.preflightStartAnyway')}
+        on:startSession={() => {
+            const p = planFor;
+            planFor = null;
+            if (p) beginStart(p.project, p.name, true).catch((err) => console.warn('start failed:', err));
+        }}
+        on:executed={() => { planFor = null; }}
+        on:cancel={() => { planFor = null; }}
+    />
+{/if}
+
+{#if featuresFor}
+    <SessionFeatures
+        project={featuresFor.project}
+        sessionName={featuresFor.name}
+        on:close={() => { featuresFor = null; }}
     />
 {/if}
 
