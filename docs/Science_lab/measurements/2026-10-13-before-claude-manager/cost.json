@@ -1,0 +1,197 @@
+{
+ "transcripts": 22,
+ "sessions_with_calls": 22,
+ "api_calls": 526,
+ "calls_per_session": {
+  "median": 21,
+  "p90": 41,
+  "max": 122
+ },
+ "total_usd": 27.5,
+ "usd_by_component": {
+  "cache_read": 13.88,
+  "cache_write": 9.76,
+  "output": 3.87,
+  "input": 0.0
+ },
+ "pct_by_component": {
+  "cache_read": 50.5,
+  "cache_write": 35.5,
+  "output": 14.1,
+  "input": 0.0
+ },
+ "tokens_by_component_M": {
+  "input": 0.0,
+  "cache_write": 1.6,
+  "cache_read": 44.1,
+  "output": 0.3
+ },
+ "usd_by_model": {
+  "claude-opus-5-5": 18.33,
+  "claude-sonnet-5": 7.1,
+  "claude-opus-5": 1.1,
+  "claude-sonnet-5-5": 0.97
+ },
+ "tool_result_lifetime_usd_by_category": {
+  "Bash: sed": {
+   "usd": 2.25,
+   "pct_of_total": 8.2,
+   "results": 66,
+   "avg_tokens": 1721
+  },
+  "Bash: cat": {
+   "usd": 1.45,
+   "pct_of_total": 5.3,
+   "results": 37,
+   "avg_tokens": 2205
+  },
+  "Bash: grep": {
+   "usd": 1.3,
+   "pct_of_total": 4.7,
+   "results": 56,
+   "avg_tokens": 1277
+  },
+  "PowerShell": {
+   "usd": 1.08,
+   "pct_of_total": 3.9,
+   "results": 69,
+   "avg_tokens": 1265
+  },
+  "Bash: other": {
+   "usd": 0.76,
+   "pct_of_total": 2.8,
+   "results": 71,
+   "avg_tokens": 961
+  },
+  "Bash: python": {
+   "usd": 0.64,
+   "pct_of_total": 2.3,
+   "results": 26,
+   "avg_tokens": 1546
+  },
+  "Edit": {
+   "usd": 0.59,
+   "pct_of_total": 2.1,
+   "results": 53,
+   "avg_tokens": 548
+  },
+  "Grep": {
+   "usd": 0.45,
+   "pct_of_total": 1.6,
+   "results": 32,
+   "avg_tokens": 931
+  },
+  "Skill": {
+   "usd": 0.41,
+   "pct_of_total": 1.5,
+   "results": 8,
+   "avg_tokens": 6235
+  },
+  "Read: *.md": {
+   "usd": 0.3,
+   "pct_of_total": 1.1,
+   "results": 10,
+   "avg_tokens": 3350
+  },
+  "Read: *.png": {
+   "usd": 0.23,
+   "pct_of_total": 0.8,
+   "results": 8,
+   "avg_tokens": 2201
+  },
+  "Bash: git push": {
+   "usd": 0.17,
+   "pct_of_total": 0.6,
+   "results": 7,
+   "avg_tokens": 3459
+  },
+  "Bash: git log": {
+   "usd": 0.17,
+   "pct_of_total": 0.6,
+   "results": 11,
+   "avg_tokens": 748
+  },
+  "Write": {
+   "usd": 0.13,
+   "pct_of_total": 0.5,
+   "results": 7,
+   "avg_tokens": 1588
+  },
+  "Bash: head": {
+   "usd": 0.11,
+   "pct_of_total": 0.4,
+   "results": 2,
+   "avg_tokens": 1895
+  },
+  "Bash: git pull": {
+   "usd": 0.09,
+   "pct_of_total": 0.3,
+   "results": 8,
+   "avg_tokens": 1216
+  },
+  "Bash: git fetch": {
+   "usd": 0.07,
+   "pct_of_total": 0.2,
+   "results": 5,
+   "avg_tokens": 1560
+  },
+  "Bash: ls": {
+   "usd": 0.06,
+   "pct_of_total": 0.2,
+   "results": 5,
+   "avg_tokens": 830
+  },
+  "Read: *.go": {
+   "usd": 0.06,
+   "pct_of_total": 0.2,
+   "results": 7,
+   "avg_tokens": 908
+  },
+  "Bash: git add": {
+   "usd": 0.04,
+   "pct_of_total": 0.2,
+   "results": 4,
+   "avg_tokens": 1869
+  },
+  "Agent": {
+   "usd": 0.04,
+   "pct_of_total": 0.2,
+   "results": 2,
+   "avg_tokens": 1305
+  },
+  "Bash: git status": {
+   "usd": 0.04,
+   "pct_of_total": 0.2,
+   "results": 4,
+   "avg_tokens": 667
+  },
+  "CronCreate": {
+   "usd": 0.02,
+   "pct_of_total": 0.1,
+   "results": 1,
+   "avg_tokens": 2740
+  },
+  "Bash: awk": {
+   "usd": 0.02,
+   "pct_of_total": 0.1,
+   "results": 1,
+   "avg_tokens": 882
+  },
+  "Bash: git diff": {
+   "usd": 0.01,
+   "pct_of_total": 0.0,
+   "results": 1,
+   "avg_tokens": 1265
+  }
+ },
+ "most_expensive_single_results": [
+  {
+   "usd": 0.61,
+   "tokens": 11131,
+   "reread_by_calls": 118,
+   "category": "Bash: cat",
+   "what": "cat frontend/src/components/Sidebar.svelte; grep -n -i \"hermes\\|runtime\" internal/config/types.go internal/config/config",
+   "file": "293a4df9-6b44-4f1a-9e5e-009c6827da7d.jsonl"
+  }
+ ]
+}

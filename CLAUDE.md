@@ -19,6 +19,7 @@ Desktop app (Windows) to launch, monitor, and control parallel Claude Code CLI s
 | [RUNTIME-TASKS.md](./RUNTIME-TASKS.md) | Common runtime event format + `Runtime` interface (RT-01..08); queue in [STATUS-P1.md](./STATUS-P1.md). Its RT-01 creates `docs/runtimes.md` — how Claude/Hermes streams map to `ParsedEvent` |
 | [GUI-TESTS.md](./GUI-TESTS.md) | ~100 Playwright test-case descriptions across all Svelte components (✓ exists / ○ missing) |
 | [config.example.toml](./config.example.toml) | Annotated config reference |
+| [docs/Science_lab/MEASURE.md](./docs/Science_lab/MEASURE.md) | Runtime and cost study of Claude Code on this Windows machine (Lumen and claude-manager sessions), the `claude-code-setup` kit installed in `~/.claude`, and the before/after measurement procedure with the 2026-10-13 baseline |
 
 ## Conventions
 

@@ -1,0 +1,29 @@
+[
+ {
+  "calls": "1-20",
+  "sessions": 11,
+  "usd_total": 6.3,
+  "pct_of_spend": 22.9,
+  "usd_per_session": 0.57,
+  "usd_per_call": 0.0629,
+  "avg_context_tokens_per_call": 63316
+ },
+ {
+  "calls": "21-50",
+  "sessions": 10,
+  "usd_total": 12.9,
+  "pct_of_spend": 47.0,
+  "usd_per_session": 1.29,
+  "usd_per_call": 0.0425,
+  "avg_context_tokens_per_call": 80820
+ },
+ {
+  "calls": "101-150",
+  "sessions": 1,
+  "usd_total": 8.3,
+  "pct_of_spend": 30.1,
+  "usd_per_session": 8.29,
+  "usd_per_call": 0.0679,
+  "avg_context_tokens_per_call": 121316
+ }
+]
