@@ -54,6 +54,7 @@ claude-manager/
 │   │   ├── runtime_hermes.go        # RT-05: hermesRuntime — wraps buildHermesArgs/hermesStream
 │   │   ├── task_outcome.go          # Hermes turn → completed/slice/unfinished; 429 behind a 401 via agent.log
 │   │   ├── handoff_budget.go        # LN-28: mid-turn "context budget reached" note (handoff_context_tokens)
+│   │   ├── loop_guard.go            # loop_detection: feeds tool calls to optimization.LoopDetector; warn / send_hint / restart + alert:loop
 │   │   ├── launch_tuning.go         # [optimization] → launch flags: --exclude-dynamic-system-prompt-sections,
 │   │   │                            #   adaptive --max-turns (1.6 × longest recent run, ≥ max_turns_default)
 │   │   ├── permission_timeout.go    # permission_timeout/_action auto-answer; notify/sound flags on session:permission

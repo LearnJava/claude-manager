@@ -201,6 +201,12 @@ path = 'D:\RustProjects\lumen-browser'
   # fresh process instead of --resume-ing the full (expensive) conversation
   # history. Off by default; crash recovery is unaffected — it always still
   # uses --resume.
+  # What happens at the threshold is optimization.context_restart_mode:
+  #   "fresh"  — new process with the recap (above);
+  #   "resume" — keep the process, send /compact (the CLI summarizes in place);
+  #   "ask"    — ask in the UI: compact / restart with a recap / continue;
+  #   "off"    — nothing.
+  # Autonomous sessions always use "fresh".
   context_handoff = false
 
   # Ask-user marker in interactive sessions: teach the model the ```ask-user

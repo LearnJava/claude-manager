@@ -1,6 +1,7 @@
 package optimization
 
 import (
+	"sort"
 	"strings"
 	"sync"
 
@@ -87,13 +88,12 @@ func (d *LoopDetector) Observe(tool, normalizedInput string) *LoopDetected {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	key := tool + ":" + normalizedInput
-
-	// Read-after-edit suppression
+	// Read-after-edit suppression compares file paths: the Read key may carry
+	// a range and the Edit key the start of the replaced text.
 	if d.cfg.LoopIgnoreReadAfterEdit &&
 		tool == "Read" &&
 		d.lastEditKey != "" &&
-		d.lastEditKey == "Edit:"+normalizedInput {
+		d.lastEditKey == pathOf(normalizedInput) {
 		// Skip counting but still update lastEditKey so subsequent Reads of the
 		// same file (not immediately after Edit) are counted normally.
 		d.lastEditKey = ""
@@ -103,7 +103,7 @@ func (d *LoopDetector) Observe(tool, normalizedInput string) *LoopDetected {
 	// Update lastEditKey AFTER the read-after-edit check so an Edit call
 	// itself does not get suppressed.
 	if tool == "Edit" {
-		d.lastEditKey = key
+		d.lastEditKey = pathOf(normalizedInput)
 	} else {
 		d.lastEditKey = ""
 	}
@@ -160,11 +160,15 @@ func (d *LoopDetector) Reset() {
 // loop detection. Rules from PLAN.md 20.3.8:
 //
 //   - Bash         → first 80 chars of the command
-//   - Read/Edit/Write → file path (verbatim)
+//   - Read         → file path, plus " @offset:limit" when a range is read,
+//     so reading a large file in parts is not a loop
+//   - Edit         → file path, plus " | " and the first 60 chars of
+//     old_string, so several different edits of one file are not a loop
+//   - Write        → file path (verbatim)
 //   - Grep         → pattern (verbatim)
 //   - Glob         → pattern (verbatim)
 //   - Agent        → first 120 chars of description
-//   - default      → first 120 chars of input
+//   - default      → the values in key order, first 120 chars
 //
 // inputs is keyed by parameter name (e.g. "command", "file_path"). Missing
 // keys collapse to an empty string so two calls with no relevant parameter
@@ -175,22 +179,48 @@ func NormalizeInput(tool string, inputs map[string]string) string {
 	switch tool {
 	case "Bash":
 		return truncate(get("command"), 80)
-	case "Read", "Edit", "Write":
+	case "Read":
+		if off, lim := get("offset"), get("limit"); off != "" || lim != "" {
+			return get("file_path") + " @" + off + ":" + lim
+		}
+		return get("file_path")
+	case "Edit":
+		if old := get("old_string"); old != "" {
+			return get("file_path") + " | " + truncate(old, 60)
+		}
+		return get("file_path")
+	case "Write":
 		return get("file_path")
 	case "Grep", "Glob":
 		return get("pattern")
 	case "Agent":
 		return truncate(get("description"), 120)
 	}
-	// Best-effort fallback: concatenate sorted values, truncate.
+	// Best-effort fallback: the values in key order (deterministic), truncated.
+	keys := make([]string, 0, len(inputs))
+	for k := range inputs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 	var b strings.Builder
-	for _, v := range inputs {
+	for _, k := range keys {
 		if b.Len() > 0 {
 			b.WriteByte('|')
 		}
-		b.WriteString(v)
+		b.WriteString(inputs[k])
 	}
 	return truncate(b.String(), 120)
+}
+
+// pathOf returns the file path part of a Read/Edit key from NormalizeInput.
+func pathOf(key string) string {
+	if i := strings.Index(key, " @"); i >= 0 {
+		key = key[:i]
+	}
+	if i := strings.Index(key, " | "); i >= 0 {
+		key = key[:i]
+	}
+	return key
 }
 
 func truncate(s string, n int) string {

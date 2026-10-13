@@ -21,6 +21,10 @@ export default {
     'notify.costRegression.body': '{id} — {factor}x recent median',
     'notify.budgetDaily.title': 'Daily budget exceeded',
     'notify.budgetDaily.body': 'Spent ${current} today (alert at ${limit})',
+    'notify.loop.title': 'Possible loop in {id}',
+    'notify.loop.body.warn': '{what} repeated {count} times in a row of recent tool calls.',
+    'notify.loop.body.send_hint': '{what} repeated {count} times — the agent got a hint to change approach.',
+    'notify.loop.body.restart': '{what} repeated {count} times — the session is restarted with a note about it.',
     'notify.budgetWeekly.title': 'Weekly budget exceeded',
     'notify.budgetWeekly.body': 'Spent ${current} in the last 7 days (alert at ${limit})',
 } as Record<string, string>;

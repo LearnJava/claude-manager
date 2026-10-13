@@ -47,6 +47,8 @@ const (
 	EvtActivity   = "activity"
 	EvtTaskSource = "task_source"
 	EvtError      = "error"
+	// EvtLoop reports a detected tool-call loop (loop_guard.go).
+	EvtLoop = "loop"
 )
 
 // SessionEvent is the payload passed to the manager-provided callback.
@@ -74,6 +76,7 @@ type SessionEvent struct {
 	CLISessionID string
 	// RunStatus is set on EvtRunEnd: the session_runs status to record.
 	RunStatus string
+	Loop      *LoopAlert
 }
 
 // ActivityInfo is an Activity stamped with when it began (EvtActivity payload).
@@ -163,6 +166,10 @@ type PendingQuestion struct {
 	Question string    `json:"question"`
 	Options  []string  `json:"options"`
 	AskedAt  time.Time `json:"asked_at"`
+	// onAnswer, when set, makes this a question from the manager itself
+	// (the context_restart_mode "ask" choice): AnswerQuestion hands the
+	// answer to it instead of sending it to the model.
+	onAnswer func(answer string) error
 }
 
 // PermissionResponseMessage is the stream-json reply to a permission_request.
@@ -290,6 +297,7 @@ type Session struct {
 	primerFn          PrimerFunc
 	handoffFn         HandoffFunc
 	contextMonitor    *optimization.ContextMonitor
+	loopDetector      *optimization.LoopDetector
 
 	mu              sync.Mutex
 	status          config.SessionStatus
@@ -320,6 +328,23 @@ type Session struct {
 	authErrorHit       atomic.Bool
 	sessionNotFoundHit atomic.Bool
 	contextRestartHit  atomic.Bool
+	// contextRearm is set after a context restart or /compact: the next
+	// turn back under the threshold re-arms contextMonitor (RearmBelow).
+	// Spans runs — it is deliberately not in resetRunAtomics.
+	contextRearm atomic.Bool
+	// loopRestartHit is set when loop_action "restart" stopped the run
+	// (loop_guard.go); Run treats it like a context restart.
+	loopRestartHit atomic.Bool
+	// afterLoopRestart marks a run started by such a restart: it only warns
+	// on a loop, so a task that loops again is not restarted forever.
+	afterLoopRestart atomic.Bool
+	// pendingLoopNote is put in front of the next run's prompt after such a
+	// restart (protected by mu; consumed by initialPromptText).
+	pendingLoopNote string
+	// endInput closes the live run's stdin (idempotent; protected by mu,
+	// nil between runs). It lets a context restart chosen later — from the
+	// "ask" question — end an interactive process idling between turns.
+	endInput func()
 	// continueMarkerHit is set when the run's last turn ended on the
 	// continue-session marker (the agent declaring its work done), and
 	// stepLimitHit when Hermes cut the turn off at its step budget. Both are
@@ -445,6 +470,7 @@ func New(p Params) *Session {
 		primerFn:          p.PrimerFn,
 		handoffFn:         p.HandoffFn,
 		contextMonitor:    optimization.NewContextMonitor(p.Optimization, 0),
+		loopDetector:      optimization.NewLoopDetector(p.Optimization),
 		status:            config.StatusIdle,
 		stateStore:        p.StateStore,
 		crashRecovery:     p.CrashRecovery,
@@ -672,10 +698,15 @@ func (s *Session) AnswerQuestion(questionID, answer string) error {
 		s.mu.Unlock()
 		return fmt.Errorf("session %s: no pending question with id %q", s.ID, questionID)
 	}
+	onAnswer := s.pendingQuestion.onAnswer
 	s.pendingQuestion = nil
 	if s.questionTimer != nil {
 		s.questionTimer.Stop()
 		s.questionTimer = nil
+	}
+	if onAnswer != nil {
+		s.mu.Unlock()
+		return onAnswer(answer)
 	}
 	if c := s.questionSet; c != nil {
 		c.answers = append(c.answers, answer)
@@ -1063,6 +1094,9 @@ func (s *Session) Run(ctx context.Context) {
 			s.mu.Lock()
 			s.CLISessionID = uuid.NewString()
 			s.mu.Unlock()
+			// Re-arm once the fresh process has a turn under the threshold,
+			// so a later crossing restarts it again.
+			s.contextRearm.Store(true)
 			continue
 		case err != nil:
 			logger.L.Error("session.run.error", "id", s.ID, "error", err, "retry_delay_sec", s.retryDelay)
@@ -1449,6 +1483,9 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	// on turn completion (autonomous mode) and after the stdout stream ends.
 	var closeInputOnce sync.Once
 	closeInput := func() { closeInputOnce.Do(func() { close(inputCh) }) }
+	s.mu.Lock()
+	s.endInput = closeInput
+	s.mu.Unlock()
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
@@ -1475,6 +1512,7 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	s.stdinPipe = nil
 	s.cancelRun = nil
 	s.inputCh = nil
+	s.endInput = nil
 	// A process that exited (killed, crashed, or errored) while a question
 	// was still pending leaves no live stdin for the timeout fallback to
 	// answer into — drop it so a later stray timer fire is a harmless no-op.
@@ -1510,6 +1548,8 @@ func (s *Session) initialPromptText(forceInteractive bool) string {
 	taskDesc := s.taskSourceDesc
 	handoff := s.pendingHandoff
 	s.pendingHandoff = ""
+	loopNote := s.pendingLoopNote
+	s.pendingLoopNote = ""
 	s.mu.Unlock()
 
 	if recovering {
@@ -1558,6 +1598,9 @@ func (s *Session) initialPromptText(forceInteractive bool) string {
 			prompt = "--- Project state (auto-generated) ---\n" + primer + "\n\n" + prompt
 		}
 	}
+	if loopNote != "" {
+		prompt = loopNote + "\n\n" + prompt
+	}
 	return prompt
 }
 
@@ -1598,6 +1641,8 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 	s.mu.Lock()
 	s.lastActivity = time.Now()
 	s.mu.Unlock()
+
+	s.observeLoops(&ev)
 
 	if ev.Activity != nil {
 		s.setActivity(*ev.Activity)
@@ -1718,7 +1763,7 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 				s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
 				return true
 			}
-			s.checkContextRestart(ev.Result)
+			s.checkContextRestart(ev.Result, autonomous)
 			s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
 		}
 		return true
@@ -1761,12 +1806,19 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 // session, or the next task-source attempt for an autonomous one) that gets
 // diverted through a handoff instead of continuing/repeating blind.
 //
-// When the threshold is crossed, it synchronously distills a compact
-// handoff (via handoffFn, if wired — a plain restart with no distilled
-// recap otherwise) and arms contextRestartHit so runOnce's scanner loop
-// closes stdin even for an interactive session that would otherwise keep
-// the now-oversized conversation open waiting for the next human turn.
-func (s *Session) checkContextRestart(res *SessionResult) {
+// When the threshold is crossed, context_restart_mode picks what happens:
+//
+//   - "fresh": restartWithHandoff — distill a recap and start a fresh,
+//     non-resumed process with it.
+//   - "resume": compactInPlace — keep the live process and conversation and
+//     send the CLI's own /compact, which summarizes the history in place.
+//   - "ask": askContextRestart — let the user pick one of the two above, or
+//     continue as is.
+//
+// "resume" and "ask" need a live process waiting for the next human turn, so
+// an autonomous run (whose process ends with the turn anyway) and a
+// per-turn-process runtime (Hermes) always take the "fresh" path.
+func (s *Session) checkContextRestart(res *SessionResult, autonomous bool) {
 	if !s.Config.ContextHandoff || res == nil || s.contextMonitor == nil {
 		return
 	}
@@ -1781,31 +1833,117 @@ func (s *Session) checkContextRestart(res *SessionResult) {
 		return
 	}
 	s.contextMonitor.SetContextWindow(window)
-	ev := s.contextMonitor.Observe(optimization.TokenUsageAdapter{
+	usage := optimization.TokenUsageAdapter{
 		InputTokens:              res.Usage.InputTokens,
 		CacheCreationInputTokens: res.Usage.CacheCreationInputTokens,
 		CacheReadInputTokens:     res.Usage.CacheReadInputTokens,
-	})
+	}
+	if s.contextRearm.Load() {
+		if s.contextMonitor.RearmBelow(usage) {
+			s.contextRearm.Store(false)
+		}
+		return
+	}
+	ev := s.contextMonitor.Observe(usage)
 	if ev.Type != optimization.ContextEventRestart {
 		return
 	}
 
+	mode := ev.RestartMode
+	if autonomous || s.runtime.PerTurnProcess() {
+		mode = "fresh"
+	}
+	logger.L.Info("session.context_restart.triggered", "id", s.ID, "utilization", ev.Utilization, "mode", mode)
+	switch mode {
+	case "resume":
+		s.compactInPlace(ev.Utilization)
+	case "ask":
+		s.askContextRestart(ev.Utilization)
+	default:
+		s.restartWithHandoff(ev.Utilization)
+	}
+}
+
+// contextRestartOptions are the answers of the "ask" question, in order:
+// the first is what an unanswered question would mean if it ever timed out.
+var contextRestartOptions = []string{
+	"Compact this conversation (/compact)",
+	"Restart with a short recap",
+	"Continue as is",
+}
+
+// askContextRestart opens a manager-side question (PendingQuestion.onAnswer)
+// offering compaction, a recap restart, or nothing. The process stays alive
+// on open stdin meanwhile; a message typed instead of a choice goes to the
+// model as usual and counts as "continue". Either way of continuing leaves
+// the monitor fired, so this conversation is not asked again.
+func (s *Session) askContextRestart(util float64) {
+	pq := &PendingQuestion{
+		ID: uuid.NewString(),
+		Question: fmt.Sprintf(
+			"Context usage reached %.0f%%. Every further turn re-reads the whole conversation. What should the manager do?",
+			util*100,
+		),
+		Options: contextRestartOptions,
+		AskedAt: time.Now(),
+	}
+	pq.onAnswer = func(answer string) error {
+		switch answer {
+		case contextRestartOptions[0]:
+			return s.compactInPlace(util)
+		case contextRestartOptions[1]:
+			s.setStatus(config.StatusWorking)
+			// The recap is an LLM call; keep it off the UI's binding call.
+			go s.restartWithHandoff(util)
+			return nil
+		}
+		s.setStatus(config.StatusWorking)
+		return nil
+	}
+	s.mu.Lock()
+	s.pendingQuestion = pq
+	s.mu.Unlock()
+	s.setStatus(config.StatusWaitingForUser)
+	cp := *pq
+	s.emit(SessionEvent{Type: EvtQuestion, Question: &cp})
+}
+
+// compactInPlace sends /compact into the live process as the next turn; the
+// first later turn under the threshold re-arms the monitor. If stdin is gone
+// it falls back to a recap restart.
+func (s *Session) compactInPlace(util float64) error {
+	s.emitManagerLog(fmt.Sprintf(
+		"Context usage reached %.0f%% — compacting this conversation in place (/compact).", util*100))
+	data, err := json.Marshal(userMessage("/compact"))
+	if err == nil {
+		err = s.queueInput(append(data, '\n'))
+	}
+	if err != nil {
+		logger.L.Warn("session.context_restart.compact_failed", "id", s.ID, "error", err)
+		s.restartWithHandoff(util)
+		return nil
+	}
+	s.contextRearm.Store(true)
+	s.setStatus(config.StatusWorking)
+	return nil
+}
+
+// restartWithHandoff synchronously distills a compact handoff (via
+// handoffFn, if wired — a plain restart with no distilled recap otherwise)
+// and arms contextRestartHit, then closes stdin so the process exits even
+// for an interactive session that would otherwise keep the now-oversized
+// conversation open waiting for the next human turn.
+func (s *Session) restartWithHandoff(util float64) {
 	s.mu.Lock()
 	cliSessionID := s.CLISessionID
 	taskDesc := s.taskSourceDesc
 	todos := formatTodoLines(s.todos)
 	s.mu.Unlock()
 
-	logger.L.Info("session.context_restart.triggered", "id", s.ID, "utilization", ev.Utilization)
-	s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
-		Time:   time.Now(),
-		Level:  "system",
-		Source: "manager",
-		Message: fmt.Sprintf(
-			"Context usage reached %.0f%% — restarting with a compact handoff instead of --resume-ing this conversation.",
-			ev.Utilization*100,
-		),
-	}})
+	s.emitManagerLog(fmt.Sprintf(
+		"Context usage reached %.0f%% — restarting with a compact handoff instead of --resume-ing this conversation.",
+		util*100,
+	))
 
 	var handoff string
 	if s.handoffFn != nil {
@@ -1821,6 +1959,22 @@ func (s *Session) checkContextRestart(res *SessionResult) {
 	s.pendingHandoff = handoff
 	s.mu.Unlock()
 	s.applyFailure(&TurnFailure{Kind: KindContextRestart})
+	s.mu.Lock()
+	endInput := s.endInput
+	s.mu.Unlock()
+	if endInput != nil {
+		endInput()
+	}
+}
+
+// emitManagerLog shows a system line from the manager in the session log.
+func (s *Session) emitManagerLog(msg string) {
+	s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+		Time:    time.Now(),
+		Level:   "system",
+		Source:  "manager",
+		Message: msg,
+	}})
 }
 
 // formatTodoLines renders the live TodoWrite state as plain checklist lines
@@ -1982,6 +2136,10 @@ func (s *Session) resetRunAtomics() {
 	s.authErrorHit.Store(false)
 	s.sessionNotFoundHit.Store(false)
 	s.contextRestartHit.Store(false)
+	s.afterLoopRestart.Store(s.loopRestartHit.Swap(false))
+	if s.loopDetector != nil {
+		s.loopDetector.Reset()
+	}
 	s.continueMarkerHit.Store(false)
 	s.stepLimitHit.Store(false)
 }
@@ -2011,6 +2169,10 @@ func (s *Session) classifySentinelError() error {
 	}
 	if s.contextRestartHit.Load() {
 		logger.L.Info("session.process_exit.context_restart", "id", s.ID)
+		return errContextRestart
+	}
+	if s.loopRestartHit.Load() {
+		logger.L.Info("session.process_exit.loop_restart", "id", s.ID)
 		return errContextRestart
 	}
 	return nil

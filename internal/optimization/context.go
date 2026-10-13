@@ -95,6 +95,32 @@ func (m *ContextMonitor) Reset() {
 	m.restarted = false
 }
 
+// RearmBelow re-arms a fired restart once a turn's utilization is back
+// under the restart threshold, and reports whether the monitor is armed now
+// (also true when it never fired). A turn still over it (the /compact call
+// itself, or a fresh process that starts big) leaves the monitor fired, so
+// one oversized turn cannot restart in a loop.
+func (m *ContextMonitor) RearmBelow(usage TokenObserver) bool {
+	if usage == nil || m.cfg == nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.restarted {
+		return true
+	}
+	if m.contextWindow <= 0 {
+		return false
+	}
+	if float64(usage.Total())/float64(m.contextWindow) >= m.cfg.ContextRestartThreshold {
+		return false
+	}
+	m.maxTokens = 0
+	m.warned = false
+	m.restarted = false
+	return true
+}
+
 // Observe records a turn's token usage and returns a ContextEvent describing
 // any threshold crossing.
 //

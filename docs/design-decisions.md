@@ -1448,7 +1448,35 @@ scenarios (`testdata/e2e/`, reusing the existing `context-growth.json`
 fakeclaude scenario) — with the flag on, `StartSession` produces two
 `session:init` events (a genuine second CLI invocation, each with its own
 fresh `--session-id`, never `--resume`) before settling at `idle`; with it
-off, exactly one.
+off, exactly one. The e2e config pins `context_restart_mode = "fresh"`.
+
+**`context_restart_mode` picks the reaction** (`checkContextRestart`); the
+per-session `context_handoff` flag still gates all of it, and the UI shows
+the three keys as one "Features" card:
+
+- `fresh` — the recap restart described above (`restartWithHandoff`).
+- `resume` — keep the live process and conversation and send the CLI's own
+  `/compact` as the next user turn (`compactInPlace`); the CLI summarizes the
+  history in place. No new process, no recap call. With no live stdin it
+  falls back to `fresh`.
+- `ask` — a manager-side question (`PendingQuestion.onAnswer`, so
+  `AnswerQuestion` handles the choice instead of sending it to the model):
+  compact, restart with a recap, or continue as is. A message typed instead
+  counts as "continue"; the monitor stays fired, so that conversation is not
+  asked again. Choosing a restart closes the idle process's stdin through
+  `Session.endInput`.
+
+`resume` and `ask` need a process idling between human turns, so an
+autonomous run (its process ends with the turn anyway) and a per-turn
+runtime (Hermes) always take `fresh`.
+
+**Re-arming.** `ContextMonitor` fires once; after a restart or `/compact`
+the session sets `contextRearm`, and `ContextMonitor.RearmBelow` re-arms it
+only on the first turn back under the threshold. Re-arming right after the
+restart would loop: a fresh process whose first turn is already over the
+threshold (or the `/compact` call itself, which reads the whole history)
+would trigger again and again. Before this, the monitor was never reset at
+all, so a session restarted at most once in its lifetime.
 
 ### Context-Budget Handoff Mid-Turn (LEARN-TASKS.md LN-28)
 
@@ -1501,6 +1529,42 @@ in the session feed and a `session.handoff_budget.note` line in the app log.
 Covered by `internal/session/handoff_budget_test.go` (off = byte-identical
 prompt and no input, the per-run tag, one note per crossing call, the
 repeat/cap schedule, interactive runs untouched, `utf8Env`).
+
+### Loop Detection in Sessions (PLAN.md 20.3.8)
+
+`optimization.LoopDetector` existed with tests long before any session called
+it, so `loop_detection` was a toggle that changed nothing. It is wired in
+`internal/session/loop_guard.go`: `handleEvent` passes every `tool` log entry
+(both runtimes produce them) to `observeLoops`, keyed by
+`NormalizeInput(ToolName, ToolArgs)`. On a hit the detector's window is
+cleared and `loop_action` runs:
+
+- `warn` — a manager line in the session log, `EvtLoop` → `alert:loop`
+  (`{id, tool, input, count, window, action}`) → a toast in the frontend.
+- `send_hint` — the same, plus `loop_hint` sent into the live stdin. Hermes
+  (`PerTurnProcess`) has no live stdin, so there it degrades to `warn`.
+- `restart` — the same, then `cancelRun()` stops the process with
+  `loopRestartHit` set; `classifySentinelError` returns `errContextRestart`,
+  so `Run` takes the context-restart branch (fresh process, crash state
+  cleared). `pendingLoopNote` is put in front of the session's normal prompt —
+  unlike a context handoff, the prompt itself (task protocol) is kept.
+
+**No endless restarts.** `resetRunAtomics` moves `loopRestartHit` into
+`afterLoopRestart`: the run a loop restart started only warns on a loop, so
+a task that loops again is not restarted forever; the run after it may
+restart again.
+
+**Keys, against false alarms.** Read keys carry the range (`path @offset:limit`)
+— the kit's "read large files by range" rule would otherwise read one file in
+parts and trip the detector; Edit keys carry the start of `old_string`, so
+several different edits of one file are not a loop. Read-after-edit
+suppression compares paths (`pathOf`). The fallback key for unknown tools
+joins values in key order (it used map order before — nondeterministic).
+
+`loop_detection` defaults to true with `loop_action = "warn"`, so wiring it
+turned on warnings for every session; `send_hint`/`restart` stay opt-in.
+Covered by `internal/session/loop_guard_test.go` and the `loop-detected`
+(warn) / `loop-restart` e2e scenarios.
 
 ### UI Localization (EN/RU)
 

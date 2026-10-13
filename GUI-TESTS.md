@@ -2,6 +2,8 @@
 
 Playwright specs against the running Wails app (`wails dev` — the control-plane is on by default).  
 Test fixtures: `frontend/tests/fixtures.ts` — provides `page` (Playwright) and `ctrl` (control-plane RPC client).
+The Vite dev server listens on 5173; `CM_VITE_PORT=<port>` moves it where Windows reserves that port
+(`listen EACCES` — e.g. a Hyper-V excluded range): `CM_VITE_PORT=41234 npx playwright test`.
 
 Legend: **✓ exists** = spec already written; **○ missing** = not yet covered.
 
@@ -191,6 +193,8 @@ live/start-time split and the editable fields live in
 | SF-05 | Escape closes popup | Press Escape (focus inside panel) | Dialog hidden | ✓ |
 | SF-07 | Toggle is saved at once | Tick `context_primer` on S2 | "✓ saved" on the row, state ON, `GetConfig` has it true | ✓ |
 | SF-08 | Start-time change on a running session offers restart | Start S1, tick `context_primer` | "applies after a restart" + enabled "Restart now" | ✓ |
+| SF-09 | Help window per setting | Click "i" on the `context_primer` row, then Escape | Help dialog with title, `context_primer` key, body and an "Example" box; Escape closes only the help, the popup stays | ✓ |
+| SF-10 | Auto model routing applies without a reload | Load the app, tick `auto_model_routing` in S2's popup, click ▶ on S2 | Model picker ("Start session") opens, nothing starts; flag restored | ✓ |
 | SF-06 | Dependency warning | Project with `auto_skills = true`, `experience_tracking = false` | Auto-skills row shows the "needs experience tracking" warning | ○ |
 
 ---

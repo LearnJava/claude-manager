@@ -91,6 +91,13 @@ Validates that all three events parse as `EventLog` with `ToolName: "Bash"`
 and that `ToolInput` is identical across all three (the condition the detector
 checks).
 
+Also drives two e2e scenarios (`testdata/e2e/`): `loop-detected` (default
+config, `loop_action = "warn"`) waits for `alert:loop` with `action: "warn"`;
+`loop-restart` (`testdata/configs/loop-restart.toml`, `loop_action =
+"restart"`) waits for an `alert:loop` with `action: "restart"`, then — the
+restarted run matches this scenario again — one with `action: "warn"` (the
+run after a loop restart only warns), then `idle`.
+
 ---
 
 ### context-growth.json

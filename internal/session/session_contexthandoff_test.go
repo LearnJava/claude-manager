@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"claude-manager/internal/config"
@@ -43,7 +44,7 @@ func handoffCfg() *config.OptimizationSettings {
 	return &config.OptimizationSettings{
 		ContextRestartThreshold: 0.75,
 		ContextWarnThreshold:    0.60,
-		ContextRestartMode:      "resume",
+		ContextRestartMode:      "fresh",
 	}
 }
 
@@ -235,5 +236,128 @@ func TestFormatTodoLines(t *testing.T) {
 func TestFormatTodoLines_Empty(t *testing.T) {
 	if got := formatTodoLines(nil); got != nil {
 		t.Errorf("got %v, want nil", got)
+	}
+}
+
+func modeCfg(mode string) *config.OptimizationSettings {
+	c := handoffCfg()
+	c.ContextRestartMode = mode
+	return c
+}
+
+// overThreshold is a result line at 77.5% of a 200k window.
+var overThreshold = resultLineWithUsage("claude-sonnet-4-6", 155_000, 200_000)
+
+func TestCheckContextRestart_ResumeCompactsInPlace(t *testing.T) {
+	s := New(Params{
+		Config:       config.SessionConfig{Name: "s", ContextHandoff: true},
+		Optimization: modeCfg("resume"),
+	})
+	in := make(chan []byte, 4)
+	s.mu.Lock()
+	s.inputCh = in
+	s.mu.Unlock()
+
+	s.handleLine(overThreshold, false)
+	if s.contextRestartHit.Load() {
+		t.Fatal("resume must keep the process, not restart it")
+	}
+	select {
+	case line := <-in:
+		if !strings.Contains(string(line), `"/compact"`) {
+			t.Fatalf("sent %s, want a /compact user turn", line)
+		}
+	default:
+		t.Fatal("expected /compact on stdin")
+	}
+
+	// The /compact turn's own result is still big: no second compaction.
+	// A turn back under the threshold re-arms; the next crossing compacts.
+	s.handleLine(overThreshold, false)
+	if len(in) != 0 {
+		t.Fatal("the /compact turn's own result must not trigger another compaction")
+	}
+	s.handleLine(resultLineWithUsage("claude-sonnet-4-6", 30_000, 200_000), false)
+	s.handleLine(overThreshold, false)
+	if len(in) != 1 {
+		t.Fatal("a crossing after compaction must compact again")
+	}
+}
+
+func TestCheckContextRestart_ResumeWithoutStdinFallsBackToRestart(t *testing.T) {
+	s := New(Params{
+		Config:       config.SessionConfig{Name: "s", ContextHandoff: true},
+		Optimization: modeCfg("resume"),
+	})
+	s.handleLine(overThreshold, false)
+	if !s.contextRestartHit.Load() {
+		t.Fatal("with no live stdin, resume must fall back to a recap restart")
+	}
+}
+
+func TestCheckContextRestart_AutonomousAlwaysFresh(t *testing.T) {
+	for _, mode := range []string{"resume", "ask"} {
+		s := New(Params{
+			Config:       config.SessionConfig{Name: "s", ContextHandoff: true},
+			Optimization: modeCfg(mode),
+		})
+		s.handleLine(overThreshold, true)
+		if !s.contextRestartHit.Load() {
+			t.Errorf("mode %q: an autonomous run must restart fresh", mode)
+		}
+		if s.PendingQuestion() != nil {
+			t.Errorf("mode %q: an autonomous run must not ask", mode)
+		}
+	}
+}
+
+func TestCheckContextRestart_AskAnswers(t *testing.T) {
+	cases := []struct {
+		answer      string
+		wantRestart bool
+		wantCompact bool
+	}{
+		{contextRestartOptions[0], false, true},
+		{contextRestartOptions[1], true, false},
+		{contextRestartOptions[2], false, false},
+	}
+	for _, c := range cases {
+		s := New(Params{
+			Config:       config.SessionConfig{Name: "s", ContextHandoff: true},
+			Optimization: modeCfg("ask"),
+		})
+		in := make(chan []byte, 4)
+		closed := make(chan struct{})
+		s.mu.Lock()
+		s.inputCh = in
+		s.endInput = func() { close(closed) }
+		s.mu.Unlock()
+
+		s.handleLine(overThreshold, false)
+		pq := s.PendingQuestion()
+		if pq == nil || len(pq.Options) != 3 {
+			t.Fatalf("expected a three-option question, got %+v", pq)
+		}
+		if s.contextRestartHit.Load() || len(in) != 0 {
+			t.Fatal("nothing may happen before the user answers")
+		}
+		if err := s.AnswerQuestion(pq.ID, c.answer); err != nil {
+			t.Fatal(err)
+		}
+		if c.wantRestart {
+			<-closed // restart runs off the binding call
+			if !s.contextRestartHit.Load() {
+				t.Errorf("%q: expected a restart", c.answer)
+			}
+		}
+		if got := len(in) == 1; got != c.wantCompact {
+			t.Errorf("%q: /compact sent = %v, want %v", c.answer, got, c.wantCompact)
+		}
+		if !c.wantRestart && s.contextRestartHit.Load() {
+			t.Errorf("%q: unexpected restart", c.answer)
+		}
+		if s.PendingQuestion() != nil {
+			t.Errorf("%q: question still pending", c.answer)
+		}
 	}
 }

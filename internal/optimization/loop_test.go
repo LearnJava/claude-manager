@@ -178,6 +178,9 @@ func TestNormalizeInput(t *testing.T) {
 		{"glob pattern", "Glob", map[string]string{"pattern": "**/*.go"}, "**/*.go"},
 		{"agent description", "Agent", map[string]string{"description": "explore code"}, "explore code"},
 		{"unknown tool falls back", "FooBar", map[string]string{"q": "v"}, "v"},
+		{"fallback is in key order", "FooBar", map[string]string{"b": "2", "a": "1", "c": "3"}, "1|2|3"},
+		{"read range", "Read", map[string]string{"file_path": "src/x.go", "offset": "100", "limit": "50"}, "src/x.go @100:50"},
+		{"edit with old_string", "Edit", map[string]string{"file_path": "src/x.go", "old_string": "foo"}, "src/x.go | foo"},
 		{"missing keys", "Bash", nil, ""},
 	}
 	for _, tc := range cases {

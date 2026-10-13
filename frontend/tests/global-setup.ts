@@ -120,7 +120,7 @@ async function warmUpVite(): Promise<void> {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
-    await page.goto('http://localhost:5173/', { timeout: 180_000, waitUntil: 'load' });
+    await page.goto(`http://localhost:${process.env.CM_VITE_PORT ?? '5173'}/`, { timeout: 180_000, waitUntil: 'load' });
   } catch (err) {
     // Not fatal: the tests will surface a real problem on their own.
     process.stderr.write(`[global-setup] vite warm-up failed: ${String(err)}

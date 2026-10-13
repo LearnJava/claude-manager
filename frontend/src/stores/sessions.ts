@@ -486,6 +486,16 @@ function subscribeEvents() {
         }));
     });
 
+    // A tool-call loop detected in a session (loop_guard.go).
+    EventsOn('alert:loop', (evt: { id: string; tool: string; input: string; count: number; action: string }) => {
+        if (!evt) return;
+        const what = evt.input ? `${evt.tool} ${evt.input}` : evt.tool;
+        notify(get(t)('notify.loop.title', { id: evt.id }), get(t)(`notify.loop.body.${evt.action}`, {
+            what,
+            count: evt.count ?? 0,
+        }));
+    });
+
     EventsOn('session:question', (evt: { id: string; question: PendingQuestion }) => {
         if (!evt || !evt.id) return;
         setSession(evt.id, (s) => ({ ...s, pending_question: evt.question }));

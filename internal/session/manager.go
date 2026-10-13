@@ -1641,6 +1641,10 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 			m.emit(EventNameQuestion, QuestionEvent{ID: id, Question: *ev.Question})
 		}
 
+	case EvtLoop:
+		if ev.Loop != nil {
+			m.emit(EventNameLoopAlert, LoopAlertEvent{ID: id, LoopAlert: *ev.Loop})
+		}
 	case EvtError:
 		msg := ""
 		if ev.Err != nil {

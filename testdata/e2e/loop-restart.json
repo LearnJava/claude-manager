@@ -1,0 +1,26 @@
+{
+  "name": "loop-restart",
+  "fakeclaude_dir": "testdata/scenarios",
+  "config": "testdata/configs/loop-restart.toml",
+  "steps": [
+    {
+      "do": "StartSession",
+      "with": {"project": "lumen", "session": "P1"}
+    },
+    {
+      "wait": "alert:loop",
+      "match": {"id": "lumen/P1", "tool": "Bash", "count": 3, "action": "restart"},
+      "timeout_ms": 8000
+    },
+    {
+      "wait": "alert:loop",
+      "match": {"id": "lumen/P1", "tool": "Bash", "count": 3, "action": "warn"},
+      "timeout_ms": 8000
+    },
+    {
+      "wait": "session:status",
+      "match": {"id": "lumen/P1", "status": "idle"},
+      "timeout_ms": 8000
+    }
+  ]
+}

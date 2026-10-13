@@ -52,9 +52,11 @@ const FIELDS: Record<string, FeatureField[]> = {
                 f('settings', 'PreflightAnalysis', 'preflight_analysis', 'bool')],
     taskHooks: [f('session', 'PreTaskHook', 'pre_task_hook', 'text'), f('session', 'PostTaskHook', 'post_task_hook', 'text')],
     crashRecovery: [f('settings', 'CrashRecovery', 'crash_recovery', 'bool')],
-    contextRestart: [f('optimization', 'ContextRestartMode', 'context_restart_mode', 'select', { options: ['resume', 'fresh', 'ask', 'off'] }),
+    // One feature, three keys: the session opts in, the mode and threshold
+    // are global ([optimization]).
+    contextRestart: [f('session', 'ContextHandoff', 'context_handoff', 'bool'),
+                     f('optimization', 'ContextRestartMode', 'context_restart_mode', 'select', { options: ['resume', 'fresh', 'ask', 'off'] }),
                      f('optimization', 'ContextRestartThreshold', 'context_restart_threshold', 'number', { step: 0.05 })],
-    contextHandoff: [f('session', 'ContextHandoff', 'context_handoff', 'bool')],
     handoffContextTokens: [f('session', 'HandoffContextTokens', 'handoff_context_tokens', 'number', { step: 1000 })],
     contextPrimer: [f('session', 'ContextPrimer', 'context_primer', 'bool')],
     askUserMarker: [f('session', 'AskUserMarker', 'ask_user_marker', 'bool')],
@@ -113,6 +115,7 @@ export const LIVE = new Set([
     'permissionSound',
     'permissionTimeout',
     'budgetAlerts',
+    'autoModelRouting',
 ]);
 
 export const GROUP_ORDER: FeatureGroup[] = ['tasks', 'context', 'learning', 'safety', 'performance', 'notifications'];
@@ -162,12 +165,13 @@ export function describeSessionFeatures(cfg: any, project: string, sessionName: 
         enabled: !!g.CrashRecovery });
 
     // --- Context -----------------------------------------------------------
+    // Mirrors Session.checkContextRestart: nothing happens unless the session
+    // opted in (context_handoff) and the global mode is not off.
     const restartMode = str(o.ContextRestartMode) || 'off';
-    add({ key: 'contextRestart', tomlKey: 'context_restart_mode', scope: 'global', group: 'context',
-        enabled: restartMode !== 'off',
-        value: restartMode !== 'off' ? `${restartMode}, ${Math.round(num(o.ContextRestartThreshold) * 100)}%` : undefined });
-    add({ key: 'contextHandoff', tomlKey: 'context_handoff', scope: 'session', group: 'context',
-        enabled: !!s.ContextHandoff,
+    const restartOn = !!s.ContextHandoff && restartMode !== 'off';
+    add({ key: 'contextRestart', tomlKey: 'context_handoff / context_restart_mode', scope: 'session', group: 'context',
+        enabled: restartOn,
+        value: restartOn ? `${restartMode}, ${Math.round(num(o.ContextRestartThreshold) * 100)}%` : undefined,
         warning: s.ContextHandoff && restartMode === 'off' ? 'handoffNoRestart' : undefined });
     const handoffTokens = num(s.HandoffContextTokens);
     add({ key: 'handoffContextTokens', tomlKey: 'handoff_context_tokens', scope: 'session', group: 'context',

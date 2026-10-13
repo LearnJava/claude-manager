@@ -5,6 +5,7 @@ import { defineConfig, devices } from '@playwright/test';
 // (CI/headless) runs are unaffected. Tune the pace with SLOWMO (ms).
 const VISUAL = !!process.env.VISUAL;
 const SLOWMO = Number(process.env.SLOWMO ?? 500);
+const VITE_PORT = process.env.CM_VITE_PORT ?? '5173';
 
 // CM_CONTROL_PORT / CM_CONTROL_TOKEN are set by global-setup (or externally).
 // The Vite dev server is started automatically by the webServer config below.
@@ -20,16 +21,17 @@ export default defineConfig({
   globalSetup: './tests/global-setup.ts',
   globalTeardown: './tests/global-teardown.ts',
 
-  // Vite dev server: the frontend JS bundle.
+  // Vite dev server: the frontend JS bundle. CM_VITE_PORT moves it off 5173
+  // where Windows reserves that port (listen EACCES).
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:5173',
+    command: `npm run dev -- --port ${VITE_PORT} --strictPort`,
+    url: `http://localhost:${VITE_PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
   },
 
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: `http://localhost:${VITE_PORT}`,
     trace: 'on-first-retry',
     screenshot: VISUAL ? 'on' : 'only-on-failure',
     video: VISUAL ? 'on' : 'off',

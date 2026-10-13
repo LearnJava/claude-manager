@@ -8,3 +8,8 @@ prompt = "Investigate context-grow behavior for LN-15."
 auto_restart = false
 model = "claude-sonnet-4-6"
 context_handoff = true
+
+[optimization]
+# The e2e scenario checks the recap restart (fresh); the default "resume"
+# would compact the live conversation instead.
+context_restart_mode = "fresh"

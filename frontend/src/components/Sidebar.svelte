@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { createEventDispatcher, onMount } from 'svelte';
+    import { createEventDispatcher } from 'svelte';
     import { projectGroups, collapsedProjects, toggleProject, initProjects } from '../stores/projects';
     import ModelPicker from './ModelPicker.svelte';
     import ResumePrompt from './ResumePrompt.svelte';
@@ -109,11 +109,6 @@
         const v = modelValue(s);
         return !!v && !MODELS.some((m) => m.value === v);
     }
-
-    let autoModelRouting = false;
-    onMount(async () => {
-        try { autoModelRouting = await GetAutoModelRouting(); } catch {}
-    });
 
     // CLAUDE.md presence, checked lazily per project on first click (not a
     // bulk scan of every configured project at startup). undefined = not
@@ -313,7 +308,9 @@
                 return;
             }
         }
-        if (autoModelRouting) {
+        // Read at click time, not once on mount: a change in Settings or the
+        // Features popup applies to the very next start.
+        if (await GetAutoModelRouting().catch(() => false)) {
             pickerFor = { project, name };
             return;
         }

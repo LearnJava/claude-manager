@@ -49,6 +49,57 @@ test.describe('Session features popup', () => {
     await expect(dialog).toBeHidden();
   });
 
+  test('the "i" button opens a detailed help window; Escape closes only it', async ({ page }) => {
+    await page.goto('/');
+    await page.locator(`[data-testid="session-features-button-${ID('S1')}"]`).click();
+    const dialog = page.locator('[data-testid="session-features"]');
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    await dialog.locator('[data-testid="feature-contextPrimer"] [data-testid="feature-help"]').click();
+    const help = page.locator('[data-testid="feature-help-dialog"]');
+    await expect(help).toBeVisible();
+    await expect(help).toContainText('context_primer');
+    await expect(help.locator('[data-testid="feature-help-body"] p').first()).not.toBeEmpty();
+    await expect(help.locator('[data-testid="feature-help-example"]')).toContainText('Example');
+
+    await page.keyboard.press('Escape');
+    await expect(help).toBeHidden();
+    await expect(dialog).toBeVisible();
+  });
+
+  test('auto model routing applies to the next ▶ without a reload', async ({ page, ctrl }) => {
+    const routing = async () => !!(await ctrl.rpc('GetConfig', {})).Optimization?.AutoModelRouting;
+    expect(await routing()).toBe(false);
+    await page.goto('/'); // the sidebar is mounted with the flag off
+
+    await page.locator(`[data-testid="session-features-button-${ID('S2')}"]`).click();
+    const dialog = page.locator('[data-testid="session-features"]');
+    const row = dialog.locator('[data-testid="feature-autoModelRouting"]');
+    await row.locator('[data-testid="field-auto_model_routing"]').check();
+    await expect(row.locator('[data-testid="feature-saved"]')).toBeVisible({ timeout: 5_000 });
+    await expect(row).toContainText('applies at once');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+
+    try {
+      const sessionRow = page.locator('[role="button"]', { hasText: 'S2' }).first();
+      await sessionRow.hover();
+      await sessionRow.getByTitle('Start', { exact: true }).click();
+      // The model picker opens instead of a direct start.
+      await expect(page.getByText('Start session')).toBeVisible({ timeout: 5_000 });
+      await page.getByRole('button', { name: 'Cancel' }).click();
+      await expect(page.getByText('Start session')).toBeHidden();
+      // Nothing was started: the row still offers Start, not Stop.
+      await sessionRow.hover();
+      await expect(sessionRow.getByTitle('Start', { exact: true })).toBeVisible();
+    } finally {
+      await page.locator(`[data-testid="session-features-button-${ID('S2')}"]`).click();
+      await dialog.locator('[data-testid="feature-autoModelRouting"] [data-testid="field-auto_model_routing"]').uncheck();
+      await expect.poll(routing, { timeout: 5_000 }).toBe(false);
+      await page.keyboard.press('Escape');
+    }
+  });
+
   test('a toggle is saved to the config at once', async ({ page, ctrl }) => {
     expect(await primerOf(ctrl, 'S2')).toBe(false);
     await page.goto('/');

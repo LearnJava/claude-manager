@@ -139,10 +139,30 @@
         .filter((g) => g.items.length > 0);
 
     const inputCls = 'bg-bg border border-bg-border rounded px-1.5 py-0.5 text-text';
+
+    // Detailed help ("i" next to a title): featureHelp.<key>.body/.example.
+    let helpItem: FeatureItem | null = null;
+    $: helpParas = helpItem ? $t(`featureHelp.${helpItem.key}.body`).split(/\n\s*\n/) : [];
+    $: helpExample = helpItem ? $t(`featureHelp.${helpItem.key}.example`) : '';
+
+    // Splits text on `backticks` so config keys render as code without {@html}.
+    function codeParts(text: string): { code: boolean; text: string }[] {
+        return text.split('`').map((part, i) => ({ code: i % 2 === 1, text: part }));
+    }
+
+    function onEscape(e: KeyboardEvent) {
+        if (e.key !== 'Escape') return;
+        if (helpItem) {
+            e.stopPropagation();
+            helpItem = null;
+        } else {
+            close();
+        }
+    }
 </script>
 
 <!-- Escape closes from anywhere, including focus inside the panel. -->
-<svelte:window on:keydown|capture={(e) => e.key === 'Escape' && close()} />
+<svelte:window on:keydown|capture={onEscape} />
 
 <!-- Backdrop -->
 <div
@@ -214,6 +234,15 @@
                                             {it.enabled ? $t('sessionFeatures.on') : $t('sessionFeatures.off')}
                                         </span>
                                         <span class="text-text font-medium">{$t(`sessionFeatures.${it.key}.title`)}</span>
+                                        <button
+                                            type="button"
+                                            class="shrink-0 w-4 h-4 rounded-full border border-text-muted/60 text-text-muted
+                                                   hover:text-text hover:border-text leading-none font-semibold"
+                                            style="font-size:10px"
+                                            title={$t('featureHelp.open')}
+                                            aria-label={$t('featureHelp.open')}
+                                            data-testid="feature-help"
+                                            on:click={() => (helpItem = it)}>i</button>
                                         {#if savedKey === it.key}
                                             <span class="text-status-working shrink-0" style="font-size:11px"
                                                   data-testid="feature-saved">✓ {$t('sessionFeatures.savedShort')}</span>
@@ -310,3 +339,48 @@
         </div>
     </div>
 </div>
+
+{#if helpItem}
+    <!-- Help window over the popup; a click outside or Escape closes only it. -->
+    <div
+        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/40"
+        on:click={() => (helpItem = null)}
+        on:keydown={(e) => e.key === 'Escape' && (helpItem = null)}
+        role="dialog"
+        aria-modal="true"
+        tabindex="-1"
+        data-testid="feature-help-dialog">
+        <div
+            class="bg-bg-panel border border-bg-border rounded-lg shadow-2xl w-[620px] max-w-[92vw] max-h-[80vh] flex flex-col"
+            role="document"
+            on:click|stopPropagation
+            on:keydown|stopPropagation>
+            <div class="flex items-start justify-between gap-3 px-5 pt-4 pb-3 border-b border-bg-border">
+                <div class="min-w-0">
+                    <div class="text-text font-semibold">{$t(`sessionFeatures.${helpItem.key}.title`)}</div>
+                    <div class="text-text-muted font-mono mt-0.5" style="font-size:12px">
+                        {helpItem.tomlKey} · {$t(`sessionFeatures.scope.${helpItem.scope}`)}
+                    </div>
+                </div>
+                <button class="text-text-muted hover:text-text" type="button"
+                        aria-label={$t('featureHelp.close')}
+                        on:click={() => (helpItem = null)}>✕</button>
+            </div>
+            <div class="overflow-y-auto px-5 py-4 flex flex-col gap-3 text-sm text-text" data-testid="feature-help-body">
+                {#each helpParas as para}
+                    <p class="leading-relaxed">
+                        {#each codeParts(para) as part}{#if part.code}<code class="font-mono px-1 rounded bg-bg-elevated" style="font-size:12px">{part.text}</code>{:else}{part.text}{/if}{/each}
+                    </p>
+                {/each}
+                {#if helpExample}
+                    <div class="border border-bg-border rounded bg-bg-elevated px-3 py-2" data-testid="feature-help-example">
+                        <div class="text-text-muted uppercase tracking-wide mb-1" style="font-size:11px">{$t('featureHelp.example')}</div>
+                        <p class="leading-relaxed">
+                            {#each codeParts(helpExample) as part}{#if part.code}<code class="font-mono px-1 rounded bg-bg" style="font-size:12px">{part.text}</code>{:else}{part.text}{/if}{/each}
+                        </p>
+                    </div>
+                {/if}
+            </div>
+        </div>
+    </div>
+{/if}

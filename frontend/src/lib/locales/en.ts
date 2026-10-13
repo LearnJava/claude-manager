@@ -30,6 +30,7 @@ import settings from './en/settings';
 import alienCrew from './en/alienCrew';
 import contextMenu from './en/contextMenu';
 import sessionFeatures from './en/sessionFeatures';
+import featureHelp from './en/featureHelp';
 
 export default {
     ...common,
@@ -60,4 +61,5 @@ export default {
     ...alienCrew,
     ...contextMenu,
     ...sessionFeatures,
+    ...featureHelp,
 } as Record<string, string>;

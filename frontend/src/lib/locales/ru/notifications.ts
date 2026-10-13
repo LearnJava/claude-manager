@@ -18,6 +18,10 @@ export default {
     'notify.costRegression.body': '{id} — {factor}x от недавней медианы',
     'notify.budgetDaily.title': 'Превышен дневной бюджет',
     'notify.budgetDaily.body': 'Сегодня потрачено ${current} (порог ${limit})',
+    'notify.loop.title': 'Похоже на зацикливание в {id}',
+    'notify.loop.body.warn': '{what} повторено {count} раз среди последних вызовов инструментов.',
+    'notify.loop.body.send_hint': '{what} повторено {count} раз — агенту отправлена подсказка сменить подход.',
+    'notify.loop.body.restart': '{what} повторено {count} раз — сессия перезапускается с заметкой об этом.',
     'notify.budgetWeekly.title': 'Превышен недельный бюджет',
     'notify.budgetWeekly.body': 'За 7 дней потрачено ${current} (порог ${limit})',
 } as Record<string, string>;

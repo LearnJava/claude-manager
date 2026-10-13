@@ -1,0 +1,13 @@
+[[project]]
+name = "lumen"
+path = "."
+
+[[project.session]]
+name = "P1"
+prompt = "Test loop detection behavior"
+auto_restart = false
+model = "claude-sonnet-4-6"
+
+[optimization]
+loop_detection = true
+loop_action = "restart"

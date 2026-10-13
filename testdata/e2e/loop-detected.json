@@ -13,6 +13,11 @@
       "timeout_ms": 8000
     },
     {
+      "wait": "alert:loop",
+      "match": {"id": "lumen/P1", "tool": "Bash", "count": 3, "action": "warn"},
+      "timeout_ms": 8000
+    },
+    {
       "wait": "session:status",
       "match": {"id": "lumen/P1", "status": "idle"},
       "timeout_ms": 8000
