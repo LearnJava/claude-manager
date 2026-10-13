@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"import os,runpy; d=os.environ.get('CLAUDE_PROJECT_DIR') or os.getcwd(); runpy.run_path(os.path.join(d,'.claude','hooks','guard-self-kill.py'), run_name='__main__')\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

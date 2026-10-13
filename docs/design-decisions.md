@@ -637,6 +637,70 @@ there to ask.
 
 **Config:** `crash_recovery = true` in `[settings]` (default: true). Per-session: `crash_recovery_prompt`. With `crash_recovery = false` no state files are written at all, so no prompt ever appears.
 
+### Surviving the Manager's Death (Self-Kill Guard + Watchdog)
+
+Every session CLI is assigned to a Windows Job Object created with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (`internal/proc/proc_windows.go`). That is
+deliberate — it is the only reliable way to reap the whole tree a run spawns
+(bash, cargo, node, subagents) — but it has a consequence worth stating
+plainly: **when the manager process dies, the OS closes the job handle and
+every session, in every project, dies with it instantly.** No clean shutdown,
+no auto-saved logs, every task cut mid-step.
+
+Two separate mechanisms address that, because the failure has two shapes.
+
+**1. A session must not kill its own host.** A session running in this repo is
+a child of the manager. Asked to rebuild and restart the app, the obvious
+sequence — build, find the running instance, `taskkill /F`, relaunch — destroys
+the session issuing it *and* every sibling session, and leaves no trace: a
+`TerminateProcess` produces no panic, no `shutdown.begin`, and no Windows error
+report. This is not hypothetical; it happened on 2026-10-04 11:36:01 and cost
+every session then running.
+
+- `internal/session/env.go` puts `CLAUDE_MANAGER_PID` and `CLAUDE_MANAGER_EXE`
+  into every session's environment. Inherited values are dropped first, so a
+  manager launched *from* a session does not pass on a stale PID.
+- `.claude/hooks/guard-self-kill.py`, registered as a `PreToolUse` hook in
+  `.claude/settings.json`, refuses shell commands aimed at the manager — by
+  name, by the advertised PID, or by resolving a numeric PID through the OS
+  for ad-hoc sessions that inherit nothing. It fails *open*: anything it
+  cannot resolve is allowed, because a false block on every Bash call is worse
+  than a missed kill. The kill verb must sit in command position, so a path
+  like `guard-self-kill.py` does not read as a kill.
+- The refusal tells the session what to do instead: build, then let the user
+  restart. There is no in-app restart binding, and deliberately so — a restart
+  is a decision about other people's running work.
+
+**2. If the manager dies anyway, it must come back.** `run-claude-manager.bat`
+(and its `.sh` counterpart) runs the app in a relaunch loop rather than
+launching it once. A crash brings the app straight back, and crash recovery
+(above) resumes the sessions with `--resume`.
+
+A deliberate quit must stay quit, so the two are told apart by a marker file:
+`App.markCleanExit` writes `~/.claude-manager/state/clean-exit` from Wails'
+`OnShutdown`, and startup removes it. Present after the binary exits → the app
+meant to go; absent → it was killed or crashed. Exit code is *not* used:
+`taskkill /F` reports success, and a dying WebView2 can take the app down with
+a zero status.
+
+Crash-loop protection: at most `MAX_RESTARTS` (10) consecutive failures, with a
+5-second backoff, and the counter resets once a run survives
+`HEALTHY_SECONDS` (60) — an isolated nightly crash does not spend the budget.
+The backoff uses `ping -n`, not `timeout`, which refuses to wait when stdin is
+redirected — i.e. whenever the launcher is started by another process.
+
+`watchdog_test.go` drives the real `.bat` with a stand-in binary (restart,
+clean exit, zero-exit-without-marker, stale marker);
+`internal/session/guard_hook_test.go` drives the real hook. Both are part of
+`go test ./...` because neither a `.bat` nor a Python hook is otherwise
+exercised by anything.
+
+**What this does not fix:** the GUI and the session engine still share one
+process, so a WebView2 failure still takes the sessions with it. The real fix
+is a headless engine with the GUI as a client over the existing control plane
+(`internal/control`, `127.0.0.1:7333`); the watchdog is what keeps the cost of
+that failure to a restart until then.
+
 ### Rate-Limit Fallback Model
 When `fallback_model_on_rate_limit = true` and `fallback_model` is set:
 - On the first rate-limit hit, `Run()` sets `usingFallback = true` and `activeModel = FallbackModel`.

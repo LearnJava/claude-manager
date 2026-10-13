@@ -1357,8 +1357,9 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 
 	cmd := exec.CommandContext(runCtx, s.claudePath, args...)
 	proc.HideConsole(cmd)
+	cmd.Env = sessionEnv()
 	if s.pythonUTF8 {
-		cmd.Env = utf8Env(os.Environ())
+		cmd.Env = utf8Env(cmd.Env)
 	}
 	if s.ProjectPath != "" {
 		cmd.Dir = s.ProjectPath

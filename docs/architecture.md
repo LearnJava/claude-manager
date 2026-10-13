@@ -34,6 +34,9 @@ claude-manager/
 │   │   │                            #   context-triggered handoff restart (checkContextRestart, LN-15)
 │   │   ├── state.go                 # StateStore: persist session_id to ~/.claude-manager/state/
 │   │   │                            #   for crash recovery; atomic write (tmp → rename)
+│   │   ├── env.go                   # CLAUDE_MANAGER_PID/_EXE in every session's environment, so
+│   │   │                            #   a session can recognise the manager hosting it
+│   │   │                            #   (.claude/hooks/guard-self-kill.py)
 │   │   ├── parser.go                # Parse stream-json: assistant, tool_use, result,
 │   │   │                            #   permission_request, rate_limit_event, init,
 │   │   │                            #   TodoWrite todos (current task + progress);
