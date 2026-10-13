@@ -1243,6 +1243,11 @@ func hasTasks(path string) bool {
 // taskPointerCapture captures the <source> and NN parts of a bare pointer line.
 var taskPointerCapture = regexp.MustCompile(`^(\S+):(\d+)$`)
 
+// turnExitNotice is how long a CLI may keep running after its turn ended
+// and stdin was closed before the session log explains the wait (see
+// exitNotice in runOnce). A var for tests.
+var turnExitNotice = 30 * time.Second
+
 // maxTaskDescLen caps the resolved description length, matching
 // orchestrator.py resolve_pointer_desc()'s 200-char truncation.
 const maxTaskDescLen = 200
@@ -1487,19 +1492,44 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	s.endInput = closeInput
 	s.mu.Unlock()
 
+	// exitNotice explains a CLI that outlives its finished turn. With stdin
+	// closed, `claude -p` still waits for a background command the agent
+	// started (run_in_background) and then starts a new turn on its own with
+	// the completion notice — the session is busy, not hung, and must not be
+	// killed. Re-armed on every result: such a follow-up turn ends with one.
+	var exitNotice *time.Timer
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
 		finished := s.handleLine(scanner.Text(), autonomous)
+		if !finished && exitNotice != nil {
+			// The CLI started a follow-up turn on its own: it is working.
+			exitNotice.Stop()
+		}
 		// A context-restart (LEARN-TASKS.md LN-15) must close stdin even for
 		// an interactive session (autonomous==false), which otherwise keeps
 		// the process — and its now-oversized conversation — open waiting
 		// for the next human turn.
 		if (finished && autonomous) || s.contextRestartHit.Load() {
 			closeInput()
+			if finished {
+				if exitNotice != nil {
+					exitNotice.Stop()
+				}
+				exitNotice = time.AfterFunc(turnExitNotice, func() {
+					logger.L.Info("session.exit_wait", "id", s.ID, "after", turnExitNotice)
+					s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+						Time: time.Now(), Level: "system", Source: "manager",
+						Message: fmt.Sprintf("The turn ended %s ago but the CLI is still running — it waits for a background command it started and will continue on its own when that finishes", turnExitNotice),
+					}})
+				})
+			}
 		}
 	}
 	scanErr := scanner.Err()
+	if exitNotice != nil {
+		exitNotice.Stop()
+	}
 
 	closeInput()
 	<-writerDone

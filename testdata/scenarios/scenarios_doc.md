@@ -249,6 +249,17 @@ set end to end through a real process run.
 
 ---
 
+### linger-after-result.json
+**State/Feature:** a CLI that outlives its finished turn (`claude -p` waits for a `run_in_background` command after stdin EOF, then continues on its own)
+**Match:** `linger-after-result`
+
+Emits `init` and a `result`, then one more assistant message 1.5 s later
+before exiting. Drives `TestRun_LingeringCLIIsExplainedNotKilled`: the session
+log explains the wait after `turnExitNotice`, the late output still arrives
+(the process is not cut off), and the run ends normally.
+
+---
+
 ### rate-limit-exceeded-demo.json
 **State/Feature:** classified turn failure, `KindRateLimit` via a genuinely
 rejecting `rate_limit_event` (RUNTIME-TASKS.md RT-07 §10)
