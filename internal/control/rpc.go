@@ -318,6 +318,17 @@ func (s *Server) buildRegistry() map[string]handler {
 		return m.RunPreflight(args.Project, args.Task)
 	}
 
+	reg["SessionPreflight"] = func(p json.RawMessage) (any, error) {
+		var args struct {
+			Project string `json:"project"`
+			Session string `json:"session"`
+		}
+		if err := json.Unmarshal(p, &args); err != nil {
+			return nil, err
+		}
+		return m.SessionPreflight(args.Project, args.Session)
+	}
+
 	reg["ApprovePlan"] = func(p json.RawMessage) (any, error) {
 		var args struct {
 			Plan analysis.TaskPlan `json:"plan"`

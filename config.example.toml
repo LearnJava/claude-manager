@@ -16,7 +16,8 @@ language = "en"                        # en | ru — UI language only, prompts t
 # Use ClearSessionState() / the UI button to force a fresh start (--new).
 crash_recovery = true
 
-# Pre-flight analysis (runs a haiku analyst before launching sessions)
+# Pre-flight analysis (runs a haiku analyst on the session's prompt before a
+# start from the UI; only for sessions with a prompt and no task queue)
 preflight_analysis = true
 preflight_model = "haiku"
 preflight_max_budget = 0               # 0 = no limit, >0 = USD cap
@@ -25,7 +26,7 @@ preflight_auto_approve_single = true   # skip review dialog when plan has one se
 # Permission handling
 permission_notify_after = 30           # seconds before escalating notification
 permission_timeout = 0                 # 0 = wait forever; >0 = timeout in seconds
-permission_timeout_action = "deny"     # deny | pause_session
+permission_timeout_action = "deny"     # deny (auto-deny) | pause_session (stop the session, resumable)
 permission_native_notification = true  # Windows toast when minimised
 permission_sound = true                # audible alert on permission request
 
@@ -33,6 +34,11 @@ permission_sound = true                # audible alert on permission request
 daily_budget_alert = 0                 # notify if daily spend exceeds this USD
 weekly_budget_alert = 0                # notify if weekly spend exceeds this USD
 rate_limit_alert_threshold = 0.80      # notify when rate-limit utilisation > 80%
+
+# [optimization] — launch tuning (defaults shown):
+# exclude_dynamic_system_prompt = true  # --exclude-dynamic-system-prompt-sections (better prompt-cache hits)
+# max_turns_auto_adjust = true          # --max-turns = 1.6 × longest recent run, after 5 finished runs
+# max_turns_default = 50                # floor for that cap
 
 # UTF-8 for Python run by the agent: PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 in
 # every Claude session's environment (a value already set is kept). Without it

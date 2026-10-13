@@ -46,6 +46,7 @@ type ManagerAPI interface {
 	ClearSessionState(project, name string)
 	GetSessionState(project, name string) *session.PersistedState
 	RunPreflight(project, task string) (*analysis.TaskPlan, error)
+	SessionPreflight(project, name string) (*analysis.TaskPlan, error)
 	ApprovePlan(plan *analysis.TaskPlan) (*analysis.TaskPlan, error)
 	ExecutePlan(planID int64) error
 	GetPlan(planID int64) (*analysis.TaskPlan, error)

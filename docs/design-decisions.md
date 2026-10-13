@@ -209,6 +209,43 @@ When `permission_mode != "bypassPermissions"`, Claude CLI sends permission reque
 4. Wait for user response via UI → write response to stdin
 5. Never ignore — session hangs forever if no response
 
+Escalation settings (PLAN.md §16.9, `internal/session/permission_timeout.go`)
+are read from the live config when a request is queued, so a change applies to
+the very next request, also in a running session:
+- `permission_native_notification` / `permission_sound` travel as `notify` /
+  `sound` on the `session:permission` event; the frontend toasts / beeps
+  (`frontend/src/lib/beep.ts`, Web Audio) accordingly. An event without the
+  fields keeps the old behaviour (toast, no beep).
+- `permission_timeout > 0` arms a `time.AfterFunc`; when it fires and the
+  request is still queued, `permission_timeout_action = "deny"` answers deny,
+  `"pause_session"` drops the request and hard-stops the session (crash
+  recovery can resume it). The timer is never cancelled — it re-checks the queue.
+
+### Session Features Popup and Launch Tuning
+The ⚙ icon before each session name in the Sidebar opens
+`SessionFeatures.svelte`: every setting that changes a session's behaviour,
+ON/OFF, a plain-language description, and an editor. Each edit is saved at
+once through `UpdateConfig` (same path as the Settings dialog). The catalog
+(`frontend/src/lib/sessionFeatures.ts`) marks which settings the manager
+reads live (`LIVE`) — the rest are read at session start, so after changing
+one while the session runs the popup offers "Restart now".
+
+Settings that existed in config but were not read anywhere are now wired:
+- `exclude_dynamic_system_prompt` → `--exclude-dynamic-system-prompt-sections`
+  on Claude launches (`launch_tuning.go`).
+- `max_turns_auto_adjust` → `--max-turns` = ceil(1.6 × longest of the last 20
+  finished runs), never below `max_turns_default`, only after 5 finished runs.
+  A run cut off by it ends as `error_max_turns` → "unfinished", and a queue
+  session continues the task in its next run.
+- `preflight_analysis` + per-session `preflight` → `SessionPreflight` before a
+  UI start (`preflight_gate.go`): only for a session with a prompt and no task
+  queue; `auto` + `preflight_auto_approve_single` starts a single-session task
+  at once, otherwise `PlanReview` shows the plan with "Start the session as is".
+  `StartSession` itself never blocks on analysis (RPC/MCP/StartProject).
+- `daily_budget_alert` / `weekly_budget_alert` → `alert:budget` after each
+  finished run, deduplicated per day / ISO week (`budget_alerts.go`); the week
+  is the last 7 local dates, matching how `daily_metrics` rows are written.
+
 ### Auto Model Routing
 When `optimization.auto_model_routing = true`, clicking ▶ on a session triggers:
 1. Pre-flight analysis (haiku, one-shot) on the session's configured prompt

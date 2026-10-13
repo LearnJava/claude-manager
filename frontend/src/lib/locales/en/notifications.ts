@@ -19,4 +19,8 @@ export default {
     'notify.fallbackTool': 'tool',
     'notify.costRegression.title': 'Cost regression',
     'notify.costRegression.body': '{id} — {factor}x recent median',
+    'notify.budgetDaily.title': 'Daily budget exceeded',
+    'notify.budgetDaily.body': 'Spent ${current} today (alert at ${limit})',
+    'notify.budgetWeekly.title': 'Weekly budget exceeded',
+    'notify.budgetWeekly.body': 'Spent ${current} in the last 7 days (alert at ${limit})',
 } as Record<string, string>;

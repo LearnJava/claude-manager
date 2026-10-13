@@ -64,6 +64,10 @@ func (m *mockManager) RunPreflight(project, task string) (*analysis.TaskPlan, er
 	m.record("RunPreflight", project, task)
 	return &analysis.TaskPlan{Project: project, OriginalTask: task}, nil
 }
+func (m *mockManager) SessionPreflight(project, name string) (*analysis.TaskPlan, error) {
+	m.record("SessionPreflight", project, name)
+	return nil, nil
+}
 func (m *mockManager) ApprovePlan(plan *analysis.TaskPlan) (*analysis.TaskPlan, error) {
 	m.record("ApprovePlan", plan.Project)
 	plan.Status = analysis.PlanStatusApproved

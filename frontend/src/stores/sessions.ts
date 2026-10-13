@@ -8,6 +8,7 @@ import {
     Notify,
 } from '../../wailsjs/go/main/App';
 import { t } from '../lib/i18n';
+import { beep } from '../lib/beep';
 
 // ---- Types mirroring Go SessionState / event payloads ----
 
@@ -460,11 +461,29 @@ function subscribeEvents() {
         }));
     });
 
-    EventsOn('session:permission', (evt: { id: string; request: PermissionRequest }) => {
+    // notify / sound carry permission_native_notification / permission_sound
+    // from the backend's live config (manager.go PermissionEvent); an event
+    // without them (older backend, control-plane replay) keeps the old
+    // behaviour: toast on, no extra sound.
+    EventsOn('session:permission', (evt: { id: string; request: PermissionRequest; notify?: boolean; sound?: boolean }) => {
         if (!evt || !evt.id) return;
         setSession(evt.id, (s) => ({ ...s, pending_permission: evt.request }));
         const tool = evt.request?.tool ?? evt.request?.Tool ?? get(t)('notify.fallbackTool');
-        notify(get(t)('notify.permissionNeeded.title'), get(t)('notify.permissionNeeded.body', { id: evt.id, tool }));
+        if (evt.notify !== false) {
+            notify(get(t)('notify.permissionNeeded.title'), get(t)('notify.permissionNeeded.body', { id: evt.id, tool }));
+        }
+        if (evt.sound) beep();
+    });
+
+    // daily_budget_alert / weekly_budget_alert crossed (budget_alerts.go);
+    // the backend already deduplicates per day / week.
+    EventsOn('alert:budget', (evt: { kind: 'daily' | 'weekly'; current: number; limit: number }) => {
+        if (!evt) return;
+        const key = evt.kind === 'weekly' ? 'notify.budgetWeekly' : 'notify.budgetDaily';
+        notify(get(t)(`${key}.title`), get(t)(`${key}.body`, {
+            current: (evt.current ?? 0).toFixed(2),
+            limit: (evt.limit ?? 0).toFixed(2),
+        }));
     });
 
     EventsOn('session:question', (evt: { id: string; question: PendingQuestion }) => {

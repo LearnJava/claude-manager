@@ -101,7 +101,11 @@ test.describe('Resume prompt', () => {
     await expect
       .poll(() => page.evaluate(() => (window as any).__calls.clear), { timeout: 5_000 })
       .toEqual([SESSION_ID]);
-    expect(await page.evaluate(() => (window as any).__calls.start)).toEqual([SESSION_ID]);
+    // The start follows the pre-flight check (Sidebar beginStart →
+    // SessionPreflight), one round-trip after the clear — poll for it too.
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__calls.start), { timeout: 5_000 })
+      .toEqual([SESSION_ID]);
   });
 
   test('Cancel starts nothing', async ({ page }) => {

@@ -174,6 +174,27 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 
 ---
 
+## SessionFeatures.svelte — Per-session Features Popup
+
+Opened by the ⚙ icon in front of each session's name in the Sidebar. Shows
+and edits the settings in place; every change is saved at once through
+`UpdateConfig`, like the Settings dialog. The catalog, the on/off rules, the
+live/start-time split and the editable fields live in
+`frontend/src/lib/sessionFeatures.ts`.
+
+| ID | Title | Steps | Assert | Status |
+|----|-------|-------|--------|--------|
+| SF-01 | Popup opens with summary | Click ⚙ on the S1 row | Dialog shows `test/S1` and "N of M on" | ✓ |
+| SF-02 | Off-by-default opt-in shown as OFF | Open popup | `context_primer` row: OFF, description and config key | ✓ |
+| SF-03 | Wired settings show when they apply | Open popup | No "NOT WIRED"; `permission_sound` says "applies at once", `context_primer` "applies on session start" | ✓ |
+| SF-04 | Filter hides plain ON rows | Tick "Only off / with warnings" | No ON row without a warning remains | ✓ |
+| SF-05 | Escape closes popup | Press Escape (focus inside panel) | Dialog hidden | ✓ |
+| SF-07 | Toggle is saved at once | Tick `context_primer` on S2 | "✓ saved" on the row, state ON, `GetConfig` has it true | ✓ |
+| SF-08 | Start-time change on a running session offers restart | Start S1, tick `context_primer` | "applies after a restart" + enabled "Restart now" | ✓ |
+| SF-06 | Dependency warning | Project with `auto_skills = true`, `experience_tracking = false` | Auto-skills row shows the "needs experience tracking" warning | ○ |
+
+---
+
 ## PermissionBanner.svelte — Inline Permission
 
 | ID | Title | Steps | Assert | Status |

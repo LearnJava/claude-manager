@@ -16,4 +16,8 @@ export default {
     'notify.fallbackTool': 'инструмент',
     'notify.costRegression.title': 'Рост стоимости',
     'notify.costRegression.body': '{id} — {factor}x от недавней медианы',
+    'notify.budgetDaily.title': 'Превышен дневной бюджет',
+    'notify.budgetDaily.body': 'Сегодня потрачено ${current} (порог ${limit})',
+    'notify.budgetWeekly.title': 'Превышен недельный бюджет',
+    'notify.budgetWeekly.body': 'За 7 дней потрачено ${current} (порог ${limit})',
 } as Record<string, string>;

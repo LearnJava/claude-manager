@@ -28,6 +28,7 @@ import mixedRun from './ru/mixedRun';
 import settings from './ru/settings';
 import alienCrew from './ru/alienCrew';
 import contextMenu from './ru/contextMenu';
+import sessionFeatures from './ru/sessionFeatures';
 
 export default {
     ...common,
@@ -57,4 +58,5 @@ export default {
     ...settings,
     ...alienCrew,
     ...contextMenu,
+    ...sessionFeatures,
 } as Record<string, string>;
