@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -105,5 +106,54 @@ func TestUpdateConfigAddProjectExplicitSessionsWin(t *testing.T) {
 	s := a.cfg.Projects[0].Sessions
 	if len(s) != 1 || s[0].Name != "Solo" {
 		t.Errorf("sessions = %+v, want only the explicit Solo", s)
+	}
+}
+
+// The mirror flag is manager-side: it stays in the global [[project]] pointer
+// (never the project folder) and survives a reload, and MirrorProject copies
+// the folder's settings into the mirror without touching the folder itself.
+func TestMirrorProjectKeepsFlagGlobalAndSyncs(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	proj := t.TempDir()
+	writeExistingOverlay(t, proj)
+	mirrorDir := filepath.Join(t.TempDir(), "projects")
+
+	a := &App{
+		cfg: &config.AppConfig{
+			Settings: config.GlobalSettings{MirrorDir: mirrorDir},
+			Projects: []config.ProjectConfig{{Name: "claude-manager", Path: proj}},
+		},
+		cfgPath: filepath.Join(t.TempDir(), "config.toml"),
+	}
+	st, err := a.MirrorProject("claude-manager")
+	if err != nil {
+		t.Fatalf("MirrorProject: %v", err)
+	}
+	if !st.Enabled || st.Files == 0 {
+		t.Fatalf("status = %+v, want enabled with files", st)
+	}
+	if _, err := os.Stat(filepath.Join(st.Dir, "files", ".claude-manager", "config.toml")); err != nil {
+		t.Errorf("project config.toml not mirrored: %v", err)
+	}
+
+	global, err := os.ReadFile(a.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(global), "mirror = true") {
+		t.Errorf("global config lost the mirror flag:\n%s", global)
+	}
+	overlay, _ := os.ReadFile(config.ProjectConfigPath(proj))
+	if strings.Contains(string(overlay), "mirror") {
+		t.Errorf("mirror flag leaked into the project folder:\n%s", overlay)
+	}
+
+	if err := a.UnmirrorProject("claude-manager"); err != nil {
+		t.Fatal(err)
+	}
+	if a.GetProjectMirror("claude-manager").Enabled {
+		t.Error("UnmirrorProject left the flag on")
 	}
 }

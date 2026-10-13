@@ -40,6 +40,14 @@ rate_limit_alert_threshold = 0.80      # notify when rate-limit utilisation > 80
 # (8.6% of Python runs in Lumen's sessions, docs/Science_lab/MEASURE.md).
 python_utf8 = true
 
+# Project mirror (Settings → Projects → "Mirror into Claude Manager"): projects
+# with mirror = true get a local copy of their settings (CLAUDE.md, .claude/,
+# .claude-manager/, task queues) and saved logs, committed to a local git
+# repository with no remote. Empty mirror_dir = <claude-manager checkout>/projects
+# when the app runs from its build/bin, else ~/.claude-manager/projects.
+# mirror_dir = ''
+mirror_interval_min = 15                 # re-sync period; 0 = only on start/save/button
+
 # ─── Mixed-programming workers (MIXED-TASKS.md) ──────────────────────────────
 # External OpenAI-compatible models that write code as FIND/REPLACE patches.
 # The manager applies patches in a worktree, runs the project gates and returns
@@ -96,6 +104,11 @@ path = 'D:\RustProjects\lumen-browser'
 # [optimization] experience_tracking (the UI switch turns it on too).
 # auto_skills = true
 # auto_skills_daily_budget_usd = 0       # 0 = no cap
+
+# Keep a local copy of this project in the manager's mirror folder (see
+# mirror_dir above). Manager-side flag: stays in this global file, never in
+# the project folder. Set by the Settings button.
+# mirror = true
 
 # Seeds permission_mode for sessions newly added to this project from now on
 # (empty = built-in default, bypassPermissions). Never touches an existing

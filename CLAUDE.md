@@ -21,6 +21,16 @@ Desktop app (Windows) to launch, monitor, and control parallel Claude Code CLI s
 | [config.example.toml](./config.example.toml) | Annotated config reference |
 | [docs/Science_lab/MEASURE.md](./docs/Science_lab/MEASURE.md) | Runtime and cost study of Claude Code on this Windows machine (Lumen and claude-manager sessions), the `claude-code-setup` kit installed in `~/.claude`, and the before/after measurement procedure with the 2026-10-13 baseline |
 
+## Mirrored projects
+
+Projects the user opted in (Settings → Projects → "Mirror into Claude Manager")
+have a read-only copy of their settings and saved run logs in `projects/<name>/`
+of the main checkout (`projects/README.md` is the index; `PROJECT.md` gives the real
+folder). Use it to inspect another project's setup or runs; fix things in the real
+project folder, never in the copy. `projects/` is a separate local git repository —
+never commit it into claude-manager or push it. See "Project Mirror" in
+`docs/design-decisions.md`.
+
 ## Conventions
 
 - Go: standard project layout, `internal/` for private packages
