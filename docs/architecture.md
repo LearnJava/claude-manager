@@ -4,7 +4,7 @@ Tech stack, the package/component map, the Wails-bound method table, the SQLite 
 
 ## Tech Stack
 
-- **Backend:** Go 1.23+, Wails v2 (desktop shell)
+- **Backend:** Go 1.25+ (`go.mod`), Wails v2.16 (desktop shell)
 - **Frontend:** Svelte + TypeScript + Tailwind CSS
 - **Config:** TOML (`~/.claude-manager/config.toml`)
 - **Storage:** SQLite (session history, metrics, logs)
@@ -404,6 +404,11 @@ All exported methods become async JS functions via auto-generated bindings in `f
 wails dev          # Dev mode (hot reload frontend)
 wails build        # Production: build/bin/claude-manager.exe (~15-20 MB)
 ```
+
+The Wails CLI must match `github.com/wailsapp/wails/v2` in `go.mod` (v2.16.0). An older CLI fails
+on a newer Go before compiling anything — CLI v2.12 with Go 1.27 stops at `internal error: package
+"os" without types`, with or without `-skipbindings`; `GOTOOLCHAIN=go1.25.0 wails build` was the
+stopgap until the 2.16 bump.
 
 
 ## Go Dependencies
