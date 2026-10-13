@@ -497,6 +497,13 @@
                                           data-testid="preflight-busy-{s.id}"
                                           title={$t('sidebar.preflightRunning')}>🔎</span>
                                 {/if}
+                                {#if s.status === 'idle' && s.stopped_after_task_at}
+                                    <span
+                                        class="text-amber-400 mr-1 shrink-0"
+                                        style="font-size: 11px"
+                                        data-testid="stopped-after-task-{s.id}"
+                                        title={$t('sidebar.stoppedAfterTaskTooltip', { time: new Date(s.stopped_after_task_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })}>⏹</span>
+                                {/if}
                                 {#if unfinished[s.id]}
                                     <span
                                         class="text-amber-400 mr-1 shrink-0"

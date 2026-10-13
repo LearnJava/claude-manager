@@ -33,6 +33,7 @@ export default {
     'sidebar.preflightStartAnyway': 'Запустить сессию как есть',
     'sidebar.runtimeLockedTooltip': 'Сессия запущена — остановите её, чтобы сменить CLI.',
     'sidebar.stopRequestedTooltip': 'Запрошена остановка — остановится после завершения текущей задачи',
+    'sidebar.stoppedAfterTaskTooltip': 'Остановлена по «Стоп после задачи» (запрошено в {time}) — следующую задачу не взяла. Нажмите ▶, чтобы продолжить.',
     'sidebar.stopTooltip': 'Остановить (сначала завершит текущую задачу)',
     'sidebar.startTooltip': 'Запустить',
     'sidebar.noProjects': 'Нет настроенных проектов.',

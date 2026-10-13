@@ -136,9 +136,14 @@ type StatusEvent struct {
 // current task" indicator the instant the soft-stop is registered, instead
 // of only finding out once the session actually reaches Idle (which can be
 // a long wait — see CLAUDE.md's session lifecycle notes).
+//
+// StoppedAfterTaskAt (RFC3339, "" otherwise) is set on the event that
+// accompanies the switch to idle when the session stopped on that request,
+// so the UI can mark why it is idle until the next start.
 type StopRequestedEvent struct {
-	ID            string `json:"id"`
-	StopRequested bool   `json:"stop_requested"`
+	ID                 string `json:"id"`
+	StopRequested      bool   `json:"stop_requested"`
+	StoppedAfterTaskAt string `json:"stopped_after_task_at,omitempty"`
 }
 
 type LogEvent struct {
@@ -250,6 +255,10 @@ type SessionState struct {
 	Branch         string     `json:"branch"`
 	CLISessionID   string     `json:"cli_session_id"`
 	StopRequested  bool       `json:"stop_requested"`
+
+	// StoppedAfterTaskAt is when the "Stop after task" request that ended
+	// the last run was made (RFC3339), "" if it ended any other way.
+	StoppedAfterTaskAt string `json:"stopped_after_task_at"`
 
 	PendingPermission *permission.PermissionRequest `json:"pending_permission,omitempty"`
 	PendingQuestion   *PendingQuestion              `json:"pending_question,omitempty"`
@@ -795,9 +804,18 @@ func (m *SessionManager) StopSession(id string, soft bool) error {
 		return fmt.Errorf("session %q not found", id)
 	}
 	logger.L.Info("manager.stop_session", "id", id, "soft", soft)
+	alreadyRequested := ms.session.Snapshot().StopRequested
 	ms.session.Stop(soft)
 	if soft {
 		m.emit(EventNameStopReq, StopRequestedEvent{ID: id, StopRequested: true})
+		if !alreadyRequested {
+			// Leave a trace in the session log: the request can sit there
+			// for an hour before the task ends, long after it was forgotten.
+			m.onSessionEvent(id, SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+				Time: time.Now(), Level: "system", Source: "manager",
+				Message: "\"Stop after task\" requested — the session stops once the current task ends instead of taking the next one",
+			}})
+		}
 	}
 	m.queue.RemoveBySession(id)
 	if !soft {
@@ -1274,6 +1292,8 @@ func (m *SessionManager) GetSession(id string) (SessionState, bool) {
 		TotalCostUSD:   ms.totalCostUSD,
 		ContextWindow:  ms.contextWindow,
 		ContextUtil:    ms.contextUtil,
+
+		StoppedAfterTaskAt: formatStoppedAt(snap.StoppedAfterTaskAt),
 	}
 	if cfgNow != nil {
 		st.Model = cfgNow.Model
@@ -1670,13 +1690,19 @@ func (m *SessionManager) handleStatus(ms *managedSession, st config.SessionStatu
 
 	switch st {
 	case config.StatusStarting:
-		// A fresh run never carries over a previous run's soft-stop request
+		// A fresh start never carries over a previous run's soft-stop request
 		// (Session.New starts with softStop=false) — tell the UI so a stale
-		// "stop requested" badge doesn't survive a restart.
-		m.emit(EventNameStopReq, StopRequestedEvent{ID: ms.session.ID, StopRequested: false})
+		// "stop requested" badge doesn't survive a restart. Within one Run()
+		// loop the request does persist (a retry, a context restart or an
+		// unfinished run passes through starting without reaching a task
+		// boundary), so report the live value rather than a blanket false.
+		m.emit(EventNameStopReq, StopRequestedEvent{ID: ms.session.ID, StopRequested: ms.session.Snapshot().StopRequested})
 		// Begin a new run record.
 		m.beginRun(ms)
 	case config.StatusIdle:
+		if at := ms.session.Snapshot().StoppedAfterTaskAt; !at.IsZero() {
+			m.emit(EventNameStopReq, StopRequestedEvent{ID: ms.session.ID, StoppedAfterTaskAt: formatStoppedAt(at)})
+		}
 		// Run loop ended without an explicit task/error event — finalize as stopped.
 		ms.mu.Lock()
 		runID := ms.runID
@@ -1685,6 +1711,14 @@ func (m *SessionManager) handleStatus(ms *managedSession, st config.SessionStatu
 			m.finishRun(ms, "stopped", "", "")
 		}
 	}
+}
+
+// formatStoppedAt renders Snapshot.StoppedAfterTaskAt for the UI ("" when unset).
+func formatStoppedAt(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
 }
 
 // beginRun inserts a new session_runs row and resets per-run metrics.

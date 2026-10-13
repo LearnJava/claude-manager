@@ -195,3 +195,59 @@ func TestRun_UnfinishedTaskIsNotCountedAndStreakStops(t *testing.T) {
 		t.Errorf("no 'not finished' line in the log: %v", logs)
 	}
 }
+
+// A "Stop after task" request ends the loop at the task boundary and leaves
+// a mark behind: the snapshot keeps when the request was made (the UI shows
+// why the session is idle) and the session log says it stopped on request.
+func TestRun_SoftStopIsRecordedOnTheIdleSession(t *testing.T) {
+	claudePath := buildFakeclaudeForSession(t)
+	scenarioDir, err := filepath.Abs(filepath.Join("..", "..", "testdata", "scenarios"))
+	if err != nil {
+		t.Fatalf("abs: %v", err)
+	}
+	t.Setenv("FAKECLAUDE_SCENARIO", scenarioDir)
+
+	var launches int
+	var logs []string
+	var s *Session
+	s = New(Params{
+		ID: "it/SS", ProjectName: "it", ProjectPath: t.TempDir(), ClaudePath: claudePath,
+		Config: config.SessionConfig{
+			Name: "SS", Model: "sonnet", PermissionMode: "bypassPermissions",
+			AutoRestart: true, Prompt: "hello",
+		},
+		OnEvent: func(_ string, ev SessionEvent) {
+			switch ev.Type {
+			case EvtInit:
+				launches++
+				s.Stop(true)
+			case EvtLog:
+				if ev.Entry != nil && ev.Entry.Source == "manager" {
+					logs = append(logs, ev.Entry.Message)
+				}
+			}
+		},
+	})
+	before := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	s.Run(ctx)
+
+	if launches != 1 {
+		t.Fatalf("launched %d processes, want 1 — the soft stop must end the loop after the task", launches)
+	}
+	snap := s.Snapshot()
+	if snap.Status != config.StatusIdle {
+		t.Errorf("status = %s, want idle", snap.Status)
+	}
+	if snap.StoppedAfterTaskAt.Before(before) {
+		t.Errorf("StoppedAfterTaskAt = %v, want the request time (after %v)", snap.StoppedAfterTaskAt, before)
+	}
+	found := false
+	for _, l := range logs {
+		found = found || strings.Contains(l, "Stopped on the \"Stop after task\" request")
+	}
+	if !found {
+		t.Errorf("no stop-on-request line in the session log: %v", logs)
+	}
+}

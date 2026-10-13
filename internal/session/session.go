@@ -376,6 +376,12 @@ type Session struct {
 	// softStop is set when the manager calls Stop(true): the current task
 	// is allowed to finish, then Run() exits without restarting.
 	softStop atomic.Bool
+	// softStopAt is when the first Stop(true) arrived; stoppedAfterTaskAt
+	// copies it once Run() actually exits on that request, so the UI can
+	// keep saying why an idle session is idle (protected by mu). Both live
+	// only as long as this Session — the next start creates a fresh one.
+	softStopAt         time.Time
+	stoppedAfterTaskAt time.Time
 
 	// Crash recovery state (protected by mu where noted).
 	stateStore      *StateStore
@@ -565,6 +571,10 @@ type Snapshot struct {
 	StopRequested   bool
 	PendingPerm     *PermissionRequest
 	PendingQuestion *PendingQuestion
+
+	// StoppedAfterTaskAt is non-zero once Run() exited on a "Stop after
+	// task" request; it holds when that request was made.
+	StoppedAfterTaskAt time.Time
 }
 
 // Snapshot returns a thread-safe copy of the session's mutable fields.
@@ -584,6 +594,8 @@ func (s *Session) Snapshot() Snapshot {
 		CLISessionID:   s.CLISessionID,
 		ActiveModel:    s.activeModel,
 		StopRequested:  s.softStop.Load(),
+
+		StoppedAfterTaskAt: s.stoppedAfterTaskAt,
 	}
 	if s.pendingPerm != nil {
 		cp := *s.pendingPerm
@@ -600,6 +612,11 @@ func (s *Session) Snapshot() Snapshot {
 // is allowed to finish before exiting. Otherwise the process is killed.
 func (s *Session) Stop(soft bool) {
 	if soft {
+		s.mu.Lock()
+		if s.softStopAt.IsZero() {
+			s.softStopAt = time.Now()
+		}
+		s.mu.Unlock()
 		s.softStop.Store(true)
 		return
 	}
@@ -936,6 +953,16 @@ func (s *Session) Run(ctx context.Context) {
 		}
 		if s.softStop.Load() && atTaskBoundary {
 			logger.L.Info("session.run.soft_stopped", "id", s.ID)
+			s.mu.Lock()
+			s.stoppedAfterTaskAt = s.softStopAt
+			requestedAt := s.softStopAt
+			s.mu.Unlock()
+			s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+				Time: time.Now(), Level: "system", Source: "manager",
+				Message: fmt.Sprintf(
+					"Stopped on the \"Stop after task\" request made at %s — the queue was not continued. Start the session to resume it.",
+					requestedAt.Format("15:04:05")),
+			}})
 			s.setStatus(config.StatusIdle)
 			return
 		}

@@ -74,6 +74,10 @@
         }
     }
 
+    // HH:MM of the "Stop after task" request that left the session idle.
+    $: stoppedAt = session.status === 'idle' && session.stopped_after_task_at
+        ? new Date(session.stopped_after_task_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : '';
     $: runtime = formatDuration(runtimeMs(session, now));
     $: hit = cacheHitRatio(session.cache_read, session.cache_creation);
     $: split = tokenSplit(session);
@@ -98,6 +102,12 @@
             {#if session.stop_requested}
                 <span class="text-amber-400" title={$t('sessionCard.stopRequestedTooltip')}>
                     {$t('sessionCard.stoppingAfterTask')}
+                </span>
+            {/if}
+            {#if stoppedAt}
+                <span class="text-amber-400" data-testid="stopped-after-task"
+                      title={$t('sessionCard.stoppedAfterTaskTooltip', { time: stoppedAt })}>
+                    {$t('sessionCard.stoppedAfterTask', { time: stoppedAt })}
                 </span>
             {/if}
         </span>

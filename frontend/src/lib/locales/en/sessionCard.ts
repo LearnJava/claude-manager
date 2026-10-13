@@ -13,6 +13,8 @@ export default {
     'sessionCard.statusIdle': 'Idle',
     'sessionCard.stopRequestedTooltip': 'Will stop once the current task finishes',
     'sessionCard.stoppingAfterTask': '· stopping after task',
+    'sessionCard.stoppedAfterTask': '· stopped by "Stop after task" ({time})',
+    'sessionCard.stoppedAfterTaskTooltip': '"Stop after task" was requested at {time}: the session finished its current task and did not take the next one. Start it to continue the queue.',
     'sessionCard.runtimeTooltip': 'Runtime',
     'sessionCard.branchLabel': 'Branch:',
     'sessionCard.taskLabel': 'Task:',

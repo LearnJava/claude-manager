@@ -33,6 +33,7 @@ export default {
     'sidebar.preflightStartAnyway': 'Start the session as is',
     'sidebar.runtimeLockedTooltip': 'Session is running — stop it to switch the CLI.',
     'sidebar.stopRequestedTooltip': 'Stop requested — will stop once the current task finishes',
+    'sidebar.stoppedAfterTaskTooltip': 'Stopped by "Stop after task" (requested at {time}) — did not take the next task. Click ▶ to continue.',
     'sidebar.stopTooltip': 'Stop (finishes current task first)',
     'sidebar.startTooltip': 'Start',
     'sidebar.noProjects': 'No projects configured.',

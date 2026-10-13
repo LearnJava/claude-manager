@@ -80,6 +80,9 @@ export interface SessionState {
     branch: string;
     cli_session_id: string;
     stop_requested: boolean;
+    // When the "Stop after task" request that ended the last run was made
+    // (RFC3339); empty/absent if the session stopped any other way.
+    stopped_after_task_at?: string;
     pending_permission?: PermissionRequest | null;
     pending_question?: PendingQuestion | null;
     input_tokens: number;
@@ -427,12 +430,18 @@ function subscribeEvents() {
             pending_permission: clearPerm ? null : s.pending_permission,
             pending_question: clearQuestion ? null : s.pending_question,
             stop_requested: clearStopReq ? false : s.stop_requested,
+            // The "stopped on request" mark lasts until the session runs again.
+            stopped_after_task_at: evt.status === 'starting' ? '' : s.stopped_after_task_at,
         }));
     });
 
-    EventsOn('session:stop_requested', (evt: { id: string; stop_requested: boolean }) => {
+    EventsOn('session:stop_requested', (evt: { id: string; stop_requested: boolean; stopped_after_task_at?: string }) => {
         if (!evt || !evt.id) return;
-        setSession(evt.id, (s) => ({ ...s, stop_requested: evt.stop_requested }));
+        setSession(evt.id, (s) => ({
+            ...s,
+            stop_requested: evt.stop_requested,
+            stopped_after_task_at: evt.stopped_after_task_at || s.stopped_after_task_at,
+        }));
     });
 
     EventsOn('session:log', (evt: { id: string; entry: LogEntry }) => {

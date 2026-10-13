@@ -13,6 +13,8 @@ export default {
     'sessionCard.statusIdle': 'Простой',
     'sessionCard.stopRequestedTooltip': 'Остановится после завершения текущей задачи',
     'sessionCard.stoppingAfterTask': '· остановится после задачи',
+    'sessionCard.stoppedAfterTask': '· остановлена по «Стоп после задачи» ({time})',
+    'sessionCard.stoppedAfterTaskTooltip': 'В {time} нажали «Стоп после задачи»: сессия доделала текущую задачу и не взяла следующую. Запустите её, чтобы продолжить очередь.',
     'sessionCard.runtimeTooltip': 'Время работы',
     'sessionCard.branchLabel': 'Ветка:',
     'sessionCard.taskLabel': 'Задача:',
