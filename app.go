@@ -41,8 +41,8 @@ type App struct {
 	manager      *session.SessionManager
 	wailsEmitter *control.WailsEmitter
 	ctrlServer   *control.Server
-	closeLog     func() // shuts down the file logger on exit
-	trayEnabled  bool   // set by main() before wails.Run; see main.go for why
+	closeLog     func()                 // shuts down the file logger on exit
+	trayEnabled  bool                   // set by main() before wails.Run; see main.go for why
 	skillPilot   *experience.SkillPilot // nil without a store (LEARN-TASKS.md LN-27)
 }
 
@@ -550,21 +550,25 @@ func upsertP1Session(cfg *config.AppConfig, project string) {
 			permissionMode = "bypassPermissions"
 		}
 		sessions = append(sessions, config.SessionConfig{
-			Name:            "P1",
-			Model:           "sonnet",
-			Effort:          "high",
-			PermissionMode:  permissionMode,
-			TaskSource:      "STATUS-P1.md",
-			StopWhenNoTasks: true,
-			AutoRestart:     true,
+			Name:                 "P1",
+			Model:                "sonnet",
+			Effort:               "high",
+			PermissionMode:       permissionMode,
+			TaskSource:           "STATUS-P1.md",
+			StopWhenNoTasks:      true,
+			AutoRestart:          true,
+			ContextPrimer:        true,
+			ContextHandoff:       true,
+			AskUserMarker:        true,
+			HandoffContextTokens: 150000,
 			// Off deliberately, and forced off above even for a pre-existing P1:
 			// the protocol installed into the project (analysis.WriteProtocolFiles)
 			// owns the worktree, keeping one persistent slot per developer whose
 			// branch survives an interrupted run. A bare --worktree would add a
 			// second, anonymous one made fresh from HEAD on every process start,
 			// and any work not yet merged would be invisible to the next session.
-			UseWorktree:     false,
-			Prompt:          analysis.DefaultP1SessionPrompt,
+			UseWorktree: false,
+			Prompt:      analysis.DefaultP1SessionPrompt,
 		})
 		cfg.Projects[pi].Sessions = sessions
 		return

@@ -73,6 +73,10 @@
         HermesProvider: string;
         HermesProfile: string;
         HermesSkills: string[];
+        ContextPrimer?: boolean;
+        ContextHandoff?: boolean;
+        AskUserMarker?: boolean;
+        HandoffContextTokens?: number;
     }
 
     interface ProjectConfig {
@@ -90,6 +94,7 @@
         MixedMaxRounds: number;
         // Manager-side: keep a local copy of the project in the mirror folder.
         Mirror?: boolean;
+        AutoSkills?: boolean;
     }
 
     interface WorkerConfig {
@@ -168,7 +173,7 @@
             DisallowedTools: [],
             PermissionRules: [],
             MaxBudgetUSD: 0,
-            UseWorktree: false,
+            UseWorktree: true,
             SystemPromptAppend: '',
             AddDirs: [],
             Preflight: 'auto',
@@ -179,6 +184,11 @@
             HermesProvider: '',
             HermesProfile: '',
             HermesSkills: [],
+            // Defaults match the reference session (Lumen browser S1).
+            ContextPrimer: true,
+            ContextHandoff: true,
+            AskUserMarker: true,
+            HandoffContextTokens: 150000,
         };
     }
 
@@ -191,6 +201,7 @@
             MixedProgramming: false,
             Gates: [],
             MixedMaxRounds: 3,
+            AutoSkills: true,
         };
     }
 
