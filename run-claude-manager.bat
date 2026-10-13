@@ -57,19 +57,37 @@ if errorlevel 1 (
     if not "!HEADREV!"=="!BUILT!" set "NEEDBUILD=1"
     if defined NEEDBUILD (
         echo Building claude-manager at !HEADREV!...
-        rem Not `wails build`: the Wails v2.12 CLI crashes on Go 1.27+ with
-        rem "package ... without types". Bindings are committed, so build directly.
-        pushd frontend
-        rem The pull may have brought new frontend dependencies.
-        call npm install --no-audit --no-fund
-        call npm run build
-        popd
-        go build -tags desktop,production -ldflags "-H windowsgui -w -s" -o build\bin\claude-manager.exe .
+        rem `wails build`, never a bare `go build`: it regenerates the frontend
+        rem bindings - frontend/wailsjs is not in git, so stale bindings break
+        rem the frontend build once a new bound method lands - and embeds the
+        rem Windows resources: icon, manifest with per-monitor DPI awareness and
+        rem Common Controls v6, version info. It runs npm install and npm run
+        rem build itself. The CLI must match the Wails version in go.mod, v2.16:
+        rem 2.12 crashes on Go 1.27. -nosyncgomod keeps go.mod untouched.
+        where wails >nul 2>&1
+        if errorlevel 1 for /f "delims=" %%g in ('go env GOPATH') do set "PATH=!PATH!;%%g\bin"
+        where wails >nul 2>&1
+        if errorlevel 1 (
+            echo WARNING: wails CLI not found, falling back to go build - no fresh bindings, icon or manifest.
+            echo Install it: go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+            pushd frontend
+            call npm install --no-audit --no-fund
+            call npm run build
+            popd
+            go build -tags desktop,production -ldflags "-H windowsgui -w -s" -o build\bin\claude-manager.exe .
+        ) else (
+            wails build -nosyncgomod
+        )
         if errorlevel 1 (
             echo WARNING: build failed.
         ) else (
             >"%STAMP%" echo !HEADREV!
         )
+        rem wails build rewrites go.mod with LF line endings even with
+        rem -nosyncgomod. When its content is unchanged, put the checkout copy
+        rem back so git status stays clean; real local edits are left alone.
+        git diff --quiet -- go.mod
+        if not errorlevel 1 git checkout -q -- go.mod
     )
     popd
     if not exist "%EXE%" (

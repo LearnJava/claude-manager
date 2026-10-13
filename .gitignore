@@ -48,3 +48,4 @@ testdata/configs/playwright-runtime.toml
 .tmp/
 __pycache__/
 ~$*
+frontend/package.json.md5
