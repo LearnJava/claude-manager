@@ -331,6 +331,7 @@ func defaults() *AppConfig {
 			WeeklyBudgetAlert:            0,
 			RateLimitAlertThreshold:      0.80,
 			SessionStartDelay:            3,
+			PythonUTF8:                   true,
 		},
 		Optimization: optimizationDefaults(),
 	}

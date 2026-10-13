@@ -47,6 +47,8 @@ claude-manager/
 │   │   ├── runtime_claude.go        # RT-05: claudeRuntime — wraps buildCLIArgs/ParseLine
 │   │   ├── runtime_hermes.go        # RT-05: hermesRuntime — wraps buildHermesArgs/hermesStream
 │   │   ├── task_outcome.go          # Hermes turn → completed/slice/unfinished; 429 behind a 401 via agent.log
+│   │   ├── handoff_budget.go        # LN-28: mid-turn "context budget reached" note (handoff_context_tokens)
+│   │   ├── launch_env.go            # utf8Env: PYTHONUTF8/PYTHONIOENCODING for Claude processes (python_utf8)
 │   │   ├── slashcmds.go             # "/" autocomplete catalog per runtime; Hermes `/skill` → `-s`
 │   │   └── ratelimit.go             # Rate limit detection, retry logic, timers
 │   ├── permission/

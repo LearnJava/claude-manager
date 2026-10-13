@@ -104,6 +104,13 @@ type GlobalSettings struct {
 
 	// Cache warming: stagger session starts by this many seconds (PLAN.md 20.3.3).
 	SessionStartDelay int `toml:"session_start_delay"`
+
+	// PythonUTF8 puts PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 into every
+	// Claude session's environment (a value already set is kept), so Python
+	// the agent runs prints UTF-8 instead of the console code page. Without
+	// it 8.6% of Python runs in Lumen's sessions returned unreadable output
+	// (docs/Science_lab/MEASURE.md). Default true.
+	PythonUTF8 bool `toml:"python_utf8"`
 }
 
 // ProjectOverlay is the per-project configuration stored inside the project
@@ -248,6 +255,16 @@ type SessionConfig struct {
 	// always have this. Off by default; with it false an interactive prompt
 	// is byte-identical to before this flag existed.
 	AskUserMarker bool `toml:"ask_user_marker"`
+
+	// HandoffContextTokens: once a model call of an autonomous Claude run
+	// sends at least this many context tokens, the manager tells the agent
+	// mid-turn to wrap up — commit work in progress with a handoff note and
+	// end the turn on the done marker — so a fresh session continues the
+	// task with a small context instead of re-reading a huge one on every
+	// call (Lumen: sessions over 100 calls were 23% of sessions and 56% of
+	// spend, docs/Science_lab/MEASURE.md). 0 = off; with it 0 the prompt is
+	// byte-identical to before this field existed.
+	HandoffContextTokens int `toml:"handoff_context_tokens"`
 
 	// Runtime selects the agent CLI the session drives (HERMES-TASKS.md
 	// HR-02): "claude" (default, also when empty) or "hermes" (`hermes chat

@@ -199,6 +199,10 @@ type Params struct {
 	StateStore    *StateStore
 	CrashRecovery bool
 
+	// PythonUTF8 mirrors GlobalSettings.PythonUTF8: the Claude process gets
+	// PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 (see utf8Env).
+	PythonUTF8 bool
+
 	// ResumeSessionID pre-seeds resumeSessionID for one immediate --resume on
 	// the first launch (see SessionManager.SetSessionModel: an interactive
 	// session has no task boundary to pick up a model change at, so it is
@@ -340,6 +344,18 @@ type Session struct {
 	crashRecovery   bool
 	resumeSessionID string // set before Run loop; cleared after first runOnce
 
+	pythonUTF8 bool // see Params.PythonUTF8
+
+	// Context-budget handoff (Config.HandoffContextTokens, see
+	// checkHandoffBudget), per run, protected by mu: the tag that marks the
+	// manager's notes, notes sent, over-budget model calls since the last
+	// note, and the previous usage total (every stream line of one call
+	// repeats its usage).
+	handoffTag     string
+	handoffNotes   int
+	handoffCalls   int
+	handoffLastCtx int
+
 	// Rate-limit fallback model tracking.
 	// activeModel is the model actually passed to --model on the next launch;
 	// it switches to FallbackModel on the first rate-limit hit when
@@ -419,6 +435,7 @@ func New(p Params) *Session {
 		status:            config.StatusIdle,
 		stateStore:        p.StateStore,
 		crashRecovery:     p.CrashRecovery,
+		pythonUTF8:        p.PythonUTF8,
 		activeModel:       p.Config.Model,
 		resumeSessionID:   p.ResumeSessionID,
 	}
@@ -1321,6 +1338,11 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	// and no task loop) keep stdin open so the user can continue the conversation.
 	autonomous := (s.Config.AutoRestart || s.Config.StopWhenNoTasks) && !forceInteractive
 
+	// A fresh process gets a fresh handoff tag (buildCLIArgs mints it).
+	s.mu.Lock()
+	s.handoffTag, s.handoffNotes, s.handoffCalls, s.handoffLastCtx = "", 0, 0, 0
+	s.mu.Unlock()
+
 	args := s.runtime.Args(s, autonomous, "", "")
 
 	logger.L.Debug("session.launch",
@@ -1335,6 +1357,9 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 
 	cmd := exec.CommandContext(runCtx, s.claudePath, args...)
 	proc.HideConsole(cmd)
+	if s.pythonUTF8 {
+		cmd.Env = utf8Env(os.Environ())
+	}
 	if s.ProjectPath != "" {
 		cmd.Dir = s.ProjectPath
 	}
@@ -1598,6 +1623,7 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 		if ev.Usage != nil {
 			usage := *ev.Usage
 			s.emit(SessionEvent{Type: EvtUsage, Usage: &usage})
+			s.checkHandoffBudget(usage, autonomous)
 		}
 
 	case EventResult:
@@ -2063,6 +2089,10 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 	s.mu.Lock()
 	resumeID := s.resumeSessionID
 	activeModel := s.activeModel
+	if s.Config.HandoffContextTokens > 0 && s.handoffTag == "" {
+		s.handoffTag = newHandoffTag()
+	}
+	handoffTag := s.handoffTag
 	s.mu.Unlock()
 
 	args := []string{
@@ -2130,6 +2160,9 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 		}
 		if autonomous {
 			combined += askUserProtocolPrompt + "\n\n" + backgroundTaskWarningPrompt
+			if s.Config.HandoffContextTokens > 0 {
+				combined += "\n\n" + handoffBudgetPrompt(handoffTag)
+			}
 		} else if interactiveAsk {
 			combined += askUserInteractivePrompt
 		}
