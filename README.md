@@ -24,19 +24,18 @@
 
 | Инструмент | Версия | Как проверить |
 |---|---|---|
-| Go | 1.23+ | `go version` |
+| Go | 1.25+ (`go.mod`) | `go version` |
 | Node.js | 18+ | `node --version` |
 | npm | 9+ | `npm --version` |
-| Wails CLI | v2 | `wails version` |
+| Wails CLI | v2.16+ — та же версия, что `github.com/wailsapp/wails/v2` в `go.mod` | `wails version` |
 | Claude Code CLI | последняя | `claude --version` |
-| GCC (для CGo/SQLite) | любая | `gcc --version` |
 
 **Установка Wails CLI:**
 ```bash
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0   # версия из go.mod
 ```
 
-**GCC на Windows** — проще всего через [TDM-GCC](https://jmeubank.github.io/tdm-gcc/) или `winlibs`. Нужен для компиляции `go-sqlite3`.
+C-компилятор не нужен: SQLite — `modernc.org/sqlite` на чистом Go, без CGo.
 
 ---
 
@@ -319,8 +318,8 @@ claude-manager/
 
 ## Часто задаваемые вопросы
 
-**`gcc` not found при сборке**
-Установите TDM-GCC и убедитесь, что `gcc` есть в `PATH`.
+**`wails build` падает с `internal error: package "os" without types`**
+Wails CLI старее Go: CLI v2.12 не читает пакеты Go 1.27. Поставьте CLI той же версии, что в `go.mod` (`go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0`).
 
 **`wails` not found**
 Убедитесь, что `%USERPROFILE%\go\bin` добавлен в `PATH`.
