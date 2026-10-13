@@ -1,72 +1,134 @@
-# MCP-сервер Claude Manager для сторонних агентов — план работ (MCP-01…MCP-12)
+# MCP-сервер Claude Manager: полное управление для сторонних агентов — план работ (MCP-01…MCP-17)
 
 Цель блока: `cm-mcp` перестаёт быть внутренним тестовым мостом и становится
-**публичным интерфейсом** менеджера — MCP-сервером по текущей спецификации
-Model Context Protocol, с которым любой сторонний агент (Claude Code, Claude
-Desktop, Cursor, Codex, Hermes…) работает без чтения нашего кода: по
+**публичным интерфейсом с полным управлением менеджером** — MCP-сервером по
+текущей спецификации Model Context Protocol. Всё, что пользователь делает
+в GUI, сторонний агент (Claude Code, Claude Desktop, Cursor, Codex,
+Hermes…) может сделать через MCP — без чтения нашего кода: по
 `instructions` из `initialize`, описаниям инструментов, схемам входа/выхода,
 ресурсам-справкам и `docs/mcp.md`.
 
-Критерий «агент с лёгкостью понимает, как работать»: в MCP-11 модель, не
-видевшая репозиторий, с одним только подключённым `cm-mcp` решает набор
-типовых задач (запустить сессию, дождаться статуса, ответить на permission,
-найти причину остановки, посчитать расходы) без лишних вызовов и без ошибок
-аргументов.
+Два критерия готовности блока:
+
+1. **Паритет.** Каждый экспортированный метод `*App` (Wails-биндинги — это
+   и есть полный список действий GUI) доступен через MCP-инструмент либо
+   стоит в списке исключений с причиной. Проверяется тестом (MCP-03), и
+   тест остаётся в гейте навсегда — новый метод GUI без MCP не сольётся.
+2. **Понятность.** В MCP-16 модель, не видевшая репозиторий, с одним только
+   подключённым `cm-mcp` с нуля настраивает проект и сессию, запускает
+   работу, отвечает на вопросы и permissions, разбирает ошибки и расходы —
+   без лишних вызовов и без ошибок аргументов.
 
 ## Как устроено сейчас (отправная точка)
 
 ```
 агент ──stdio JSON-RPC──> cmd/cm-mcp (main.go, самописный) ──HTTP /rpc,/wait + token──> internal/control (server.go, rpc.go) ──> session.Manager / App
-                                       └ список инструментов: internal/control/mcptools.go (MCPTools, 19 шт.)
+                                       └ список инструментов: internal/control/mcptools.go (MCPTools)
 ```
 
-- `cmd/cm-mcp/main.go` — ручной разбор JSON-RPC построчно: `initialize`
-  (жёстко `protocolVersion: "2024-11-05"`, только capability `tools`),
-  `tools/list`, `tools/call`. Нет согласования версии, `ping`,
-  `notifications/cancelled`, progress, `instructions`, ресурсов, промптов,
-  `outputSchema`/`structuredContent`, аннотаций инструментов, пагинации.
-- `internal/control/mcptools.go` — `ToolDef{Name, Description, InputSchema}`,
-  схемы — JSON-строки руками; описания в одну строку. Идентификация
-  сессии непоследовательна: где-то `project`+`session`, где-то `session_id`
-  (`"project/session"`).
-- Control-plane (`internal/control/server.go`) включён по умолчанию
-  (`CM_CONTROL=0` выключает), адрес и токен лежат в
-  `~/.claude-manager/control.json` (`endpoint.go`), который `cm-mcp` читает
-  сам. RPC-реестр (`rpc.go:buildRegistry`) шире, чем MCP: `GetSession`,
-  `GetHistory`, `GetDailyCost`, `GetProjectCost`, `StartProject`,
-  `StopProject`, `StopAll`, `ListSlashCommands`, `StartSessionWithOverride`…
-  в MCP не выставлены.
-- Документация инструментов — одна таблица в `docs/testing-harness.md`
+Три слоя разной ширины (на 2026-10-13):
+
+| Слой | Где | Методов |
+|---|---|---|
+| GUI — Wails-биндинги `*App` | `app.go`, `app_*.go` | 84 |
+| control-plane RPC | `internal/control/rpc.go:buildRegistry` | 34 |
+| MCP-инструменты | `internal/control/mcptools.go:buildMCPTools` | 19 |
+
+Методы `App`, которых **нет даже в RPC** (53) — по областям:
+
+- **Сессии:** `StartSessionWithModel`, `StartAdHocChatSession`,
+  `SetSessionModel`, `SetSessionRuntime`, `SendMessageWithImages`.
+- **Взаимодействие:** `AnswerQuestion`, `GetPendingQuestions`,
+  `AddPermissionRule`, `GetPermissionCandidates`.
+- **Проекты и конфиг:** `GetProjects`, `InitGitRepo`, `HasClaudeMd`,
+  `GenerateClaudeMdSession`, `InstallSessionProtocol`, `MirrorProject`,
+  `UnmirrorProject`, `SyncProjectMirrors`, `GetProjectMirror`.
+- **Логи:** `ExportLog`, `ImportProjectLogs`, `ClearProjectLogs`,
+  `CleanOldLogs`, `GetProjectLogFiles`.
+- **Метрики и оптимизация:** `GetDailyTokens`, `GetProjectTokens`,
+  `GetTokenAttribution`, `GetTopActions`, `GetActionSamples`,
+  `GetDurationProfile`, `GetModelRecommendation`, `GetAutoModelRouting`.
+- **Roadmap:** `GenerateRoadmap`, `ApproveRoadmap`, `GetLatestDraftRoadmap`,
+  `GetSessionRoadmap`, `GetRoadmapRowDetail`, `GetRoadmapTaskDetail`.
+- **Навыки (experience layer):** `GetSkills`, `GetSkillCandidates`,
+  `ApproveSkill`, `DistillSkill`, `ArchiveSkill`, `RestoreSkill`,
+  `GetSkillQuality`, `GetSkillUsage`, `GetSkillAutopilot`,
+  `SetSkillAutopilot`, `RunSkillAutopilot`.
+- **Окно ОС (кандидаты в исключения):** `PickDirectory`, `MinimizeToTray`,
+  `ShowMainWindow`, `Notify`.
+
+Остальное:
+
+- `cmd/cm-mcp/main.go` — ручной разбор JSON-RPC: `initialize` (жёстко
+  `protocolVersion: "2024-11-05"`, только capability `tools`), `tools/list`,
+  `tools/call`. Нет согласования версии, `ping`, отмены, progress,
+  `instructions`, ресурсов, промптов, `outputSchema`/`structuredContent`,
+  аннотаций, пагинации.
+- Схемы инструментов — JSON-строки руками, описания в одну строку.
+  Идентификация сессии непоследовательна: `project`+`session` или
+  `session_id` (`"project/session"`).
+- Конфиг проектов и сессий GUI меняет целиком через `GetConfig` /
+  `UpdateConfig` — для агента это неудобно и опасно (MCP-08 даёт точечные
+  операции).
+- Control-plane включён по умолчанию (`CM_CONTROL=0` выключает), адрес и
+  токен — в `~/.claude-manager/control.json` (`endpoint.go`).
+- Документация инструментов — таблица в `docs/testing-harness.md`
   («cm-mcp tools available to Claude»), рассчитанная на GUI-тесты.
-- Тесты: `cmd/cm-mcp/main_test.go`, `internal/control/*_test.go`.
 
 ## Инварианты блока
 
-- **Совместимость.** Существующие имена инструментов и аргументов продолжают
-  работать до конца блока: переименование — только через алиас с пометкой
-  `deprecated` в описании, удаление алиасов — отдельной задачей после MCP-12.
-  Тесты GUI/Playwright и `cmd/cm-mcp/main_test.go` проходят без правок
-  смысла (допустимы правки под новый формат ответа, если старый текст
-  сохранён в `content`).
-- **Одна точка правды.** Имя, описание, схемы, аннотации и уровень доступа
-  инструмента объявляются в одном месте (реестр в Go); `tools/list`,
-  `docs/mcp.md` и тесты получают их оттуда. Руками написанная копия списка
-  инструментов где-либо ещё — ошибка, тест сверки (MCP-10) её ловит.
-- **Безопасность по умолчанию.** Всё, что может остановить чужую работу,
-  поменять настройки или одобрить permission вместо человека, недоступно в
-  режиме по умолчанию и включается явно (MCP-06). Ни один инструмент не
-  может убить/перезапустить `claude-manager.exe` (см. «Known gotchas» в
-  `CLAUDE.md`). Токен control-plane не попадает ни в ответы, ни в логи.
-- **Вывод экономен.** Любой ответ ограничен по размеру (лог, история,
-  список) и пагинируется курсором; агенту сообщается, как получить
-  продолжение. Причина — стоимость контекста, см.
-  `docs/Science_lab/MEASURE.md`.
+- **Паритет с GUI.** Метод `*App` без MCP-инструмента допустим только в
+  списке исключений (`excluded`: имя → причина, например «оконное
+  действие ОС», «заменено аргументом `path`») или во временном списке
+  `pending` (метод ещё не перенесён). `pending` только сокращается; к
+  MCP-17 он пуст. Тест паритета (MCP-03) входит в обычный `go test`.
+- **Совместимость.** Существующие имена инструментов и аргументов работают
+  до конца блока: переименование — через алиас с пометкой `deprecated` в
+  описании, удаление алиасов — отдельной задачей после MCP-17. Тесты
+  GUI/Playwright и `cmd/cm-mcp/main_test.go` проходят без правок смысла.
+- **Одна точка правды.** Имя, описание, схемы, аннотации, уровень доступа и
+  привязка к методу `App` объявляются в одном месте (реестр в Go);
+  `tools/list`, `docs/mcp.md` и тест паритета получают их оттуда.
+- **GUI и MCP — один код.** Инструмент вызывает тот же метод `App` (через
+  RPC control-plane), что и кнопка в GUI; своей бизнес-логики в
+  `cm-mcp`/`internal/control` нет. Действие через MCP видно в GUI так же,
+  как сделанное руками (те же Wails-события).
+- **Безопасность по умолчанию.** Уровни доступа (MCP-05) вводятся **до**
+  массового добавления инструментов. Всё, что останавливает чужую работу,
+  удаляет данные, меняет конфиг, одобряет permission/план/навык вместо
+  человека, — уровень выше режима по умолчанию и включается явно. Ни один
+  инструмент не убивает/не перезапускает `claude-manager.exe` (см. «Known
+  gotchas» в `CLAUDE.md`). Токен control-plane и секреты конфига не
+  попадают ни в ответы, ни в логи. Инвариант `LEARN-TASKS.md` «ничего не
+  пишется в репозиторий пользователя без одобрения» распространяется на
+  одобрение через MCP: оно доступно только на уровне `admin`.
+- **Вывод экономен.** Любой ответ ограничен по размеру и пагинируется
+  курсором; агенту сообщается, как получить продолжение (причина —
+  стоимость контекста, `docs/Science_lab/MEASURE.md`).
 - **Ни одного вызова настоящего API в обычном `go test`.** Оценка реальной
-  моделью (MCP-11) — только opt-in (`CM_MCP_EVAL=1`), по образцу
-  `CM_REAL_CLAUDE=1`.
+  моделью (MCP-16) — только opt-in (`CM_MCP_EVAL=1`).
 - **Документация — часть задачи.** Каждая задача в том же коммите обновляет
-  `docs/mcp.md` (создаётся в MCP-01) плюс обычную матрицу doc-sync из
-  `CLAUDE.md`.
+  `docs/mcp.md` (создаётся в MCP-01) и обычную матрицу doc-sync из
+  `CLAUDE.md`; новый RPC-метод — ещё и строка в таблице Wails Bindings
+  `docs/architecture.md`, если меняется сигнатура `App`.
+
+## Шаблон «доменной» задачи (MCP-06…MCP-11)
+
+Каждая задача переноса области делает для **каждого** метода `App` своей
+области:
+
+1. RPC-метод в `internal/control/rpc.go` (если его нет), вызывающий метод
+   `App`/`Manager` без собственной логики; тест RPC на `fakeclaude`.
+2. MCP-инструмент в реестре по стандарту MCP-03/04: схемы входа/выхода,
+   `title`, аннотации, уровень доступа, описание по шаблону, действенные
+   ошибки, лимит ответа.
+3. Удаление метода из `pending` (или перенос в `excluded` с причиной).
+4. Тест инструмента через `cm-mcp` → control-plane → `fakeclaude`.
+5. Раздел области в `docs/mcp.md` + обновление golden `tools/list`.
+
+Несколько тонких методов `App` можно сводить в один инструмент (например,
+`get_cost` с параметром `scope`), если это проще агенту; привязка в
+реестре тогда указывает все покрытые методы.
 
 ## Как сессия берёт задачу
 
@@ -87,57 +149,69 @@ Desktop, Cursor, Codex, Hermes…) работает без чтения наше
 |---|---|---|
 | MCP-01 | ○ TODO | docs/mcp.md, docs/design-decisions.md |
 | MCP-02 | ○ TODO | cmd/cm-mcp/, go.mod |
-| MCP-03 | ○ TODO | internal/control/mcptools.go → реестр, cmd/cm-mcp/ |
-| MCP-04 | ○ TODO | реестр инструментов, internal/control/rpc.go |
-| MCP-05 | ○ TODO | реестр инструментов, internal/control/rpc.go |
-| MCP-06 | ○ TODO | cmd/cm-mcp/, internal/control/ |
-| MCP-07 | ○ TODO | cmd/cm-mcp/, internal/control/wait.go |
-| MCP-08 | ○ TODO | cmd/cm-mcp/ (resources, prompts) |
-| MCP-09 | ○ TODO | cmd/cm-mcp/*_test.go, testdata/scenarios/ |
-| MCP-10 | ○ TODO | docs/mcp.md, README.md, CLAUDE.md, docs/testing-harness.md |
-| MCP-11 | ○ TODO | scripts/ или cmd/cm-mcp-eval/, testdata/mcp-eval/ |
-| MCP-12 | ○ TODO | docs/mcp.md, docs/design-decisions.md, CLAUDE.md |
+| MCP-03 | ○ TODO | internal/control/mcptools.go → реестр, тест паритета |
+| MCP-04 | ○ TODO | реестр, internal/control/rpc.go, тест-линтер |
+| MCP-05 | ○ TODO | cmd/cm-mcp/, internal/control/ |
+| MCP-06 | ○ TODO | сессии: rpc.go, реестр |
+| MCP-07 | ○ TODO | вопросы, permissions, планы: rpc.go, реестр |
+| MCP-08 | ○ TODO | проекты, конфиг, git, mirror: rpc.go, реестр, internal/config |
+| MCP-09 | ○ TODO | логи и метрики: rpc.go, реестр |
+| MCP-10 | ○ TODO | preflight, roadmap, mixed: rpc.go, реестр |
+| MCP-11 | ○ TODO | навыки: rpc.go, реестр |
+| MCP-12 | ○ TODO | ожидание и события: cmd/cm-mcp/, internal/control/wait.go, emit.go |
+| MCP-13 | ○ TODO | ресурсы и промпты: cmd/cm-mcp/ |
+| MCP-14 | ○ TODO | conformance и e2e: cmd/cm-mcp/*_test.go, testdata/scenarios/ |
+| MCP-15 | ○ TODO | docs/mcp.md, README.md, CLAUDE.md, docs/testing-harness.md |
+| MCP-16 | ○ TODO | testdata/mcp-eval/, раннер оценки |
+| MCP-17 | ○ TODO | docs/mcp.md, docs/design-decisions.md, CLAUDE.md |
 
 ---
 
-## MCP-01: Аудит и решения — `docs/mcp.md` + ADR
+## MCP-01: Аудит, карта паритета и решения — `docs/mcp.md` + ADR
 
 **Зависит от:** —
 **Files:** `docs/mcp.md` (новый), `docs/design-decisions.md`, `CLAUDE.md`
-(карта документации — строка уже есть, проверить ссылку).
+(проверить строку карты документации).
 
 **Что сделать.** Код не меняется. Зафиксировать решения, на которые
 опираются все следующие задачи:
 
 1. **Версия спецификации.** Взять актуальную стабильную ревизию с
    modelcontextprotocol.io (на момент написания блока — `2025-11-25`;
-   проверить, не вышла ли новее) и выписать в `docs/mcp.md`, какие её части
-   сервер обязан поддержать: lifecycle и согласование версии, `ping`,
-   отмена, progress, `tools` (с `outputSchema`, `structuredContent`,
-   `annotations`, `title`), `resources` (+ templates), `prompts`, `logging`,
-   пагинация, разделение ошибок протокола и ошибок исполнения инструмента.
-   Что сознательно **не** делаем (sampling, elicitation, Streamable HTTP —
-   или делаем, с обоснованием).
-2. **SDK или своё.** Сравнить официальный Go SDK
-   (`github.com/modelcontextprotocol/go-sdk`) с доводкой самописного
+   проверить, не вышла ли новее) и выписать, что сервер обязан
+   поддержать: lifecycle и согласование версии, `ping`, отмена, progress,
+   `tools` (с `outputSchema`, `structuredContent`, `annotations`, `title`),
+   `resources` (+ templates, подписки), `prompts`, `logging`, пагинация,
+   разделение ошибок протокола и ошибок инструмента. Что сознательно
+   **не** делаем (sampling, elicitation, Streamable HTTP — или делаем) —
+   с обоснованием.
+2. **SDK или своё.** Официальный Go SDK
+   (`github.com/modelcontextprotocol/go-sdk`) против доводки самописного
    `main.go`: чистый Go без CGO (требование проекта), зрелость, генерация
-   схем из структур, поддержка версии из п.1, размер зависимости. Решение —
-   с аргументами; рекомендация по умолчанию — официальный SDK, если он
-   покрывает п.1.
+   схем из структур, поддержка версии из п.1. Рекомендация по умолчанию —
+   официальный SDK, если покрывает п.1.
 3. **Модель идентификаторов.** Один способ адресовать сессию во всех
-   инструментах (рекомендация: `session_id = "project/session"`, как в
-   остальном коде), проект — `project`. Таблица «старый аргумент → новый»,
-   алиасы на время блока.
-4. **Уровни доступа** (детали — MCP-06): `read` / `operate` / `admin`, какой
-   инструмент на каком уровне, режим по умолчанию.
-5. **Аудит покрытия:** таблица «RPC-метод control-plane → есть ли MCP-
-   инструмент → нужен ли (и на каком уровне)». Это вход для MCP-05.
-6. Раздел «Why cm-mcp is a public interface» в `docs/design-decisions.md`:
-   зачем, какие инварианты (см. выше), ссылка на `docs/mcp.md`.
+   инструментах (рекомендация: `session_id = "project/session"`), проект —
+   `project`. Таблица «старый аргумент → новый», алиасы на время блока.
+4. **Карта паритета** — главный артефакт задачи. Таблица по **всем**
+   экспортированным методам `*App` (сейчас 84): метод → область (задача
+   MCP-06…11) → имя MCP-инструмента → уровень доступа (`read` / `operate` /
+   `admin`) → аннотации (только чтение / разрушительное / идемпотентное) →
+   или `excluded` с причиной. Отдельно проверить фронтенд: есть ли
+   действия GUI, которые идут **мимо** методов `App` (прямые Wails-события,
+   состояние только во фронтенде — например, переключатели вида). Каждое
+   такое действие либо признаётся чисто визуальным (исключение), либо
+   переносится на бэкенд в соответствующей доменной задаче.
+5. **Уровни доступа** (детали — MCP-05): определение уровней, режим по
+   умолчанию (рекомендация — `operate`), чем `admin` защищён.
+6. Раздел «Why cm-mcp is a public interface with full GUI parity» в
+   `docs/design-decisions.md`: зачем, инварианты блока, ссылка на
+   `docs/mcp.md`.
 
 **Готово когда:** `docs/mcp.md` содержит разделы «Спецификация», «SDK»,
-«Идентификаторы», «Уровни доступа», «Покрытие» с проверенными по коду
-ссылками `файл:функция`; ADR в `design-decisions.md`; гейт зелёный.
+«Идентификаторы», «Уровни доступа», «Карта паритета» (все методы `App`, ни
+одной пустой ячейки) с проверенными по коду ссылками `файл:функция`; ADR в
+`design-decisions.md`; гейт зелёный.
 
 ---
 
@@ -150,272 +224,400 @@ Desktop, Cursor, Codex, Hermes…) работает без чтения наше
 **Что сделать.** Перевести транспорт и жизненный цикл на решение MCP-01,
 **не меняя набор и поведение инструментов**:
 
-- согласование `protocolVersion` (клиент просит старую — отвечаем ей, если
-  поддерживаем; иначе — нашей последней), `notifications/initialized`,
+- согласование `protocolVersion` (клиент просит старую поддерживаемую —
+  отвечаем ей, иначе — нашей последней), `notifications/initialized`,
   `ping`, `notifications/cancelled`;
-- `serverInfo` с `name`, `title`, `version` (версия — из сборки, не
-  константа `1.0.0`);
+- `serverInfo` с `name`, `title`, `version` (версия — из сборки);
 - поле `instructions` в ответе `initialize`: 10–20 строк для агента — что
   такое менеджер, формат `session_id`, жизненный цикл статусов, «жди через
-  `wait_for_*`, не опрашивай в цикле», где справка (ресурс `cm://guide` —
-  появится в MCP-08, пока ссылка на `docs/mcp.md`);
-- stdout — только протокол, всё диагностическое — в stderr;
+  `wait_for_*`, не опрашивай в цикле», где справка (ресурс `cm://guide`
+  появится в MCP-13, до того — ссылка на `docs/mcp.md`);
+- stdout — только протокол, диагностика — в stderr;
 - недоступный control-plane (`control.json` нет, приложение не запущено) —
-  понятная ошибка исполнения инструмента с подсказкой «запустите Claude
-  Manager», а не падение сервера.
+  понятная ошибка инструмента с подсказкой «запустите Claude Manager», а
+  не падение сервера.
 
-**Готово когда:** тест в `cmd/cm-mcp` прогоняет handshake для двух версий
-протокола, `ping`, отмену и вызов при недоступном control-plane; все
-существующие тесты зелёные; `docs/mcp.md` — раздел «Протокол».
+**Готово когда:** тест прогоняет handshake для двух версий протокола,
+`ping`, отмену и вызов при недоступном control-plane; существующие тесты
+зелёные; раздел «Протокол» в `docs/mcp.md`.
 
 ---
 
-## MCP-03: Реестр инструментов — одна точка правды
+## MCP-03: Реестр инструментов и тест паритета
 
 **Зависит от:** MCP-02
 **Files:** `internal/control/mcptools.go` (переработка), `cmd/cm-mcp/`,
-тесты; `docs/architecture.md` (дерево, если появятся файлы).
+`testdata/mcp/tools.golden.json`, тест паритета; `docs/architecture.md`
+(дерево, если появятся файлы); `CLAUDE.md` (матрица doc-sync).
 
-**Что сделать.** Каждый инструмент объявляется один раз: Go-структуры входа
-и выхода с тегами `json`/`jsonschema` → `inputSchema` и `outputSchema`;
-`title`; `annotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
-`openWorldHint`); уровень доступа (поле реестра, используется в MCP-06);
-обработчик. Ответ — `structuredContent` по `outputSchema` **плюс** текстовый
-`content` (короткое человекочитаемое резюме, а не дамп JSON). Аргументы
-приводятся к модели идентификаторов MCP-01, старые имена принимаются как
-алиасы.
+**Что сделать.**
 
-**Готово когда:** golden-тест `tools/list` (`testdata/mcp/tools.golden.json`)
-фиксирует весь контракт; тест проверяет, что каждый `structuredContent`
-валиден по своей `outputSchema`; рукописных JSON-схем строками не осталось;
-старые вызовы из `main_test.go` работают.
+- Каждый инструмент объявляется один раз: Go-структуры входа и выхода с
+  тегами → `inputSchema` и `outputSchema`; `title`; `annotations`
+  (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`);
+  уровень доступа; список покрываемых методов `App`; обработчик. Ответ —
+  `structuredContent` по `outputSchema` **плюс** короткое текстовое резюме в
+  `content` (не дамп JSON). Аргументы — по модели идентификаторов MCP-01,
+  старые имена — алиасы.
+- Существующие 19 инструментов переводятся в реестр.
+- **Тест паритета:** через `reflect` перебирает экспортированные методы
+  `*App` и проверяет, что каждый либо покрыт инструментом реестра, либо в
+  `excluded` (с непустой причиной), либо в `pending`. Заполнить `pending`
+  по карте MCP-01. Тест падает также, если метод из `pending` уже покрыт
+  (список должен сокращаться вместе с работой).
+- В `CLAUDE.md`, матрица doc-sync, строка «New/changed Wails-bound method
+  on `App`»: добавить «+ MCP-инструмент в реестре или запись в `excluded`
+  (тест паритета)».
+
+**Готово когда:** golden `tools/list` фиксирует контракт; тест проверяет
+валидность каждого `structuredContent` по своей `outputSchema`; тест
+паритета зелёный и ловит новый метод `App` без MCP (проверено временным
+методом в тесте); рукописных JSON-схем строками не осталось.
 
 ---
 
-## MCP-04: Описания и ошибки, написанные для агента
+## MCP-04: Стандарт описаний, ошибок и размера ответа
 
 **Зависит от:** MCP-03
-**Files:** реестр инструментов, `internal/control/rpc.go` (тексты ошибок),
-тест-линтер реестра.
+**Files:** реестр, `internal/control/rpc.go` (тексты ошибок), тест-линтер
+реестра.
 
-**Что сделать.**
+**Что сделать.** Установить стандарт, по которому делаются все
+инструменты MCP-06…11, и привести к нему существующие:
 
-- **Описание каждого инструмента** по одному шаблону: что делает (1
-  фраза) → когда использовать и когда **не** (какой инструмент вместо) →
-  что возвращает → побочные эффекты → короткий пример аргументов. Без
-  внутреннего жаргона (`inputCh`, «атомики»).
-- **Каждый параметр** имеет `description`, формат/пример, `enum` где
-  значения конечны, значения по умолчанию в схеме.
-- **Ошибки исполнения** (`isError: true`) — действенные: что не так и что
-  делать дальше. «session not found» → «сессия `x/y` не найдена; доступные в
-  проекте `x`: A, B; список — `get_sessions`». Неверный статус → текущий
-  статус и допустимые действия. Ошибки протокола (неизвестный инструмент,
-  невалидная схема) — JSON-RPC-кодами.
-- **Размер ответа:** логи/история/списки — лимит по умолчанию, `cursor` /
-  `next_cursor`, флаг `truncated` и подсказка в тексте ответа.
+- **Описание инструмента** по шаблону: что делает (1 фраза) → когда
+  использовать и когда **не** (какой инструмент вместо) → что возвращает →
+  побочные эффекты и уровень доступа → пример аргументов. Без внутреннего
+  жаргона (`inputCh`, «атомики»).
+- **Каждый параметр** — `description`, формат/пример, `enum` где значения
+  конечны, значения по умолчанию в схеме.
+- **Ошибки инструмента** (`isError: true`) — действенные: что не так и что
+  делать дальше («сессия `x/y` не найдена; в проекте `x` есть A, B; список
+  — `get_sessions`»; неверный статус → текущий статус и допустимые
+  действия). Ошибки протокола — кодами JSON-RPC.
+- **Размер ответа:** лимит по умолчанию, `cursor`/`next_cursor`, флаг
+  `truncated` и подсказка в тексте.
 
-**Готово когда:** тест-линтер падает, если у инструмента нет секций
-шаблона, у параметра нет `description`, или ответ любого инструмента на
-фикстуре больше лимита; таблица ошибок в `docs/mcp.md` («Ошибки»).
+**Готово когда:** тест-линтер падает при нарушении шаблона описания,
+параметре без `description`, ответе больше лимита на фикстуре; раздел
+«Ошибки» в `docs/mcp.md`.
 
 ---
 
-## MCP-05: Покрытие — недостающие инструменты
+## MCP-05: Уровни доступа и защита
 
 **Зависит от:** MCP-04
-**Files:** реестр инструментов, `internal/control/rpc.go` (если нужен
-новый RPC), тесты.
+**Files:** `cmd/cm-mcp/`, `internal/control/`, `config.example.toml` и
+PLAN.md (если появится поле конфига).
 
-**Что сделать.** По таблице покрытия из MCP-01 добавить то, что нужно
-агенту для самостоятельной работы, в формате MCP-03/04. Ориентир:
-`list_projects` (проекты и их сессии из конфига, без секретов),
-`get_session` (одна сессия подробно: статус, модель, текущая задача,
-последняя ошибка, ожидающие permissions/вопросы), `get_history`,
-`get_cost` (день/проект, вместо россыпи), `start_project`/`stop_project`,
-`list_slash_commands`, запуск с переопределением модели/effort
-(параметры `start_session`, а не отдельный инструмент), ответ на вопрос
-пользователю (`QuestionBanner`, RT-03), если он не покрыт `send_message`.
-Каждое добавление — с уровнем доступа и аннотациями. Что решено не
-выставлять — записать в `docs/mcp.md` с причиной.
+**Что сделать.** До массового добавления инструментов:
 
-**Готово когда:** таблица покрытия в `docs/mcp.md` не имеет пустых
-решений; каждый новый инструмент покрыт тестом через control-plane на
-`fakeclaude`; golden обновлён.
+- Режим `CM_MCP_MODE=read|operate|admin` (и/или поле конфига — по MCP-01),
+  по умолчанию — решение MCP-01. Инструменты выше уровня не попадают в
+  `tools/list`; вызов по имени даёт ошибку с подсказкой, как включить.
+- Проверка уровня — на стороне **control-plane** тоже (токен с уровнем или
+  заголовок режима), чтобы обход `cm-mcp` прямым HTTP не давал больше прав.
+- Распределить существующие инструменты: `set_global_settings`,
+  `stop_all`, `approve_permission`/`deny_permission` → `admin`.
+- Защита от самоповреждения: сессия, запущенная менеджером, не может
+  остановить/перезапустить/очистить **саму себя** без явного флага
+  (идентификация — переменная окружения дочернего процесса; проверить,
+  есть ли, иначе добавить).
+- Журнал вызовов: каждое изменяющее действие (`operate`/`admin`) — в
+  файловый лог менеджера: клиент (`clientInfo`), инструмент, аргументы без
+  секретов, результат.
+- Control-plane слушает только loopback; токен нигде не выводится —
+  проверить тестами.
+
+**Готово когда:** тесты на каждый режим (видимость в `tools/list`, отказ в
+`cm-mcp` и в control-plane), самоостановку и журнал; раздел «Безопасность» в
+`docs/mcp.md`; doc-sync по новому полю конфига, если есть.
 
 ---
 
-## MCP-06: Уровни доступа и защита
+## MCP-06: Область «Сессии» — полный жизненный цикл
 
 **Зависит от:** MCP-05
-**Files:** `cmd/cm-mcp/`, `internal/control/` (если проверка на стороне
-сервера), `config.example.toml` и PLAN.md (если появится поле конфига).
+**Files:** `internal/control/rpc.go`, реестр, тесты.
+
+**Что сделать** (по шаблону доменной задачи). Покрыть: `StartSession`,
+`StartSessionWithModel` / `StartSessionWithOverride` (модель, effort,
+рантайм — параметрами `start_session`, а не отдельными инструментами),
+`StartAdHocChatSession`, `StopSession` (мягко/жёстко), `RestartSession`,
+`ResumeSession`, `StopAll`, `StartProject`, `StopProject`,
+`SetSessionModel`, `SetSessionRuntime`, `ClearSessionState`,
+`GetSessionState`, `GetSession`, `GetAllSessions`, `SendMessage`,
+`SendMessageWithImages` (изображения — путь к файлу или base64 с лимитом
+размера; решить и описать), `ListSlashCommands`, `GetRateLimitStatus`.
+`get_session` возвращает всё, что нужно агенту для решения «что дальше»:
+статус, модель, рантайм, текущая задача, последняя ошибка, ожидающие
+вопросы/permissions/планы.
+
+**Готово когда:** все перечисленные методы вне `pending`; тесты каждого
+инструмента на `fakeclaude`; раздел «Сессии» в `docs/mcp.md`.
+
+---
+
+## MCP-07: Область «Взаимодействие» — вопросы, permissions, планы
+
+**Зависит от:** MCP-06
+**Files:** `internal/control/rpc.go`, реестр, тесты.
+
+**Что сделать** (по шаблону). Покрыть: `GetPendingQuestions`,
+`AnswerQuestion` (вопросы `AskUserQuestion`/`clarify`, RT-03),
+`GetPendingPermissions`, `RespondPermission` (существующие
+`approve_permission`/`deny_permission` — алиасы на единый
+`respond_permission` или остаются, по MCP-01), `AddPermissionRule`,
+`GetPermissionCandidates`, `GetPlan`, `ApprovePlan`. Одобрение
+permissions, правил и планов — `admin` (MCP-05). Один инструмент-сводка
+«что ждёт человека» (`get_pending` по всем видам, с фильтром по сессии)
+— чтобы агенту не нужно было три вызова.
+
+**Готово когда:** методы вне `pending`; e2e на `fakeclaude`: вопрос →
+ответ через MCP → сессия продолжает; permission → решение через MCP;
+раздел «Вопросы и permissions» в `docs/mcp.md`.
+
+---
+
+## MCP-08: Область «Проекты и конфигурация»
+
+**Зависит от:** MCP-07
+**Files:** `internal/control/rpc.go`, реестр, при необходимости
+`internal/config` (точечные операции), тесты, `config.example.toml`/PLAN.md
+(если меняется конфиг).
+
+**Что сделать** (по шаблону).
+
+- Чтение: `GetProjects`, `GetConfig` (эффективный конфиг **без
+  секретов**), `HasClaudeMd`, `GetProjectMirror`.
+- **Точечное изменение конфига** вместо «прислать весь `UpdateConfig`»:
+  `add_project`, `update_project`, `remove_project`, `add_session`,
+  `update_session`, `remove_session`, `update_global_settings` (белый
+  список полей). Каждая операция валидирует вход тем же кодом, что GUI,
+  возвращает diff «было/стало», поддерживает `dry_run: true`, проходит
+  через тот же путь сохранения, что `UpdateConfig` (GUI обновляется
+  событием). `update_config` целиком — только `admin`, с
+  `If-Match`-подобной версией конфига против гонок с GUI.
+- Действия над проектом: `InitGitRepo`, `GenerateClaudeMdSession`,
+  `InstallSessionProtocol`, `MirrorProject`, `UnmirrorProject`,
+  `SyncProjectMirrors`. Всё, что пишет в репозиторий пользователя, —
+  `admin` (инвариант `LEARN-TASKS.md`).
+- `PickDirectory` → `excluded` («путь передаётся аргументом `path`»);
+  проверить, что путь существует, и вернуть понятную ошибку.
+
+**Готово когда:** методы вне `pending`; тест «с пустого конфига через MCP:
+добавить проект → добавить сессию → изменить её модель → `dry_run` не
+меняет файл → удалить»; раздел «Проекты и конфигурация» в `docs/mcp.md`.
+
+---
+
+## MCP-09: Область «Логи и метрики»
+
+**Зависит от:** MCP-08
+**Files:** `internal/control/rpc.go`, реестр, тесты.
+
+**Что сделать** (по шаблону).
+
+- Логи: `GetSessionLog`, `GetHistory`, `GetProjectLogFiles`, `ExportLog`
+  (возвращает путь к файлу, а не содержимое), `ImportProjectLogs`,
+  `ClearProjectLogs` и `CleanOldLogs` (`admin`, разрушительные). Поиск по
+  логу сессии с фильтром по типу события/тексту — если его нет в `App`,
+  добавить в RPC, чтобы агент не выкачивал весь лог.
+- Метрики: `GetSessionMetrics`, `GetDailyCost`, `GetProjectCost`,
+  `GetDailyTokens`, `GetProjectTokens`, `GetTokenAttribution`,
+  `GetTopActions`, `GetActionSamples`, `GetDurationProfile`,
+  `GetModelRecommendation`, `GetAutoModelRouting`. Свести в небольшое
+  число инструментов с параметром области (`get_cost`, `get_tokens`,
+  `get_usage_profile`…), если это проще агенту.
+
+**Готово когда:** методы вне `pending`; ответы в лимите размера на больших
+фикстурах; раздел «Логи и метрики» в `docs/mcp.md`.
+
+---
+
+## MCP-10: Область «Preflight, roadmap, mixed programming»
+
+**Зависит от:** MCP-09
+**Files:** `internal/control/rpc.go`, реестр, тесты.
+
+**Что сделать** (по шаблону). Покрыть: `RunPreflight`, `SessionPreflight`,
+`ExecutePlan`, `GenerateRoadmap`, `ApproveRoadmap` (`admin`),
+`GetLatestDraftRoadmap`, `GetSessionRoadmap`, `GetRoadmapRowDetail`,
+`GetRoadmapTaskDetail`, `RegisterMixedBrief`, `DispatchMixedTask`,
+`CancelMixedTask`, `GetMixedRounds`, `GetMixedQuality`. Долгие операции
+здесь пока возвращают идентификатор и статус; progress и ожидание — в
+MCP-12.
+
+**Готово когда:** методы вне `pending`; тесты на `fakeclaude`/`fakeworker`;
+раздел «Планирование и mixed» в `docs/mcp.md`.
+
+---
+
+## MCP-11: Область «Навыки» (experience layer)
+
+**Зависит от:** MCP-10
+**Files:** `internal/control/rpc.go`, реестр, тесты.
+
+**Что сделать** (по шаблону). Покрыть: `GetSkills`, `GetSkillCandidates`,
+`GetSkillQuality`, `GetSkillUsage`, `DistillSkill`, `ApproveSkill`
+(`admin`), `ArchiveSkill`, `RestoreSkill`, `GetSkillAutopilot`,
+`SetSkillAutopilot` (`admin`), `RunSkillAutopilot`. Учесть инварианты
+`LEARN-TASKS.md` (всё новое выключено по умолчанию, промпт байт-в-байт при
+выключенных флагах): MCP не включает функции в обход их флагов, а
+сообщает агенту, какой флаг нужен.
+
+**Готово когда:** методы вне `pending`; `pending` содержит только оконные
+методы, ожидающие решения, или пуст; раздел «Навыки» в `docs/mcp.md`.
+
+---
+
+## MCP-12: Ожидание, progress, отмена и события
+
+**Зависит от:** MCP-11
+**Files:** `cmd/cm-mcp/`, `internal/control/wait.go`,
+`internal/control/emit.go`, тесты.
 
 **Что сделать.**
 
-- Режим `CM_MCP_MODE=read|operate|admin` (и/или поле конфига — решить);
-  **по умолчанию `operate`** или `read` — по решению MCP-01. Инструменты
-  выше уровня не попадают в `tools/list`, а вызов по имени даёт ошибку с
-  подсказкой, как включить.
-- `admin`: `set_global_settings`, `stop_all`, `approve_permission` /
-  `deny_permission` (одобрение вместо человека). Изменения настроек — по
-  белому списку полей, без записи в чужие репозитории (инвариант
-  `LEARN-TASKS.md`).
-- Защита от самоповреждения: сессия, запущенная менеджером, не может
-  остановить/перезапустить **саму себя** через MCP без явного флага
-  (идентификация — переменная окружения, которую менеджер передаёт
-  дочернему процессу; проверить, есть ли такая, иначе добавить).
-- Журнал вызовов: каждое изменяющее действие (`operate`/`admin`) пишется в
-  файловый лог менеджера — кто (clientInfo), что, аргументы без секретов,
-  результат.
-- Токен не выводится нигде; control-plane слушает только loopback —
-  проверить тестом.
-
-**Готово когда:** тесты на каждый режим (видимость в `tools/list`, отказ при
-вызове), на самоостановку и на журнал; раздел «Безопасность» в
-`docs/mcp.md`; doc-sync по новому полю конфига, если оно есть.
-
----
-
-## MCP-07: Долгие операции — ожидание, progress, отмена
-
-**Зависит от:** MCP-06
-**Files:** `cmd/cm-mcp/`, `internal/control/wait.go`, тесты.
-
-**Что сделать.** `wait_for_status`, `wait_for_event`,
-`wait_for_worker_status`, `run_preflight`, `dispatch_mixed_task`:
-
-- обязательный разумный таймаут по умолчанию и верхняя граница;
-- `notifications/progress`, если клиент передал `progressToken`
-  (текущий статус сессии / номер раунда);
-- `notifications/cancelled` реально прерывает ожидание на стороне
-  control-plane, а не только перестаёт ждать ответ;
-- по таймауту — не ошибка, а результат `{reached: false, current_status, …}`
-  с подсказкой, что делать дальше.
+- Все долгие инструменты (`wait_for_status`, `wait_for_event`,
+  `wait_for_worker_status`, preflight, roadmap, mixed, distill):
+  таймаут по умолчанию и верхняя граница; `notifications/progress` при
+  `progressToken`; `notifications/cancelled` реально прерывает ожидание на
+  стороне control-plane; по таймауту — результат
+  `{reached: false, current_status, …}` с подсказкой, а не ошибка.
+- `wait_for_any`: ждать первого из событий «нужен человек» (вопрос,
+  permission, план, ошибка, завершение задачи) по набору сессий — основной
+  цикл агента-оператора без опроса.
+- Если MCP-01 решил делать подписки — `notifications/resources/updated`
+  для `cm://sessions/...` по событиям `emit.go`.
+- Список типов событий `wait_for_event` — `enum` в схеме, из одного
+  источника с `emit.go`.
 
 **Готово когда:** тесты на progress, отмену (control-plane освобождает
-ожидание) и таймаут; раздел «Долгие операции» в `docs/mcp.md`.
+ожидание), таймаут, `wait_for_any`; раздел «Ожидание и события» в
+`docs/mcp.md`.
 
 ---
 
-## MCP-08: Ресурсы и промпты
+## MCP-13: Ресурсы и промпты
 
-**Зависит от:** MCP-07
+**Зависит от:** MCP-12
 **Files:** `cmd/cm-mcp/` (resources, prompts), тесты, `docs/mcp.md`.
 
 **Что сделать.**
 
-- **Ресурсы:** `cm://guide` — краткое руководство агента (встроенное в
-  бинарник, генерируется из `docs/mcp.md` или наоборот — без двух копий);
-  `cm://sessions` — снимок; шаблоны `cm://sessions/{project}/{session}` и
-  `cm://sessions/{project}/{session}/log{?cursor}`;
-  `cm://projects/{project}/config` — эффективный конфиг без секретов.
-  `mimeType`, `title`, `description` у каждого; `resources/list` с
-  пагинацией. Подписки (`resources/subscribe`) — только если MCP-01 решил
-  их делать.
-- **Промпты** (готовые сценарии для пользователя клиента): «разобрать
-  остановившуюся сессию», «запустить задачу в проекте и довести до
-  конца», «разобрать ожидающие permissions», «отчёт о расходах за
-  период». Каждый ссылается на конкретные инструменты.
-- `instructions` из MCP-02 ссылается на `cm://guide`.
+- **Ресурсы:** `cm://guide` — руководство агента (встроено в бинарник,
+  без второй копии `docs/mcp.md` — генерировать одно из другого);
+  `cm://projects`, `cm://projects/{project}/config` (без секретов);
+  `cm://sessions`, `cm://sessions/{project}/{session}`,
+  `cm://sessions/{project}/{session}/log{?cursor}`. `mimeType`, `title`,
+  `description` у каждого; `resources/list` с пагинацией.
+- **Промпты** (готовые сценарии для пользователя клиента): «настроить
+  проект и сессию с нуля», «запустить задачу и довести до конца»,
+  «разобрать остановившуюся сессию», «разобрать всё, что ждёт человека»,
+  «отчёт о расходах за период». Каждый ссылается на конкретные
+  инструменты.
+- `instructions` (MCP-02) ссылается на `cm://guide`.
 
 **Готово когда:** тесты `resources/list`, `resources/read` по каждому
-шаблону, `prompts/list`, `prompts/get`; ни один ресурс не отдаёт токен или
-секреты конфига (тест); разделы «Ресурсы» и «Промпты» в `docs/mcp.md`.
+шаблону, `prompts/list`, `prompts/get`; тест, что ни ресурс, ни инструмент
+не отдают токен и секреты; разделы «Ресурсы» и «Промпты» в `docs/mcp.md`.
 
 ---
 
-## MCP-09: Соответствие спецификации и e2e
+## MCP-14: Соответствие спецификации и e2e полного управления
 
-**Зависит от:** MCP-08
+**Зависит от:** MCP-13
 **Files:** `cmd/cm-mcp/*_test.go`, `internal/control/e2e_*`,
 `testdata/scenarios/` (+ `scenarios_doc.md`), `scripts/`.
 
 **Что сделать.**
 
-- Набор conformance-тестов: клиент (из SDK или тестовый) поднимает
-  `cm-mcp` как подпроцесс по stdio и проходит каждый метод протокола,
-  который мы объявляем в capabilities; неподдерживаемые методы дают
-  `-32601`.
-- e2e: реальный control-plane + `fakeclaude`, сценарий «агент через MCP
-  запускает сессию → ждёт статуса → отвечает на permission → читает лог →
-  останавливает». Новый сценарий fakeclaude — с уникальным `match`
-  (см. «Known gotchas» про `MatchScenario`) и записью в `scenarios_doc.md`.
+- Conformance: клиент (из SDK или тестовый) поднимает `cm-mcp`
+  подпроцессом по stdio и проходит каждый объявленный в capabilities
+  метод; неподдерживаемые — `-32601`.
+- e2e «полное управление»: реальный control-plane + `fakeclaude`, всё
+  только через MCP — пустой конфиг → проект → сессия → запуск → вопрос и
+  ответ → permission → лог и метрики → смена модели → перезапуск →
+  остановка проекта → удаление сессии. Новый сценарий fakeclaude — с
+  уникальным `match` (см. «Known gotchas» про `MatchScenario`) и записью в
+  `scenarios_doc.md`.
 - Opt-in скрипт проверки официальным MCP Inspector в CLI-режиме
-  (`scripts/mcp-inspect.sh`; запускается вручную, в `go test` не входит).
+  (`scripts/mcp-inspect.sh`; запускается вручную).
 
-**Готово когда:** гейт зелёный, conformance и e2e в обычном `go test`;
-инструкция запуска Inspector в `docs/mcp.md` («Проверка»).
+**Готово когда:** conformance и e2e в обычном `go test`; инструкция
+Inspector в `docs/mcp.md` («Проверка»).
 
 ---
 
-## MCP-10: Онбординг стороннего агента и doc-sync
+## MCP-15: Онбординг стороннего агента и doc-sync
 
-**Зависит от:** MCP-09
+**Зависит от:** MCP-14
 **Files:** `docs/mcp.md`, `README.md`, `CLAUDE.md`,
-`docs/testing-harness.md`, примеры конфигов клиентов.
+`docs/testing-harness.md`, `.claude/skills/cm-task-finish/`, примеры
+конфигов клиентов.
 
 **Что сделать.**
 
 - `docs/mcp.md` — полное руководство: быстрый старт (сборка `cm-mcp`,
-  где лежит `control.json`), регистрация в клиентах (Claude Code
-  `claude mcp add`/`.mcp.json`, Claude Desktop, Cursor, Codex — готовые
-  фрагменты конфигов), модель предметной области (проект → сессия →
-  задача → ход, статусы и переходы — диаграмма), рецепты (5–8 типовых
-  задач с последовательностью вызовов), справочник инструментов,
-  ошибки, режимы доступа, траблшутинг.
-- Справочник инструментов **генерируется** из реестра
-  (`go run ./cmd/cm-mcp -gen-docs` или `go generate`); тест падает, если
-  `docs/mcp.md` разошёлся с реестром.
-- `docs/testing-harness.md`: таблица «cm-mcp tools available to Claude»
-  заменяется ссылкой на `docs/mcp.md`. В `CLAUDE.md` строка матрицы
-  doc-sync «New `cm-mcp` tool» указывает на `docs/mcp.md` (генерация), а
-  `.claude/skills/cm-task-finish` — проверить, не ссылается ли на старую
-  таблицу.
-- `README.md` — короткий раздел «Управление из других ИИ (MCP)» со ссылкой.
+  `control.json`), регистрация в клиентах (Claude Code `claude mcp add` /
+  `.mcp.json`, Claude Desktop, Cursor, Codex — готовые фрагменты), режимы
+  доступа и как их включить, модель предметной области (проект → сессия →
+  задача → ход; статусы и переходы — диаграмма), рецепты (8–10 типовых
+  задач с последовательностью вызовов), справочник инструментов по
+  областям, ошибки, траблшутинг.
+- Справочник инструментов и карта паритета **генерируются** из реестра
+  (`go run ./cmd/cm-mcp -gen-docs` или `go generate`); тест падает при
+  расхождении `docs/mcp.md` с реестром.
+- `docs/testing-harness.md`: таблица «cm-mcp tools available to Claude» →
+  ссылка на `docs/mcp.md`. `CLAUDE.md`: строка матрицы doc-sync «New
+  `cm-mcp` tool» → `docs/mcp.md` (генерация); проверить
+  `.claude/skills/cm-task-finish` на ссылки на старую таблицу.
+- `README.md` — раздел «Управление из других ИИ (MCP)».
 
-**Готово когда:** тест сверки документации зелёный; все ссылки из
-`CLAUDE.md`/`README.md`/`docs/testing-harness.md` ведут в актуальные
-разделы; человек по `docs/mcp.md` подключает `cm-mcp` к Claude Code с нуля.
+**Готово когда:** тест сверки документации зелёный; ссылки из
+`CLAUDE.md`/`README.md`/`docs/testing-harness.md` актуальны; человек по
+`docs/mcp.md` подключает `cm-mcp` к Claude Code с нуля.
 
 ---
 
-## MCP-11: Оценка реальным агентом
+## MCP-16: Оценка реальным агентом
 
-**Зависит от:** MCP-10
+**Зависит от:** MCP-15
 **Files:** `testdata/mcp-eval/` (задачи и ожидаемые исходы), раннер
 (`cmd/cm-mcp-eval/` или `scripts/`), `docs/mcp.md` («Оценка»).
 
-**Что сделать.** Opt-in (`CM_MCP_EVAL=1`) прогон: тестовый экземпляр
-менеджера на `fakeclaude` (`testdata/configs/playwright.toml` или свой
-конфиг) + `claude -p` с **только** `cm-mcp` в `--mcp-config` и без доступа к
-репозиторию. 8–12 задач с проверяемым исходом (состояние менеджера после
-прогона, а не текст ответа): запустить сессию и дождаться `idle`, найти
-сессию с ошибкой и назвать причину, одобрить конкретный permission,
-посчитать расходы проекта, остановить проект мягко, и т.п. Метрики на
-задачу: успех, число вызовов, число ошибочных вызовов (неверные аргументы,
-не тот инструмент), токены. По результатам — правка описаний/ошибок
-(MCP-04) и повторный прогон.
+**Что сделать.** Opt-in (`CM_MCP_EVAL=1`): тестовый экземпляр менеджера
+на `fakeclaude` + `claude -p` с **только** `cm-mcp` в `--mcp-config`, без
+доступа к репозиторию. 12–15 задач, покрывающих **все области** MCP-06…11,
+с проверкой исхода по состоянию менеджера (не по тексту ответа):
+настроить проект и сессию с нуля, запустить и дождаться `idle`, ответить
+на вопрос, одобрить конкретный permission, найти сессию с ошибкой и
+назвать причину, сменить модель и перезапустить, посчитать расходы
+проекта, сгенерировать и показать roadmap, найти кандидатов в навыки,
+мягко остановить проект и т.п. Метрики на задачу: успех, число вызовов,
+ошибочных вызовов, токены. По результатам — правка описаний/ошибок и
+повторный прогон.
 
 **Готово когда:** раннер и задачи в репозитории; таблица «до/после
 правок» в `docs/mcp.md`; успех ≥ 90% задач, ошибочных вызовов в среднем
-< 1 на задачу (если порог не достигнут — задача остаётся открытой со
-списком причин).
+< 1 на задачу (иначе задача остаётся открытой со списком причин).
 
 ---
 
-## MCP-12: Закрыть блок
+## MCP-17: Закрыть блок
 
-**Зависит от:** MCP-11
+**Зависит от:** MCP-16
 **Files:** `docs/mcp.md`, `docs/design-decisions.md`,
 `docs/architecture.md`, `CLAUDE.md`, этот файл.
 
-**Что сделать.** Сверить `docs/mcp.md` с кодом после MCP-02…11; удалить
-устаревшие фрагменты; в `docs/architecture.md` — `cm-mcp` в дереве и в
-описании control-plane как публичный интерфейс; в `CLAUDE.md` — строка
-`Developer 1` в таблице ролей обновлена (MCP-01..12 — done). Список
-deprecated-алиасов с планом удаления — отдельной задачей в конец этого
-файла, если они остались.
+**Что сделать.** `pending` пуст — тест паритета это подтверждает; каждое
+исключение в `excluded` имеет причину. Сверить `docs/mcp.md` с кодом;
+в `docs/architecture.md` — `cm-mcp` и control-plane как публичный
+интерфейс с полным паритетом; в `CLAUDE.md` строка `Developer 1` в таблице
+ролей — MCP-01..17 done. Список deprecated-алиасов с планом удаления —
+отдельной задачей в конец этого файла, если они остались.
 
-**Готово когда:** агент, не видевший этот блок, по `instructions` +
-`cm://guide` + `docs/mcp.md` работает с менеджером (подтверждено MCP-11);
-все ссылки актуальны; гейт зелёный.
+**Готово когда:** `pending` пуст; агент, не видевший этот блок, по
+`instructions` + `cm://guide` + `docs/mcp.md` полностью управляет
+менеджером (подтверждено MCP-16); ссылки актуальны; гейт зелёный.

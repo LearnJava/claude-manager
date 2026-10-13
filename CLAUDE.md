@@ -17,7 +17,7 @@ Desktop app (Windows) to launch, monitor, and control parallel Claude Code CLI s
 | [LEARN-TASKS.md](./LEARN-TASKS.md) | Experience layer task breakdown (LN-01..18); queue in [LEARN-STATUS.md](./LEARN-STATUS.md) |
 | [VIEW-TASKS.md](./VIEW-TASKS.md) | Hermes-style session feed in `LogStream` (UI-01..06); queue in [STATUS-P1.md](./STATUS-P1.md) |
 | [RUNTIME-TASKS.md](./RUNTIME-TASKS.md) | Common runtime event format + `Runtime` interface (RT-01..08); queue in [STATUS-P1.md](./STATUS-P1.md). Its RT-01 creates `docs/runtimes.md` — how Claude/Hermes streams map to `ParsedEvent` |
-| [MCP-TASKS.md](./MCP-TASKS.md) | `cm-mcp` as a public MCP server for third-party agents (MCP-01..12); queue in [STATUS-P1.md](./STATUS-P1.md). Its MCP-01 creates `docs/mcp.md` — the agent-facing guide |
+| [MCP-TASKS.md](./MCP-TASKS.md) | `cm-mcp` as a public MCP server with full GUI parity for third-party agents (MCP-01..17); queue in [STATUS-P1.md](./STATUS-P1.md). Its MCP-01 creates `docs/mcp.md` — the agent-facing guide |
 | [GUI-TESTS.md](./GUI-TESTS.md) | ~100 Playwright test-case descriptions across all Svelte components (✓ exists / ○ missing) |
 | [config.example.toml](./config.example.toml) | Annotated config reference |
 | [docs/Science_lab/MEASURE.md](./docs/Science_lab/MEASURE.md) | Runtime and cost study of Claude Code on this Windows machine (Lumen and claude-manager sessions), the `claude-code-setup` kit installed in `~/.claude`, and the before/after measurement procedure with the 2026-10-13 baseline |
@@ -56,7 +56,7 @@ prompt, which is why the prompt is one line.
 
 | Session | Queue (`task_source`) | Task specs | Branch prefix | Pool slot |
 |---|---|---|---|---|
-| `Developer 1` | `STATUS-P1.md` | `VIEW-TASKS.md` (UI-01..13, done), `RUNTIME-TASKS.md` (RT-01..08, done), `MCP-TASKS.md` (MCP-01..12) | `p1-` | `p1-work` |
+| `Developer 1` | `STATUS-P1.md` | `VIEW-TASKS.md` (UI-01..13, done), `RUNTIME-TASKS.md` (RT-01..08, done), `MCP-TASKS.md` (MCP-01..17) | `p1-` | `p1-work` |
 
 Read the task file's own rules before starting — each breakdown carries
 invariants that are not repeated here (`LEARN-TASKS.md` §Инварианты: everything
