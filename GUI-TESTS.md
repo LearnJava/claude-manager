@@ -377,6 +377,7 @@ case overrides the stub via `page.evaluate` (same pattern as EXP-15).
 | EXP-22 | Tab switches, empty state | Click "Cost by tool" tab | Tab highlighted; "No recorded tool output…" names the flag | **✓** |
 | EXP-23 | Attribution report renders | Override `GetTokenAttribution` to return one signature/tool, click Refresh | By-tool summary shows total est. tokens; by-signature row renders with signature, calls, est. tokens (`formatTokens`), share, avg/max chars | **✓** |
 | EXP-24 | Truncated top-N still reflects whole-project Share | Project with more signatures than the reported top-N | `TotalEstTokens`/Share come from every signature seen, not just the reported rows | ○ |
+| EXP-24a | Re-read price and session-length table (LN-29) | Same override as EXP-23 plus `LifetimeTokens`/`LifetimeShare` and two `ByLength` bands | "With re-reads" column shows `formatTokens(LifetimeTokens)`; `cost-by-length` table renders "1–20" and "251+" bands with their cost share | **✓** |
 
 ---
 

@@ -34,6 +34,12 @@ daily_budget_alert = 0                 # notify if daily spend exceeds this USD
 weekly_budget_alert = 0                # notify if weekly spend exceeds this USD
 rate_limit_alert_threshold = 0.80      # notify when rate-limit utilisation > 80%
 
+# UTF-8 for Python run by the agent: PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 in
+# every Claude session's environment (a value already set is kept). Without it
+# Python prints in the console code page and Russian text comes back unreadable
+# (8.6% of Python runs in Lumen's sessions, docs/Science_lab/MEASURE.md).
+python_utf8 = true
+
 # ─── Mixed-programming workers (MIXED-TASKS.md) ──────────────────────────────
 # External OpenAI-compatible models that write code as FIND/REPLACE patches.
 # The manager applies patches in a worktree, runs the project gates and returns
@@ -184,6 +190,17 @@ path = 'D:\RustProjects\lumen-browser'
   # adds the schema so the model writes it reliably. Autonomous sessions
   # always have it. Off by default; with it false the prompt is unchanged.
   ask_user_marker = false
+
+  # Handoff by context budget (autonomous Claude sessions): once a model call
+  # sends at least this many context tokens, the manager tells the agent
+  # mid-turn to finish its step, commit work in progress with a handoff note
+  # and end the turn on the done marker; a fresh session continues the task
+  # with a small context. Every call re-reads the whole conversation, so long
+  # sessions cost disproportionately: in Lumen, sessions over 100 calls were
+  # 23% of sessions and 56% of spend (docs/Science_lab/MEASURE.md). In Lumen
+  # 150000 is reached by a third of sessions, at about their 78th call;
+  # 120000 by more than half, at about the 56th. 0 = off (prompt unchanged).
+  handoff_context_tokens = 0
 
   # Runtime (HERMES-TASKS.md): "claude" (default) or "hermes". A hermes
   # session runs `hermes chat --query-file - --format stream-json`, one

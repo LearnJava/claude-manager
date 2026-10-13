@@ -84,6 +84,16 @@ the manager closes stdin when the turn's `result` event arrives so the CLI exits
 cleanly and the run loop can iterate; real Claude keeps the process alive on open
 stdin otherwise.
 
+**Environment.** With `settings.python_utf8` (default true) the Claude process
+gets `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` (`utf8Env`,
+`internal/session/launch_env.go`); a variable already set, in any case, is kept.
+The agent's Bash tool inherits the CLI's environment, so every Python it runs
+prints UTF-8 instead of the console code page — on a Russian-localized Windows
+that was the most common source of unreadable tool output (8.6% of Python runs
+in Lumen's sessions, `docs/Science_lab/MEASURE.md`; mostly cp1251/cp866 bytes a
+Python wrapper re-printed). Hermes sessions are left as they were: Hermes is a
+Python program itself and its own stdio encoding was not tested with the flag.
+
 ### Stream-JSON Events (stdout)
 Key event types to parse:
 - `{"type":"system","subtype":"init",...}` — session info, model, tools, version. Its `slash_commands`, `skills` and `terminal_slash_commands` are kept on the `Session` (`initCommands`) for the message box's "/" autocomplete — see "Slash-Command Autocomplete" below
@@ -1282,6 +1292,58 @@ fakeclaude scenario) — with the flag on, `StartSession` produces two
 fresh `--session-id`, never `--resume`) before settling at `idle`; with it
 off, exactly one.
 
+### Context-Budget Handoff Mid-Turn (LEARN-TASKS.md LN-28)
+
+LN-15 reacts only at a turn boundary and only to a share of the model's
+context window. An autonomous task is usually **one** turn of 50–450 model
+calls, so by the time its `result` arrives the expensive part is already paid
+— and with a 1M window, 75% is far past where the money goes. Measured on
+Lumen's transcripts (`docs/Science_lab/MEASURE.md`): sessions over 100 calls
+were 23% of sessions and 56% of spend; context per call grows from ~59k
+tokens in short sessions to ~231k in the longest, and every call re-reads it.
+
+**Flag:** `SessionConfig.HandoffContextTokens` (`handoff_context_tokens`,
+0 = off — prompt byte-identical, nothing written to stdin). Autonomous Claude
+runs only: an interactive session has no slice to hand off, and Hermes runs
+one process per turn with no mid-turn stdin.
+
+**Trigger** (`checkHandoffBudget`, `internal/session/handoff_budget.go`):
+every `assistant` line's `usage` (input + cache read + cache creation = the
+context that call sent). All lines of one call repeat its usage, so a repeat
+of the previous total is skipped as the same call. The first call at or over
+the budget sends a note; a reminder follows every `handoffRepeatEvery` (20)
+over-budget calls, at most `handoffMaxNotes` (3) per run — reaching a
+committable state can take a few calls, past that a reminder only adds tokens.
+Calibration on Lumen: 150k is reached by a third of sessions at about their
+78th call (close to the ~90 calls the study recommended), 120k by more than
+half at about the 56th.
+
+**Channel: a user message on stdin, announced in the system prompt.** The
+CLI delivers a message written to stdin mid-turn attached to the next tool
+result. Probed with the real CLI: a bare note was ignored by haiku as a
+prompt injection ("the tool result contains text claiming to be a manager
+instruction"); with `handoffBudgetPrompt` appended to the system prompt
+haiku, sonnet and opus all stopped after the current call and followed it.
+The note starts with `[session-manager <tag>]`, the tag minted per process
+by `buildCLIArgs` (`handoffTag`), and the prompt says text without the exact
+tag is not from the manager — tool output cannot impersonate it. A
+PostToolUse hook (via `--settings`) was the alternative: it depends on the
+shell the CLI runs hook commands in and was ignored in one of two probes.
+
+**Outcome:** the note asks the agent to finish the step, commit work in
+progress with a handoff note in the commit body (done / next / how to
+verify) and end the reply with the `continue_session` block. The run then
+classifies as a finished slice (`classifyTaskOutcome`: pointer still queued
++ marker), the next process starts fresh — no `--resume` — and the
+developer protocol's "an existing `p<N>-…` branch is your interrupted task"
+rule makes it continue from the note. Nothing is killed: an agent that
+finishes the task instead simply closes it. Each note is a `system` entry
+in the session feed and a `session.handoff_budget.note` line in the app log.
+
+Covered by `internal/session/handoff_budget_test.go` (off = byte-identical
+prompt and no input, the per-run tag, one note per crossing call, the
+repeat/cap schedule, interactive runs untouched, `utf8Env`).
+
 ### UI Localization (EN/RU)
 
 The frontend renders in English or Russian; nothing else (prompts sent to
@@ -2291,6 +2353,28 @@ Feeds LN-08's `rediscoveryChars` (a candidate's evidence is weighted by how
 many result chars a session would read through to rediscover the pattern on
 its own) and is raw material for LN-16's cost-regression alerts — this task
 does not wire either consumer.
+
+**Re-read price and session length** (LN-29, same file). Volume is not cost:
+a result is written to the prompt cache once and read back on every later
+model call of its session, and re-reading was 65% of spend in the study
+behind `docs/Science_lab`. `store.ActionResultChars` therefore also returns
+`Remaining` — steps of the same CLI session after the row (a window
+`MAX(step_index) OVER (PARTITION BY cli_session_id | run_id | session)`
+minus its own `step_index`; another CLI session of the same manager session
+is a fresh conversation and never counts). Each row is priced
+`EstimateTokens × (cacheWriteWeight 2.0 + cacheReadWeight 0.1 × Remaining)`
+in uncached-input-token units (a 1-hour cache write is 2× the input price, a
+read 0.1×; steps stand in for model calls, each tool result is followed by
+one) — `LifetimeTokens`/`LifetimeShare` on both cuts, which are now sorted by
+it (volume breaks ties, so a report without step spread keeps the old
+order). On Lumen's history it moves `Bash` from 37% of volume to 26% of
+cost and `read_file` from 8% to 11%. `ByLength` buckets the project's runs
+with a known cost (`store.RunLengthCosts`: `session_runs.num_turns`,
+`total_cost_usd > 0`) into the study's bands (1–20 … 251+ turns), so the
+in-app numbers compare directly with `docs/Science_lab/MEASURE.md` and show
+whether `handoff_context_tokens` (LN-28) moved spend out of the long bands.
+The tab adds two columns and the length table; a report from before LN-29
+(fields absent) renders "—".
 
 **Duration profile** (LN-18, `internal/experience/duration.go`). A fresh
 session has no idea how long this project's own slow commands take, and

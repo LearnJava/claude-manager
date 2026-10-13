@@ -192,9 +192,18 @@ test.describe('Experience panel', () => {
               Share: 1,
               AvgResultChars: 4000,
               MaxResultChars: 4000,
+              LifetimeTokens: 23500,
+              LifetimeShare: 1,
             },
           ],
-          ByTool: [{ Tool: 'Read', Count: 10, EstTokens: 1000, Share: 1 }],
+          ByTool: [
+            { Tool: 'Read', Count: 10, EstTokens: 1000, Share: 1, LifetimeTokens: 23500, LifetimeShare: 1 },
+          ],
+          TotalLifetimeTokens: 23500,
+          ByLength: [
+            { MinTurns: 1, MaxTurns: 20, Runs: 6, CostUSD: 2.5, CostShare: 0.2, AvgCostUSD: 0.42 },
+            { MinTurns: 251, MaxTurns: 0, Runs: 1, CostUSD: 10, CostShare: 0.8, AvgCostUSD: 10 },
+          ],
         });
     });
     await modal.getByRole('button', { name: 'Refresh' }).click();
@@ -202,6 +211,15 @@ test.describe('Experience panel', () => {
     await expect(modal.getByText('Read:src/*.go')).toBeVisible({ timeout: 5_000 });
     // formatTokens(1000) -> "1.0k".
     await expect(modal.getByText(/1\.0k est\. tokens total/i)).toBeVisible();
+
+    // LN-29: the re-read price next to the volume, and the session-length cut.
+    await expect(modal.getByRole('columnheader', { name: 'With re-reads' }).first()).toBeVisible();
+    await expect(modal.getByText('23.5k').first()).toBeVisible();
+    const byLength = modal.getByTestId('cost-by-length');
+    await expect(byLength).toBeVisible();
+    await expect(byLength.getByText('1–20')).toBeVisible();
+    await expect(byLength.getByText('251+')).toBeVisible();
+    await expect(byLength.getByText('80%')).toBeVisible();
 
     await modal.getByRole('button', { name: '✕' }).click();
     await expect(modal).not.toBeVisible({ timeout: 3_000 });

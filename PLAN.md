@@ -188,6 +188,9 @@ daily_budget_alert = 0                    # 0 = выкл. >0 = уведомле�
 weekly_budget_alert = 0                   # 0 = выкл. >0 = уведомление при превышении $/неделя
 rate_limit_alert_threshold = 0.80         # Уведомление при утилизации rate limit > 80%
 
+# Окружение сессий
+python_utf8 = true                        # PYTHONUTF8=1 и PYTHONIOENCODING=utf-8 для Claude-сессий (заданное значение не трогается)
+
 # ─── Проект 1 ───────────────────────────────────────────
 
 [[project]]
@@ -373,6 +376,12 @@ type SessionConfig struct {
     // Context primer (LEARN-TASKS.md LN-05): prepend an auto-generated
     // "Project state" block to a fresh run's prompt.
     ContextPrimer       bool             `toml:"context_primer"`
+
+    // Хендофф по бюджету контекста (LEARN-TASKS.md LN-28): когда вызов
+    // модели автономного прогона отправил столько токенов контекста, менеджер
+    // посреди хода просит агента закоммитить WIP с запиской и закончить ход
+    // маркером — задачу продолжает свежая сессия. 0 = выключено.
+    HandoffContextTokens int             `toml:"handoff_context_tokens"`
 }
 
 type PermissionRule struct {
@@ -3012,6 +3021,8 @@ experience_tracking = false
 | Cache warming delay | При запуске нескольких сессий | ~$0.04 × (N-1) сессий |
 | `--exclude-dynamic-system-prompt` | Всегда при >1 сессии | ~$0.04 × (N-1) × кол-во рестартов |
 | Авто-рестарт по контексту | context > 75% | ~$0.30/turn после рестарта |
+| Хендофф по бюджету контекста (`handoff_context_tokens`, LN-28) | вызов модели отправил ≥ N токенов контекста | в Lumen сессии >100 вызовов — 23% сессий и 56% затрат; замер — `docs/Science_lab/MEASURE.md` |
+| UTF-8 для Python в сессиях (`python_utf8`) | Всегда, если переменная не задана | без него 8.6% запусков Python в Lumen вернули нечитаемый вывод |
 | `--max-turns` | Всегда (защита от зацикливания) | До десятков $ при зацикливании |
 | Loop detection + hint | При 3+ повторах tool call | $0.50-5.00 за инцидент |
 | `--effort` по типу задачи | Простые задачи = low effort | 30-50% на output tokens |

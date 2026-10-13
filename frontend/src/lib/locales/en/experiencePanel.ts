@@ -57,6 +57,18 @@ export default {
     'experiencePanel.cost.colSignature': 'Signature',
     'experiencePanel.cost.colAvgChars': 'Avg chars',
     'experiencePanel.cost.colMaxChars': 'Max chars',
+    'experiencePanel.cost.colLifetime': 'With re-reads',
+    'experiencePanel.cost.colLifetimeShare': 'Share, re-reads',
+    'experiencePanel.cost.lifetimeNote':
+        'Sorted by cost with re-reads: a result is written to the prompt cache once and read back on every later call of its session — tokens × (2 + 0.1 × later calls), in uncached-input-token units.',
+    'experiencePanel.cost.byLengthHeading': 'By session length — manager runs with a known cost',
+    'experiencePanel.cost.byLengthNote':
+        'Every call re-reads the whole conversation, so long sessions cost disproportionately; handoff_context_tokens hands a long task off to a fresh session.',
+    'experiencePanel.cost.colTurns': 'Model turns',
+    'experiencePanel.cost.colRuns': 'Runs',
+    'experiencePanel.cost.colCost': 'Cost',
+    'experiencePanel.cost.colCostShare': 'Share of cost',
+    'experiencePanel.cost.colAvgCost': 'Per run',
     'experiencePanel.cost.errorLoad': 'Failed to load token attribution: {error}',
 
     'experiencePanel.actions.loading': 'Loading actions…',
