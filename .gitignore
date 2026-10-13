@@ -46,3 +46,5 @@ testdata/configs/playwright-runtime.toml
 # Worktree pool slots (scripts/worktree-pool.sh) — local checkouts, not sources
 .claude/worktrees/
 .tmp/
+__pycache__/
+~$*
