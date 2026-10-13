@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Linux counterpart of run-claude-manager.bat.
+# Linux counterpart of run-claude-manager.bat: captures raw stderr and
+# restarts the app if it dies without meaning to (see the loop below).
 #
 # Wails builds the app as a GUI binary with no console, so anything the Go
 # runtime writes directly to the OS-level stderr handle -- an unrecovered
@@ -27,5 +28,47 @@ if [ ! -x "$EXE" ]; then
     fi
 fi
 
-echo "---- $(date) ----" >> "$LOGDIR/crash.log"
-exec "$EXE" 2>> "$LOGDIR/crash.log"
+# Relaunch loop. Sessions are children of the manager and die with it, so an
+# unplanned exit should bring the app straight back and let crash recovery
+# resume them. A deliberate quit is recognised by the marker app.go's
+# shutdown writes on its way out (App.markCleanExit) — present means stop.
+MARKER="$HOME/.claude-manager/state/clean-exit"
+MAX_RESTARTS=10
+HEALTHY_SECONDS=60
+restarts=0
+
+while true; do
+    rm -f "$MARKER"
+    started=$SECONDS
+
+    echo "---- $(date) ----" >> "$LOGDIR/crash.log"
+    # Not `exec`: the loop has to outlive the app to be able to restart it.
+    # A non-zero exit is expected here (crash, kill), so suspend errexit.
+    set +e
+    "$EXE" 2>> "$LOGDIR/crash.log"
+    set -e
+
+    if [ -f "$MARKER" ]; then
+        echo "---- $(date) clean exit ----" >> "$LOGDIR/crash.log"
+        exit 0
+    fi
+
+    uptime=$((SECONDS - started))
+    # A run long enough to be a real session means this is an isolated
+    # failure rather than a loop, so forgive the earlier attempts.
+    if [ "$uptime" -ge "$HEALTHY_SECONDS" ]; then
+        restarts=0
+    fi
+
+    restarts=$((restarts + 1))
+    if [ "$restarts" -gt "$MAX_RESTARTS" ]; then
+        echo "---- $(date) gave up after $MAX_RESTARTS failed restarts ----" >> "$LOGDIR/crash.log"
+        echo "claude-manager keeps exiting unexpectedly ($MAX_RESTARTS times). Not restarting again." >&2
+        echo "See $LOGDIR/crash.log" >&2
+        exit 1
+    fi
+
+    echo "---- $(date) unexpected exit after ${uptime}s, restart $restarts of $MAX_RESTARTS ----" >> "$LOGDIR/crash.log"
+    # Breathing room so a failure that is instant does not spin the CPU.
+    sleep 5
+done

@@ -69,6 +69,13 @@ func (a *App) startup(ctx context.Context) {
 
 	logger.L.Info("startup", "cfg", a.cfgPath)
 
+	// Clear last run's clean-exit marker: from here on, the marker's absence
+	// means this process did not get to shut down properly (see
+	// cleanExitMarkerPath).
+	if err := os.Remove(a.cleanExitMarkerPath()); err != nil && !os.IsNotExist(err) {
+		logger.L.Warn("startup.clean_exit_marker_clear", "error", err)
+	}
+
 	cfg, err := config.Load(a.cfgPath)
 	if err != nil {
 		logger.L.Error("config.load", "error", err)
@@ -317,10 +324,36 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.trayEnabled {
 		systray.Quit()
 	}
+	a.markCleanExit()
 	logger.L.Info("shutdown.complete")
 	runtime.LogInfo(ctx, "Claude Session Manager shutting down")
 	if a.closeLog != nil {
 		a.closeLog()
+	}
+}
+
+// cleanExitMarkerPath is the file shutdown drops to record that this process
+// ended on purpose — the tray's Quit, or any other path through Wails'
+// OnShutdown. A process that is killed or crashes never gets here, so the
+// marker's absence after the binary exits means the run ended badly.
+//
+// run-claude-manager.bat uses exactly that to decide whether to relaunch:
+// sessions die with the manager (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, see
+// internal/proc/proc_windows.go), so an unplanned exit should bring the app
+// straight back and let crash recovery resume the sessions, while a
+// deliberate quit must stay quit.
+func (a *App) cleanExitMarkerPath() string {
+	return filepath.Join(filepath.Dir(a.cfgPath), "state", "clean-exit")
+}
+
+func (a *App) markCleanExit() {
+	path := a.cleanExitMarkerPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		logger.L.Warn("shutdown.clean_exit_marker_dir", "error", err)
+		return
+	}
+	if err := os.WriteFile(path, []byte(time.Now().Format(time.RFC3339)+"\n"), 0o644); err != nil {
+		logger.L.Warn("shutdown.clean_exit_marker_write", "error", err)
 	}
 }
 
