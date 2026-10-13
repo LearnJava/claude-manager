@@ -58,6 +58,18 @@ export default {
     'experiencePanel.cost.colSignature': 'Сигнатура',
     'experiencePanel.cost.colAvgChars': 'Ср. символов',
     'experiencePanel.cost.colMaxChars': 'Макс. символов',
+    'experiencePanel.cost.colLifetime': 'С перечитыванием',
+    'experiencePanel.cost.colLifetimeShare': 'Доля с перечит.',
+    'experiencePanel.cost.lifetimeNote':
+        'Отсортировано по цене с перечитыванием: результат один раз пишется в кэш промпта и читается заново на каждом следующем вызове своей сессии — токены × (2 + 0.1 × вызовов после него), в единицах некэшированного входа.',
+    'experiencePanel.cost.byLengthHeading': 'По длине сессии — прогоны менеджера с известной стоимостью',
+    'experiencePanel.cost.byLengthNote':
+        'Каждый вызов перечитывает всю переписку, поэтому длинные сессии непропорционально дороги; handoff_context_tokens передаёт длинную задачу свежей сессии.',
+    'experiencePanel.cost.colTurns': 'Ходов модели',
+    'experiencePanel.cost.colRuns': 'Прогонов',
+    'experiencePanel.cost.colCost': 'Затраты',
+    'experiencePanel.cost.colCostShare': 'Доля затрат',
+    'experiencePanel.cost.colAvgCost': 'На прогон',
     'experiencePanel.cost.errorLoad': 'Не удалось загрузить распределение токенов: {error}',
 
     'experiencePanel.actions.loading': 'Загрузка действий…',

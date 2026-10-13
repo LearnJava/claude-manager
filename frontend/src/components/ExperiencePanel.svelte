@@ -1,7 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher, onDestroy, onMount } from 'svelte';
     import { projects } from '../stores/projects';
-    import { formatDuration, formatPercent, formatTime, formatTokens } from '../lib/formatters';
+    import { formatCost, formatDuration, formatPercent, formatTime, formatTokens } from '../lib/formatters';
     import { t } from '../lib/i18n';
     import SkillReview from './SkillReview.svelte';
     import { PickDirectory } from '../../wailsjs/go/main/App';
@@ -691,6 +691,7 @@
                         <h3 class="text-text text-sm font-medium mb-2">
                             {$t('experiencePanel.cost.byToolHeading', { tokens: formatTokens(attribution.TotalEstTokens) })}
                         </h3>
+                        <p class="text-text-muted text-xs mb-2">{$t('experiencePanel.cost.lifetimeNote')}</p>
                         <table class="w-full text-sm border-collapse mb-6">
                             <thead class="bg-bg-elevated text-text-muted text-xs">
                                 <tr>
@@ -698,6 +699,8 @@
                                     <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colCalls')}</th>
                                     <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colEstTokens')}</th>
                                     <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colShare')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colLifetime')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colLifetimeShare')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -712,6 +715,12 @@
                                         </td>
                                         <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
                                             {formatPercent(t.Share)}
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right text-text font-mono text-xs">
+                                            {t.LifetimeTokens === undefined ? '—' : formatTokens(t.LifetimeTokens)}
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right text-text font-mono text-xs">
+                                            {t.LifetimeShare === undefined ? '—' : formatPercent(t.LifetimeShare)}
                                         </td>
                                     </tr>
                                 {/each}
@@ -728,6 +737,8 @@
                                     <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colCalls')}</th>
                                     <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colEstTokens')}</th>
                                     <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colShare')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colLifetime')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colLifetimeShare')}</th>
                                     <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colAvgChars')}</th>
                                     <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colMaxChars')}</th>
                                 </tr>
@@ -747,6 +758,12 @@
                                         <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
                                             {formatPercent(row.Share)}
                                         </td>
+                                        <td class="px-3 py-1.5 text-right text-text font-mono text-xs">
+                                            {row.LifetimeTokens === undefined ? '—' : formatTokens(row.LifetimeTokens)}
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right text-text font-mono text-xs">
+                                            {row.LifetimeShare === undefined ? '—' : formatPercent(row.LifetimeShare)}
+                                        </td>
                                         <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
                                             {Math.round(row.AvgResultChars)}
                                         </td>
@@ -757,6 +774,43 @@
                                 {/each}
                             </tbody>
                         </table>
+
+                        {#if (attribution.ByLength ?? []).length > 0}
+                            <h3 class="text-text text-sm font-medium mt-6 mb-1">
+                                {$t('experiencePanel.cost.byLengthHeading')}
+                            </h3>
+                            <p class="text-text-muted text-xs mb-2">{$t('experiencePanel.cost.byLengthNote')}</p>
+                            <table class="w-full text-sm border-collapse" data-testid="cost-by-length">
+                                <thead class="bg-bg-elevated text-text-muted text-xs">
+                                    <tr>
+                                        <th class="text-left px-3 py-2 font-medium">{$t('experiencePanel.cost.colTurns')}</th>
+                                        <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colRuns')}</th>
+                                        <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colCost')}</th>
+                                        <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colCostShare')}</th>
+                                        <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.cost.colAvgCost')}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {#each attribution.ByLength ?? [] as b (b.MinTurns)}
+                                        <tr class="border-t border-bg-border">
+                                            <td class="px-3 py-1.5 text-text font-mono text-xs">
+                                                {b.MaxTurns ? `${b.MinTurns}–${b.MaxTurns}` : `${b.MinTurns}+`}
+                                            </td>
+                                            <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">{b.Runs}</td>
+                                            <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                                {formatCost(b.CostUSD)}
+                                            </td>
+                                            <td class="px-3 py-1.5 text-right text-text font-mono text-xs">
+                                                {formatPercent(b.CostShare)}
+                                            </td>
+                                            <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                                {formatCost(b.AvgCostUSD)}
+                                            </td>
+                                        </tr>
+                                    {/each}
+                                </tbody>
+                            </table>
+                        {/if}
                     </div>
                 {/if}
             {:else if !project}

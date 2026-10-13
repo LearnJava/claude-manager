@@ -2354,6 +2354,28 @@ many result chars a session would read through to rediscover the pattern on
 its own) and is raw material for LN-16's cost-regression alerts — this task
 does not wire either consumer.
 
+**Re-read price and session length** (LN-29, same file). Volume is not cost:
+a result is written to the prompt cache once and read back on every later
+model call of its session, and re-reading was 65% of spend in the study
+behind `docs/Science_lab`. `store.ActionResultChars` therefore also returns
+`Remaining` — steps of the same CLI session after the row (a window
+`MAX(step_index) OVER (PARTITION BY cli_session_id | run_id | session)`
+minus its own `step_index`; another CLI session of the same manager session
+is a fresh conversation and never counts). Each row is priced
+`EstimateTokens × (cacheWriteWeight 2.0 + cacheReadWeight 0.1 × Remaining)`
+in uncached-input-token units (a 1-hour cache write is 2× the input price, a
+read 0.1×; steps stand in for model calls, each tool result is followed by
+one) — `LifetimeTokens`/`LifetimeShare` on both cuts, which are now sorted by
+it (volume breaks ties, so a report without step spread keeps the old
+order). On Lumen's history it moves `Bash` from 37% of volume to 26% of
+cost and `read_file` from 8% to 11%. `ByLength` buckets the project's runs
+with a known cost (`store.RunLengthCosts`: `session_runs.num_turns`,
+`total_cost_usd > 0`) into the study's bands (1–20 … 251+ turns), so the
+in-app numbers compare directly with `docs/Science_lab/MEASURE.md` and show
+whether `handoff_context_tokens` (LN-28) moved spend out of the long bands.
+The tab adds two columns and the length table; a report from before LN-29
+(fields absent) renders "—".
+
 **Duration profile** (LN-18, `internal/experience/duration.go`). A fresh
 session has no idea how long this project's own slow commands take, and
 finds out the only way it can — by hitting a timeout. The manager already

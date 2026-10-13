@@ -109,6 +109,8 @@ export interface SignatureAttribution {
     Share: number;
     AvgResultChars: number;
     MaxResultChars: number;
+    LifetimeTokens?: number;
+    LifetimeShare?: number;
 }
 
 export interface ToolAttribution {
@@ -116,12 +118,30 @@ export interface ToolAttribution {
     Count: number;
     EstTokens: number;
     Share: number;
+    LifetimeTokens?: number;
+    LifetimeShare?: number;
 }
 
+// LengthBucket mirrors experience.LengthBucket (LEARN-TASKS.md LN-29): the
+// project's runs of one length band in model turns and what they cost.
+// MaxTurns 0 = no upper bound.
+export interface LengthBucket {
+    MinTurns: number;
+    MaxTurns: number;
+    Runs: number;
+    CostUSD: number;
+    CostShare: number;
+    AvgCostUSD: number;
+}
+
+// Lifetime* (LN-29) price each result with its re-reads — absent in reports
+// from before LN-29, so optional.
 export interface AttributionReport {
     TotalEstTokens: number;
+    TotalLifetimeTokens?: number;
     BySignature: SignatureAttribution[];
     ByTool: ToolAttribution[];
+    ByLength?: LengthBucket[];
 }
 
 // fetchTokenAttribution aggregates a project's action_signatures result

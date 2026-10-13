@@ -371,7 +371,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetTopActions(project, days)` | Aggregated tool-call signatures for the "Actions" tab (LEARN-TASKS.md LN-03) |
 | `GetActionSamples(project, sig, limit)` | Concrete example rows for one signature — the "Actions" tab's click-through |
 | `GetDurationProfile(project)` | Median/p90/max/fail-rate duration profile per signature — the "Timing" tab (LEARN-TASKS.md LN-18) |
-| `GetTokenAttribution(project, topN)` | Estimated-token attribution by signature (top-N) and by tool — the "Cost by tool" tab (LEARN-TASKS.md LN-12) |
+| `GetTokenAttribution(project, topN)` | Estimated-token attribution by signature (top-N) and by tool, priced with re-reads (`LifetimeTokens`), plus cost by session length (`ByLength`) — the "Cost by tool" tab (LEARN-TASKS.md LN-12, LN-29) |
 | `GetPermissionCandidates(project, days)` | Suggested auto-allow permission rules, split into safe/needs-review — the "Permissions" tab (LEARN-TASKS.md LN-04) |
 | `AddPermissionRule(project, session, tool, pattern, decision)` | Append a `PermissionRule` to one session's config — the Permissions tab's "Add rule" button |
 | `GetSkillCandidates(project)` | Mine a project's recent `action_signatures` into ranked skill candidates — the Skills tab's "Candidates" list, and the only source of an `experience.SkillCandidate` to pass to `DistillSkill` below (LEARN-TASKS.md LN-08) |

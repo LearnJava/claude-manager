@@ -27,6 +27,19 @@ func EstimateTokens(chars int) int {
 	return chars / CharsPerToken
 }
 
+// Re-read weights (LEARN-TASKS.md LN-29). A tool result enters the prompt
+// cache once and is read back on every later model call of the session, so
+// its real price is tokens × (cacheWriteWeight + cacheReadWeight × calls
+// after it), in units of uncached input tokens: a 1-hour cache write costs
+// 2× the input price, a cache read 0.1×. Same model as the study's
+// cost_attribution.py (docs/Science_lab), where re-reading was 65% of spend.
+// Steps (tool calls) stand in for model calls — every tool result is
+// followed by one.
+const (
+	cacheWriteWeight = 2.0
+	cacheReadWeight  = 0.1
+)
+
 // attributionWindowDays bounds BuildAttributionReport the same way
 // TopSignatures/DurationProfile bound their own windows — "what's burning
 // context right now", not a command that was expensive a year ago.
@@ -42,26 +55,52 @@ type SignatureAttribution struct {
 	Share          float64 // fraction of the report's TotalEstTokens; 0 when TotalEstTokens is 0
 	AvgResultChars float64
 	MaxResultChars int
+	// LifetimeTokens is EstTokens priced with re-reads (cacheWriteWeight,
+	// cacheReadWeight), LifetimeShare its fraction of TotalLifetimeTokens —
+	// the order the report is sorted in (LN-29).
+	LifetimeTokens int64
+	LifetimeShare  float64
 }
 
 // ToolAttribution is the same volume rolled up by tool alone — the "which
 // tool is actually burning context" cut (LEARN-TASKS.md LN-12: "второй срез —
 // по инструменту").
 type ToolAttribution struct {
-	Tool      string
-	Count     int
-	EstTokens int64
-	Share     float64
+	Tool           string
+	Count          int
+	EstTokens      int64
+	Share          float64
+	LifetimeTokens int64
+	LifetimeShare  float64
 }
+
+// LengthBucket is the project's runs of one length band (model turns) and
+// what they cost (LEARN-TASKS.md LN-29): long sessions re-read a large
+// context on every call, so a minority of them carries most of the spend.
+// MaxTurns 0 means no upper bound.
+type LengthBucket struct {
+	MinTurns   int
+	MaxTurns   int
+	Runs       int
+	CostUSD    float64
+	CostShare  float64
+	AvgCostUSD float64
+}
+
+// lengthBands are the study's session-length buckets, so the app's numbers
+// compare directly with docs/Science_lab/MEASURE.md.
+var lengthBands = [][2]int{{1, 20}, {21, 50}, {51, 100}, {101, 150}, {151, 250}, {251, 0}}
 
 // AttributionReport is BuildAttributionReport's result. TotalEstTokens is the
 // sum across *every* signature seen in the window, not just the reported
 // top-N BySignature slice, so Share always reflects the whole project's
 // volume regardless of how the report was truncated.
 type AttributionReport struct {
-	TotalEstTokens int64
-	BySignature    []SignatureAttribution
-	ByTool         []ToolAttribution
+	TotalEstTokens      int64
+	TotalLifetimeTokens int64
+	BySignature         []SignatureAttribution
+	ByTool              []ToolAttribution
+	ByLength            []LengthBucket
 }
 
 // BuildAttributionReport aggregates a project's action_signatures
@@ -86,15 +125,19 @@ func BuildAttributionReport(st *store.Store, project string, topN int) (Attribut
 		count int
 		chars int64
 		maxCh int
+		life  float64
 	}
 	sigGroups := make(map[string]*acc)
 	var sigOrder []string
 	toolGroups := make(map[string]*acc)
 	var toolOrder []string
 	var totalChars int64
+	var totalLife float64
 
 	for _, r := range rows {
 		totalChars += int64(r.ResultChars)
+		life := float64(EstimateTokens(r.ResultChars)) * (cacheWriteWeight + cacheReadWeight*float64(r.Remaining))
+		totalLife += life
 
 		sg, ok := sigGroups[r.Sig]
 		if !ok {
@@ -104,6 +147,7 @@ func BuildAttributionReport(st *store.Store, project string, topN int) (Attribut
 		}
 		sg.count++
 		sg.chars += int64(r.ResultChars)
+		sg.life += life
 		if r.ResultChars > sg.maxCh {
 			sg.maxCh = r.ResultChars
 		}
@@ -116,6 +160,7 @@ func BuildAttributionReport(st *store.Store, project string, topN int) (Attribut
 		}
 		tg.count++
 		tg.chars += int64(r.ResultChars)
+		tg.life += life
 	}
 
 	// Computed once from the true total rather than summed from each group's
@@ -129,6 +174,18 @@ func BuildAttributionReport(st *store.Store, project string, topN int) (Attribut
 		}
 		return float64(EstimateTokens(int(chars))) / float64(total)
 	}
+	lifeShare := func(life float64) float64 {
+		if totalLife == 0 {
+			return 0
+		}
+		return life / totalLife
+	}
+	byLife := func(a, b, estA, estB int64) bool {
+		if a != b {
+			return a > b
+		}
+		return estA > estB
+	}
 
 	bySig := make([]SignatureAttribution, 0, len(sigOrder))
 	for _, sig := range sigOrder {
@@ -141,9 +198,13 @@ func BuildAttributionReport(st *store.Store, project string, topN int) (Attribut
 			Share:          share(g.chars),
 			AvgResultChars: float64(g.chars) / float64(g.count),
 			MaxResultChars: g.maxCh,
+			LifetimeTokens: int64(g.life),
+			LifetimeShare:  lifeShare(g.life),
 		})
 	}
-	sort.Slice(bySig, func(i, j int) bool { return bySig[i].EstTokens > bySig[j].EstTokens })
+	sort.Slice(bySig, func(i, j int) bool {
+		return byLife(bySig[i].LifetimeTokens, bySig[j].LifetimeTokens, bySig[i].EstTokens, bySig[j].EstTokens)
+	})
 	if topN > 0 && len(bySig) > topN {
 		bySig = bySig[:topN]
 	}
@@ -154,15 +215,61 @@ func BuildAttributionReport(st *store.Store, project string, topN int) (Attribut
 		byTool = append(byTool, ToolAttribution{
 			Tool:      tool,
 			Count:     g.count,
-			EstTokens: int64(EstimateTokens(int(g.chars))),
-			Share:     share(g.chars),
+			EstTokens:      int64(EstimateTokens(int(g.chars))),
+			Share:          share(g.chars),
+			LifetimeTokens: int64(g.life),
+			LifetimeShare:  lifeShare(g.life),
 		})
 	}
-	sort.Slice(byTool, func(i, j int) bool { return byTool[i].EstTokens > byTool[j].EstTokens })
+	sort.Slice(byTool, func(i, j int) bool {
+		return byLife(byTool[i].LifetimeTokens, byTool[j].LifetimeTokens, byTool[i].EstTokens, byTool[j].EstTokens)
+	})
+
+	runs, err := st.RunLengthCosts(project, attributionWindowDays)
+	if err != nil {
+		return AttributionReport{}, err
+	}
 
 	return AttributionReport{
-		TotalEstTokens: total,
-		BySignature:    bySig,
-		ByTool:         byTool,
+		TotalEstTokens:      total,
+		TotalLifetimeTokens: int64(totalLife),
+		BySignature:         bySig,
+		ByTool:              byTool,
+		ByLength:            bucketByLength(runs),
 	}, nil
+}
+
+// bucketByLength groups runs into lengthBands; empty bands are dropped and
+// runs with no recorded turn count are left out.
+func bucketByLength(runs []store.RunLengthCost) []LengthBucket {
+	var total float64
+	buckets := make([]LengthBucket, len(lengthBands))
+	for i, b := range lengthBands {
+		buckets[i] = LengthBucket{MinTurns: b[0], MaxTurns: b[1]}
+	}
+	for _, r := range runs {
+		if r.Turns <= 0 {
+			continue
+		}
+		for i := range buckets {
+			if r.Turns >= buckets[i].MinTurns && (buckets[i].MaxTurns == 0 || r.Turns <= buckets[i].MaxTurns) {
+				buckets[i].Runs++
+				buckets[i].CostUSD += r.CostUSD
+				total += r.CostUSD
+				break
+			}
+		}
+	}
+	out := make([]LengthBucket, 0, len(buckets))
+	for _, b := range buckets {
+		if b.Runs == 0 {
+			continue
+		}
+		b.AvgCostUSD = b.CostUSD / float64(b.Runs)
+		if total > 0 {
+			b.CostShare = b.CostUSD / total
+		}
+		out = append(out, b)
+	}
+	return out
 }

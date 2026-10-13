@@ -102,6 +102,7 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-26 | ✓ DONE (2026-10-01) | internal/experience/skillpilot.go (evaluate, trial rules) |
 | LN-27 | ✓ DONE (2026-10-01) | internal/session/manager.go (SetSkillAutopilot), app.go, internal/config, SkillReview.svelte |
 | LN-28 | ✓ DONE (2026-10-13) | internal/session/handoff_budget.go, session.go, internal/config/types.go |
+| LN-29 | ✓ DONE (2026-10-13) | internal/experience/attribution.go, internal/store/store.go, ExperiencePanel.svelte |
 
 > LN-17 и LN-18 дописаны после разведки корпуса. LN-17 по приоритету идёт
 > **третьим**, сразу за LN-02 (без него нечего анализировать); LN-18 — после
@@ -1470,3 +1471,27 @@ p50 = 782, максимум 8692). Абсолютный порог над вел
 на вызов, пересёкший бюджет; повтор и предел; интерактивный прогон не трогается.
 Эффект — по `docs/Science_lab/MEASURE.md` (доля затрат в сессиях >100 вызовов,
 контекст на вызов).
+
+## LN-29: Цена перечитывания и длина сессии во вкладке «Стоимость»
+
+**Depends on:** LN-12
+**Files:** `internal/experience/attribution.go`, `attribution_lifetime_test.go`,
+`internal/store/store.go` (ActionResultChars, RunLengthCosts),
+`frontend/src/components/ExperiencePanel.svelte`, `stores/experience.ts`
+
+LN-12 считает объём вывода, а платим за перечитывание: результат один раз
+пишется в кэш промпта и читается заново на каждом следующем вызове сессии
+(в исследовании `docs/Science_lab` — 65 % затрат). Ранний небольшой результат
+длинной сессии дороже большого в её конце.
+
+**Логика:** для каждой строки `action_signatures` — сколько шагов той же
+CLI-сессии было после неё (оконная функция по `step_index`); цена =
+токены × (2 + 0.1 × шагов после) в единицах некэшированного входа. Оба среза
+сортируются по ней, объём остаётся рядом. Отдельно — прогоны менеджера с
+известной стоимостью по полосам длины (1–20 … 251+ ходов), те же, что в
+`docs/Science_lab/MEASURE.md`: видно, ушли ли затраты из длинных сессий после
+LN-28.
+
+**Готово когда:** тесты — ранний результат обгоняет поздний больший; шаги другой
+CLI-сессии не считаются перечитыванием; полосы длины без прогонов без стоимости
+и без числа ходов; вкладка показывает столбцы и таблицу (EXP-24a).

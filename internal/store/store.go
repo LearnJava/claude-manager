@@ -1217,15 +1217,22 @@ type ResultCharsRow struct {
 	Sig         string
 	Tool        string
 	ResultChars int
+	// Remaining is how many steps of the same CLI session (run, or session
+	// name when neither id is known) came after this one: each re-read the
+	// result as part of the conversation (LEARN-TASKS.md LN-29).
+	Remaining int
 }
 
 // ActionResultChars returns every action_signatures row's (sig, tool,
-// result_chars) for project over the last sinceDays days — including rows
-// with result_chars==0 (no result ever captured), unlike ActionDurations:
-// those calls still happened and must count toward Count, they simply
-// contribute nothing to the token estimate (LEARN-TASKS.md LN-12).
+// result_chars, steps after it) for project over the last sinceDays days —
+// including rows with result_chars==0 (no result ever captured), unlike
+// ActionDurations: those calls still happened and must count toward Count,
+// they simply contribute nothing to the token estimate (LEARN-TASKS.md LN-12).
 func (s *Store) ActionResultChars(project string, sinceDays int) ([]ResultCharsRow, error) {
-	const q = `SELECT sig, tool, result_chars FROM action_signatures
+	const q = `SELECT sig, tool, result_chars,
+       MAX(step_index) OVER (PARTITION BY COALESCE(NULLIF(cli_session_id, ''), CAST(run_id AS TEXT), session))
+         - step_index
+    FROM action_signatures
     WHERE project=? AND ts >= datetime('now', ?)`
 	rows, err := s.db.Query(q, project, fmt.Sprintf("-%d days", sinceDays))
 	if err != nil {
@@ -1236,7 +1243,40 @@ func (s *Store) ActionResultChars(project string, sinceDays int) ([]ResultCharsR
 	var out []ResultCharsRow
 	for rows.Next() {
 		var r ResultCharsRow
-		if err := rows.Scan(&r.Sig, &r.Tool, &r.ResultChars); err != nil {
+		if err := rows.Scan(&r.Sig, &r.Tool, &r.ResultChars, &r.Remaining); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// RunLengthCost is one finished run's length in model turns and its cost —
+// the sample experience.BuildAttributionReport buckets by session length
+// (LEARN-TASKS.md LN-29).
+type RunLengthCost struct {
+	Turns   int
+	CostUSD float64
+}
+
+// RunLengthCosts returns (num_turns, total_cost_usd) of project's runs
+// started over the last sinceDays days whose cost is known (> 0): runs that
+// never reported a result (killed, Hermes without cost) would only dilute
+// the cost shares. started_at is a Go time string; its leading
+// "YYYY-MM-DD HH:MM:SS" compares correctly with SQLite's datetime().
+func (s *Store) RunLengthCosts(project string, sinceDays int) ([]RunLengthCost, error) {
+	const q = `SELECT num_turns, total_cost_usd FROM session_runs
+    WHERE project=? AND total_cost_usd > 0 AND substr(started_at, 1, 19) >= datetime('now', ?)`
+	rows, err := s.db.Query(q, project, fmt.Sprintf("-%d days", sinceDays))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []RunLengthCost
+	for rows.Next() {
+		var r RunLengthCost
+		if err := rows.Scan(&r.Turns, &r.CostUSD); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
