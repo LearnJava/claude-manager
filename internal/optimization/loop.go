@@ -159,7 +159,8 @@ func (d *LoopDetector) Reset() {
 // NormalizeInput produces a canonical representation of a tool's input for
 // loop detection. Rules from PLAN.md 20.3.8:
 //
-//   - Bash         → first 80 chars of the command
+//   - Bash         → the command, first 2000 chars (a short cut collided on a
+//     shared "cd <long path> &&" prefix)
 //   - Read         → file path, plus " @offset:limit" when a range is read,
 //     so reading a large file in parts is not a loop
 //   - Edit         → file path, plus " | " and the first 60 chars of
@@ -178,7 +179,9 @@ func NormalizeInput(tool string, inputs map[string]string) string {
 
 	switch tool {
 	case "Bash":
-		return truncate(get("command"), 80)
+		// Not the first 80 chars: commands like "cd <long project path> && ..."
+		// share a prefix longer than that and different commands collided.
+		return truncate(get("command"), 2000)
 	case "Read":
 		if off, lim := get("offset"), get("limit"); off != "" || lim != "" {
 			return get("file_path") + " @" + off + ":" + lim

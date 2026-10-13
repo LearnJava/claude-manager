@@ -170,7 +170,7 @@ func TestNormalizeInput(t *testing.T) {
 		want   string
 	}{
 		{"bash command", "Bash", map[string]string{"command": "ls -la"}, "ls -la"},
-		{"bash truncates", "Bash", map[string]string{"command": long}, long[:80]},
+		{"bash keeps long commands apart", "Bash", map[string]string{"command": long}, long},
 		{"read path", "Read", map[string]string{"file_path": "src/x.go"}, "src/x.go"},
 		{"edit path", "Edit", map[string]string{"file_path": "src/x.go"}, "src/x.go"},
 		{"write path", "Write", map[string]string{"file_path": "src/x.go"}, "src/x.go"},
