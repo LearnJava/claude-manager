@@ -692,7 +692,11 @@ redirected — i.e. whenever the launcher is started by another process.
 **Update on launch.** Before the relaunch loop, the launcher runs
 `git fetch`, fast-forwards (`pull --ff-only --autostash`) if `origin` is ahead,
 and rebuilds when `HEAD` differs from the commit recorded in
-`build/bin/claude-manager.commit` (written after a successful build). So
+`build/bin/claude-manager.commit` (written after a successful build). The
+rebuild is `wails build -nosyncgomod` — never a bare `go build`, which leaves
+the frontend bindings stale and the exe without icon and manifest (see
+`docs/architecture.md` "Build & Run"); the bare build remains only as a warned
+fallback when no `wails` CLI is on `PATH` or in `GOPATH\bin`. So
 "update" is just starting the launcher again — no deleting the exe. It happens
 only at launch, never mid-run: the manager's restart kills every session (Job
 Object), so the moment is the user's. Not a git checkout, offline, or a failed

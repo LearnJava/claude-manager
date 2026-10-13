@@ -404,14 +404,30 @@ All exported methods become async JS functions via auto-generated bindings in `f
 ## Build & Run
 
 ```bash
-wails dev          # Dev mode (hot reload frontend)
-wails build        # Production: build/bin/claude-manager.exe (~15-20 MB)
+wails dev                    # Dev mode (hot reload frontend)
+wails build -nosyncgomod     # Production: build/bin/claude-manager.exe (~19 MB)
+run-claude-manager.bat       # What the user runs: pull origin, rebuild if HEAD moved, relaunch loop
 ```
 
-The Wails CLI must match `github.com/wailsapp/wails/v2` in `go.mod` (v2.16.0). An older CLI fails
-on a newer Go before compiling anything — CLI v2.12 with Go 1.27 stops at `internal error: package
-"os" without types`, with or without `-skipbindings`; `GOTOOLCHAIN=go1.25.0 wails build` was the
-stopgap until the 2.16 bump.
+**Only `wails build` makes a correct exe.** Besides compiling, it runs `npm install`/`npm run build`,
+regenerates the frontend bindings (`frontend/wailsjs` — gitignored, so they exist only after a Wails
+step) and embeds the Windows resources from `build/windows/` (icon; manifest with per-monitor-v2 DPI
+awareness and Common Controls v6; version info). A bare `go build -tags desktop,production` — which
+the launcher used for a while — produced an exe with the generic Windows icon, no manifest (blurry
+at display scaling above 100%) and whatever bindings were left on disk; once a bound method is added
+upstream the frontend build fails and the launcher keeps the old exe. Measured 2026-10-13: 39 s for
+`wails build` against 17 s for the bare build, both with the frontend steps; the launcher rebuilds
+only when a pull moved `HEAD`, so the difference is paid per update, not per start. The bare build
+stays in the launcher only as a warned fallback when no `wails` CLI is found.
+
+The Wails CLI must match `github.com/wailsapp/wails/v2` in `go.mod` (v2.16.0):
+`go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0`. An older CLI fails on a newer Go before
+compiling anything — CLI v2.12 with Go 1.27 stops at `internal error: package "os" without types`,
+with or without `-skipbindings`; `GOTOOLCHAIN=go1.25.0 wails build` was the stopgap until the 2.16
+bump. `-nosyncgomod` keeps Wails from editing `go.mod`, yet `wails build` still rewrites it with LF
+line endings, content unchanged; the launcher puts the checkout copy back when `git diff` shows no
+content change. `frontend/package.json.md5` (Wails' "did package.json change" hash) depends on the
+checkout's line endings, so it is gitignored rather than re-committed after every build.
 
 
 ## Go Dependencies

@@ -35,7 +35,7 @@ if git -C "$SCRIPT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
     built=$(cat "$STAMP" 2>/dev/null || true)
     if [ ! -x "$EXE" ] || [ "$head_rev" != "$built" ]; then
         echo "Building claude-manager at $head_rev..."
-        if (cd "$SCRIPT_DIR" && CGO_ENABLED=1 wails build -tags webkit2_41); then
+        if (cd "$SCRIPT_DIR" && CGO_ENABLED=1 wails build -nosyncgomod -tags webkit2_41); then
             echo "$head_rev" > "$STAMP"
         else
             echo "WARNING: build failed." >&2
@@ -43,7 +43,7 @@ if git -C "$SCRIPT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
     fi
 elif [ ! -x "$EXE" ]; then
     echo "claude-manager not found, building..."
-    (cd "$SCRIPT_DIR" && CGO_ENABLED=1 wails build -tags webkit2_41)
+    (cd "$SCRIPT_DIR" && CGO_ENABLED=1 wails build -nosyncgomod -tags webkit2_41)
 fi
 if [ ! -x "$EXE" ]; then
     echo "Build failed: claude-manager still missing." >&2
