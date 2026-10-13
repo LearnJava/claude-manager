@@ -75,6 +75,14 @@ func TestReadTaskQueue_PrefersIntegrationBranch(t *testing.T) {
 		t.Fatalf("pointer = %q, want ROADMAP.md:331 (from origin/main, not the stale checkout)", got)
 	}
 
+	// task_source typed in another case than the file (Lumen has "STATUS-P3.MD"
+	// for STATUS-P3.md). git tree paths are case-sensitive on every OS, so
+	// without the case fix `git show` missed the file: Windows then read the
+	// stale checkout (BUGS.md:291), Linux found nothing at all.
+	if got := firstTaskPointer(readTaskQueue(context.Background(), root, "status-p6.MD")); got != "ROADMAP.md:331" {
+		t.Fatalf("mistyped case: pointer = %q, want ROADMAP.md:331 from origin/main", got)
+	}
+
 	// No remote: falls back to the file on disk.
 	plain := t.TempDir()
 	os.WriteFile(filepath.Join(plain, "Q.md"), []byte("A.md:1\n"), 0o644)
