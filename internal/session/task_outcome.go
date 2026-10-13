@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"claude-manager/internal/fsutil"
 	"claude-manager/internal/gitutil"
 	"claude-manager/internal/logger"
 	"claude-manager/internal/proc"
@@ -83,6 +84,11 @@ func readTaskQueue(ctx context.Context, projectPath, taskSource string) string {
 		abs = filepath.Join(projectPath, abs)
 	}
 	if projectPath != "" {
+		// task_source may differ in case from the file ("STATUS-P3.MD" for
+		// STATUS-P3.md). git tree paths are case-sensitive on every OS, so
+		// spell it as on disk before asking origin — otherwise Windows reads
+		// the possibly stale checkout instead and Linux finds nothing.
+		abs = fsutil.ResolveCaseInsensitive(projectPath, abs)
 		if rel, err := filepath.Rel(projectPath, abs); err == nil && !strings.HasPrefix(rel, "..") {
 			rel = filepath.ToSlash(rel)
 			fctx, cancel := context.WithTimeout(ctx, queueFetchTimeout)

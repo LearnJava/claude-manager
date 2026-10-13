@@ -10,27 +10,26 @@ import (
 	"strings"
 )
 
-// ResolveCaseInsensitive case-corrects path's components relative to root,
-// for a path that was typed or copy-pasted on a case-insensitive filesystem
-// (Windows, default macOS) and is now being read on a case-sensitive one
-// (Linux) — e.g. a configured task_source of "STATUS-P3.MD" when the real
-// file on disk is "STATUS-P3.md". Read that way, the mismatch looks
-// identical to a genuinely missing file.
+// ResolveCaseInsensitive returns path with each component below root spelled
+// the way it is on disk, for a path typed or copy-pasted in another case —
+// e.g. a configured task_source of "STATUS-P3.MD" when the real file is
+// "STATUS-P3.md". On a case-sensitive filesystem (Linux) the mistyped path
+// does not open at all; on a case-insensitive one (Windows, default macOS)
+// it opens, so os.Stat cannot be trusted to mean "spelled right" — and every
+// case-sensitive consumer still misses it: `git show origin/main:STATUS-P3.MD`
+// fails on any OS, git tree paths being case-sensitive. So the walk runs on
+// every OS.
 //
-// If path already exists as given, it is returned unchanged (the common
-// case, and already correct on a case-insensitive filesystem — nothing
-// needed resolving). Otherwise each component of path below root is checked
-// case-insensitively against that directory's actual entries via a single
-// os.ReadDir, walking down one level at a time. The first component with no
-// case-insensitive match stops resolution and the original path is returned
-// unchanged, so a genuinely missing file still reports as missing.
-// Resolution never walks outside root: a path that does not resolve to
-// somewhere under root (e.g. via "..") is returned unchanged.
+// Each component below root is looked up among its directory's actual
+// entries (one os.ReadDir per level): an exact match wins — on a
+// case-sensitive filesystem "a.md" and "A.md" can both exist — otherwise the
+// first case-insensitive one. The first component with no match stops
+// resolution and the original path is returned unchanged, so a genuinely
+// missing file still reports as missing; a path that needed no correction is
+// returned unchanged too, byte for byte. Resolution never walks outside root:
+// a path that does not resolve to somewhere under root (e.g. via "..") is
+// returned unchanged.
 func ResolveCaseInsensitive(root, path string) string {
-	if _, err := os.Stat(path); err == nil {
-		return path
-	}
-
 	root = filepath.Clean(root)
 	clean := filepath.Clean(path)
 
@@ -39,15 +38,9 @@ func ResolveCaseInsensitive(root, path string) string {
 		return path
 	}
 
-	parts := strings.Split(rel, string(filepath.Separator))
 	current := root
-	for _, part := range parts {
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
 		if part == "." || part == "" {
-			continue
-		}
-		candidate := filepath.Join(current, part)
-		if _, err := os.Stat(candidate); err == nil {
-			current = candidate
 			continue
 		}
 		entries, err := os.ReadDir(current)
@@ -56,15 +49,21 @@ func ResolveCaseInsensitive(root, path string) string {
 		}
 		matched := ""
 		for _, e := range entries {
-			if strings.EqualFold(e.Name(), part) {
-				matched = e.Name()
+			if e.Name() == part {
+				matched = part
 				break
+			}
+			if matched == "" && strings.EqualFold(e.Name(), part) {
+				matched = e.Name()
 			}
 		}
 		if matched == "" {
 			return path
 		}
 		current = filepath.Join(current, matched)
+	}
+	if current == clean {
+		return path
 	}
 	return current
 }
