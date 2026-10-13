@@ -679,8 +679,9 @@ func (a *App) StartAdHocChatSession(project string) error {
 }
 
 // upsertChatSession ensures project has a "Chat" SessionConfig, creating a
-// bare one (no prompt, no task_source, no auto_restart — Model/Effort/
-// PermissionMode fall back to the usual applySessionDefaults) if absent.
+// one (no prompt, no task_source, no auto_restart — Model/Effort/
+// PermissionMode fall back to the usual applySessionDefaults; worktree,
+// primer, handoff and ask-user on like any new session) if absent.
 // An existing "Chat" session is left untouched, so a user's manual edits
 // (model, effort, a prompt they added later) survive repeated clicks.
 // Reports whether project was found. Operates on cloned slices so it never
@@ -696,7 +697,16 @@ func upsertChatSession(cfg *config.AppConfig, project string) bool {
 			}
 		}
 		sessions := append([]config.SessionConfig(nil), cfg.Projects[pi].Sessions...)
-		sessions = append(sessions, config.SessionConfig{Name: "Chat"})
+		// Same defaults as a session added in Settings (the reference
+		// session, Lumen browser S1).
+		sessions = append(sessions, config.SessionConfig{
+			Name:                 "Chat",
+			UseWorktree:          true,
+			ContextPrimer:        true,
+			ContextHandoff:       true,
+			AskUserMarker:        true,
+			HandoffContextTokens: 150000,
+		})
 		cfg.Projects[pi].Sessions = sessions
 		return true
 	}
