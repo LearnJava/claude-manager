@@ -191,11 +191,18 @@ rate_limit_alert_threshold = 0.80         # Уведомление при ути
 # Окружение сессий
 python_utf8 = true                        # PYTHONUTF8=1 и PYTHONIOENCODING=utf-8 для Claude-сессий (заданное значение не трогается)
 
+# Копия проектов в Claude Manager (internal/mirror): у проектов с mirror = true
+# настройки и сохранённые логи копируются в mirror_dir и коммитятся в локальный
+# git-репозиторий без remote. Пусто = <checkout claude-manager>/projects.
+mirror_dir = ""
+mirror_interval_min = 15                  # период пересинхронизации, 0 = только старт/сохранение/кнопка
+
 # ─── Проект 1 ───────────────────────────────────────────
 
 [[project]]
 name = "lumen-browser"
 path = 'D:\RustProjects\lumen-browser'
+mirror = true                             # копия настроек и логов в mirror_dir (флаг менеджера, в папку проекта не пишется)
 
   [[project.session]]
   name = "P1"

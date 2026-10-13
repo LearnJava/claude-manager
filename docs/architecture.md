@@ -23,6 +23,9 @@ claude-manager/
 │   │   │                            #   ProjectConfig, SessionConfig, PermissionRule,
 │   │   │                            #   WorkerConfig (mixed programming, MIXED-TASKS.md)
 │   │   └── config.go                # Load/save TOML, defaults, validation
+│   ├── mirror/
+│   │   └── mirror.go                # Local copy of mirrored projects' settings + saved logs in
+│   │                                #   <checkout>/projects/<name>/, own git repo, no remote
 │   ├── logger/
 │   │   └── logger.go                # Global slog logger (logger.L); Init() opens app.log
 │   ├── session/
@@ -393,6 +396,10 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `CleanOldLogs(days)` | Delete logs older than N days from SQLite |
 | `GetProjectLogFiles(project)` | List auto-saved log files under `<project>/.claude-manager/logs/` (name/size/mod_time) |
 | `ClearProjectLogs(project)` | Delete a project's saved log files + their `session_logs` SQLite rows (keeps `session_runs`) |
+| `MirrorProject(project)` | "Mirror into Claude Manager": set the project's `mirror` flag and sync it now → `ProjectMirrorStatus` |
+| `UnmirrorProject(project)` | Clear the `mirror` flag; the copy and its history stay |
+| `SyncProjectMirrors()` | Re-sync every mirrored project now → `[]mirror.Result` |
+| `GetProjectMirror(project)` | `{enabled, dir, lastSync, files, error}` for Settings |
 | `ClearSessionState(project, name)` | Delete crash-recovery state file (equivalent to --new) |
 | `GetSessionState(project, name)` | Return persisted state (session_id + started_at) or nil |
 | `PickDirectory(title)` | Native folder picker dialog |

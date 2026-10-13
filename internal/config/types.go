@@ -111,6 +111,16 @@ type GlobalSettings struct {
 	// it 8.6% of Python runs in Lumen's sessions returned unreadable output
 	// (docs/Science_lab/MEASURE.md). Default true.
 	PythonUTF8 bool `toml:"python_utf8"`
+
+	// MirrorDir is where projects with mirror = true get a local copy of
+	// their settings and saved logs (internal/mirror). Empty = auto: the
+	// projects/ folder of the claude-manager checkout the app was built in,
+	// else ~/.claude-manager/projects.
+	MirrorDir string `toml:"mirror_dir"`
+	// MirrorIntervalMin is how often mirrored projects are re-synced, in
+	// minutes. 0 disables the timer (sync then runs only on start, on
+	// settings save and from the button). Default 15.
+	MirrorIntervalMin int `toml:"mirror_interval_min"`
 }
 
 // ProjectOverlay is the per-project configuration stored inside the project
@@ -189,6 +199,14 @@ type ProjectConfig struct {
 	// the same name (LEARN-TASKS.md LN-25..27). Private-layer opt-in, off.
 	AutoSkills               bool    `toml:"auto_skills"`
 	AutoSkillsDailyBudgetUSD float64 `toml:"auto_skills_daily_budget_usd"`
+
+	// Mirror keeps a local copy of this project's settings and saved logs in
+	// the manager's mirror folder (GlobalSettings.MirrorDir), re-synced
+	// periodically and committed to a local-only git repository there, so an
+	// agent working in the claude-manager folder can inspect the project.
+	// Manager-side flag: stored in the global [[project]] entry, never in
+	// the project folder. Default off.
+	Mirror bool `toml:"mirror"`
 }
 
 type SessionConfig struct {

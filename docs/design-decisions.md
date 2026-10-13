@@ -43,6 +43,47 @@ themselves. Workers stay global (reusable presets, and the home-dir file is
 never in a repo). `MixedProgramming` is a `*bool` in `ProjectOverlay` so an
 absent overlay field leaves the global value untouched.
 
+### Project Mirror (a Copy of Each Project in the Manager's Folder)
+Settings live in each project's folder (above), so an agent working in the
+claude-manager folder could not see how Lumen or any other project is set up,
+what its sessions run or what its last runs logged. "Mirror into Claude
+Manager" in Settings → Projects sets `mirror = true` on the project and from
+then on `internal/mirror` keeps a copy under the mirror folder:
+
+```
+projects/                     <checkout>/projects, or [settings] mirror_dir
+├── .git/                     own repository, no remote — never pushed
+├── README.md                 index: project → folder
+└── <name>/
+    ├── PROJECT.md            folder path, sessions, list of copied files
+    ├── effective-config.toml the ProjectConfig the manager runs (global + overlay)
+    └── files/                CLAUDE.md, .mcp.json, .claude/{settings*.json,hooks,skills,
+                              agents,commands}, .claude-manager/{config*.toml,journal.md,
+                              logs,archived-skills}, each session's task_source
+```
+
+- **The project folder stays the source of truth.** Sync only reads from it;
+  the copy is overwritten, and files deleted in the project are deleted from
+  the copy (their content stays in the mirror's git history). Nothing is ever
+  written into the project.
+- **Where.** Default is `projects/` in the checkout the running exe was built
+  in (`<checkout>/build/bin/claude-manager.exe`, how `run-claude-manager.bat`
+  builds it) — the folder agents in claude-manager work in. It is in the
+  checkout's `.gitignore` and has its own `.git`, so mirror commits never land
+  in claude-manager's history and a developer session's `git push` of master
+  cannot carry them anywhere. Elsewhere (no checkout) it falls back to
+  `~/.claude-manager/projects`.
+- **When.** 10 s after start, after every `UpdateConfig`, every
+  `mirror_interval_min` minutes (default 15, 0 = timer off) and from the
+  "Sync now" button; one sync covers all mirrored projects and makes at most
+  one commit, only when something changed. Syncs are serialized by a mutex.
+- **The flag is manager-side.** `mirror` is kept in the global `[[project]]`
+  pointer (`UpdateConfig` carries it when shrinking the entry), not in the
+  project's overlay — it is about this machine's manager, not the repo.
+- **Commits** use a per-command identity (`-c user.name=claude-manager`), so no
+  git config is written, and `core.autocrlf=false` so copies are byte-exact.
+  Files over 5 MB are skipped.
+
 ### Bidirectional Streaming
 Sessions use `--input-format stream-json` + `--output-format stream-json`. Manager writes to stdin (user messages, permission responses) and reads stdout (events). This enables interactive sessions, not just one-shot `-p` calls.
 

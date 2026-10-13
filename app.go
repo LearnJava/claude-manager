@@ -275,6 +275,8 @@ func (a *App) startup(ctx context.Context) {
 	runtime.LogInfo(ctx, "Claude Session Manager started")
 	runtime.EventsEmit(ctx, "app:ready")
 
+	a.startMirrorLoop(ctx)
+
 	go func() {
 		defer logger.Recover("window.ensure_on_screen")
 		// Give the native window a moment to settle before reading its position.
@@ -1101,7 +1103,7 @@ func (a *App) UpdateConfig(cfg config.AppConfig) error {
 				// Register it as a pointer only and let the reload below
 				// merge the existing overlay in, exactly like any other
 				// already-known project.
-				global.Projects[i] = config.ProjectConfig{Name: p.Name, Path: p.Path}
+				global.Projects[i] = config.ProjectConfig{Name: p.Name, Path: p.Path, Mirror: p.Mirror}
 				continue
 			}
 			// Local workers have no field on ProjectConfig for the frontend
@@ -1117,7 +1119,7 @@ func (a *App) UpdateConfig(cfg config.AppConfig) error {
 			if err := config.SaveProjectOverlay(p.Path, p, localWorkers); err != nil {
 				return err
 			}
-			global.Projects[i] = config.ProjectConfig{Name: p.Name, Path: p.Path}
+			global.Projects[i] = config.ProjectConfig{Name: p.Name, Path: p.Path, Mirror: p.Mirror}
 		} else {
 			// No writable project folder — keep the settings inline so they
 			// are not lost (e.g. a project whose path does not exist yet).
@@ -1137,6 +1139,7 @@ func (a *App) UpdateConfig(cfg config.AppConfig) error {
 	if a.manager != nil {
 		a.manager.SetConfig(reloaded)
 	}
+	kickMirror()
 	return nil
 }
 

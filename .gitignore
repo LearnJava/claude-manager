@@ -23,6 +23,10 @@ build/windows/*
 frontend/node_modules/
 frontend/dist/
 
+# Project mirror (internal/mirror): local copies of mirrored projects'
+# settings and logs, kept in their own local-only git repository.
+projects/
+
 # Orchestrator runtime files
 scripts/.taskstate.json
 scripts/.taskstate.json.tmp

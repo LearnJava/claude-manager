@@ -8,6 +8,10 @@
         GetLatestDraftRoadmap,
         GetProjectLogFiles,
         ClearProjectLogs,
+        GetProjectMirror,
+        MirrorProject,
+        UnmirrorProject,
+        SyncProjectMirrors,
         InstallSessionProtocol,
     } from '../../wailsjs/go/main/App';
     import { EventsOn } from '../../wailsjs/runtime/runtime';
@@ -84,6 +88,8 @@
         MixedProgramming: boolean;
         Gates: string[];
         MixedMaxRounds: number;
+        // Manager-side: keep a local copy of the project in the mirror folder.
+        Mirror?: boolean;
     }
 
     interface WorkerConfig {
@@ -586,7 +592,72 @@
         if (!cfg) return;
         cfg.Projects.forEach((p, i) => {
             if (p.Path) loadProjectLogInfo(i);
+            loadProjectMirror(i);
         });
+    }
+
+    // ---- Project mirror: a local copy of the project's settings and logs in
+    // the claude-manager folder (internal/mirror) ----
+    type MirrorStatus = { enabled: boolean; dir: string; lastSync: string; files: number; error: string };
+    let projectMirror: Record<number, MirrorStatus | null> = {};
+    let mirrorBusy: number | null = null;
+
+    async function loadProjectMirror(idx: number) {
+        if (!cfg) return;
+        const p = cfg.Projects[idx];
+        try {
+            projectMirror[idx] = (await GetProjectMirror(p.Name)) as MirrorStatus;
+        } catch {
+            projectMirror[idx] = null;
+        }
+        projectMirror = projectMirror;
+    }
+
+    async function mirrorProject(idx: number) {
+        if (!cfg) return;
+        const p = cfg.Projects[idx];
+        mirrorBusy = idx;
+        error = '';
+        try {
+            projectMirror[idx] = (await MirrorProject(p.Name)) as MirrorStatus;
+            projectMirror = projectMirror;
+            p.Mirror = true;
+            info = $t('settings.mirror.done', { project: p.Name });
+        } catch (e: any) {
+            error = $t('settings.mirror.failed', { error: e?.message ?? String(e) });
+            await loadProjectMirror(idx);
+        } finally {
+            mirrorBusy = null;
+        }
+    }
+
+    async function syncProjectMirror(idx: number) {
+        mirrorBusy = idx;
+        error = '';
+        try {
+            await SyncProjectMirrors();
+        } catch (e: any) {
+            error = $t('settings.mirror.failed', { error: e?.message ?? String(e) });
+        } finally {
+            await loadProjectMirror(idx);
+            mirrorBusy = null;
+        }
+    }
+
+    async function unmirrorProject(idx: number) {
+        if (!cfg) return;
+        const p = cfg.Projects[idx];
+        mirrorBusy = idx;
+        error = '';
+        try {
+            await UnmirrorProject(p.Name);
+            p.Mirror = false;
+            await loadProjectMirror(idx);
+        } catch (e: any) {
+            error = $t('settings.mirror.failed', { error: e?.message ?? String(e) });
+        } finally {
+            mirrorBusy = null;
+        }
     }
 
     function requestClearProjectLogs(idx: number) {
@@ -1230,6 +1301,61 @@
                                         </div>
                                         <p class="text-[11px] text-text-muted/70 leading-snug">
                                             {$t('settings.logs.description')}
+                                        </p>
+                                    </div>
+
+                                    <!-- Project mirror: local copy of settings + logs in the
+                                         claude-manager folder (internal/mirror) -->
+                                    <div class="border-t border-bg-border pt-2 mt-1 space-y-2" data-testid="project-mirror">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <span class="text-xs text-text-muted truncate" title={projectMirror[i]?.dir ?? ''}>
+                                                {#if !p.Path}
+                                                    {$t('settings.mirror.setPathFirst')}
+                                                {:else if projectMirror[i]?.enabled}
+                                                    {projectMirror[i]?.lastSync
+                                                        ? $t('settings.mirror.synced', { files: projectMirror[i]?.files ?? 0, time: new Date(projectMirror[i]?.lastSync ?? '').toLocaleString() })
+                                                        : $t('settings.mirror.enabled')}
+                                                {:else}
+                                                    {$t('settings.mirror.off')}
+                                                {/if}
+                                            </span>
+                                            <div class="flex items-center gap-1 shrink-0">
+                                                {#if projectMirror[i]?.enabled}
+                                                    <button
+                                                        type="button"
+                                                        on:click={() => syncProjectMirror(i)}
+                                                        disabled={mirrorBusy !== null}
+                                                        title={$t('settings.mirror.syncTitle')}
+                                                        class="px-2 py-0.5 text-xs rounded bg-bg border border-bg-border
+                                                               text-text-muted hover:text-text disabled:opacity-40 disabled:cursor-not-allowed">
+                                                        {#if mirrorBusy === i}…{:else}{$t('settings.mirror.syncButton')}{/if}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        on:click={() => unmirrorProject(i)}
+                                                        disabled={mirrorBusy !== null}
+                                                        title={$t('settings.mirror.stopTitle')}
+                                                        class="px-2 py-0.5 text-xs rounded bg-bg border border-bg-border
+                                                               text-text-muted hover:text-status-error disabled:opacity-40 disabled:cursor-not-allowed">
+                                                        {$t('settings.mirror.stopButton')}
+                                                    </button>
+                                                {:else}
+                                                    <button
+                                                        type="button"
+                                                        on:click={() => mirrorProject(i)}
+                                                        disabled={!p.Path || mirrorBusy !== null}
+                                                        class="px-2 py-0.5 text-xs rounded bg-accent/20 border border-accent/50
+                                                               text-text hover:bg-accent/30 disabled:opacity-40 disabled:cursor-not-allowed">
+                                                        {#if mirrorBusy === i}…{:else}{$t('settings.mirror.button')}{/if}
+                                                    </button>
+                                                {/if}
+                                            </div>
+                                        </div>
+                                        {#if projectMirror[i]?.error}
+                                            <p class="text-[11px] text-status-error leading-snug">{projectMirror[i]?.error}</p>
+                                        {/if}
+                                        <p class="text-[11px] text-text-muted/70 leading-snug">
+                                            {$t('settings.mirror.description')}
                                         </p>
                                     </div>
                                     <div class="border-t border-bg-border pt-2 mt-1 space-y-1">
