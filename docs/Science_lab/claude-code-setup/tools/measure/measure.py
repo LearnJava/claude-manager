@@ -428,6 +428,77 @@ def timed(cmd, runs):
     return statistics.median(ms)
 
 
+GO_HELLO = 'package main\n\nimport "fmt"\n\nfunc main() { fmt.Println("hi") }\n'
+GO_LOOP = ('package main\n\nimport (\n\t"fmt"\n\t"os"\n\t"strconv"\n\t"time"\n)\n\n'
+           'func main() {\n\tn, _ := strconv.Atoi(os.Args[1])\n\tt := time.Now()\n\ts := 0\n'
+           '\tfor i := 0; i < n; i++ {\n\t\ts += (i * i) % 7\n\t}\n'
+           '\tfmt.Println(float64(time.Since(t).Microseconds())/1000, s)\n}\n')
+RS_HELLO = 'fn main() { println!("hi"); }\n'
+# n comes from argv so the compiler cannot fold the loop away; the sum is printed so it is not dead code
+RS_LOOP = ('use std::time::Instant;\nfn main() {\n    let n: u64 = std::env::args().nth(1).unwrap().parse().unwrap();\n'
+           '    let t = Instant::now();\n    let mut s: u64 = 0;\n    for i in 0..n { s += (i * i) % 7; }\n'
+           '    println!("{} {}", t.elapsed().as_secs_f64() * 1000.0, s);\n}\n')
+
+
+def once(cmd, cwd=None, env=None, timeout=900):
+    t = time.perf_counter()
+    r = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout)
+    return (time.perf_counter() - t) * 1000, r
+
+
+def compiled(runs, tmp):
+    """Compile-and-run costs of the compiled toolchains found here; returns (name, argv) of their loop
+    binaries — speed() appends the iteration count."""
+    go, rustc, cargo, node = shutil.which("go"), shutil.which("rustc"), shutil.which("cargo"), shutil.which("node")
+    rows, loops = [], []
+    exe = ".exe" if os.name == "nt" else ""
+    if go:
+        d = tmp / "go"
+        d.mkdir()
+        (d / "hello.go").write_text(GO_HELLO, encoding="utf-8")
+        ms, _ = once([go, "run", "hello.go"], cwd=d)
+        rows.append(("Go: `go run hello.go`, первый раз (тёплый кэш стандартной библиотеки)", ms))
+        rows.append(("Go: `go run hello.go`, повторно", statistics.median(once([go, "run", "hello.go"], cwd=d)[0]
+                                                                     for _ in range(3))))
+        cold = dict(os.environ, GOCACHE=str(tmp / "gocache-cold"))
+        rows.append(("Go: `go run hello.go` с пустым кэшем сборки (новая машина, CI)",
+                     once([go, "run", "hello.go"], cwd=d, env=cold)[0]))
+        ms, _ = once([go, "build", "-o", "hello" + exe, "hello.go"], cwd=d)
+        rows.append(("Go: `go build`", ms))
+        rows.append(("Go: запуск готового бинарника", timed([str(d / ("hello" + exe))], runs)))
+        (d / "loop.go").write_text(GO_LOOP, encoding="utf-8")
+        once([go, "build", "-o", "loop" + exe, "loop.go"], cwd=d)
+        loops.append(("Go (скомпилирован)", [str(d / ("loop" + exe))]))
+    if rustc:
+        d = tmp / "rs"
+        d.mkdir()
+        (d / "hello.rs").write_text(RS_HELLO, encoding="utf-8")
+        once([rustc, "hello.rs"], cwd=d)  # warm-up: the first rustc call of a session pays a one-off start
+        rows.append(("Rust: `rustc hello.rs` (отладочная сборка)", once([rustc, "hello.rs"], cwd=d)[0]))
+        rows.append(("Rust: `rustc -O hello.rs`", once([rustc, "-O", "hello.rs"], cwd=d)[0]))
+        rows.append(("Rust: запуск готового бинарника", timed([str(d / ("hello" + exe))], runs)))
+        (d / "loop.rs").write_text(RS_LOOP, encoding="utf-8")
+        once([rustc, "-O", "loop.rs"], cwd=d)
+        loops.append(("Rust (rustc -O)", [str(d / ("loop" + exe))]))
+    if cargo:
+        ms, r = once([cargo, "new", "--vcs", "none", "--quiet", "proj"], cwd=tmp)
+        if r.returncode == 0:
+            rows.append(("Rust: `cargo build` нового проекта без зависимостей",
+                         once([cargo, "build", "--quiet"], cwd=tmp / "proj")[0]))
+            rows.append(("Rust: `cargo run` без изменений", once([cargo, "run", "--quiet"], cwd=tmp / "proj")[0]))
+    if node:
+        (tmp / "hello.js").write_text('console.log("hi")\n', encoding="utf-8")
+        (tmp / "hello.ts").write_text('const msg: string = "hi";\nconsole.log(msg)\n', encoding="utf-8")
+        rows.append(("Node: `node hello.js`", timed([node, str(tmp / "hello.js")], runs)))
+        rows.append(("Node: `node hello.ts` (TypeScript без компиляции, стирание типов)",
+                     timed([node, str(tmp / "hello.ts")], runs)))
+    if rows:
+        print("\n## Компиляция и запуск: сколько ждать до первого результата\n\n| Что | мс |\n|---|---|")
+        for name, ms in rows:
+            print(f"| {name} | {num(ms)} |")
+    return loops
+
+
 def ps_cmd(exe, script):
     return [exe, "-NoProfile", "-NonInteractive", "-EncodedCommand",
             base64.b64encode(script.encode("utf-16-le")).decode()]
@@ -471,7 +542,7 @@ def speed(a):
     for name, cmd in start:
         print(f"| {name} | {timed(cmd, a.runs):.0f} |")
 
-    n, n_ps = 3_000_000, 100_000
+    n, n_ps, n_c = 3_000_000, 100_000, 300_000_000
     loops = [("Python", [py, "-c", f"import time\nt=time.perf_counter();s=0\nfor i in range({n}): s+=(i*i)%7\n"
                                      "print((time.perf_counter()-t)*1000, s)"], n)]
     if numpy:
@@ -494,6 +565,13 @@ def speed(a):
         loops.append(("PowerShell 7", ps_cmd(pwsh, ps_loop), n_ps))
     if ps:
         loops.append(("PowerShell 5.1", ps_cmd(ps, ps_loop), n_ps))
+    with tempfile.TemporaryDirectory(prefix="measure-speed-", ignore_cleanup_errors=True) as tmpdir:
+        for name, cmd in compiled(a.runs, Path(tmpdir)):
+            loops.append((name, cmd + [str(n_c)], n_c))
+        loop_table(loops)
+
+
+def loop_table(loops):
     print(f"\n## Цикл `s += (i*i) % 7`, только время счёта (без старта процесса)\n\n"
           "| Что | Итераций | мс | нс на итерацию | Относительно Python |\n|---|---|---|---|---|")
     base = None
