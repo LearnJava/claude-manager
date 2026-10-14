@@ -14,6 +14,7 @@ import (
 	"claude-manager/internal/analysis"
 	"claude-manager/internal/config"
 	"claude-manager/internal/control"
+	"claude-manager/internal/envcheck"
 	"claude-manager/internal/experience"
 	"claude-manager/internal/gitutil"
 	"claude-manager/internal/logger"
@@ -384,6 +385,18 @@ func (a *App) GetProjects() []config.ProjectConfig {
 		return nil
 	}
 	return a.cfg.Projects
+}
+
+// CheckEnvironment finds the programs the manager and its sessions rely on
+// (Claude CLI, Git, Git Bash, Python, build tools) and, for each missing
+// one, the command that installs it here. Runs each found tool's version
+// command, so it takes a second or two.
+func (a *App) CheckEnvironment() envcheck.Report {
+	claudePath := "claude"
+	if a.cfg != nil {
+		claudePath = a.cfg.Settings.ClaudePath
+	}
+	return envcheck.Check(claudePath)
 }
 
 // GetAutoModelRouting reports whether auto_model_routing is enabled in config.

@@ -21,6 +21,9 @@ claude-manager/
 │   ├── cmdguard/                    # PreToolUse hook installed in Claude sessions (command_guard): fix.go rewrites
 │   │                                #   Bash commands that cannot work (cd into a dir only under the project root,
 │   │                                #   Windows paths bash mangles); hook.go reads the payload, logs to cmdguard.log
+│   ├── envcheck/                    # Finds claude/git/Git Bash/Python/gh/go/node/wails and their versions, and the
+│   │                                #   install command for this OS + package manager (Settings → Environment);
+│   │                                #   NewestPython picks the newest off-PATH Windows Python (also env card)
 │   ├── guardaudit/                  # Replays cmdguard over saved transcripts/run logs: per-rule rewrites (on a
 │   │                                #   working command = unsafe rule) + clusters of failures no rule covers
 │   ├── config/
@@ -340,6 +343,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | Method | Description |
 |---|---|
 | `GetConfig()` | Full AppConfig including Optimization settings |
+| `CheckEnvironment()` | `envcheck.Report`: required/recommended/build tools found on this machine, their versions, and an install command for each missing one (winget/brew/apt/dnf/pacman/zypper/apk) — Settings → Global → Environment |
 | `UpdateConfig(cfg)` | Persist config to TOML, reload session manager |
 | `GetProjects()` | Project list shortcut |
 | `GetAutoModelRouting()` | Whether auto_model_routing is enabled |

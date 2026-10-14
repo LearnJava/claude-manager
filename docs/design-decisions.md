@@ -164,6 +164,24 @@ by default for every project:
   project root, the Read-a-large-file rule. Its text depends only on the
   machine and project, so it is byte-stable across runs and keeps the prompt
   cache. Both flags off leave the CLI arguments byte-identical.
+  Among several off-PATH installs the newest wins by numeric version
+  (`envcheck.NewestPython`): a string sort put 3.9 above 3.14.
+
+**Environment check** (`internal/envcheck`, Settings → Global →
+Environment, `App.CheckEnvironment`). The card tells the *model* what is
+missing; this tells the *user* what to install. It looks up claude (the
+configured `claude_path`), git, Git Bash on Windows (`CLAUDE_CODE_GIT_BASH_PATH`
+or `<Git>inash.exe`), Python (the WindowsApps stub does not count), gh,
+and the build tools go/node/wails, runs each found one's version command
+(5 s timeout, in parallel), and for a missing one renders the install
+command for the package manager the machine has: winget on Windows, brew on
+macOS (with a row for Homebrew itself), apt/dnf/pacman/zypper/apk on Linux;
+Claude Code uses its official installer script. The Wails CLI is also
+flagged when its version differs from the `wails/v2` module the binary was
+built with (read from build info). Levels — required / recommended / build /
+optional — only colour the row and the summary; nothing is installed by the
+manager itself, the user copies the command. The check runs when Settings
+opens, not at startup, so a launch never waits on ten version commands.
 
 **Finding the next rule: `go run ./cmd/guardaudit`** (`internal/guardaudit`).
 The study is kept as a tool rather than a one-off script, so a new kind of

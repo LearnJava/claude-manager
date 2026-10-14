@@ -319,6 +319,7 @@ live/start-time split and the editable fields live in
 | ST-18 | Project mixed-programming opt-in | Projects tab, enable mixed on a project | Privacy warning + Gates textarea appear | ○ |
 | ST-19 | Project logs panel shows count/size | Projects tab, project with saved logs | "Saved logs: N files, X KB/MB" shown | ○ |
 | ST-20 | Clear project logs (two-click confirm) | Click "Clear project logs" twice | Files removed from disk; count resets to 0 files | ○ |
+| ST-21 | Environment section lists tools | Open Settings (Global tab); `CheckEnvironment` stubbed | Summary "Need attention: N" (optional tools excluded); found tool shows version; missing tool shows its install command; wrong Wails version shows "needs vX" + command | **✓** |
 
 ---
 

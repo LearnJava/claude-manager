@@ -157,6 +157,18 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         // regardless of whether a spec ever touches the roadmap feature.
         GetLatestDraftRoadmap: () => Promise.resolve(null),
         // Stubs for platform-specific calls that don't exist in the test server.
+        // A fixed report: the real one depends on the machine running the tests.
+        CheckEnvironment: () =>
+          Promise.resolve({
+            OS: 'windows',
+            PackageManager: 'winget',
+            Tools: [
+              { ID: 'claude', Name: 'Claude Code CLI', Level: 'required', Found: true, Path: 'C:\\bin\\claude.exe', Version: '2.1.296 (Claude Code)', Want: '', Mismatch: false, Install: '', InstallVia: '', Note: '' },
+              { ID: 'gh', Name: 'GitHub CLI', Level: 'recommended', Found: false, Path: '', Version: '', Want: '', Mismatch: false, Install: 'winget install --id GitHub.cli -e', InstallVia: 'winget', Note: '' },
+              { ID: 'wails', Name: 'Wails CLI', Level: 'build', Found: true, Path: 'C:\\go\\bin\\wails.exe', Version: 'v2.12.0', Want: 'v2.16.0', Mismatch: true, Install: 'go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0', InstallVia: 'go', Note: '' },
+              { ID: 'bc', Name: 'bc', Level: 'optional', Found: false, Path: '', Version: '', Want: '', Mismatch: false, Install: '', InstallVia: '', Note: 'gitBashTool' },
+            ],
+          }),
         PickDirectory: () => Promise.resolve(''),
         Notify: () => Promise.resolve(undefined),
         MinimizeToTray: () => Promise.resolve(undefined),
