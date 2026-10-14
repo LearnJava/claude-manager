@@ -22,6 +22,7 @@
     import { formatBytes } from '../lib/formatters';
     import { MODELS, EFFORTS, isKnownModel } from '../lib/models';
     import PlanReview from './PlanReview.svelte';
+    import EnvironmentCheck from './EnvironmentCheck.svelte';
 
     const dispatch = createEventDispatcher();
 
@@ -1053,6 +1054,8 @@
                             </label>
                         </div>
                     </section>
+
+                    <EnvironmentCheck />
                 </div>
             {:else if activeTab === 'projects'}
                 <!-- ───────── PROJECTS TAB ───────── -->

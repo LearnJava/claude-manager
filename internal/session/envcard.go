@@ -5,8 +5,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
+
+	"claude-manager/internal/envcheck"
 )
 
 // envProbe is what envCard needs to know about the machine; tests fake it.
@@ -26,7 +27,7 @@ func hostProbe() envProbe {
 			_, err := os.Stat(p)
 			return err == nil
 		},
-		installedPython: windowsInstalledPython,
+		installedPython: envcheck.WindowsInstalledPython,
 	}
 }
 
@@ -145,25 +146,6 @@ func pythonLine(p envProbe) string {
 		}
 	}
 	return "- Python is not on PATH.\n"
-}
-
-// windowsInstalledPython returns the newest python.exe from the standard
-// per-user install locations, or "".
-func windowsInstalledPython() string {
-	local := os.Getenv("LOCALAPPDATA")
-	if local == "" {
-		return ""
-	}
-	for _, pattern := range []string{
-		filepath.Join(local, "Python", "pythoncore-*", "python.exe"),
-		filepath.Join(local, "Programs", "Python", "Python3*", "python.exe"),
-	} {
-		if m, _ := filepath.Glob(pattern); len(m) > 0 {
-			slices.Sort(m)
-			return m[len(m)-1]
-		}
-	}
-	return ""
 }
 
 // selfExe is the manager binary the cmdguard hook runs (`<exe> hook
