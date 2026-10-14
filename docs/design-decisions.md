@@ -267,7 +267,8 @@ Settings that existed in config but were not read anywhere are now wired:
 - `max_turns_auto_adjust` → `--max-turns` = ceil(1.6 × longest of the last 20
   finished runs), never below `max_turns_default`, only after 5 finished runs.
   A run cut off by it ends as `error_max_turns` → "unfinished", and a queue
-  session continues the task in its next run.
+  session continues the task in its next run. Autonomous runs only: an
+  interactive session (Chat) has the user watching and gets no cap.
 - `preflight_analysis` + per-session `preflight` → `SessionPreflight` before a
   UI start (`preflight_gate.go`): only for a session with a prompt and no task
   queue; `auto` + `preflight_auto_approve_single` starts a single-session task
@@ -710,6 +711,12 @@ which does send a synthetic "wait for instructions" turn because it's
 reacting to an *emptied* task queue rather than a session that never had one.
 Also not on `control.AppAPI` (same Wails-only reasoning as `GenerateClaudeMdSession`);
 `upsertChatSession` is unit-tested directly in `app_test.go`.
+
+A Chat is never cut short. `context_handoff` is off in the config it creates
+(the context restart would end the user's conversation; the CLI's own
+auto-compact handles a full context), and `--max-turns` from
+`max_turns_auto_adjust` is passed to autonomous runs only — in a Chat it ended
+a long answer mid-task with `error_max_turns` (2026-10-14).
 
 ### Crash Recovery
 Mirrors `orchestrator.py` session state files (`.session-PN.json`).

@@ -45,7 +45,10 @@ func TestBuildCLIArgs_LaunchTuning(t *testing.T) {
 	}
 
 	on := New(Params{Config: config.SessionConfig{Model: "sonnet"}, MaxTurns: 144, ExcludeDynamic: true})
-	args = on.buildCLIArgs(false)
+	if args = on.buildCLIArgs(false); hasFlag(args, "--max-turns") {
+		t.Errorf("an interactive run (Chat) must not get --max-turns: %v", args)
+	}
+	args = on.buildCLIArgs(true)
 	if !hasFlag(args, "--exclude-dynamic-system-prompt-sections") {
 		t.Errorf("missing --exclude-dynamic-system-prompt-sections: %v", args)
 	}

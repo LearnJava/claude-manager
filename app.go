@@ -681,7 +681,9 @@ func (a *App) StartAdHocChatSession(project string) error {
 // upsertChatSession ensures project has a "Chat" SessionConfig, creating a
 // one (no prompt, no task_source, no auto_restart — Model/Effort/
 // PermissionMode fall back to the usual applySessionDefaults; worktree,
-// primer, handoff and ask-user on like any new session) if absent.
+// primer and ask-user on like any new session) if absent. Context handoff
+// stays off: a Chat is a conversation the user is having, and the context
+// restart would cut it — the CLI's own auto-compact handles a full context.
 // An existing "Chat" session is left untouched, so a user's manual edits
 // (model, effort, a prompt they added later) survive repeated clicks.
 // Reports whether project was found. Operates on cloned slices so it never
@@ -703,7 +705,6 @@ func upsertChatSession(cfg *config.AppConfig, project string) bool {
 			Name:                 "Chat",
 			UseWorktree:          true,
 			ContextPrimer:        true,
-			ContextHandoff:       true,
 			AskUserMarker:        true,
 			HandoffContextTokens: 150000,
 		})
