@@ -2,8 +2,10 @@ package main
 
 import (
 	"embed"
+	"os"
 	"runtime"
 
+	"claude-manager/internal/cmdguard"
 	"claude-manager/internal/logger"
 
 	"github.com/getlantern/systray"
@@ -19,6 +21,13 @@ var assets embed.FS
 var trayIconICO []byte
 
 func main() {
+	// `claude-manager hook <name>` runs a Claude Code hook the manager installs
+	// into its sessions (cmdguard: the PreToolUse command repair, see
+	// internal/cmdguard) and exits before any GUI or tray state exists.
+	if len(os.Args) > 1 && os.Args[1] == "hook" {
+		os.Exit(cmdguard.RunHook(os.Args[2:], os.Stdin, os.Stdout))
+	}
+
 	// Create an instance of the app structure
 	app := NewApp()
 

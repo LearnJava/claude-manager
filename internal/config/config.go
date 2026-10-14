@@ -332,6 +332,8 @@ func defaults() *AppConfig {
 			RateLimitAlertThreshold:      0.80,
 			SessionStartDelay:            3,
 			PythonUTF8:                   true,
+			CommandGuard:                 true,
+			EnvCard:                      true,
 			MirrorIntervalMin:            15,
 		},
 		Optimization: optimizationDefaults(),

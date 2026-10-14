@@ -135,6 +135,36 @@ in Lumen's sessions, `docs/Science_lab/MEASURE.md`; mostly cp1251/cp866 bytes a
 Python wrapper re-printed). Hermes sessions are left as they were: Hermes is a
 Python program itself and its own stdio encoding was not tested with the flag.
 
+**Command Guard and the environment card.** A study of the saved run logs
+(7,010 sessions, 150k tool calls, 2026-10-14) found ~2,100 mechanical slips —
+Windows paths broken by bash quoting, a `cd` to a directory that is not under
+the current one, tools Git Bash lacks, Read of a file too big for one call —
+each costing about one extra model turn. Two measures follow from it, both on
+by default for every project:
+
+- `settings.command_guard` passes `--settings` with a PreToolUse hook,
+  `"<manager exe>" hook cmdguard` (`internal/cmdguard`). It *rewrites* rather
+  than refuses: a refusal costs the model the same round trip as the failure,
+  so a deny hook saves nothing. The rewrite is returned as `updatedInput` with
+  `permissionDecision: "allow"`, which also skips the permission prompt, so it
+  is applied in `bypassPermissions` mode only. A process start costs ~50-100 ms
+  on Windows; run before every Bash call that would cost more time than the
+  fixes save, so the hook carries `"if": "Bash(cd .*)"` and the CLI starts it
+  for 0.6% of calls only (the permission-rule syntax of `if` cannot match a
+  backslash or a drive letter, so the Windows-path rules ride along on those
+  calls rather than having a trigger of their own). Rules were replayed over
+  93k logged Bash calls: none changed a command that worked. Each hook run is
+  logged to `~/.claude-manager/logs/cmdguard.log` — the data for judging it.
+  A subcommand of the GUI binary rather than a separate exe: a standalone
+  binary started only ~15 ms faster, not worth a second build artifact.
+- `settings.env_card` appends a short card (`envCard`,
+  `internal/session/envcard.go`) to the system prompt: OS and shell rules,
+  missing tools, the Python command that works (on Windows the PATH `python`
+  is often the Store stub, so standard install dirs are searched), the
+  project root, the Read-a-large-file rule. Its text depends only on the
+  machine and project, so it is byte-stable across runs and keeps the prompt
+  cache. Both flags off leave the CLI arguments byte-identical.
+
 ### Stream-JSON Events (stdout)
 Key event types to parse:
 - `{"type":"system","subtype":"init",...}` — session info, model, tools, version. Its `slash_commands`, `skills` and `terminal_slash_commands` are kept on the `Session` (`initCommands`) for the message box's "/" autocomplete — see "Slash-Command Autocomplete" below

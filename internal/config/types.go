@@ -112,6 +112,20 @@ type GlobalSettings struct {
 	// (docs/Science_lab/MEASURE.md). Default true.
 	PythonUTF8 bool `toml:"python_utf8"`
 
+	// CommandGuard installs the manager's PreToolUse hook (internal/cmdguard)
+	// in every Claude session via --settings. It rewrites Bash commands that
+	// cannot work as written — a Windows path whose trailing backslash
+	// escapes the closing quote, an unquoted Windows path, a leading cd to a
+	// directory that only exists under the project root — and logs each fix
+	// to ~/.claude-manager/logs/cmdguard.log. Rewrites apply in
+	// bypassPermissions mode only. Default true.
+	CommandGuard bool `toml:"command_guard"`
+
+	// EnvCard appends a short environment card (OS, shell rules, Python
+	// command, project root) to every Claude session's system prompt.
+	// Default true.
+	EnvCard bool `toml:"env_card"`
+
 	// MirrorDir is where projects with mirror = true get a local copy of
 	// their settings and saved logs (internal/mirror). Empty = auto: the
 	// projects/ folder of the claude-manager checkout the app was built in,

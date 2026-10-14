@@ -87,6 +87,10 @@ export default {
     'sessionFeatures.sessionStartDelay.desc': 'Sessions start with a pause between them so the second one reuses the cache warmed by the first.',
     'sessionFeatures.pythonUtf8.title': 'Python in UTF-8',
     'sessionFeatures.pythonUtf8.desc': 'Python started by the agent prints UTF-8, so Russian text in its output is readable.',
+    'sessionFeatures.commandGuard.title': 'Command repair',
+    'sessionFeatures.commandGuard.desc': 'A command certain to fail (cd into the wrong folder, a broken Windows path) is fixed before it runs.',
+    'sessionFeatures.envCard.title': 'Environment card',
+    'sessionFeatures.envCard.desc': 'The agent is told the OS, shell, Python command and project root instead of guessing them.',
 
     'sessionFeatures.permissionNotify.title': 'Windows notification',
     'sessionFeatures.permissionNotify.desc': 'A system notification appears when a session waits for your permission.',
