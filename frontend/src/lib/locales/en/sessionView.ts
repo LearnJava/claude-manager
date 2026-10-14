@@ -11,6 +11,9 @@ export default {
     'sessionView.gitInit.failedPrefix': 'Init git repo failed',
     'sessionView.stop.label': 'Stop',
     'sessionView.stop.title': 'Stop: terminate the process now',
+    'sessionView.interrupt.label': 'Interrupt',
+    'sessionView.interrupt.title':
+        'Interrupt the current action; the session stays open and waits for your next message',
     'sessionView.stopAfterTask.titleRequested':
         'Already requested: will stop once the current task finishes',
     'sessionView.stopAfterTask.titleDefault': 'Soft stop: let the current task finish, then stop',

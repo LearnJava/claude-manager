@@ -30,4 +30,7 @@ export default {
     'logStream.copyFailed': 'Не удалось скопировать',
     'logStream.doneMarker': 'Сессия завершена, следующую задачу возьмёт новая сессия',
     'logStream.doneMarkerWith': 'Сессия завершена: {s} — следующую задачу возьмёт новая сессия',
+    'logStream.interrupt.label': 'Стоп',
+    'logStream.interrupt.title':
+        'Остановить это действие; сессия остаётся открытой и ждёт вашего следующего сообщения',
 } as Record<string, string>;

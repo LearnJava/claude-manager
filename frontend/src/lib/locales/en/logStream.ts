@@ -30,4 +30,7 @@ export default {
     'logStream.copyFailed': 'Copy failed',
     'logStream.doneMarker': 'Session done, a fresh session picks up the next task',
     'logStream.doneMarkerWith': 'Session done: {s} — a fresh session picks up the next task',
+    'logStream.interrupt.label': 'Stop',
+    'logStream.interrupt.title':
+        'Stop this action; the session stays open and waits for your next message',
 } as Record<string, string>;

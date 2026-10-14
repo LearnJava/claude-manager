@@ -270,3 +270,19 @@ mid-run), this scenario's `rate_limit_event` reports `status:"exceeded"`
 with `utilization:1.0` — the throttling case `onRateLimit`'s `throttled()`
 actually aborts the run for, so `runOnce` returns `errRateLimited`. Drives
 `TestContract_FailureKinds/claude/rate_limit`.
+
+---
+
+### interrupt-demo.json
+**State/Feature:** interrupting the action in flight without stopping the
+session (`Session.Interrupt`, the ⏹ button under the live action)
+**Match:** `interrupt-demo`
+
+Emits `init` and a `Bash` tool call (`sleep 600`), then waits for a
+`control_request` (the CLI's `interrupt`), answers it like the real CLI —
+`control_response`, an interrupted `tool_result`, and a `result` with subtype
+`error_during_execution` — and keeps reading stdin: the next user message
+gets a normal reply and a `success` result. Drives
+`TestInterrupt_AbortsTurnAndWaitsForUser`: the interrupted turn neither closes
+stdin nor counts as a failure, the session waits in `waiting_for_user`, and
+the following message continues the same process.

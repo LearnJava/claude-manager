@@ -233,6 +233,7 @@ Key event types to parse:
 - `{"type":"result","total_cost_usd":...,"usage":{...},"modelUsage":{...}}` — final metrics. In autonomous runs, its `result` text is also scanned for the ```` ```ask-user ```` marker (see "Ask-User Questions" below) before being treated as a finished turn.
 - `{"type":"user","message":{"content":...}}` — a replayed user turn (string → `user` entry) or tool results echoed back (`tool_result` blocks → `tool_result`/`error` entries). Exception: a turn whose text starts with `<task-notification>` was injected by the CLI itself when a background task (Bash `run_in_background`, a background agent) finished — nobody typed it, so `tasknotify.go` logs it as a `system` entry `Background task <status>: <summary>` followed by its other fields (`task-id`, `tool-use-id`, `output-file`, …) with entities unescaped, from either a string or a `text` block
 - `{"type":"stream_event",...}` — partial-message events (from `--include-partial-messages`). No log entry (the full `assistant` message follows). A `content_block_start` becomes a transient `session:activity` event `{id, kind, tool?, since}` (`thinking` | `tool` | `writing`; `result` → `idle`); deltas are dropped so a long answer does not flood IPC. Hermes maps `text`→`writing` (on change only), `tool_use`→`tool`, `tool_result`→`thinking`, `result`→`idle`. Emitted only on a change of kind/tool (`Session.setActivity`), never stored in SQLite; a non-running status (idle/error/stopping/rate_limited) also resets it to `idle`. UI-09 decision: the session *status* stays `working` after `result` — changing it risks auto-restart and task queues, so "turn over" is expressed only as `activity: idle`.
+- `{"type":"control_response",...}` — the CLI's acknowledgement of a `control_request` the manager wrote (see "Interrupting the current action"); recognized, nothing logged
 - `{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"|"allowed_warning"|"rejected",...}}` — rate limit status. Real Claude emits an informational `status:"allowed"` event on **every** session; only a rejecting status (`rejected`/`exceeded`/…) pauses/restarts the run. `allowed_warning` (with utilization) is surfaced to the UI but does not abort.
 
 **Slash-Command Autocomplete.** Typing `/` as the first character of the
@@ -292,6 +293,32 @@ which holds for the current single-turn-per-process model (HR-04) where
 results stream back in the same order the calls were issued. Not persisted to
 `session_logs` — `History` (the classic view) is unaffected; the id lives only
 on the in-memory/live-event `LogEntry` UI-02 groups from.
+
+**Interrupting the current action.** `Session.Interrupt`
+(`internal/session/interrupt.go`, `InterruptSession` on `SessionManager`/`App`,
+`interrupt_session` in `cm-mcp`) aborts the turn in flight without stopping the
+session: it writes the CLI's own control request
+`{"type":"control_request","request_id":"interrupt-<uuid>","request":{"subtype":"interrupt"}}`
+to stdin. The CLI answers `control_response` (parsed as an empty `EventLog`),
+cancels the running tool call or generation (the tool result reads
+`[Request interrupted by user for tool use]`) and ends the turn with a `result`
+of subtype `error_during_execution`. `interruptPending` routes that one result
+to `onInterrupted` instead of the usual path: no failure classification, no
+"turn finished" — so even an autonomous run keeps stdin open — and the session
+goes to `waiting_for_user` with `interrupted` set, which lets `SendMessage`
+accept the next message there and return the session to `working`. The turn
+that message starts ends the normal way (an autonomous run then closes stdin
+and the queue loop goes on). Interrupt is refused when nothing is in flight
+(`activity: idle`, except a pending permission prompt, which it also drops) —
+an armed flag with no turn to end would swallow the next turn's result — and
+for Hermes, which starts a process per turn and has no control channel.
+Because `activity` otherwise stays `idle` from the last `result` until the
+CLI's first stream event, queuing a user message (`sendInitialPrompt`,
+`SendMessage`, `AnswerQuestion`) marks the session `thinking`
+(`markTurnStarted`), as the Hermes runtime already did. UI: a `■ Stop` button
+at the end of the live status line under the running action (feed layout,
+`LiveStatus.svelte`) and `■ Interrupt` in the control bar (`SessionView.svelte`),
+both gated by `lib/interrupt.ts:canInterrupt`.
 
 ### Permission Handling
 When `permission_mode != "bypassPermissions"`, Claude CLI sends permission requests via stdout and blocks waiting for response on stdin. The manager MUST:

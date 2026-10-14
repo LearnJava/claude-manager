@@ -403,6 +403,11 @@ func parseLineAt(line string, now time.Time) ParsedEvent {
 		return handleRateLimit(ev)
 	case "permission_request":
 		return handlePermission(ev)
+	case "control_response":
+		// The CLI's acknowledgement of a control_request the manager wrote
+		// (Session.Interrupt): recognized, but nothing to show — the turn's own
+		// result reports the outcome.
+		return ParsedEvent{EventType: EventLog}
 	case "stream_event":
 		// Partial-message events emitted by --include-partial-messages. The full
 		// "assistant" message follows, so they add nothing to the log; only a

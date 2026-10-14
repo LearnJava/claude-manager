@@ -51,6 +51,7 @@ Any normal launch — `wails dev` or the built `claude-manager.exe` — starts t
 |---|---|
 | `start_session` | Start a session by project + name |
 | `stop_session` | Stop a session (soft=true waits for current task) |
+| `interrupt_session` | Abort the current action (turn) without stopping the session; it then waits for `send_message` |
 | `restart_session` | Hard restart or resume from saved CLI session ID |
 | `send_message` | Send a user message to a running session |
 | `approve_permission` | Approve a pending permission request |
