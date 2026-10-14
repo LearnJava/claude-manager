@@ -15,9 +15,12 @@ Tech stack, the package/component map, the Wails-bound method table, the SQLite 
 
 ```
 claude-manager/
-├── main.go                          # Wails bootstrap
+├── main.go                          # Wails bootstrap; `claude-manager hook cmdguard` runs the PreToolUse hook and exits
 ├── app.go                           # App struct, Wails lifecycle, 40 exported methods
 ├── internal/
+│   ├── cmdguard/                    # PreToolUse hook installed in Claude sessions (command_guard): fix.go rewrites
+│   │                                #   Bash commands that cannot work (cd into a dir only under the project root,
+│   │                                #   Windows paths bash mangles); hook.go reads the payload, logs to cmdguard.log
 │   ├── config/
 │   │   ├── types.go                 # AppConfig, GlobalSettings, OptimizationSettings,
 │   │   │                            #   ProjectConfig, SessionConfig, PermissionRule,
@@ -62,6 +65,7 @@ claude-manager/
 │   │   ├── budget_alerts.go         # daily/weekly_budget_alert → alert:budget once per day/week (after finishRun)
 │   │   ├── preflight_gate.go        # PreflightMode + SessionPreflight: pre-flight on a UI start (PLAN.md §17.6)
 │   │   ├── launch_env.go            # utf8Env: PYTHONUTF8/PYTHONIOENCODING for Claude processes (python_utf8)
+│   │   ├── envcard.go               # envCard: OS/shell/Python/project-root card appended to the system prompt (env_card)
 │   │   ├── slashcmds.go             # "/" autocomplete catalog per runtime; Hermes `/skill` → `-s`
 │   │   └── ratelimit.go             # Rate limit detection, retry logic, timers
 │   ├── permission/

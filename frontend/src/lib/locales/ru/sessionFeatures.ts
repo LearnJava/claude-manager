@@ -87,6 +87,10 @@ export default {
     'sessionFeatures.sessionStartDelay.desc': 'Сессии стартуют с паузой между собой, чтобы следующая использовала кэш, прогретый предыдущей.',
     'sessionFeatures.pythonUtf8.title': 'Python в UTF-8',
     'sessionFeatures.pythonUtf8.desc': 'Python, запущенный агентом, выводит UTF-8, и русский текст в выводе читается.',
+    'sessionFeatures.commandGuard.title': 'Исправление команд',
+    'sessionFeatures.commandGuard.desc': 'Команду, которая точно упадёт (cd не в ту папку, сломанный Windows-путь), менеджер исправляет до запуска.',
+    'sessionFeatures.envCard.title': 'Карточка окружения',
+    'sessionFeatures.envCard.desc': 'Агент заранее знает ОС, оболочку, команду Python и корень проекта, а не угадывает их.',
 
     'sessionFeatures.permissionNotify.title': 'Уведомление Windows',
     'sessionFeatures.permissionNotify.desc': 'Появляется системное уведомление, когда сессия ждёт вашего разрешения.',

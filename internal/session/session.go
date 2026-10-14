@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"claude-manager/internal/cmdguard"
 	"claude-manager/internal/config"
 	"claude-manager/internal/fsutil"
 	"claude-manager/internal/hooks"
@@ -210,6 +211,13 @@ type Params struct {
 	// PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 (see utf8Env).
 	PythonUTF8 bool
 
+	// CommandGuard mirrors GlobalSettings.CommandGuard: the CLI gets the
+	// manager's cmdguard PreToolUse hook via --settings.
+	CommandGuard bool
+	// EnvCard mirrors GlobalSettings.EnvCard: the environment card (envCard)
+	// is appended to the system prompt.
+	EnvCard bool
+
 	// ResumeSessionID pre-seeds resumeSessionID for one immediate --resume on
 	// the first launch (see SessionManager.SetSessionModel: an interactive
 	// session has no task boundary to pick up a model change at, so it is
@@ -393,7 +401,9 @@ type Session struct {
 	crashRecovery   bool
 	resumeSessionID string // set before Run loop; cleared after first runOnce
 
-	pythonUTF8 bool // see Params.PythonUTF8
+	pythonUTF8   bool // see Params.PythonUTF8
+	commandGuard bool // see Params.CommandGuard
+	envCard      bool // see Params.EnvCard
 
 	// Context-budget handoff (Config.HandoffContextTokens, see
 	// checkHandoffBudget), per run, protected by mu: the tag that marks the
@@ -511,6 +521,8 @@ func New(p Params) *Session {
 		stateStore:        p.StateStore,
 		crashRecovery:     p.CrashRecovery,
 		pythonUTF8:        p.PythonUTF8,
+		commandGuard:      p.CommandGuard,
+		envCard:           p.EnvCard,
 		excludeDynamic:    p.ExcludeDynamic,
 		maxTurns:          p.MaxTurns,
 		activeModel:       p.Config.Model,
@@ -2461,8 +2473,17 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 	if len(s.Config.DisallowedTools) > 0 {
 		args = append(args, "--disallowedTools", strings.Join(s.Config.DisallowedTools, " "))
 	}
+	if s.commandGuard {
+		if exe, err := selfExe(); err == nil {
+			args = append(args, "--settings", cmdguard.SettingsJSON(exe))
+		}
+	}
+	card := ""
+	if s.envCard {
+		card = envCard(hostProbe(), s.ProjectPath)
+	}
 	interactiveAsk := !autonomous && s.Config.AskUserMarker
-	if s.Config.SystemPromptAppend != "" || autonomous || interactiveAsk {
+	if s.Config.SystemPromptAppend != "" || autonomous || interactiveAsk || card != "" {
 		combined := strings.TrimSpace(s.Config.SystemPromptAppend)
 		if (autonomous || interactiveAsk) && combined != "" {
 			combined += "\n\n"
@@ -2474,6 +2495,12 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 			}
 		} else if interactiveAsk {
 			combined += askUserInteractivePrompt
+		}
+		if card != "" {
+			if combined != "" {
+				combined += "\n\n"
+			}
+			combined += card
 		}
 		args = append(args, "--append-system-prompt", combined)
 	}

@@ -82,6 +82,8 @@ const FIELDS: Record<string, FeatureField[]> = {
     excludeDynamicSystemPrompt: [f('optimization', 'ExcludeDynamicSystemPrompt', 'exclude_dynamic_system_prompt', 'bool')],
     sessionStartDelay: [f('settings', 'SessionStartDelay', 'session_start_delay', 'number')],
     pythonUtf8: [f('settings', 'PythonUTF8', 'python_utf8', 'bool')],
+    commandGuard: [f('settings', 'CommandGuard', 'command_guard', 'bool')],
+    envCard: [f('settings', 'EnvCard', 'env_card', 'bool')],
     permissionNotify: [f('settings', 'PermissionNativeNotification', 'permission_native_notification', 'bool')],
     permissionSound: [f('settings', 'PermissionSound', 'permission_sound', 'bool')],
     permissionTimeout: [f('settings', 'PermissionTimeout', 'permission_timeout', 'number'),
@@ -235,6 +237,10 @@ export function describeSessionFeatures(cfg: any, project: string, sessionName: 
         enabled: startDelay > 0, value: startDelay > 0 ? `${startDelay}s` : undefined });
     add({ key: 'pythonUtf8', tomlKey: 'python_utf8', scope: 'global', group: 'performance',
         enabled: !!g.PythonUTF8 });
+    add({ key: 'commandGuard', tomlKey: 'command_guard', scope: 'global', group: 'performance',
+        enabled: !!g.CommandGuard });
+    add({ key: 'envCard', tomlKey: 'env_card', scope: 'global', group: 'performance',
+        enabled: !!g.EnvCard });
 
     // --- Notifications -----------------------------------------------------
     add({ key: 'permissionNotify', tomlKey: 'permission_native_notification', scope: 'global', group: 'notifications',
