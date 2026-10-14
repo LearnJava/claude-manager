@@ -2449,7 +2449,9 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 	if s.Config.MaxBudgetUSD > 0 {
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(s.Config.MaxBudgetUSD, 'f', -1, 64))
 	}
-	if s.maxTurns > 0 {
+	// The cap guards unattended loops only. An interactive session (Chat) has
+	// the user watching, and a cut-off leaves their request half-done.
+	if s.maxTurns > 0 && autonomous {
 		args = append(args, "--max-turns", strconv.Itoa(s.maxTurns))
 	}
 	if s.excludeDynamic {

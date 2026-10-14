@@ -35,6 +35,23 @@ func guardHookPath(t *testing.T) string {
 	}
 }
 
+// envWithout returns env minus the named variables (case-insensitive, as
+// Windows treats them).
+func envWithout(env []string, names ...string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		k, _, _ := strings.Cut(kv, "=")
+		drop := false
+		for _, n := range names {
+			drop = drop || strings.EqualFold(k, n)
+		}
+		if !drop {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
 func pythonExe(t *testing.T) string {
 	t.Helper()
 	for _, name := range []string{"python", "python3"} {
@@ -63,8 +80,14 @@ func runGuard(t *testing.T, python, hook, command string, env []string) int {
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	// A stray CLAUDE_MANAGER_PID in the developer's own environment would
-	// make these cases non-deterministic, so the environment is explicit.
-	cmd.Env = append([]string{"SYSTEMROOT=" + os.Getenv("SYSTEMROOT"), "PATH=" + os.Getenv("PATH")}, env...)
+	// make these cases non-deterministic, so the manager variables are
+	// dropped and each case sets its own. Everything else is kept: the
+	// `python` on PATH may be the Python install manager's launcher, which
+	// without LOCALAPPDATA finds no installs, tries to install one into its
+	// working directory and exits 1. The temp dir keeps any such side files
+	// out of the package.
+	cmd.Env = append(envWithout(os.Environ(), EnvManagerPID, EnvManagerExe), env...)
+	cmd.Dir = t.TempDir()
 
 	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError
@@ -176,6 +199,7 @@ func TestGuardMalformedPayloadIsAllowed(t *testing.T) {
 	hook := guardHookPath(t)
 
 	cmd := exec.Command(python, hook)
+	cmd.Dir = t.TempDir()
 	cmd.Stdin = strings.NewReader("this is not json")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("malformed payload must not block: %v", err)

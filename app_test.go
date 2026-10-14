@@ -131,6 +131,9 @@ func TestUpsertChatSession_CreatesWhenAbsent(t *testing.T) {
 	if sessions[0].TaskSource != "" || sessions[0].AutoRestart {
 		t.Errorf("Chat session must be plain interactive (no task_source/auto_restart), got %+v", sessions[0])
 	}
+	if sessions[0].ContextHandoff {
+		t.Error("Chat session must not get the context restart: it would cut the user's conversation")
+	}
 }
 
 func TestUpsertChatSession_LeavesExistingUntouched(t *testing.T) {
