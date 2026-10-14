@@ -690,6 +690,7 @@ func (m *SessionManager) StartSession(project, name string) error {
 		PythonUTF8:        m.cfg.Settings.PythonUTF8,
 		CommandGuard:      m.cfg.Settings.CommandGuard,
 		EnvCard:           m.cfg.Settings.EnvCard,
+		ManagerCard:       m.managerCardFor(proj, name),
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
 		Optimization:      &m.cfg.Optimization,
@@ -771,6 +772,7 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 		PythonUTF8:        m.cfg.Settings.PythonUTF8,
 		CommandGuard:      m.cfg.Settings.CommandGuard,
 		EnvCard:           m.cfg.Settings.EnvCard,
+		ManagerCard:       m.managerCardFor(proj, name),
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
 		Optimization:      &m.cfg.Optimization,
@@ -1007,6 +1009,7 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 		PythonUTF8:        m.cfg.Settings.PythonUTF8,
 		CommandGuard:      m.cfg.Settings.CommandGuard,
 		EnvCard:           m.cfg.Settings.EnvCard,
+		ManagerCard:       m.managerCardFor(proj, name),
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
 		Optimization:      &m.cfg.Optimization,
@@ -2785,4 +2788,13 @@ func (m *SessionManager) CancelMixedTask(id string) error {
 	}
 	cancel()
 	return nil
+}
+
+// managerCardFor renders the Claude Manager card for one session of proj, or
+// "" when GlobalSettings.ManagerCard is off.
+func (m *SessionManager) managerCardFor(proj *config.ProjectConfig, session string) string {
+	if !m.cfg.Settings.ManagerCard || proj == nil {
+		return ""
+	}
+	return managerCard(proj.Name, proj.Path, proj.Sessions, session)
 }

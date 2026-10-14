@@ -217,6 +217,9 @@ type Params struct {
 	// EnvCard mirrors GlobalSettings.EnvCard: the environment card (envCard)
 	// is appended to the system prompt.
 	EnvCard bool
+	// ManagerCard is the Claude Manager card (managerCard) appended to the
+	// system prompt; empty when GlobalSettings.ManagerCard is off.
+	ManagerCard string
 
 	// ResumeSessionID pre-seeds resumeSessionID for one immediate --resume on
 	// the first launch (see SessionManager.SetSessionModel: an interactive
@@ -404,6 +407,7 @@ type Session struct {
 	pythonUTF8   bool // see Params.PythonUTF8
 	commandGuard bool // see Params.CommandGuard
 	envCard      bool // see Params.EnvCard
+	managerCard  string // see Params.ManagerCard
 
 	// Context-budget handoff (Config.HandoffContextTokens, see
 	// checkHandoffBudget), per run, protected by mu: the tag that marks the
@@ -523,6 +527,7 @@ func New(p Params) *Session {
 		pythonUTF8:        p.PythonUTF8,
 		commandGuard:      p.CommandGuard,
 		envCard:           p.EnvCard,
+		managerCard:       p.ManagerCard,
 		excludeDynamic:    p.ExcludeDynamic,
 		maxTurns:          p.MaxTurns,
 		activeModel:       p.Config.Model,
@@ -2483,6 +2488,12 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 	card := ""
 	if s.envCard {
 		card = envCard(hostProbe(), s.ProjectPath)
+	}
+	if s.managerCard != "" {
+		if card != "" {
+			card += "\n\n"
+		}
+		card += s.managerCard
 	}
 	interactiveAsk := !autonomous && s.Config.AskUserMarker
 	if s.Config.SystemPromptAppend != "" || autonomous || interactiveAsk || card != "" {

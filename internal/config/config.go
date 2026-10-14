@@ -334,6 +334,7 @@ func defaults() *AppConfig {
 			PythonUTF8:                   true,
 			CommandGuard:                 true,
 			EnvCard:                      true,
+			ManagerCard:                  true,
 			MirrorIntervalMin:            15,
 		},
 		Optimization: optimizationDefaults(),

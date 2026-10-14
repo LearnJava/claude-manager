@@ -166,6 +166,19 @@ by default for every project:
   cache. Both flags off leave the CLI arguments byte-identical.
   Among several off-PATH installs the newest wins by numeric version
   (`envcheck.NewestPython`): a string sort put 3.9 above 3.14.
+- `settings.manager_card` appends the Claude Manager card (`managerCard`,
+  `internal/session/managercard.go`): the project's sessions with their
+  queues and role prompts, and the protocol for handing work over — a task is
+  a self-contained section of `<BLOCK>-TASKS.md` (Depends on / Files / What
+  to do / Done when), sized to one branch and one context window, assigned by
+  a `file:line` pointer in the target session's `task_source`; a session
+  without a queue gets one created and the user is asked to set it. A queue
+  session also gets its own queue and the take/close rule (delete the
+  pointer when done — that is how the run's outcome is judged). Why: a Chat
+  session asked to "assign tasks to Developer 1" took it for a Jira user —
+  the manager's sessions existed nowhere in its context, and per-project
+  CLAUDE.md notes (claude-manager's own "Roles and session start") do not
+  travel to other projects. Built from config only, so byte-stable.
 
 **Environment check** (`internal/envcheck`, Settings → Global →
 Environment, `App.CheckEnvironment`). The card tells the *model* what is

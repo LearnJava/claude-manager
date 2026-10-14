@@ -125,6 +125,10 @@ type GlobalSettings struct {
 	// command, project root) to every Claude session's system prompt.
 	// Default true.
 	EnvCard bool `toml:"env_card"`
+	// ManagerCard appends a Claude Manager card to every Claude session's
+	// system prompt: the project's sessions and their queues, and how to
+	// write, size and assign tasks to them. Default true.
+	ManagerCard bool `toml:"manager_card"`
 
 	// MirrorDir is where projects with mirror = true get a local copy of
 	// their settings and saved logs (internal/mirror). Empty = auto: the
