@@ -157,6 +157,19 @@ by default for every project:
   logged to `~/.claude-manager/logs/cmdguard.log` — the data for judging it.
   A subcommand of the GUI binary rather than a separate exe: a standalone
   binary started only ~15 ms faster, not worth a second build artifact.
+  The same settings also guard the manager's own configuration
+  (`cmdguard/protect.go`): `permissions.deny` rules `Edit(**/.claude-manager/config.toml)`
+  and `…/config.local.toml` (an Edit rule covers Edit/MultiEdit/Write; deny
+  holds in `bypassPermissions` too), and a second hook entry with
+  `"if": "Bash(*.claude-manager*)"` whose `ProtectedConfigWrite` *denies* a
+  Bash command that names such a file and writes it (`sed -i`, `cp`/`mv`,
+  redirection, an interpreter's `open(…,'w')`, `Set-Content`, …) — reading
+  stays allowed. Here a refusal is the point, unlike the rewrites: the manager
+  does not reread a hand-edited config and its Settings window overwrites it,
+  so an agent that wired a queue into `.claude-manager/config.toml` itself
+  (an ARB Chat did) left the UI showing an empty Task source while the file
+  said otherwise. Checked against the real CLI: Bash, Edit and Write are all
+  refused and the file stays unchanged.
 - `settings.env_card` appends a short card (`envCard`,
   `internal/session/envcard.go`) to the system prompt: OS and shell rules,
   missing tools, the Python command that works (on Windows the PATH `python`
@@ -171,8 +184,14 @@ by default for every project:
   queues and role prompts, and the protocol for handing work over — a task is
   a self-contained section of `<BLOCK>-TASKS.md` (Depends on / Files / What
   to do / Done when), sized to one branch and one context window, assigned by
-  a `file:line` pointer in the target session's `task_source`; a session
-  without a queue gets one created and the user is asked to set it. A queue
+  a `file:line` pointer in the target session's `task_source`. The queue is
+  exactly that setting: a session without one gets no invented queue file or
+  task folder — the agent asks the user to set its Task source to the next
+  free `STATUS-P<N>.md` (`nextQueueName`), the project's established naming,
+  and fills it once confirmed; editing the manager's config is forbidden
+  (and blocked by the command guard). An earlier wording ("create
+  `STATUS-<SESSION>.md`, e.g. `STATUS-DEVELOPER-1.md`") added a second naming
+  scheme next to `STATUS-P1.md`. A queue
   session also gets its own queue and the take/close rule (delete the
   pointer when done — that is how the run's outcome is judged). Why: a Chat
   session asked to "assign tasks to Developer 1" took it for a Jira user —

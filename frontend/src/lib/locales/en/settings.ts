@@ -169,6 +169,7 @@ export default {
 
     'settings.sessions.identityHeading': 'Identity',
     'settings.sessions.taskSourceFile': 'Task source file',
+    'settings.sessions.taskSourcePlaceholder': 'not set — no queue (e.g. STATUS-P1.md)',
     'settings.sessions.promptLabel': 'Prompt',
 
     'settings.sessions.modelHeading': 'Model',
