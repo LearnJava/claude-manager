@@ -1478,8 +1478,10 @@
                                                 <input
                                                     type="text"
                                                     bind:value={sess.TaskSource}
-                                                    placeholder="STATUS-P1.md"
-                                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                                                    data-testid="task-source-input"
+                                                    placeholder={$t('settings.sessions.taskSourcePlaceholder')}
+                                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text
+                                                           placeholder:text-text-dim placeholder:italic" />
                                             </label>
                                         </div>
                                         <label class="flex flex-col text-xs text-text-muted gap-1 mt-3">

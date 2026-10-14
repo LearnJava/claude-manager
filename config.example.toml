@@ -52,7 +52,9 @@ python_utf8 = true
 # a directory that exists only under the project root (the model re-entering
 # the worktree it is in), a Windows path whose trailing backslash escapes the
 # closing quote, an unquoted Windows path. Rewrites apply in bypassPermissions
-# mode; every run is logged to ~/.claude-manager/logs/cmdguard.log.
+# mode; every run is logged to ~/.claude-manager/logs/cmdguard.log. It also
+# denies edits of the manager's own config (.claude-manager/config*.toml) from
+# sessions in any permission mode — settings change only in the Settings window.
 command_guard = true
 
 # Environment card: a few lines appended to every Claude session's system

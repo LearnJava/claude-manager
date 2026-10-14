@@ -169,6 +169,7 @@ export default {
 
     'settings.sessions.identityHeading': 'Идентификация',
     'settings.sessions.taskSourceFile': 'Файл источника задач',
+    'settings.sessions.taskSourcePlaceholder': 'не задан — очереди нет (например STATUS-P1.md)',
     'settings.sessions.promptLabel': 'Промпт',
 
     'settings.sessions.modelHeading': 'Модель',

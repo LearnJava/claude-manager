@@ -1,6 +1,8 @@
 package session
 
 import (
+	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -71,10 +73,14 @@ func managerCard(projectName, projectPath string, sessions []config.SessionConfi
 		"heading>` (e.g. `KM-TASKS.md:42`), first line = next task, nothing else on those lines (headings and " +
 		"`>` notes are fine). Append pointers in execution order; do not reorder or remove pointers of tasks " +
 		"that may already be in progress. Recheck the line numbers after editing the task file.\n")
-	b.WriteString("4. A session with no queue cannot take tasks yet: create `" + abs("STATUS-<SESSION>.md") +
-		"` (e.g. `STATUS-DEVELOPER-1.md`), fill it, and tell the user to set it as that session's Task source " +
-		"in the manager (with Auto-restart to run the queue unattended). You cannot change the manager's " +
-		"settings or start sessions yourself; tell the user what to start.\n")
+	b.WriteString("4. A session's queue is exactly its Task source from the manager's settings, listed above — " +
+		"never a queue file under another name or folder. A session with no queue cannot take tasks: do not " +
+		"invent a queue file or a task folder; ask the user to set that session's Task source in Settings → " +
+		"Sessions to `" + nextQueueName(sessions) + "` (the `STATUS-P<N>.md` naming) with Auto-restart to run " +
+		"it unattended, and fill `" + abs(nextQueueName(sessions)) + "` once they confirm. Never edit the " +
+		"manager's configuration (`.claude-manager/config*.toml`, `~/.claude-manager/`): the manager does not " +
+		"reread hand edits and its Settings window overwrites them. You cannot change settings or start " +
+		"sessions yourself; tell the user what to set and start.\n")
 	b.WriteString("5. Keep task and queue files in the main checkout at the paths above — developer sessions may " +
 		"work in a git worktree but read them there. Commit them only if the project already tracks them or " +
 		"the user asks.\n")
@@ -89,6 +95,23 @@ func managerCard(projectName, projectPath string, sessions []config.SessionConfi
 			"say why, and do not start the next task.")
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// nextQueueName is the first `STATUS-P<N>.md` no session of the project uses
+// as its Task source — the name a queue-less session's queue should get.
+func nextQueueName(sessions []config.SessionConfig) string {
+	used := map[string]bool{}
+	for _, s := range sessions {
+		if q := strings.TrimSpace(s.TaskSource); q != "" {
+			used[strings.ToLower(path.Base(filepath.ToSlash(q)))] = true
+		}
+	}
+	for n := 1; ; n++ {
+		name := fmt.Sprintf("STATUS-P%d.md", n)
+		if !used[strings.ToLower(name)] {
+			return name
+		}
+	}
 }
 
 // oneLine collapses s to a single line of at most n runes.

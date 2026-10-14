@@ -46,6 +46,20 @@ func RunHook(args []string, stdin io.Reader, stdout io.Writer) int {
 	if cmd == "" {
 		return 0
 	}
+	if ProtectedConfigWrite(cmd) {
+		out, err := json.Marshal(map[string]any{
+			"hookSpecificOutput": map[string]any{
+				"hookEventName":            "PreToolUse",
+				"permissionDecision":       "deny",
+				"permissionDecisionReason": ProtectReason,
+			},
+		})
+		if err == nil {
+			_, _ = stdout.Write(out)
+			logCall("deny:manager-config", cmd, "")
+		}
+		return 0
+	}
 	fixed, rules := FixCommand(cmd, in.Cwd, os.Getenv("CLAUDE_PROJECT_DIR"))
 	if len(rules) == 0 {
 		logCall("-", cmd, "")
@@ -116,18 +130,25 @@ func HookCommand(exe string) string {
 }
 
 // SettingsJSON returns the --settings value that installs the guard as a
-// PreToolUse hook on the Bash tool.
+// PreToolUse hook on the Bash tool — once for the command repairs
+// (HookCondition) and once for the manager-config protection
+// (ProtectHookCondition) — plus the deny rules that keep Edit/Write off the
+// manager's configuration (protect.go).
 func SettingsJSON(exe string) string {
+	hook := func(cond string) map[string]any {
+		return map[string]any{
+			"type":    "command",
+			"if":      cond,
+			"command": HookCommand(exe),
+			"timeout": 10,
+		}
+	}
 	b, _ := json.Marshal(map[string]any{
+		"permissions": map[string]any{"deny": ProtectDenyRules},
 		"hooks": map[string]any{
 			"PreToolUse": []any{map[string]any{
 				"matcher": "Bash",
-				"hooks": []any{map[string]any{
-					"type":    "command",
-					"if":      HookCondition,
-					"command": HookCommand(exe),
-					"timeout": 10,
-				}},
+				"hooks":   []any{hook(HookCondition), hook(ProtectHookCondition)},
 			}},
 		},
 	})

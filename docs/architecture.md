@@ -20,7 +20,8 @@ claude-manager/
 ├── internal/
 │   ├── cmdguard/                    # PreToolUse hook installed in Claude sessions (command_guard): fix.go rewrites
 │   │                                #   Bash commands that cannot work (cd into a dir only under the project root,
-│   │                                #   Windows paths bash mangles); hook.go reads the payload, logs to cmdguard.log
+│   │                                #   Windows paths bash mangles); hook.go reads the payload, logs to cmdguard.log;
+│   │                                #   protect.go denies edits of the manager's own .claude-manager/config*.toml
 │   ├── envcheck/                    # Finds claude/git/Git Bash/Python/gh/go/node/wails and their versions, and the
 │   │                                #   install command for this OS + package manager (Settings → Environment);
 │   │                                #   NewestPython picks the newest off-PATH Windows Python (also env card)
