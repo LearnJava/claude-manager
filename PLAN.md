@@ -192,6 +192,7 @@ rate_limit_alert_threshold = 0.80         # Уведомление при ути
 python_utf8 = true                        # PYTHONUTF8=1 и PYTHONIOENCODING=utf-8 для Claude-сессий (заданное значение не трогается)
 command_guard = true                      # PreToolUse-хук internal/cmdguard: чинит `cd .…` в несуществующую папку и Windows-пути (только bypassPermissions)
 env_card = true                           # Карточка окружения (ОС, оболочка, Python, корень проекта) в системном промпте сессий
+manager_card = true                       # Карточка менеджера: сессии проекта, их очереди и протокол постановки задач (размер, файл спецификации, указатель в очереди)
 
 # Копия проектов в Claude Manager (internal/mirror): у проектов с mirror = true
 # настройки и сохранённые логи копируются в mirror_dir и коммитятся в локальный

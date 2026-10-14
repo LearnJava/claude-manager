@@ -91,6 +91,8 @@ export default {
     'sessionFeatures.commandGuard.desc': 'A command certain to fail (cd into the wrong folder, a broken Windows path) is fixed before it runs.',
     'sessionFeatures.envCard.title': 'Environment card',
     'sessionFeatures.envCard.desc': 'The agent is told the OS, shell, Python command and project root instead of guessing them.',
+    'sessionFeatures.managerCard.title': 'Manager card',
+    'sessionFeatures.managerCard.desc': "The agent knows the project's sessions and their queues and how to hand them tasks: size, which file the spec goes in, where the pointer goes.",
 
     'sessionFeatures.permissionNotify.title': 'Windows notification',
     'sessionFeatures.permissionNotify.desc': 'A system notification appears when a session waits for your permission.',

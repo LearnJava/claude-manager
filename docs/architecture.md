@@ -71,6 +71,7 @@ claude-manager/
 │   │   ├── preflight_gate.go        # PreflightMode + SessionPreflight: pre-flight on a UI start (PLAN.md §17.6)
 │   │   ├── launch_env.go            # utf8Env: PYTHONUTF8/PYTHONIOENCODING for Claude processes (python_utf8)
 │   │   ├── envcard.go               # envCard: OS/shell/Python/project-root card appended to the system prompt (env_card)
+│   │   ├── managercard.go           # managerCard: project sessions + task protocol appended to the system prompt (manager_card)
 │   │   ├── slashcmds.go             # "/" autocomplete catalog per runtime; Hermes `/skill` → `-s`
 │   │   └── ratelimit.go             # Rate limit detection, retry logic, timers
 │   ├── permission/

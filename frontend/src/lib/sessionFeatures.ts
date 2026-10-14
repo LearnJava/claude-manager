@@ -84,6 +84,7 @@ const FIELDS: Record<string, FeatureField[]> = {
     pythonUtf8: [f('settings', 'PythonUTF8', 'python_utf8', 'bool')],
     commandGuard: [f('settings', 'CommandGuard', 'command_guard', 'bool')],
     envCard: [f('settings', 'EnvCard', 'env_card', 'bool')],
+    managerCard: [f('settings', 'ManagerCard', 'manager_card', 'bool')],
     permissionNotify: [f('settings', 'PermissionNativeNotification', 'permission_native_notification', 'bool')],
     permissionSound: [f('settings', 'PermissionSound', 'permission_sound', 'bool')],
     permissionTimeout: [f('settings', 'PermissionTimeout', 'permission_timeout', 'number'),
@@ -241,6 +242,8 @@ export function describeSessionFeatures(cfg: any, project: string, sessionName: 
         enabled: !!g.CommandGuard });
     add({ key: 'envCard', tomlKey: 'env_card', scope: 'global', group: 'performance',
         enabled: !!g.EnvCard });
+    add({ key: 'managerCard', tomlKey: 'manager_card', scope: 'global', group: 'performance',
+        enabled: !!g.ManagerCard });
 
     // --- Notifications -----------------------------------------------------
     add({ key: 'permissionNotify', tomlKey: 'permission_native_notification', scope: 'global', group: 'notifications',

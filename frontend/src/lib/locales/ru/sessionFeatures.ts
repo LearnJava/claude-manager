@@ -91,6 +91,8 @@ export default {
     'sessionFeatures.commandGuard.desc': 'Команду, которая точно упадёт (cd не в ту папку, сломанный Windows-путь), менеджер исправляет до запуска.',
     'sessionFeatures.envCard.title': 'Карточка окружения',
     'sessionFeatures.envCard.desc': 'Агент заранее знает ОС, оболочку, команду Python и корень проекта, а не угадывает их.',
+    'sessionFeatures.managerCard.title': 'Карточка менеджера',
+    'sessionFeatures.managerCard.desc': 'Агент знает сессии проекта и их очереди и умеет ставить им задачи: какого размера, в какой файл писать задачу, куда класть указатель.',
 
     'sessionFeatures.permissionNotify.title': 'Уведомление Windows',
     'sessionFeatures.permissionNotify.desc': 'Появляется системное уведомление, когда сессия ждёт вашего разрешения.',

@@ -60,6 +60,13 @@ command_guard = true
 # project root — so the model does not guess them.
 env_card = true
 
+# Manager card: tells every Claude session it runs inside Claude Manager — the
+# project's sessions and their queues (task_source), and how to write, size and
+# assign tasks to them (spec section in <BLOCK>-TASKS.md, file:line pointer in
+# the target session's queue). Without it "assign to Developer 1" reads as a
+# person in the issue tracker.
+manager_card = true
+
 # Project mirror (Settings → Projects → "Mirror into Claude Manager"): projects
 # with mirror = true get a local copy of their settings (CLAUDE.md, .claude/,
 # .claude-manager/, task queues) and saved logs, committed to a local git
