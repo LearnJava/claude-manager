@@ -835,6 +835,23 @@ func (m *SessionManager) StopSession(id string, soft bool) error {
 	return nil
 }
 
+// InterruptSession aborts the action in flight — the current turn — without
+// stopping the session: it stays alive and waits for the user's next
+// message. See Session.Interrupt.
+func (m *SessionManager) InterruptSession(id string) error {
+	ms := m.get(id)
+	if ms == nil {
+		return fmt.Errorf("session %q not found", id)
+	}
+	if err := ms.session.Interrupt(); err != nil {
+		return err
+	}
+	logger.L.Info("manager.interrupt_session", "id", id)
+	// A queued permission prompt belongs to the aborted tool call.
+	m.queue.RemoveBySession(id)
+	return nil
+}
+
 // StopAll stops every running session (soft=false).
 func (m *SessionManager) StopAll() {
 	m.mu.Lock()

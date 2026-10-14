@@ -108,6 +108,7 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         SessionPreflight: (project: string, session: string) =>
           rpc('SessionPreflight', { project, session }),
         StopSession: (id: string, soft: boolean) => rpc('StopSession', { id, soft }),
+        InterruptSession: (id: string) => rpc('InterruptSession', { id }),
         StartProject: (project: string) => rpc('StartProject', { project }),
         StopProject: (project: string) => rpc('StopProject', { project }),
         StartSessionWithModel: (project: string, session: string, model: string, effort: string) =>

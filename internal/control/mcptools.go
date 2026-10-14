@@ -30,6 +30,11 @@ func buildMCPTools() []ToolDef {
 			InputSchema: mustSchemaJSON(`{"type":"object","properties":{"project":{"type":"string"},"session":{"type":"string"},"after_task":{"type":"boolean","description":"Finish current task before stopping (soft stop)"}},"required":["project","session"]}`),
 		},
 		{
+			Name:        "interrupt_session",
+			Description: "Interrupt the session's current action (the turn in flight: a running tool call or generation) without stopping the session; it then waits for the next send_message.",
+			InputSchema: mustSchemaJSON(`{"type":"object","properties":{"project":{"type":"string"},"session":{"type":"string"}},"required":["project","session"]}`),
+		},
+		{
 			Name:        "restart_session",
 			Description: "Restart a session. Set resume=true to resume from the saved CLI session ID instead of restarting fresh.",
 			InputSchema: mustSchemaJSON(`{"type":"object","properties":{"project":{"type":"string"},"session":{"type":"string"},"resume":{"type":"boolean","description":"Resume from saved CLI session ID"}},"required":["project","session"]}`),
@@ -180,6 +185,11 @@ func TranslateTool(name string, args json.RawMessage) (endpoint string, body any
 		return "/rpc", rpcCallBody("StopSession", map[string]any{
 			"id":   sessionID(),
 			"soft": boolean("after_task"),
+		}), nil
+
+	case "interrupt_session":
+		return "/rpc", rpcCallBody("InterruptSession", map[string]string{
+			"id": sessionID(),
 		}), nil
 
 	case "restart_session":

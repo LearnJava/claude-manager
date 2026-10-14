@@ -72,6 +72,7 @@ claude-manager/
 │   │   ├── launch_env.go            # utf8Env: PYTHONUTF8/PYTHONIOENCODING for Claude processes (python_utf8)
 │   │   ├── envcard.go               # envCard: OS/shell/Python/project-root card appended to the system prompt (env_card)
 │   │   ├── managercard.go           # managerCard: project sessions + task protocol appended to the system prompt (manager_card)
+│   │   ├── interrupt.go             # Session.Interrupt: control_request interrupt aborts the turn in flight, session waits for the next message
 │   │   ├── slashcmds.go             # "/" autocomplete catalog per runtime; Hermes `/skill` → `-s`
 │   │   └── ratelimit.go             # Rate limit detection, retry logic, timers
 │   ├── permission/
@@ -374,6 +375,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `SetSessionModel(id, model)` | Switch a running session's model live and remember it (see "Live Model Switching") |
 | `SetSessionRuntime(id, runtime)` | Switch a stopped session between `claude` and `hermes` CLI (sidebar picker); persisted as the session's `runtime`. Refused while the session runs |
 | `StopSession(id, soft)` | Stop (soft=true finishes current task first) |
+| `InterruptSession(id)` | Abort the current action (turn) but keep the session alive, waiting for the next message |
 | `RestartSession(id)` | Hard stop + restart |
 | `ResumeSession(id)` | Resume from saved CLI session ID |
 | `StartProject(project)` | Start all sessions in a project — in cache-affinity order when `experience_tracking` + a store are on (see "Cache-Affinity Launch Order" LN-14), else plain config order |

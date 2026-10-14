@@ -65,6 +65,7 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | SV-07 | Export markdown creates file | Select md format, click Export | Success path shown; file exists on disk | ○ |
 | SV-08 | Export JSON creates file | Select json format, click Export | Success path shown; file is valid JSON | ○ |
 | SV-09 | Export confirmation clears after 3s | Export successfully | Export confirm message gone after 3s | ○ |
+| SV-10 | Interrupt button aborts the current action | Working session with a running tool, click ■ Stop under the live status line (or ■ Interrupt in the control bar) | Both buttons shown only while a turn is in flight (`live-status.spec.ts` "Interrupt button"); the abort itself is covered by `TestInterrupt_AbortsTurnAndWaitsForUser` | ✓ |
 
 ---
 

@@ -26,6 +26,7 @@ type ManagerAPI interface {
 	StartSession(project, name string) error
 	StartSessionWithOverride(project, name, model, effort string) error
 	StopSession(id string, soft bool) error
+	InterruptSession(id string) error
 	StopAll()
 	RestartSession(id string) error
 	ResumeSession(id string) error

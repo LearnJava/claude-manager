@@ -1,0 +1,62 @@
+{
+  "name": "interrupt-demo",
+  "match": "(?i)\\binterrupt-demo\\b",
+  "model": "claude-sonnet-4-6",
+  "context_window": 200000,
+  "exit_code": 0,
+  "steps": [
+    {
+      "type": "await_stdin",
+      "expect": "user",
+      "timeout_ms": 5000,
+      "store_as": "msg"
+    },
+    {
+      "type": "emit",
+      "delay_ms": 0,
+      "event": {"type":"system","subtype":"init","session_id":"${session_id}","model":"${model}","tools":["Bash"],"cwd":"${cwd}"}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 30,
+      "event": {"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu_sleep","name":"Bash","input":{"command":"sleep 600","description":"Long-running command"}}],"usage":{"input_tokens":800,"output_tokens":40,"cache_read_input_tokens":0}}}
+    },
+    {
+      "type": "await_stdin",
+      "expect": "control_request",
+      "timeout_ms": 60000,
+      "store_as": "ctl"
+    },
+    {
+      "type": "emit",
+      "delay_ms": 0,
+      "event": {"type":"control_response","response":{"subtype":"success","request_id":"interrupt"}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 10,
+      "event": {"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_sleep","content":"[Request interrupted by user for tool use]","is_error":true}]}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 10,
+      "event": {"type":"result","subtype":"error_during_execution","is_error":true,"total_cost_usd":0.004,"num_turns":1,"usage":{"input_tokens":800,"output_tokens":40},"modelUsage":{"claude-sonnet-4-6":{"costUSD":0.004}}}
+    },
+    {
+      "type": "await_stdin",
+      "expect": "user",
+      "timeout_ms": 60000,
+      "store_as": "next"
+    },
+    {
+      "type": "emit",
+      "delay_ms": 20,
+      "event": {"type":"assistant","message":{"content":[{"type":"text","text":"Continuing after the interrupt."}],"usage":{"input_tokens":900,"output_tokens":20,"cache_read_input_tokens":0}}}
+    },
+    {
+      "type": "emit",
+      "delay_ms": 10,
+      "event": {"type":"result","subtype":"success","total_cost_usd":0.006,"num_turns":1,"usage":{"input_tokens":900,"output_tokens":20},"modelUsage":{"claude-sonnet-4-6":{"costUSD":0.006}}}
+    }
+  ]
+}

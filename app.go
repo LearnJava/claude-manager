@@ -770,6 +770,12 @@ func (a *App) StopSession(id string, soft bool) error {
 	return a.manager.StopSession(id, soft)
 }
 
+// InterruptSession aborts the session's current action (turn) but keeps the
+// session alive, waiting for the user's next message.
+func (a *App) InterruptSession(id string) error {
+	return a.manager.InterruptSession(id)
+}
+
 func (a *App) StopAll() {
 	a.manager.StopAll()
 }

@@ -34,18 +34,21 @@ func (m *mockManager) StartSession(project, name string) error { return m.startE
 func (m *mockManager) StartSessionWithOverride(project, name, model, effort string) error {
 	return nil
 }
-func (m *mockManager) StopSession(id string, soft bool) error                        { return nil }
-func (m *mockManager) StopAll()                                                       {}
-func (m *mockManager) RestartSession(id string) error                                 { return nil }
-func (m *mockManager) ResumeSession(id string) error                                  { return nil }
-func (m *mockManager) StartProject(project string) error                              { return nil }
-func (m *mockManager) StopProject(project string) error                               { return nil }
-func (m *mockManager) SendMessage(id, message string) error                           { return nil }
+func (m *mockManager) StopSession(id string, soft bool) error                      { return nil }
+func (m *mockManager) InterruptSession(id string) error                            { return nil }
+func (m *mockManager) StopAll()                                                    {}
+func (m *mockManager) RestartSession(id string) error                              { return nil }
+func (m *mockManager) ResumeSession(id string) error                               { return nil }
+func (m *mockManager) StartProject(project string) error                           { return nil }
+func (m *mockManager) StopProject(project string) error                            { return nil }
+func (m *mockManager) SendMessage(id, message string) error                        { return nil }
 func (m *mockManager) ListSlashCommands(id string) ([]session.SlashCommand, error) { return nil, nil }
-func (m *mockManager) RespondPermission(id, requestID, decision string) error         { return nil }
-func (m *mockManager) GetPendingPermissions() []permission.PermissionRequest          { return nil }
-func (m *mockManager) GetAllSessions() []session.SessionState                         { return m.allSessions }
-func (m *mockManager) GetSession(id string) (session.SessionState, bool)              { return session.SessionState{}, false }
+func (m *mockManager) RespondPermission(id, requestID, decision string) error      { return nil }
+func (m *mockManager) GetPendingPermissions() []permission.PermissionRequest       { return nil }
+func (m *mockManager) GetAllSessions() []session.SessionState                      { return m.allSessions }
+func (m *mockManager) GetSession(id string) (session.SessionState, bool) {
+	return session.SessionState{}, false
+}
 func (m *mockManager) GetSessionLog(id string, offset, limit int) ([]*store.LogEntry, error) {
 	return nil, nil
 }
@@ -55,10 +58,10 @@ func (m *mockManager) GetHistory(project string, limit int) ([]*store.SessionRun
 func (m *mockManager) GetSessionMetrics(id string) (session.SessionMetrics, error) {
 	return session.SessionMetrics{}, nil
 }
-func (m *mockManager) GetDailyCost(date string) (float64, error)              { return 0, nil }
-func (m *mockManager) GetProjectCost(project string, days int) (float64, error) { return 0, nil }
-func (m *mockManager) GetRateLimitStatus() *session.RateLimitInfo              { return nil }
-func (m *mockManager) ClearSessionState(project, name string)                  {}
+func (m *mockManager) GetDailyCost(date string) (float64, error)                    { return 0, nil }
+func (m *mockManager) GetProjectCost(project string, days int) (float64, error)     { return 0, nil }
+func (m *mockManager) GetRateLimitStatus() *session.RateLimitInfo                   { return nil }
+func (m *mockManager) ClearSessionState(project, name string)                       {}
 func (m *mockManager) GetSessionState(project, name string) *session.PersistedState { return nil }
 func (m *mockManager) RunPreflight(project, task string) (*analysis.TaskPlan, error) {
 	m.record("RunPreflight", project, task)
@@ -106,7 +109,7 @@ func (m *mockManager) CancelMixedTask(id string) error {
 
 type mockApp struct{}
 
-func (a *mockApp) GetConfig() *config.AppConfig       { return &config.AppConfig{} }
+func (a *mockApp) GetConfig() *config.AppConfig            { return &config.AppConfig{} }
 func (a *mockApp) UpdateConfig(cfg config.AppConfig) error { return nil }
 
 // newTestServer creates a Server backed by mock manager/app, ready for httptest.

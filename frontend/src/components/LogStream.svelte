@@ -11,6 +11,7 @@
     import LiveStatus from './LiveStatus.svelte';
     import LiveElapsed from './LiveElapsed.svelte';
     import { lastOpenCall } from '../lib/liveStatus';
+    import { canInterrupt } from '../lib/interrupt';
 
     export let sessionId: string;
     // Threshold (px) — if the user has scrolled further than this from the
@@ -86,6 +87,7 @@
     $: liveSession = $sessions[sessionId];
     $: liveActivity = liveSession && LIVE_STATUSES.includes(liveSession.status) ? liveSession.activity : undefined;
     $: openCall = liveActivity?.kind === 'tool' ? lastOpenCall(allEntries) : null;
+    $: interruptId = canInterrupt(liveSession) ? sessionId : null;
 
     // A block matches the search if any of its entries do — used to
     // auto-expand the group containing a hit (UI-02 "Группа … раскрывается").
@@ -425,7 +427,7 @@
             {/each}
         {/if}
         {#if $logLayout === 'feed'}
-            <LiveStatus activity={liveActivity} {openCall} />
+            <LiveStatus activity={liveActivity} {openCall} {interruptId} />
         {/if}
     </div>
 

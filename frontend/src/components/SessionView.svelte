@@ -16,8 +16,10 @@
     import { queues, syncQueue } from '../stores/queues';
     import { EMPTY_QUEUE, hasQueue } from '../lib/queue';
     import { t } from '../lib/i18n';
+    import { canInterrupt } from '../lib/interrupt';
     import {
         StopSession,
+        InterruptSession,
         RestartSession,
         ExportLog,
         InitGitRepo,
@@ -50,6 +52,10 @@
 
     function onStop() {
         call('Stop', () => StopSession(session.id, false));
+    }
+
+    function onInterrupt() {
+        call('Interrupt', () => InterruptSession(session.id));
     }
 
     function onStopAfterTask() {
@@ -156,6 +162,7 @@
         session.status !== 'idle' &&
         session.status !== 'error' &&
         session.status !== 'stopping';
+    $: interruptible = canInterrupt(session);
 </script>
 
 <div class="flex-1 min-h-0 flex flex-col">
@@ -229,6 +236,16 @@
             on:click={onStop}
             title={$t('sessionView.stop.title')}>
             {busyMatches('Stop') ? '…' : '⏹'} {$t('sessionView.stop.label')}
+        </button>
+        <button
+            type="button"
+            data-testid="interrupt-button"
+            class="px-2.5 py-1 text-xs rounded bg-bg-elevated border border-bg-border
+                   text-text hover:bg-bg-panel disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!interruptible || !!busy}
+            on:click={onInterrupt}
+            title={$t('sessionView.interrupt.title')}>
+            {busyMatches('Interrupt') ? '…' : '■'} {$t('sessionView.interrupt.label')}
         </button>
         <button
             type="button"

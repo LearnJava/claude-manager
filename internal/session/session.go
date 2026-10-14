@@ -392,6 +392,13 @@ type Session struct {
 	// softStop is set when the manager calls Stop(true): the current task
 	// is allowed to finish, then Run() exits without restarting.
 	softStop atomic.Bool
+	// interruptPending is set by Interrupt until the result that ends the
+	// aborted turn arrives (handleEvent -> onInterrupted).
+	interruptPending atomic.Bool
+	// interrupted marks a session waiting for the user's next message after
+	// an interrupted turn (protected by mu); SendMessage accepts input in
+	// StatusWaitingForUser while it is set, and clears it.
+	interrupted bool
 	// softStopAt is when the first Stop(true) arrived; stoppedAfterTaskAt
 	// copies it once Run() actually exits on that request, so the UI can
 	// keep saying why an idle session is idle (protected by mu). Both live
@@ -690,7 +697,7 @@ func (s *Session) SendMessageWithImages(msg string, images []ImageAttachment) er
 	s.mu.Lock()
 	st := s.status
 	// A free-text message typed while a question is pending is the answer.
-	answering := st == config.StatusWaitingForUser && s.pendingQuestion != nil
+	answering := st == config.StatusWaitingForUser && (s.pendingQuestion != nil || s.interrupted)
 	s.mu.Unlock()
 	if st != config.StatusWorking && st != config.StatusWaitingPermission && !answering {
 		return fmt.Errorf("session %s is not active (status=%s)", s.ID, st)
@@ -702,9 +709,11 @@ func (s *Session) SendMessageWithImages(msg string, images []ImageAttachment) er
 	if err := s.queueInput(append(data, '\n')); err != nil {
 		return err
 	}
+	s.markTurnStarted()
 	if answering {
 		s.mu.Lock()
 		s.pendingQuestion = nil
+		s.interrupted = false
 		if s.questionTimer != nil {
 			s.questionTimer.Stop()
 			s.questionTimer = nil
@@ -791,6 +800,7 @@ func (s *Session) AnswerQuestion(questionID, answer string) error {
 	if err := s.queueInput(append(data, '\n')); err != nil {
 		return err
 	}
+	s.markTurnStarted()
 	s.setStatus(config.StatusWorking)
 	return nil
 }
@@ -1651,6 +1661,8 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	s.cancelRun = nil
 	s.inputCh = nil
 	s.endInput = nil
+	s.interrupted = false
+	s.interruptPending.Store(false)
 	// A process that exited (killed, crashed, or errored) while a question
 	// was still pending leaves no live stdin for the timeout fallback to
 	// answer into — drop it so a later stray timer fire is a harmless no-op.
@@ -1750,6 +1762,7 @@ func (s *Session) sendInitialPrompt(ch chan<- []byte, prompt string) error {
 	}
 	select {
 	case ch <- append(data, '\n'):
+		s.markTurnStarted()
 		return nil
 	case <-time.After(5 * time.Second):
 		return fmt.Errorf("session %s: initial prompt send timed out", s.ID)
@@ -1831,6 +1844,10 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 			s.emit(SessionEvent{Type: EvtLog, Entry: &entry})
 		}
 		if ev.Result != nil {
+			if s.interruptPending.Swap(false) {
+				s.onInterrupted(ev.Result)
+				return false
+			}
 			// RT-04: the adapter already classified any failure this result
 			// carries (step_limit / auth) into ev.Failure; applyFailure is
 			// the single place that becomes session state.

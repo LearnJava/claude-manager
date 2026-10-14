@@ -11,6 +11,9 @@ export default {
     'sessionView.gitInit.failedPrefix': 'Не удалось инициализировать git-репозиторий',
     'sessionView.stop.label': 'Стоп',
     'sessionView.stop.title': 'Стоп: завершить процесс немедленно',
+    'sessionView.interrupt.label': 'Прервать',
+    'sessionView.interrupt.title':
+        'Прервать текущее действие; сессия остаётся открытой и ждёт вашего следующего сообщения',
     'sessionView.stopAfterTask.titleRequested':
         'Уже запрошено: остановится после завершения текущей задачи',
     'sessionView.stopAfterTask.titleDefault':
