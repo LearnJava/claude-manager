@@ -21,6 +21,8 @@ claude-manager/
 │   ├── cmdguard/                    # PreToolUse hook installed in Claude sessions (command_guard): fix.go rewrites
 │   │                                #   Bash commands that cannot work (cd into a dir only under the project root,
 │   │                                #   Windows paths bash mangles); hook.go reads the payload, logs to cmdguard.log
+│   ├── guardaudit/                  # Replays cmdguard over saved transcripts/run logs: per-rule rewrites (on a
+│   │                                #   working command = unsafe rule) + clusters of failures no rule covers
 │   ├── config/
 │   │   ├── types.go                 # AppConfig, GlobalSettings, OptimizationSettings,
 │   │   │                            #   ProjectConfig, SessionConfig, PermissionRule,
@@ -302,6 +304,7 @@ claude-manager/
 │   ├── fakeclaude/                  # Scripted Claude CLI double (deterministic stream-json)
 │   ├── fakeworker/                  # Scripted OpenAI-compatible worker double (SSE, MP-07)
 │   ├── fakehermes/                  # Scripted `hermes chat --format stream-json` double
+│   ├── guardaudit/                  # CLI front end of internal/guardaudit (`go run ./cmd/guardaudit`)
 │   └── cm-mcp/                      # MCP server: drive the app as agent tools
 ├── internal/
 │   ├── testkit/                     # Scenario loaders + fakeclaude<->parser conformance,

@@ -9,7 +9,8 @@
 // round trip as the failure it prevents, so a deny hook saves nothing. Each
 // rule fires only where the original command cannot work, which the replay
 // of 95k Bash calls from saved run logs confirmed (docs/design-decisions.md
-// "Command Guard"); anything uncertain is left alone.
+// "Command Guard"); anything uncertain is left alone. Judge a new rule with
+// `go run ./cmd/guardaudit`, which replays them over saved sessions.
 package cmdguard
 
 import (
