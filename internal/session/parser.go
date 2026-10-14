@@ -561,6 +561,21 @@ type rawToolResult struct {
 	ToolUseID string          `json:"tool_use_id"`
 	Content   json.RawMessage `json:"content"`
 	IsError   bool            `json:"is_error"`
+	Text      string          `json:"text"` // a plain text block (a task notification)
+}
+
+// taskNotificationEvent logs a CLI task notification as a system entry, not as
+// the user's prompt — see tasknotify.go.
+func taskNotificationEvent(text string, now time.Time) ParsedEvent {
+	return ParsedEvent{
+		EventType: EventLog,
+		Entries: []config.LogEntry{{
+			Time:    now,
+			Level:   "system",
+			Source:  "claude",
+			Message: formatTaskNotifications(text),
+		}},
+	}
 }
 
 // handleUser turns a `type:"user"` event into concise log entries instead of
@@ -580,6 +595,9 @@ func handleUser(line string, now time.Time) ParsedEvent {
 		if strings.TrimSpace(text) == "" {
 			return ParsedEvent{EventType: EventUnknown}
 		}
+		if isTaskNotification(text) {
+			return taskNotificationEvent(text, now)
+		}
 		return ParsedEvent{
 			EventType: EventLog,
 			Entries: []config.LogEntry{{
@@ -598,6 +616,10 @@ func handleUser(line string, now time.Time) ParsedEvent {
 	}
 	var entries []config.LogEntry
 	for _, b := range blocks {
+		if b.Type == "text" && isTaskNotification(b.Text) {
+			entries = append(entries, taskNotificationEvent(b.Text, now).Entries...)
+			continue
+		}
 		if b.Type != "tool_result" {
 			continue
 		}

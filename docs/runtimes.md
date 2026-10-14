@@ -78,8 +78,8 @@ see §4 and `internal/session/task_outcome.go`.
 | `{"type":"system","subtype":"init",...}` | `handleSystem` | `EventInit`, `Init` filled, one `EventLog` entry ("Session initialized: model vX") |
 | `{"type":"system","subtype":≠"init"}` | `handleSystem` | `EventUnknown`, no entries |
 | `{"type":"assistant",...}` | `handleAssistant` | `EventLog`; one `LogEntry` per content block (`text`→`level:"text"`, `tool_use`→`level:"tool"` + `Diff`/`ToolArgs`/`ToolUseID`, `thinking`→`level:"thinking"`); `TodoWrite` tool_use also fills `Todos`; `Usage` from `message.usage` |
-| `{"type":"user",...}` (string content) | `handleUser` (shape 1) | `EventLog`, one entry `level:"user"` — a replayed prompt (`--replay-user-messages`) |
-| `{"type":"user",...}` (array content) | `handleUser` (shape 2) | `EventLog`; one entry per `tool_result` block, `level:"tool_result"` or `"error"` if `is_error`, `ToolUseID` from `tool_use_id` |
+| `{"type":"user",...}` (string content) | `handleUser` (shape 1) | `EventLog`, one entry `level:"user"` — a replayed prompt (`--replay-user-messages`); text starting with `<task-notification>` (the CLI announcing a finished background task) → `level:"system"`, formatted by `tasknotify.go` |
+| `{"type":"user",...}` (array content) | `handleUser` (shape 2) | `EventLog`; one entry per `tool_result` block, `level:"tool_result"` or `"error"` if `is_error`, `ToolUseID` from `tool_use_id`; a `text` block holding a `<task-notification>` → `level:"system"` |
 | `{"type":"result",...}` | `handleResult` | `EventResult`, `Result` filled, `Activity:{Kind:idle}`, one entry `level:"result"` (subtype prefixed if not `"success"`) |
 | `{"type":"rate_limit_event",...}` | `handleRateLimit` | `EventRateLimit`, `RateLimit` filled (nil → `EventUnknown`) |
 | `{"type":"permission_request",...}` | `handlePermission` | `EventPermission`, `Permission` filled |

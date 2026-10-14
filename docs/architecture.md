@@ -45,6 +45,7 @@ claude-manager/
 │   │   │                            #   TodoWrite todos (current task + progress);
 │   │   │                            #   see docs/runtimes.md for the full Claude<->Hermes
 │   │   │                            #   ParsedEvent mapping (RUNTIME-TASKS.md RT-01)
+│   │   ├── tasknotify.go            # CLI <task-notification> user turn → readable system entry
 │   │   ├── input.go                 # Write to stdin: user_message, permission_response
 │   │   ├── hermes_parser.go         # Hermes CLI stream-json → the same ParsedEvent (HERMES-TASKS.md)
 │   │   ├── hermes_runtime.go        # runtime = "hermes": `hermes chat` per turn, --resume by id
