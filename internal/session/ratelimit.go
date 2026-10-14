@@ -133,6 +133,9 @@ func (s *Session) applyFailure(f *TurnFailure) {
 		s.stepLimitHit.Store(true)
 	case KindContextRestart:
 		s.contextRestartHit.Store(true)
+	case KindTransientAPI:
+		s.transientAPIHit.Store(true)
+		logger.L.Warn("session.transient_api_error_detected", "id", s.ID, "text", f.Message)
 	case KindOther:
 		// Recognized as a failure, but the Run loop has no special handling
 		// for it beyond the generic process-error path.

@@ -328,6 +328,11 @@ type Session struct {
 	authErrorHit       atomic.Bool
 	sessionNotFoundHit atomic.Bool
 	contextRestartHit  atomic.Bool
+	// transientAPIHit is set when the run's result was the CLI's "API
+	// Error: ..." for a network failure or a 5xx/overloaded response
+	// (isTransientAPIError) — the Run loop resumes the same conversation
+	// with backoff instead of counting the task as unfinished.
+	transientAPIHit atomic.Bool
 	// contextRearm is set after a context restart or /compact: the next
 	// turn back under the threshold re-arms contextMonitor (RearmBelow).
 	// Spans runs — it is deliberately not in resetRunAtomics.
@@ -411,6 +416,31 @@ type Session struct {
 // errRateLimited is the internal sentinel signalling that the run ended
 // because of a rate limit (not a generic process error).
 var errRateLimited = errors.New("session: rate limited")
+
+// errTransientAPI is the sentinel for a run that ended on a transient
+// network/API failure (connection refused, 5xx, overloaded). Not the task's
+// fault: the Run loop resumes the same conversation after a backoff and does
+// not count the run toward maxUnfinishedStreak.
+var errTransientAPI = errors.New("session: transient API error (network or 5xx)")
+
+// transientAPIMaxDelay caps the backoff between transient-API retries.
+const transientAPIMaxDelay = 10 * time.Minute
+
+// transientAPIDelay is the pause before retry number streak (1-based):
+// retryDelay doubled per consecutive failure, capped at transientAPIMaxDelay.
+func transientAPIDelay(retryDelaySec, streak int) time.Duration {
+	d := time.Duration(retryDelaySec) * time.Second
+	if d <= 0 {
+		d = 30 * time.Second
+	}
+	for i := 1; i < streak && d < transientAPIMaxDelay; i++ {
+		d *= 2
+	}
+	if d > transientAPIMaxDelay {
+		d = transientAPIMaxDelay
+	}
+	return d
+}
 
 // errPreHookFailed is returned by runOnce when the pre_task_hook exits non-zero.
 // The Run loop converts this to a Retrying state (see PLAN.md section 9).
@@ -936,6 +966,9 @@ func (s *Session) Run(ctx context.Context) {
 	}
 
 	unfinishedStreak := 0
+	// transientStreak counts consecutive runs ended by errTransientAPI; it
+	// only drives the backoff — a network outage never stops the loop.
+	transientStreak := 0
 	// atTaskBoundary is true when the previous iteration ended at a point
 	// where "stop after this task" can honour itself: before the first run,
 	// after a closed task, or after a finished slice. A run that failed, hit
@@ -1047,7 +1080,38 @@ func (s *Session) Run(ctx context.Context) {
 			return
 		}
 
+		if !errors.Is(err, errTransientAPI) {
+			transientStreak = 0
+		}
+
 		switch {
+		case errors.Is(err, errTransientAPI):
+			// The API/network dropped mid-task. Resume the same conversation
+			// (Claude only — the run's CLISessionID is its on-disk
+			// transcript) so the agent keeps its context, and leave
+			// unfinishedStreak and atTaskBoundary alone: the task neither
+			// failed nor reached a boundary a soft stop could honour.
+			transientStreak++
+			delay := transientAPIDelay(s.retryDelay, transientStreak)
+			logger.L.Warn("session.run.transient_api_error", "id", s.ID,
+				"streak", transientStreak, "delay_sec", int(delay.Seconds()))
+			s.setStatus(config.StatusRetrying)
+			s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+				Time: time.Now(), Level: "system", Source: "manager",
+				Message: fmt.Sprintf("API unreachable (attempt %d) — resuming the same conversation in %s",
+					transientStreak, delay.Round(time.Second)),
+			}})
+			if s.Config.IsHermes() {
+				s.resumeHermesAfterFailure()
+			} else {
+				s.mu.Lock()
+				s.resumeSessionID = s.CLISessionID
+				s.mu.Unlock()
+			}
+			if !s.sleepCtx(ctx, delay) {
+				s.setStatus(config.StatusIdle)
+				return
+			}
 		case errors.Is(err, errRateLimited):
 			logger.L.Warn("session.run.rate_limited", "id", s.ID, "using_fallback", s.usingFallback)
 			s.setStatus(config.StatusRateLimited)
@@ -2193,6 +2257,7 @@ func (s *Session) resetRunAtomics() {
 	s.authErrorHit.Store(false)
 	s.sessionNotFoundHit.Store(false)
 	s.contextRestartHit.Store(false)
+	s.transientAPIHit.Store(false)
 	s.afterLoopRestart.Store(s.loopRestartHit.Swap(false))
 	if s.loopDetector != nil {
 		s.loopDetector.Reset()
@@ -2223,6 +2288,9 @@ func (s *Session) classifySentinelError() error {
 	}
 	if s.rateLimited.Load() {
 		return errRateLimited
+	}
+	if s.transientAPIHit.Load() {
+		return errTransientAPI
 	}
 	if s.contextRestartHit.Load() {
 		logger.L.Info("session.process_exit.context_restart", "id", s.ID)

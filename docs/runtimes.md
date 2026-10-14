@@ -422,7 +422,7 @@ consolidation point:
 
 - `TurnFailure{Kind, Message, ResetsAt}` (`turn_failure.go`) — `Kind` is one
   of `rate_limit`\|`auth`\|`session_not_found`\|`context_restart`\|
-  `step_limit`\|`other`.
+  `step_limit`\|`transient_api`\|`other`.
 - `ParsedEvent.Failure *TurnFailure` — an adapter fills this when the event
   it just parsed carries a classified failure. Only `parser.go`'s
   `handleResult` fills it today (Claude's two result-line signals: an
@@ -449,6 +449,7 @@ consolidation point:
 | `session_not_found` | Hermes stderr only: `ClassifyHermesStderrLine` (`"Session not found: …"`) | `applyFailure{Kind:session_not_found}` | `sessionNotFoundHit` armed → `errSessionNotFound` → `Run` clears the stale resume id and retries as a fresh conversation |
 | `context_restart` | `checkContextRestart` (`session.go`), runtime-agnostic — reads `SessionResult.ModelUsage` from either adapter, only armed when `Config.ContextHandoff` is set | `applyFailure{Kind:context_restart}` | `contextRestartHit` armed → scanner loop closes stdin even for an interactive session → `errContextRestart` → `Run` rotates the CLI session id and resends the distilled handoff |
 | `step_limit` | Claude: `handleResult` classifies `subtype=="error_max_turns"` into `ParsedEvent.Failure`. Hermes: `hermesTurnHitStepLimit` (`task_outcome.go`, `state.db` tail scan after the process exits) | `applyFailure{Kind:step_limit}` | `stepLimitHit` armed → read by `Session.Run`'s task-outcome classification (`classifyTaskOutcome`'s "unfinished" reason string) |
+| `transient_api` | Claude only: `handleResult` classifies a result whose text starts with `API Error` and names a network failure or a 5xx/overloaded response (`isTransientAPIError`: `ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `Connection error`, `529 overloaded_error`, …) into `ParsedEvent.Failure`. The CLI exits cleanly after it, so without this the run read as an unfinished task. | `applyFailure{Kind:transient_api}` | `transientAPIHit` armed → `errTransientAPI` → `Run` sets `resumeSessionID` to the run's own `CLISessionID` (Hermes: `resumeHermesAfterFailure`) and sleeps `retry_delay` doubled per consecutive failure, capped at 10 min. Does not count toward `maxUnfinishedStreak`, never stops the loop, and is not a task boundary, so a soft stop waits for the task |
 | `other` | Reserved — no adapter produces it today; exists so a future classifier can say "this was a failure, not a success" without silently mapping to one of the five specific Kinds above | `applyFailure` no-ops on it | nothing; the run still ends via its normal non-nil-error/non-zero-exit path |
 
 Continue-session (`KindContinueSession` on a `Question`, not a `TurnFailure`

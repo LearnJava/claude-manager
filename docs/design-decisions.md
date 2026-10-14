@@ -1264,6 +1264,14 @@ adapter-local workaround like the one `2064fe0` had to patch over.
 On detection, `authErrorHit` atomic is set → `runOnce()` returns `errAuthError` → `Run()` pauses 60 seconds and retries.
 The crash-recovery state file is cleared on auth errors (not resumable).
 
+### Transient API Errors (network, 5xx, overloaded)
+When the API is unreachable the CLI ends the turn with a clean `result` whose text is e.g.
+`API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)` and exits 0.
+`handleResult` classifies such text (`API Error` prefix + a network/5xx marker, `isTransientAPIError`) as
+`transient_api` → `runOnce()` returns `errTransientAPI` → `Run()` resumes the same conversation
+(`--resume <CLISessionID>`) after `retry_delay` doubled per consecutive failure (capped at 10 min).
+It never counts toward the 3-unfinished-runs stop, so an outage of any length does not end an autonomous loop.
+
 ### Token Optimization
 - Context grows with every turn (all messages re-sent). Monitor `usage` in each `assistant` event.
 - Auto-restart session when context > 75% of `contextWindow` — opt-in per session via `context_handoff`, since `contextWindow` is only ever known from a `result` event's `modelUsage`, not the init event (see "Context Handoff on Restart" LN-15 below for exactly how/when this fires).

@@ -32,6 +32,7 @@ const (
 	KindSessionNotFound = "session_not_found"
 	KindContextRestart  = "context_restart"
 	KindStepLimit       = "step_limit"
+	KindTransientAPI    = "transient_api"
 	KindOther           = "other"
 )
 
@@ -45,6 +46,40 @@ func isAuthError(line string) bool {
 		(strings.Contains(lower, "forbidden") ||
 			strings.Contains(lower, "authenticate") ||
 			strings.Contains(lower, "unauthorized"))
+}
+
+// transientAPIMarkers are the substrings that make an "API Error: ..." result
+// a transient failure: the network or the API itself was briefly unreachable,
+// and the same request will succeed once it is back. Observed live on a Lumen
+// session: "API Error: Connection refused — a firewall or proxy may be
+// blocking it (ECONNREFUSED)" ended a 30-minute run cleanly, and the Run loop
+// counted it as an unfinished task.
+var transientAPIMarkers = []string{
+	"econnrefused", "econnreset", "etimedout", "enotfound", "eai_again",
+	"enetunreach", "ehostunreach", "epipe", "socket hang up",
+	"connection refused", "connection error", "connection reset",
+	"request timed out", "fetch failed", "network error",
+	"overloaded", "api_error", "internal server error", "bad gateway",
+	"service unavailable", "gateway timeout",
+	"api error: 500", "api error: 502", "api error: 503", "api error: 504", "api error: 529",
+}
+
+// isTransientAPIError reports whether a Claude result's own text is the CLI's
+// "API Error: ..." for a network failure or a 5xx/overloaded API response.
+// Requires the "API Error" prefix so a normal final answer that merely
+// mentions ECONNREFUSED (e.g. while debugging a server) never matches.
+func isTransientAPIError(text string) bool {
+	t := strings.TrimSpace(text)
+	if !strings.HasPrefix(t, "API Error") {
+		return false
+	}
+	lower := strings.ToLower(t)
+	for _, m := range transientAPIMarkers {
+		if strings.Contains(lower, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // isSessionNotFoundError reports whether a Hermes stderr line is its

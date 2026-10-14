@@ -691,6 +691,8 @@ func handleResult(ev rawStreamEvent, now time.Time) ParsedEvent {
 		pe.Failure = &TurnFailure{Kind: KindStepLimit, Message: msg}
 	case isAuthError(ev.ResultText):
 		pe.Failure = &TurnFailure{Kind: KindAuth, Message: ev.ResultText}
+	case isTransientAPIError(ev.ResultText):
+		pe.Failure = &TurnFailure{Kind: KindTransientAPI, Message: ev.ResultText}
 	}
 	if q := questionFromMarker(ev.ResultText); q != nil {
 		pe.Questions = []Question{*q}
