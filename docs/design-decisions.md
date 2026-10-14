@@ -165,6 +165,36 @@ by default for every project:
   machine and project, so it is byte-stable across runs and keeps the prompt
   cache. Both flags off leave the CLI arguments byte-identical.
 
+**Finding the next rule: `go run ./cmd/guardaudit`** (`internal/guardaudit`).
+The study is kept as a tool rather than a one-off script, so a new kind of
+slip is found and a new rule judged the same way. It reads CLI transcripts
+(`~/.claude/projects`, default) and/or saved run logs passed as roots
+(`projects/`, `<project>/.claude-manager/logs`; overlapping roots count a run
+twice) and prints two things. (1) Per rule: how many Bash calls it would
+rewrite, split into failed / live / working. *Working* must be 0 — exit code
+2 lists every such rewrite for review. A call counts as failed when the tool
+flagged an error **or** its output carries the rule's own failure text
+(`failEvidence`): `cd x; …` exits 0 after a failed cd. *Live* is a command
+the installed hook already rewrote (`cmdguard.log`): the transcript keeps the
+original text and its success, so without the log it would read as a broken
+working command. A call whose recorded cwd is gone (a removed worktree) does
+not replay the cd rule — its answer depends on the tree. (2) The failures no
+rule touches, keyed by tool + `experience.ErrorKey` of the first meaningful
+error line (a Bash `Exit code N` line is skipped) and ranked by distinct
+sessions — the candidates for the next rule, or for a line in the
+environment card when no rewrite can fix them. Projects under `%TEMP%`
+(test runs) are excluded by default. A markdown log is lossier than a
+transcript: a command is on one line (a heredoc command is not replayed —
+its body would read as shell words), there is no cwd (the cd rule is off),
+and results pair with calls first-in-first-out, so a lost result shifts
+them — the rule's failure text is looked for within 5 steps either side
+before a markdown call counts as working. Sessions are counted per file
+(one run). Adding a rule: a function in
+`cmdguard/fix.go`, a case in `fix_test.go`, its failure text in
+`guardaudit.failEvidence`, then the audit over both corpora with `on_working`
+0; a rule that needs a command shape other than `cd .…` also needs
+`HookCondition` widened, which the `if` syntax limits.
+
 ### Stream-JSON Events (stdout)
 Key event types to parse:
 - `{"type":"system","subtype":"init",...}` — session info, model, tools, version. Its `slash_commands`, `skills` and `terminal_slash_commands` are kept on the `Session` (`initCommands`) for the message box's "/" autocomplete — see "Slash-Command Autocomplete" below
@@ -1910,6 +1940,12 @@ transcript backend and a markdown-log backend (LN-17) both stitch
 `tool_use`↔`tool_result` into the same `Step` fields. Consumers must not
 assume every field is populated — `Input`/`ToolUseID`/`Usage` are simply zero
 on a backend that never had raw JSON to begin with.
+Two JSONL quirks the reader handles: a failed call's row carries
+`toolUseResult` as a bare string (`"Error: Exit code 1…"`), not an object —
+until 2026-10-14 that failed the row's decode and silently dropped every
+failed call's result; and a `tool_use` row is written after the call ran, so
+its `cwd` already reflects the call's own `cd` — `Step.Cwd` takes the cwd of
+the last non-assistant row before it instead.
 
 **Signatures turn a raw call into something aggregable** (LN-02,
 `internal/experience/signature.go`). `Signature(tool, inputText, projectPath)`

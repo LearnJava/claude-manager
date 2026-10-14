@@ -277,3 +277,29 @@ func TestTranscriptsRoot_HonorsEnvOverride(t *testing.T) {
 		t.Errorf("TranscriptsRoot() = %q", got)
 	}
 }
+
+// A failed call's row carries toolUseResult as a bare string (real CLI
+// output), not an object. The row must still close its tool_use as an error
+// instead of being skipped. Cwd is the one before the call (the attachment
+// row), not the tool_use row's own, which the CLI writes after a cd ran.
+func TestReadFrom_FailedCallWithStringToolUseResult(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	lines := `{"type":"attachment","sessionId":"s","cwd":"C:\\proj"}
+{"type":"assistant","sessionId":"s","cwd":"C:\\proj\\sub","timestamp":"2026-10-13T13:48:58Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"node -v; which claude"}}]}}
+{"type":"user","sessionId":"s","cwd":"C:\\proj","timestamp":"2026-10-13T13:48:59Z","message":{"role":"user","content":[{"type":"tool_result","content":"Exit code 1\nv22.23.2","is_error":true,"tool_use_id":"toolu_1"}]},"toolUseResult":"Error: Exit code 1\nv22.23.2"}
+`
+	if err := os.WriteFile(path, []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	traj, err := Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if traj.Skipped != 0 || len(traj.Steps) != 1 {
+		t.Fatalf("Skipped = %d, steps = %d; want 0, 1", traj.Skipped, len(traj.Steps))
+	}
+	st := traj.Steps[0]
+	if !st.ResultIsError || st.ResultText != "Exit code 1\nv22.23.2" || st.Cwd != `C:\proj` {
+		t.Errorf("step = %+v", st)
+	}
+}

@@ -50,6 +50,11 @@ type Step struct {
 	// StepToolUse (same rule as session_logs.tool_input, via
 	// session.AbbreviateInput); the prose itself for StepText/StepThinking.
 	ToolUseID string
+	// Cwd is the shell's working directory before the call ran: the cwd of
+	// the last non-assistant row before it. The tool_use row's own cwd is
+	// not used — the CLI writes it after the call ran, so it already
+	// reflects the call's own cd. Empty on the markdown backend.
+	Cwd string
 
 	// Result fields are only ever set for Kind == StepToolUse.
 	ResultText    string
@@ -75,6 +80,10 @@ type Trajectory struct {
 	Branch      string
 	Steps       []Step
 	Skipped     int
+
+	// preCallCwd is the cwd of the last non-assistant row read (see
+	// Step.Cwd).
+	preCallCwd string
 }
 
 // TranscriptsRoot returns the directory the Claude CLI writes JSONL
@@ -238,6 +247,23 @@ type rawToolUseResult struct {
 	IsImage     bool   `json:"isImage"`
 }
 
+// UnmarshalJSON accepts every shape the CLI writes: an object for a
+// completed call, but a bare string ("Error: Exit code 1\n...") for a failed
+// one. A non-object leaves the struct zero instead of failing the whole row —
+// which used to drop the tool_result of every failed call.
+func (r *rawToolUseResult) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || data[0] != '{' {
+		return nil
+	}
+	type plain rawToolUseResult
+	var p plain
+	if err := json.Unmarshal(data, &p); err != nil {
+		return nil
+	}
+	*r = rawToolUseResult(p)
+	return nil
+}
+
 func processLine(traj *Trajectory, toolIndex map[string]int, line string) {
 	var raw rawLine
 	if err := json.Unmarshal([]byte(line), &raw); err != nil {
@@ -250,6 +276,9 @@ func processLine(traj *Trajectory, toolIndex map[string]int, line string) {
 	}
 	if raw.Cwd != "" {
 		traj.ProjectPath = raw.Cwd
+		if traj.preCallCwd == "" || raw.Type != "assistant" {
+			traj.preCallCwd = raw.Cwd
+		}
 	}
 	if raw.GitBranch != "" {
 		traj.Branch = raw.GitBranch
@@ -294,6 +323,7 @@ func processAssistant(traj *Trajectory, toolIndex map[string]int, raw rawLine) {
 				Input:     b.Input,
 				InputText: session.AbbreviateInput(b.Name, b.Input),
 				ToolUseID: b.ID,
+				Cwd:       traj.preCallCwd,
 				Usage:     raw.Message.Usage,
 			}
 			traj.Steps = append(traj.Steps, step)
