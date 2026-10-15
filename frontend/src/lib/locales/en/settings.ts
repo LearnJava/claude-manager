@@ -199,6 +199,8 @@ export default {
     'settings.sessions.autoRestart': 'Auto-restart after task',
     'settings.sessions.stopWhenNoTasks': 'Stop when no tasks',
     'settings.sessions.useWorktree': 'Use git worktree',
+    'settings.sessions.useWorktreeTitle': 'Permanent folder .claude/worktrees/<slot>; created once, an unfinished task continues in it',
+    'settings.sessions.noProtocol': 'This project has no work-folder protocol. Without it the session works in the slot, but nobody manages task branches.',
     'settings.sessions.preflightLabel': 'Pre-flight',
 
     'settings.sessions.hooksHeading': 'Hooks',

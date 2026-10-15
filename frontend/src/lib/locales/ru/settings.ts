@@ -199,6 +199,8 @@ export default {
     'settings.sessions.autoRestart': 'Автоперезапуск после задачи',
     'settings.sessions.stopWhenNoTasks': 'Останавливаться при отсутствии задач',
     'settings.sessions.useWorktree': 'Использовать git worktree',
+    'settings.sessions.useWorktreeTitle': 'Постоянная папка .claude/worktrees/<slot>; создаётся один раз, незаконченная задача продолжается в ней',
+    'settings.sessions.noProtocol': 'В проекте нет протокола рабочих папок. Без него сессия работает в слоте, но ветками задач никто не управляет.',
     'settings.sessions.preflightLabel': 'Предварительный анализ',
 
     'settings.sessions.hooksHeading': 'Хуки',

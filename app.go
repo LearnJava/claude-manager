@@ -553,7 +553,7 @@ func upsertP1Session(cfg *config.AppConfig, project string) {
 				sessions[si].TaskSource = "STATUS-P1.md"
 				sessions[si].StopWhenNoTasks = true
 				sessions[si].AutoRestart = true
-				sessions[si].UseWorktree = false
+				sessions[si].UseWorktree = true
 				cfg.Projects[pi].Sessions = sessions
 				return
 			}
@@ -574,13 +574,11 @@ func upsertP1Session(cfg *config.AppConfig, project string) {
 			ContextHandoff:       true,
 			AskUserMarker:        true,
 			HandoffContextTokens: 150000,
-			// Off deliberately, and forced off above even for a pre-existing P1:
-			// the protocol installed into the project (analysis.WriteProtocolFiles)
-			// owns the worktree, keeping one persistent slot per developer whose
-			// branch survives an interrupted run. A bare --worktree would add a
-			// second, anonymous one made fresh from HEAD on every process start,
-			// and any work not yet merged would be invisible to the next session.
-			UseWorktree: false,
+			// On, and forced on above even for a pre-existing P1: the flag now
+			// prepares the same permanent slot (.claude/worktrees/p1-work) that the
+			// installed protocol (analysis.WriteProtocolFiles) occupies, and the CLI
+			// starts directly in it — no --worktree, no anonymous per-start copy.
+			UseWorktree: true,
 			Prompt:      analysis.DefaultP1SessionPrompt,
 		})
 		cfg.Projects[pi].Sessions = sessions
@@ -599,6 +597,14 @@ func upsertP1Session(cfg *config.AppConfig, project string) {
 // generated; this is the retrofit path for everything else.
 func (a *App) InstallSessionProtocol(project string) ([]string, error) {
 	return a.manager.InstallProtocol(project)
+}
+
+// HasSessionProtocol reports whether project's folder already carries a
+// developer-session protocol (scripts/worktree-pool.sh or
+// docs/git-workflow.md). Settings uses it to warn, under the "Use worktree"
+// checkbox, that nobody manages task branches in the slot.
+func (a *App) HasSessionProtocol(project string) (bool, error) {
+	return a.manager.HasProtocol(project)
 }
 
 // HasClaudeMd reports whether projectPath already contains a CLAUDE.md.
@@ -716,7 +722,7 @@ func upsertChatSession(cfg *config.AppConfig, project string) bool {
 		// session, Lumen browser S1).
 		sessions = append(sessions, config.SessionConfig{
 			Name:                 "Chat",
-			UseWorktree:          true,
+			UseWorktree:          false,
 			ContextPrimer:        true,
 			AskUserMarker:        true,
 			HandoffContextTokens: 150000,

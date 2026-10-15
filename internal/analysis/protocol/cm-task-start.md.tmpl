@@ -50,7 +50,7 @@ from the details file — the row alone is navigation, not a specification.
 Do not create a worktree per task — occupy your persistent slot:
 
 ```bash
-cd "$(bash scripts/worktree-pool.sh p1-work p1-$ARGUMENTS | tail -1)"
+cd "$(bash scripts/worktree-pool.sh {{.Slot}} {{.BranchPrefix}}$ARGUMENTS | tail -1)"
 git branch --show-current      # must print your branch before you edit anything
 ```
 
@@ -62,7 +62,7 @@ it: find out what is in there, it is somebody's unfinished task.
 Before the first code edit, if this project has a remote:
 
 ```bash
-git push origin p1-$ARGUMENTS
+git push origin {{.BranchPrefix}}$ARGUMENTS
 ```
 
 ## Step 5 — Report

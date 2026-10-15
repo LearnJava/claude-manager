@@ -1129,13 +1129,10 @@ func TestGetRoadmapRowDetail(t *testing.T) {
 	}
 }
 
-// TestUpsertP1Session_DoesNotUseManagerWorktree is the guard on the change that
-// made an interrupted session recoverable at all. With the manager's own
-// --worktree on, every process start gets a fresh anonymous worktree cut from
-// HEAD, so an interrupted task's branch is invisible to the next run and the
-// task is silently implemented again. The protocol written into the project
-// owns the worktree instead (one persistent slot per developer).
-func TestUpsertP1Session_DoesNotUseManagerWorktree(t *testing.T) {
+// TestUpsertP1Session_UsesPermanentSlot: use_worktree on a P1 session now
+// prepares the permanent slot (p1-work) the installed protocol occupies; the CLI
+// no longer gets --worktree, so no anonymous per-start copy appears.
+func TestUpsertP1Session_UsesPermanentSlot(t *testing.T) {
 	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{Name: "lumen"}}}
 	upsertP1Session(cfg, "lumen")
 
@@ -1143,8 +1140,8 @@ func TestUpsertP1Session_DoesNotUseManagerWorktree(t *testing.T) {
 	if len(sessions) != 1 || sessions[0].Name != "P1" {
 		t.Fatalf("expected one P1 session, got %+v", sessions)
 	}
-	if sessions[0].UseWorktree {
-		t.Error("P1 must not use the manager's --worktree: the project's protocol owns the worktree")
+	if !sessions[0].UseWorktree {
+		t.Error("P1 must have use_worktree = true (permanent slot)")
 	}
 	if sessions[0].TaskSource != "STATUS-P1.md" || !sessions[0].AutoRestart || !sessions[0].StopWhenNoTasks {
 		t.Errorf("P1 queue wiring not set: %+v", sessions[0])
@@ -1154,25 +1151,22 @@ func TestUpsertP1Session_DoesNotUseManagerWorktree(t *testing.T) {
 	}
 }
 
-// A P1 session left over from before this change carries use_worktree = true;
-// re-approving a roadmap has to clear it, or the project keeps the exact
-// behaviour the protocol exists to prevent. The user's own model/prompt edits
-// still survive.
-func TestUpsertP1Session_ClearsStaleWorktreeFlagOnExisting(t *testing.T) {
+// An existing P1 gets use_worktree forced on; the user's own model/prompt edits
+// survive.
+func TestUpsertP1Session_EnablesSlotOnExisting(t *testing.T) {
 	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{
 		Name: "lumen",
 		Sessions: []config.SessionConfig{{
-			Name:        "P1",
-			Model:       "opus",
-			Prompt:      "my own prompt",
-			UseWorktree: true,
+			Name:   "P1",
+			Model:  "opus",
+			Prompt: "my own prompt",
 		}},
 	}}}
 	upsertP1Session(cfg, "lumen")
 
 	got := cfg.Projects[0].Sessions[0]
-	if got.UseWorktree {
-		t.Error("stale use_worktree = true was not cleared")
+	if !got.UseWorktree {
+		t.Error("use_worktree was not enabled")
 	}
 	if got.Model != "opus" || got.Prompt != "my own prompt" {
 		t.Errorf("manual edits were overwritten: %+v", got)

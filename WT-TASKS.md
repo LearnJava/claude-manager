@@ -216,5 +216,5 @@
 | Задача | Статус | Ключевые файлы |
 |---|---|---|
 | WT-01 | ✓ DONE (2026-10-15) | internal/worktree/ |
-| WT-02 | ○ TODO | internal/session/, запуск CLI в слоте, лента |
-| WT-03 | ○ TODO | протокол, CLAUDE.md, умолчания |
+| WT-02 | ✓ DONE (2026-10-15) | internal/session/, запуск CLI в слоте, лента |
+| WT-03 | ✓ DONE (2026-10-15) | протокол, CLAUDE.md, умолчания |

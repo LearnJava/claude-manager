@@ -24,7 +24,7 @@ interrupted.
 forbidden** — including docs and a one-line status update.
 
 Branch name: `p<N>-<task>`, kebab-case, developer number first —
-`p1-user-auth`, `p1-parse-config`. The prefix identifies the owner of a branch
+`{{.BranchPrefix}}user-auth`, `{{.BranchPrefix}}parse-config`. The prefix identifies the owner of a branch
 left behind by a crashed session.
 
 **The branch is the reservation.** The pointer line in `{{.QueueFile}}` stays in
@@ -36,7 +36,7 @@ tracker.
 Each session works in its own slot: `.claude/worktrees/p<N>-work`.
 
 ```bash
-cd "$(bash scripts/worktree-pool.sh p1-work p1-<task> | tail -1)"
+cd "$(bash scripts/worktree-pool.sh {{.Slot}} {{.BranchPrefix}}<task> | tail -1)"
 ```
 
 **The slot is persistent — one per developer, not one per task.** Only the
@@ -96,7 +96,7 @@ large end-of-task conflict with several trivial ones.
 ```bash
 {{.GateBlock}}
 git commit -m "..."
-git -C <repo-root> merge --no-ff p1-<task> -m "Merge p1-<task>: ..."
+git -C <repo-root> merge --no-ff {{.BranchPrefix}}<task> -m "Merge {{.BranchPrefix}}<task>: ..."
 git push origin {{.MainBranch}}
 ```
 
@@ -108,7 +108,7 @@ worktree taken from the remote instead:
 
 ```bash
 git worktree add .claude/worktrees/merge-tmp -b merge-tmp-<task> origin/{{.MainBranch}}
-git -C .claude/worktrees/merge-tmp merge --no-ff p1-<task> -m "Merge p1-<task>: ..."
+git -C .claude/worktrees/merge-tmp merge --no-ff {{.BranchPrefix}}<task> -m "Merge {{.BranchPrefix}}<task>: ..."
 git -C .claude/worktrees/merge-tmp push origin HEAD:{{.MainBranch}}
 git worktree remove .claude/worktrees/merge-tmp && git branch -D merge-tmp-<task>
 ```
@@ -132,8 +132,8 @@ steps beside it. What must be true when a task is closed:
 ## If work is cancelled
 
 ```bash
-bash scripts/worktree-pool.sh release p1-work   # refuses while unmerged commits exist
-git branch -D p1-<task>
+bash scripts/worktree-pool.sh release {{.Slot}}   # refuses while unmerged commits exist
+git branch -D {{.BranchPrefix}}<task>
 ```
 Leave the queue untouched unless the task is genuinely abandoned — the pointer
 is what makes the next session pick it up.
