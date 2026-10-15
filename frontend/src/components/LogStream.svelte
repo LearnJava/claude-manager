@@ -79,7 +79,11 @@
     // Feed view groups the *filtered* entries, same as the classic view
     // filters rows — a group whose only surviving member matched the search
     // still shows correctly grouped instead of leaking raw entries around it.
-    $: blocks = groupEntries(entries);
+    // No live CLI process: a Stop kills it without a turn `result`, so open
+    // tool calls and a trailing "Thinking…" must not keep spinning.
+    const ENDED_STATUSES = ['idle', 'error', 'stopping'];
+    $: processEnded = !liveSession || ENDED_STATUSES.includes(liveSession.status);
+    $: blocks = groupEntries(entries, processEnded);
 
     // Live status line (UI-12): only for a running session, never over the
     // permission/question banners (those statuses are not in this list).
@@ -364,7 +368,7 @@
                     {@const isOpen = groupOpen.get(block.seq) ?? false}
                     {@const label =
                         block.thinkingSeconds === null || block.thinkingSeconds === undefined
-                            ? $t('logStream.thinkingNow')
+                            ? $t(processEnded ? 'logStream.thought' : 'logStream.thinkingNow')
                             : $t('logStream.thoughtFor', { s: block.thinkingSeconds })}
                     <div class="py-px" title={formatTime(block.entries[0].time)}>
                         <button
@@ -376,7 +380,7 @@
                                 {isOpen ? '−' : '＋'}
                             </span>
                             <span class="shrink-0">{label}</span>
-                            {#if block.thinkingSeconds === null || block.thinkingSeconds === undefined}
+                            {#if !processEnded && (block.thinkingSeconds === null || block.thinkingSeconds === undefined)}
                                 <LiveElapsed since={block.entries[0].time} />
                             {/if}
                             {#if !isOpen}

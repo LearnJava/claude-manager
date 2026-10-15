@@ -52,9 +52,9 @@ export interface EditBlockSummary {
 }
 
 // One tool call paired with its result — VIEW-TASKS.md UI-08. `running` is a
-// call with no result yet; once the turn's `result` entry has arrived after it
-// the call is closed as `ok` without a duration, so an interrupted turn never
-// spins forever.
+// call with no result yet; once the turn's `result` entry has arrived after it,
+// or the session's process is gone (Stop, crash), the call is closed as `ok`
+// without a duration, so an interrupted turn never spins forever.
 export interface ToolCall {
     call: LogEntry;
     result?: LogEntry;
@@ -191,7 +191,9 @@ function secondsBetween(from: LogEntry, to: LogEntry | undefined): number | null
     return Math.max(0, Math.round((b - a) / 1000));
 }
 
-export function groupEntries(entries: LogEntry[]): LogBlock[] {
+// `processEnded`: the session has no live CLI process (idle, error, stopping),
+// so no call can still be running — a Stop kills the CLI without a `result`.
+export function groupEntries(entries: LogEntry[], processEnded = false): LogBlock[] {
     const blocks: LogBlock[] = [];
     // Index of the last turn-level `result` entry: a call before it that never
     // got its own result is closed, not running.
@@ -201,7 +203,7 @@ export function groupEntries(entries: LogEntry[]): LogBlock[] {
         indexOf.set(e, i);
         if ((e.level ?? '').toLowerCase() === 'result') lastResultIdx = i;
     });
-    const turnEnded = (call: LogEntry) => (indexOf.get(call) ?? 0) < lastResultIdx;
+    const turnEnded = (call: LogEntry) => processEnded || (indexOf.get(call) ?? 0) < lastResultIdx;
     let cur: LogEntry[] | null = null;
     // Which kind the currently-open run will flush as. Only meaningful while
     // `cur` is non-null.

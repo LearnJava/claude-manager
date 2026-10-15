@@ -18,6 +18,7 @@ export default {
     'logStream.readOnlySummary': 'Viewed',
     'logStream.thoughtFor': 'Thought for {s}s',
     'logStream.thinkingNow': 'Thinking…',
+    'logStream.thought': 'Thought',
     'logStream.editMoreLines': '{n} more lines',
     'logStream.turnDone': 'Done',
     'logStream.turnIn': 'in {d}',

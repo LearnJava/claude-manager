@@ -18,6 +18,7 @@ export default {
     'logStream.readOnlySummary': 'Просмотрено',
     'logStream.thoughtFor': 'Думал {s}s',
     'logStream.thinkingNow': 'Думает…',
+    'logStream.thought': 'Думал',
     'logStream.editMoreLines': 'ещё {n} строк',
     'logStream.turnDone': 'Готово',
     'logStream.turnIn': 'за {d}',

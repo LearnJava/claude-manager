@@ -225,6 +225,13 @@ test.describe('tool call pairs (UI-08)', () => {
         expect(tc[0].durationMs).toBeUndefined();
     });
 
+    test('a stopped process closes an unanswered call without a turn result', () => {
+        const blocks = groupEntries([call('a'), res('a'), call('b')], true);
+        const tc = blocks[0].summary!.toolCalls;
+        expect(tc.map((t) => t.state)).toEqual(['ok', 'ok']);
+        expect(tc[1].durationMs).toBeUndefined();
+    });
+
     test('error result gives state error', () => {
         const blocks = groupEntries([call('a'), entry({ level: 'error', tool_use_id: 'a' } as any)]);
         expect(blocks[0].summary!.toolCalls[0].state).toBe('error');
