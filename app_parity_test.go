@@ -24,15 +24,6 @@ var parityExcluded = map[string]string{
 // task of MCP-TASKS.md (value = that task). The list only shrinks: once a
 // tool covers a method it must leave this map, and the test fails until it does.
 var parityPending = map[string]string{
-	"SessionPreflight": "MCP-10",
-	"GenerateRoadmap": "MCP-10",
-	"GetLatestDraftRoadmap": "MCP-10",
-	"ApproveRoadmap": "MCP-10",
-	"GetMixedQuality": "MCP-10",
-	"CancelMixedTask": "MCP-10",
-	"GetSessionRoadmap": "MCP-10",
-	"GetRoadmapTaskDetail": "MCP-10",
-	"GetRoadmapRowDetail": "MCP-10",
 	"GetSkillCandidates": "MCP-11",
 	"DistillSkill": "MCP-11",
 	"GetSkills": "MCP-11",

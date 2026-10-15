@@ -591,3 +591,28 @@ the wrong type». Правки идут под одним замком серв�
 **App или менеджер.** Файлы логов, очистка, импорт, таблицы опыта и совет по модели нужны
 GUI-приложению; в `playwright-server` они отвечают ошибкой «needs the Claude Manager app».
 Логи, поиск, экспорт, история и расход работают с любым менеджером.
+
+## Планирование и mixed
+
+Область MCP-10: preflight, roadmap и mixed programming. Реализация — `internal/control/rpc_planning.go`
+(RPC roadmap), `mcptools_planning.go` (новые инструменты); остальные инструменты области
+(`run_preflight`, `execute_plan`, `register_mixed_brief`, `dispatch_mixed_task`, `get_mixed_rounds`) появились раньше.
+Долгие операции (`session_preflight`, `generate_roadmap`, `dispatch_mixed_task`) пока отвечают, когда модель закончила;
+прогресс и ожидание — в MCP-12.
+
+| Инструмент | Уровень | Что делает |
+|---|---|---|
+| `session_preflight` | operate | Тот же гейт, что у кнопки Start: `needed=false`, если сессии хватает обычного старта, иначе план для просмотра |
+| `run_preflight` / `execute_plan` | operate | План для ad-hoc задачи и его запуск (`approve_plan` — в «Вопросы и permissions») |
+| `generate_roadmap` | operate | Разбивает идею проекта на фазы и задачи, сохраняет черновик (`plan_id`); стоит денег, в проект ничего не пишет |
+| `get_latest_draft_roadmap` | read | Последний неодобренный черновик проекта (`found=false`, если нет) |
+| `approve_roadmap` | admin | Пишет `ROADMAP.md` и `STATUS-P1.md` в проект, создаёт или обновляет сессию P1. Существующие файлы без `overwrite=true` не трогает |
+| `get_session_roadmap` | read | Дерево roadmap как в панели задач, плоским списком в порядке чтения: у узла `depth`, `status`, `current`, `detail_path`, `line`; страницами |
+| `get_roadmap_task_detail` | read | Текст файла `tasks/NN-*.md` (`path` — `detail_path` узла); окна по `MaxResponseBytes`, `cursor` — смещение в байтах |
+| `get_roadmap_row_detail` | read | Длинный текст строки roadmap (`roadmap_file` и `line` узла) |
+| `register_mixed_brief` / `dispatch_mixed_task` / `get_mixed_rounds` | operate / read | Бриф для worker-модели, запуск цикла «патчи → ворота → фидбэк», сохранённые раунды |
+| `get_mixed_quality` | read | Сравнение worker-моделей проекта: задачи, раунды до зелёного, доля чистых патчей, сбои |
+| `cancel_mixed_task` | operate | Отменяет идущую задачу (`task_id` вида `project/brief/worker`); уже применённые патчи остаются |
+
+**App или менеджер.** `approve_roadmap` и чтение roadmap нужны GUI-приложению (конфиг и папка проекта);
+в `playwright-server` они отвечают ошибкой «needs the Claude Manager app». Остальное работает с любым менеджером.

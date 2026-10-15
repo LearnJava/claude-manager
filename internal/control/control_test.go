@@ -125,6 +125,14 @@ func (m *mockManager) CancelMixedTask(id string) error {
 	m.record("CancelMixedTask", id)
 	return nil
 }
+func (m *mockManager) GenerateRoadmap(project, idea, model string) (*analysis.TaskPlan, error) {
+	m.record("GenerateRoadmap", project, idea, model)
+	return &analysis.TaskPlan{ID: 9, Project: project, Kind: analysis.PlanKindRoadmap}, nil
+}
+func (m *mockManager) GetLatestDraftRoadmap(project string) (*analysis.TaskPlan, error) {
+	m.record("GetLatestDraftRoadmap", project)
+	return nil, nil
+}
 
 type mockApp struct{}
 

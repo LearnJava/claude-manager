@@ -74,6 +74,7 @@ Any normal launch — `wails dev` or the built `claude-manager.exe` — starts t
 | `get_metrics` | Cost/token metrics for a project |
 | `search_session_log` / `get_history` / `get_session_metrics` | Filter a session log by level/tool/text; past runs; one session's tokens and cost |
 | `get_cost` / `export_log` / `get_top_actions` / `get_model_advice` | Day or project cost and tokens; log to a file (returns the path); experience tables; model recommendation (see docs/mcp.md "Логи и метрики" for the rest) |
+| `session_preflight` / `generate_roadmap` / `approve_roadmap` / `get_session_roadmap` / `get_mixed_quality` / `cancel_mixed_task` | Preflight gate of a session; draft roadmap from an idea and its approval (writes ROADMAP.md); roadmap tree and row/task text; worker comparison; cancel a mixed task (see docs/mcp.md "Планирование и mixed" for the rest) |
 | `wait_for_status` | Block until session reaches a target status |
 | `wait_for_event` | Block until a specific event is emitted |
 | `set_global_settings` | Deprecated alias of a whole-config write; use `update_global_settings` |
