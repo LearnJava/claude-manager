@@ -111,7 +111,7 @@ Update docs **in the same change** as the code, not as a follow-up:
 | New/changed Wails-bound method on `App` | Row in `docs/architecture.md`'s "Wails Bindings (app.go)" table + an MCP tool in the registry (`internal/control/mcptools.go`) or an entry in `parityExcluded` (`app_parity_test.go`, the parity test) |
 | New `SessionConfig`/`ProjectConfig`/`GlobalSettings` field | `config.example.toml` + relevant PLAN.md section |
 | New stream-json event type or field the parser handles | "Stream-JSON Events (stdout)" section in `docs/design-decisions.md` |
-| New `cm-mcp` tool | "cm-mcp tools available to Claude" table in `docs/testing-harness.md` |
+| New `cm-mcp` tool | Nothing by hand: run `go run ./cmd/cm-mcp -gen-docs` (regenerates the tool reference and parity map in `docs/mcp.md`; `TestDocsInSync` enforces it). Add a recipe row to `docs/mcp.md` if the tool opens a new workflow |
 | New fakeclaude/fakeworker scenario | `testdata/scenarios/scenarios_doc.md` entry describing state/feature covered and its `match` pattern |
 | New app-level task breakdown item done | Corresponding checkbox/row in `TASKS.md` / `HARNESS-TASKS.md` / `MIXED-TASKS.md` / `LEARN-TASKS.md` / `VIEW-TASKS.md` / `RUNTIME-TASKS.md` (+ delete its pointer line from the matching `*-STATUS.md` queue) |
 | New package or otherwise notable file under `internal/` | The architecture tree in `docs/architecture.md` |

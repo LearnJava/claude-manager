@@ -2,7 +2,7 @@
 
 Руководство и решения блока `MCP-TASKS.md`. Файл создан в MCP-01 и растёт
 с каждой задачей блока: MCP-02 добавляет «Протокол», MCP-06…11 — разделы
-областей, MCP-15 — онбординг. Раздел «Карта паритета» — источник, из
+областей, MCP-15 — онбординг и генерируемые таблицы. Раздел «Карта паритета» — источник, из
 которого MCP-03 строит реестр инструментов и тест паритета.
 
 Данные на 2026-10-15: по коду (`файл:функция`) и по modelcontextprotocol.io.
@@ -240,6 +240,226 @@ Control-plane проверяет уровень и на своей сторон�
 
 Новых недостающих действий GUI, требующих переноса на бэкенд, нет.
 
+## Быстрый старт
+
+1. Собрать `cm-mcp` (рядом с приложением) и запустить менеджер:
+
+   ```bash
+   go build -o build/cm-mcp.exe ./cmd/cm-mcp
+   ```
+
+   Запущенное приложение пишет адрес и токен control-plane в
+   `~/.claude-manager/control.json`; `cm-mcp` читает его сам. Переопределения:
+   `CM_CONTROL_ADDR`, `CM_CONTROL_TOKEN`. Приложение не запущено — `tools/list`
+   работает, `tools/call` вернёт «control-plane unreachable».
+2. Зарегистрировать сервер в клиенте (ниже). Уровень по умолчанию — `operate`;
+   `admin` включается только в конфиге клиента (`--level admin` или
+   `CM_MCP_LEVEL=admin`), см. «Уровни доступа».
+3. Проверить: попросить агента вызвать `get_sessions` — вернётся список сессий.
+
+### Регистрация в клиентах
+
+Путь к `cm-mcp.exe` — абсолютный. Во всех примерах уровень `operate`; для
+другого добавьте `"--level", "admin"` в `args` (или `-e CM_MCP_LEVEL=admin`).
+
+**Claude Code**
+
+```bash
+claude mcp add cm -- D:/GoProjects/claude-manager/build/cm-mcp.exe
+claude mcp add cm -e CM_MCP_LEVEL=admin -- D:/GoProjects/claude-manager/build/cm-mcp.exe   # admin
+```
+
+или `.mcp.json` в корне проекта:
+
+```json
+{
+  "mcpServers": {
+    "cm": { "command": "D:/GoProjects/claude-manager/build/cm-mcp.exe", "args": [] }
+  }
+}
+```
+
+**Claude Desktop** (`%APPDATA%\Claude\claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "cm": { "command": "D:\GoProjects\claude-manager\build\cm-mcp.exe", "args": ["--level", "operate"] }
+  }
+}
+```
+
+**Cursor** (`~/.cursor/mcp.json` или `.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "cm": { "command": "D:/GoProjects/claude-manager/build/cm-mcp.exe", "args": [], "env": { "CM_MCP_LEVEL": "operate" } }
+  }
+}
+```
+
+**Codex** (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.cm]
+command = "D:/GoProjects/claude-manager/build/cm-mcp.exe"
+args = ["--level", "operate"]
+```
+
+Транспорт — только stdio. Подробности протокола — «Протокол»; проверка
+соединения без клиента — «MCP Inspector».
+
+## Модель предметной области
+
+**Проект** (папка + `config.toml`) → **сессия** (`{project}/{session}`,
+`session_id`) → **задача** (строка очереди `*-STATUS.md`, `task_id`) → **ход**
+(одно сообщение пользователя и ответ модели). Агент оперирует `session_id`
+из ответов, не конструируя идентификаторы.
+
+Статусы сессии и переходы:
+
+```
+idle ──start_session──▶ starting ──▶ working ◀──send_message──┐
+ ▲                                     │  │                    │
+ │                                     │  └─ вопрос ─▶ waiting_for_user ──answer_question─┘
+ │                                     └──── permission ─▶ waiting_permission ──approve/deny─┘
+ └── stop_session / завершение ◀───────┘   (ошибка → error; лимит → rate_limited → retrying)
+```
+
+Полный перечень статусов — enum аргумента `wait_for_status` (есть ещё `analyzing`, `stopping`); ждать
+перехода — `wait_for_status` / `wait_for_any`, а не опрашивать в цикле.
+
+## Рецепты
+
+| Задача | Вызовы по порядку |
+|---|---|
+| Обзор | `get_sessions` → `get_session` по интересующей |
+| Подключить проект | `add_project` (`dry_run` сначала) → `add_session` → `start_session` |
+| Дать поручение и дождаться | `send_message` → `wait_for_status` (`waiting_*`/`idle`) → `get_session_logs` |
+| Разобрать ожидающее человека | `get_pending` → `approve_permission` / `deny_permission` / `answer_question` |
+| Следить за несколькими | `wait_for_any` по списку сессий → действовать по причине пробуждения |
+| Сменить модель | `stop_session` → `set_session_model` → `start_session` (или `restart_session`) |
+| Расход | `get_cost` (project, day) → `get_metrics` / `get_session_metrics` |
+| Найти в логе | `search_session_log` (level/tool/text) → `export_log` |
+| Спланировать перед запуском | `session_preflight` → `get_plan` → `approve_plan` → `execute_plan` |
+| Остановить всё | `stop_project` / `stop_all_sessions` (`confirm=true`, admin) |
+
+Готовые сценарии с именованными аргументами — «Промпты».
+
+## Справочник инструментов
+
+Генерируется из реестра; описание — первая фраза `description`
+(полный формат — «Стандарт описаний»). Признаки — аннотации MCP.
+
+<!-- BEGIN GENERATED: tools -->
+
+| Инструмент | Уровень | Признаки | Что делает |
+|---|---|---|---|
+| `start_session` | operate | идемпотентное, запускает модель | Start a configured session, optionally with a model, effort or runtime override. |
+| `stop_session` | operate | идемпотентное | Stop a running session. |
+| `interrupt_session` | operate | идемпотентное | Interrupt the session's current turn (a running tool call or generation) without stopping the session. |
+| `restart_session` | operate | запускает модель | Restart a session, fresh or resuming its saved conversation. |
+| `send_message` | operate | запускает модель | Send a user message, optionally with images, to a running session. |
+| `set_session_model` | operate | идемпотентное | Switch a session's model, live if it is running. |
+| `set_session_runtime` | operate | идемпотентное | Choose which agent CLI (claude or hermes) a session drives. |
+| `clear_session_state` | admin | разрушительное, идемпотентное | Delete a session's saved crash-recovery state so its next start opens a fresh conversation. |
+| `start_project` | operate | идемпотентное, запускает модель | Start every configured session of a project. |
+| `stop_project` | admin | разрушительное, идемпотентное | Stop every running session of a project. |
+| `stop_all_sessions` | admin | разрушительное, идемпотентное | Stop every running session of every project. |
+| `start_ad_hoc_chat` | operate | идемпотентное, запускает модель | Open an unconfigured Chat session in a project, with no task source and no first prompt. |
+| `approve_permission` | admin | — | Approve a pending permission request on the human's behalf. |
+| `deny_permission` | operate | — | Deny a pending permission request. |
+| `set_global_settings` | admin | идемпотентное | Deprecated, use update_global_settings: sends a partial object as the whole config. |
+| `run_preflight` | operate | запускает модель | Analyse a task in a project and produce an execution plan. |
+| `execute_plan` | operate | запускает модель | Start executing a plan produced by run_preflight. |
+| `register_mixed_brief` | operate | идемпотентное | Register a self-contained brief (English task text, verbatim code excerpts, decisions, target files) for a worker model. |
+| `dispatch_mixed_task` | operate | запускает модель | Run the brief, patches, checks, feedback loop for a registered brief against a worker model. |
+| `get_mixed_rounds` | read | только чтение | List the saved mixed-programming tasks of a project with rounds, patches, check results and status. |
+| `wait_for_worker_status` | read | только чтение | Block until a mixed-programming task reaches a terminal status, or the timeout passes. |
+| `get_sessions` | read | только чтение | List all sessions with their status and metrics. |
+| `get_session` | read | только чтение | Get one session's full state: status, model, runtime, current task, pending questions and permissions, saved conversation state. |
+| `list_slash_commands` | read | только чтение | List the slash commands and skills a session offers after a leading /. |
+| `get_session_logs` | read | только чтение | Read a session's log of its latest run, oldest entry first, one page at a time. |
+| `get_pending_permissions` | read | только чтение | List permission requests that wait for a decision, across all sessions. |
+| `get_metrics` | read | только чтение | Get a project's cost over a period, or the account rate-limit status when no project is given. |
+| `wait_for_status` | read | только чтение | Block until a session reports the given status, or the timeout passes. |
+| `wait_for_event` | read | только чтение | Block until an event whose payload contains the given fields is emitted, or the timeout passes. |
+| `wait_for_any` | read | только чтение | Block until the first of several sessions needs a human (question, permission, plan, error, finished task or turn), or the timeout passes. |
+| `get_pending` | read | только чтение | List every permission request and question that waits for a human, across all sessions or for one. |
+| `get_pending_questions` | read | только чтение | List the questions sessions asked the human (AskUserQuestion, clarify, the manager's own restart choice) that still wait for an answer. |
+| `answer_question` | operate | запускает модель | Answer a question a session asked the human. |
+| `add_permission_rule` | admin | идемпотентное | Add a standing allow or deny rule to one session's permission rules. |
+| `get_permission_candidates` | read | только чтение | Suggest auto-allow rules from a project's permission history: requests that keep recurring and were always approved. |
+| `get_plan` | read | только чтение | Get a persisted plan with its subtasks and their progress. |
+| `approve_plan` | admin | идемпотентное | Persist a plan, optionally edited, as approved on the human's behalf. |
+| `get_projects` | read | только чтение | List the configured projects with their folder, session names and mirror and mixed-programming flags. |
+| `get_config` | read | только чтение | Return the effective application config (global settings, optimization, projects with sessions, workers) in config.toml shape, without secrets, with its version. |
+| `check_environment` | read | только чтение, запускает модель | Find the programs sessions rely on (Claude CLI, Git, Git Bash, Python, build tools) and the install command for each missing one. |
+| `get_project_setup` | read | только чтение | Report whether a project's folder has a CLAUDE.md and the developer-session protocol, and its mirror state. |
+| `add_project` | admin | идемпотентное | Register a project folder under a new name. dry_run:true returns the diff and saves nothing. |
+| `update_project` | admin | идемпотентное | Change fields of a project: default permission mode, mixed programming, gates, journal, skills and mirror flags. dry_run:true returns the diff and saves nothing. |
+| `remove_project` | admin | разрушительное, идемпотентное | Remove a project from the manager's registry. dry_run:true returns the diff and saves nothing. |
+| `add_session` | admin | идемпотентное | Add a session to a project, optionally with initial fields. dry_run:true returns the diff and saves nothing. |
+| `update_session` | admin | идемпотентное | Change fields of a session: model, prompt, budget, permission mode, hooks and the rest of its config. dry_run:true returns the diff and saves nothing. |
+| `remove_session` | admin | разрушительное, идемпотентное | Remove a session from its project's config. dry_run:true returns the diff and saves nothing. |
+| `update_global_settings` | admin | идемпотентное | Change application-wide settings: budgets and alerts, permission handling, retry and log retention, language, cards. dry_run:true returns the diff and saves nothing. |
+| `update_config` | admin | разрушительное, идемпотентное | Replace the whole application config with an edited copy of what get_config returned. |
+| `init_git_repo` | admin | идемпотентное, запускает модель | Run git init in the project folder if it is not a repository yet, and make an initial commit if HEAD cannot be resolved. |
+| `generate_claude_md` | admin | запускает модель | Create or re-point the Init session of a project and start it, so Claude writes (or refines) the project's CLAUDE.md. |
+| `install_session_protocol` | admin | идемпотентное | Write the developer-session protocol (docs/git-workflow.md, scripts/worktree-pool.sh, the cm-task skills) into a project and gitignore its worktree pool. |
+| `mirror_project` | admin | идемпотентное | Turn on "Mirror into Claude Manager" for a project and copy its settings and saved run logs now. |
+| `unmirror_project` | admin | идемпотентное | Stop re-syncing a project's mirror. |
+| `sync_project_mirrors` | operate | идемпотентное | Re-sync every mirrored project now. |
+| `get_history` | read | только чтение | List the past runs of a project's sessions, or of all projects, newest first. |
+| `search_session_log` | read | только чтение | Find log entries of a session's latest run by kind, tool or text, oldest first, one page at a time. |
+| `get_session_metrics` | read | только чтение | Get a session's token counts, turns, cost, context use and duration. |
+| `get_cost` | read | только чтение | Get the cost and token volume of one day across all projects, or of one project over a period. |
+| `export_log` | operate | — | Write a session's latest log to a file in the manager's exports folder and return its path. |
+| `import_project_logs` | operate | идемпотентное | Read a folder of saved CLI logs into the project's experience tables. |
+| `get_project_log_files` | read | только чтение | List the session logs the manager saved automatically in a project's .claude-manager/logs folder, newest first. |
+| `clear_project_logs` | admin | разрушительное, идемпотентное | Delete every saved log file of a project and its stored log lines. |
+| `clean_old_logs` | admin | разрушительное, идемпотентное | Delete the stored log lines of runs older than a number of days, in every project. |
+| `get_top_actions` | read | только чтение | List the tool calls a project's sessions repeat most, grouped by signature, with error rate and token weight. |
+| `get_action_samples` | read | только чтение | List concrete calls that make up one action signature of a project. |
+| `get_duration_profile` | read | только чтение | Show how long each kind of tool call takes in a project: median, 90th percentile, maximum, total and failure rate. |
+| `get_token_attribution` | read | только чтение | Estimate which tool calls fill a project's context: tokens per signature, per tool and per result length. |
+| `get_model_advice` | read | только чтение | Say whether automatic model routing is on and which model and effort it recommends for a configured session's prompt. |
+| `session_preflight` | operate | запускает модель | Run the preflight analysis the settings of a session call for (what the Start button does) and return the plan to review, or nothing when the session should simply start. |
+| `generate_roadmap` | operate | запускает модель | Split a whole project idea into a backlog of phases and tasks and save it as a draft roadmap plan. |
+| `get_latest_draft_roadmap` | read | только чтение | Return the newest roadmap of a project that was generated but not approved yet. |
+| `approve_roadmap` | admin | идемпотентное | Approve a draft roadmap: write ROADMAP.md and STATUS-P1.md into the project and create or update its P1 session. |
+| `get_session_roadmap` | read | только чтение | Show the roadmap of a session as its task panel does: every phase and task with done, current or pending status. |
+| `get_roadmap_task_detail` | read | только чтение | Read the task file (tasks/NN-*.md) a roadmap row links to. |
+| `get_roadmap_row_detail` | read | только чтение | Read the long text of one roadmap row: its note column, else the raw row. |
+| `get_mixed_quality` | read | только чтение | Compare the worker models of the mixed-programming tasks of a project: tasks done, rounds to green, clean patch rate and failures per worker. |
+| `cancel_mixed_task` | operate | разрушительное, идемпотентное | Cancel a running mixed-programming task. |
+| `get_skill_candidates` | read | только чтение | List the action patterns of a project's past runs that are worth turning into a skill, best first. |
+| `distill_skill` | operate | запускает модель | Turn one skill candidate into a skill draft with a model run and save it as a draft; nothing is written into the project yet. |
+| `get_skills` | read | только чтение | List the skills of a project in every status: drafts, trials, approved, rejected and archived. |
+| `approve_skill` | admin | идемпотентное | Write a skill draft into the project as .claude/skills/<name>/SKILL.md so the agents load it. |
+| `archive_skill` | operate | идемпотентное | Switch a skill off: an applied skill's folder is moved out of .claude/skills so the agents stop seeing it. |
+| `restore_skill` | admin | идемпотентное | Bring an archived skill back into .claude/skills, or apply a rejected one anyway. |
+| `get_skill_usage` | read | только чтение | Show how often agents actually load each skill of a project. |
+| `get_skill_quality` | read | только чтение | Compare the runs before and after each approved skill of a project: does the skill help. |
+| `get_skill_autopilot` | read | только чтение | Show whether the skill autopilot is on for a project, its daily budget and what it has spent. |
+| `set_skill_autopilot` | admin | идемпотентное | Turn the skill autopilot on or off for a project and set its daily budget. |
+| `run_skill_autopilot` | operate | запускает модель | Run one autopilot step for a project now instead of waiting for the next finished run. |
+
+<!-- END GENERATED: tools -->
+
+## Ошибки и траблшутинг
+
+- `control-plane unreachable` — менеджер не запущен или `control.json`
+  устарел/недоступен; запустите приложение либо задайте `CM_CONTROL_ADDR` и
+  `CM_CONTROL_TOKEN`. Порт занят — `CM_CONTROL_PORT`.
+- `requires access level admin … CM_MCP_LEVEL=admin` — инструмент выше уровня
+  `cm-mcp`; повысить может только человек в конфиге клиента.
+- `-32001` уровень, `-32003` самоповреждение (сессия пытается остановить
+  себя; `--allow-self`). Остальные коды — «Ошибки и размер ответа».
+- Инструмента нет в `tools/list` — он выше текущего уровня.
+- Пустой или обрезанный ответ — страницы логов: `limit` и `next_cursor`.
+
 ## Реестр инструментов и тест паритета
 
 Реализован в MCP-03. Каждый инструмент объявляется **один раз** в
@@ -332,115 +552,107 @@ cursor="N"`. Страница дополнительно режется до `Ma
 
 ## Карта паритета
 
-Таблица охватывает **все 87 экспортированных методов `*App`**
-(`grep "^func (a \*App) [A-Z]" app*.go`: 83 в `app.go`, 4 в
-`app_mirror.go`; в постановке блока значилось 84 — картина на 2026-10-13
-устарела). Wails привязывает один объект — `app` (`main.go`, `Bind`), то
-есть список методов `App` = полный список действий GUI, идущих через Go.
+Каждый экспортированный метод `*App` (Wails привязывает один объект — это
+полный список действий GUI) покрыт инструментом или исключён с причиной в
+`parityExcluded` (`app_parity_test.go`): `PickDirectory`, `ShowMainWindow`,
+`MinimizeToTray`, `Notify` — оконные/ОС-действия без смысла для агента;
+`GetConfig` заменён `get_config`. Таблица ниже **генерируется** из реестра
+(`Covers` каждого инструмента); править руками нельзя —
+`go run ./cmd/cm-mcp -gen-docs` пересобирает её, тест `TestDocsInSync`
+падает при расхождении.
 
-**RPC сейчас** — есть ли метод в `internal/control/rpc.go:buildRegistry`
-(33 из 87; ещё два RPC, `GetSession` и `StartSessionWithOverride`, — не
-методы `App`). **Задача** — кто переносит. Один инструмент может покрывать
-несколько методов (`get_cost` → `GetDailyCost`, `GetDailyTokens`,
-`GetProjectCost`, `GetProjectTokens`). Итог: 83 метода → MCP, 4 → `excluded`.
-Уровни: 40 `read`, 24 `operate`, 19 `admin` (для `RespondPermission` —
-`approve` = admin, `deny` = operate; считается по первому).
+<!-- BEGIN GENERATED: parity -->
 
-Аннотации: *только чтение* = `readOnlyHint`; *разрушительное* =
-`destructiveHint`; *идемпотентное* = `idempotentHint`; *аддитивное* — не
-читает и не разрушает (`readOnlyHint=false`, `destructiveHint=false`).
-`openWorldHint=true` только у инструментов, запускающих модель (сессии,
-preflight, roadmap, distill); остальные — `false`.
+| Метод `App` | Инструмент | Уровень |
+|---|---|---|
+| `AddPermissionRule` | `add_permission_rule` | admin |
+| `AnswerQuestion` | `answer_question` | operate |
+| `ApprovePlan` | `approve_plan` | admin |
+| `ApproveRoadmap` | `approve_roadmap` | admin |
+| `ApproveSkill` | `approve_skill` | admin |
+| `ArchiveSkill` | `archive_skill` | operate |
+| `CancelMixedTask` | `cancel_mixed_task` | operate |
+| `CheckEnvironment` | `check_environment` | read |
+| `CleanOldLogs` | `clean_old_logs` | admin |
+| `ClearProjectLogs` | `clear_project_logs` | admin |
+| `ClearSessionState` | `clear_session_state` | admin |
+| `DispatchMixedTask` | `dispatch_mixed_task` | operate |
+| `DistillSkill` | `distill_skill` | operate |
+| `ExecutePlan` | `execute_plan` | operate |
+| `ExportLog` | `export_log` | operate |
+| `GenerateClaudeMdSession` | `generate_claude_md` | admin |
+| `GenerateRoadmap` | `generate_roadmap` | operate |
+| `GetActionSamples` | `get_action_samples` | read |
+| `GetAllSessions` | `get_sessions` | read |
+| `GetAutoModelRouting` | `get_model_advice` | read |
+| `GetDailyCost` | `get_cost` | read |
+| `GetDailyTokens` | `get_cost` | read |
+| `GetDurationProfile` | `get_duration_profile` | read |
+| `GetHistory` | `get_history` | read |
+| `GetLatestDraftRoadmap` | `get_latest_draft_roadmap` | read |
+| `GetMixedQuality` | `get_mixed_quality` | read |
+| `GetMixedRounds` | `get_mixed_rounds` | read |
+| `GetModelRecommendation` | `get_model_advice` | read |
+| `GetPendingPermissions` | `get_pending_permissions` | read |
+| `GetPendingPermissions` | `get_pending` | read |
+| `GetPendingQuestions` | `get_pending` | read |
+| `GetPendingQuestions` | `get_pending_questions` | read |
+| `GetPermissionCandidates` | `get_permission_candidates` | read |
+| `GetPlan` | `get_plan` | read |
+| `GetProjectCost` | `get_metrics` | read |
+| `GetProjectLogFiles` | `get_project_log_files` | read |
+| `GetProjectMirror` | `get_project_setup` | read |
+| `GetProjectTokens` | `get_cost` | read |
+| `GetProjects` | `get_projects` | read |
+| `GetRateLimitStatus` | `get_metrics` | read |
+| `GetRoadmapRowDetail` | `get_roadmap_row_detail` | read |
+| `GetRoadmapTaskDetail` | `get_roadmap_task_detail` | read |
+| `GetSessionLog` | `get_session_logs` | read |
+| `GetSessionMetrics` | `get_session_metrics` | read |
+| `GetSessionRoadmap` | `get_session_roadmap` | read |
+| `GetSessionState` | `get_session` | read |
+| `GetSkillAutopilot` | `get_skill_autopilot` | read |
+| `GetSkillCandidates` | `get_skill_candidates` | read |
+| `GetSkillQuality` | `get_skill_quality` | read |
+| `GetSkillUsage` | `get_skill_usage` | read |
+| `GetSkills` | `get_skills` | read |
+| `GetTokenAttribution` | `get_token_attribution` | read |
+| `GetTopActions` | `get_top_actions` | read |
+| `HasClaudeMd` | `get_project_setup` | read |
+| `HasSessionProtocol` | `get_project_setup` | read |
+| `ImportProjectLogs` | `import_project_logs` | operate |
+| `InitGitRepo` | `init_git_repo` | admin |
+| `InstallSessionProtocol` | `install_session_protocol` | admin |
+| `InterruptSession` | `interrupt_session` | operate |
+| `ListSlashCommands` | `list_slash_commands` | read |
+| `MirrorProject` | `mirror_project` | admin |
+| `RegisterMixedBrief` | `register_mixed_brief` | operate |
+| `RespondPermission` | `approve_permission` | admin |
+| `RespondPermission` | `deny_permission` | operate |
+| `RestartSession` | `restart_session` | operate |
+| `RestoreSkill` | `restore_skill` | admin |
+| `ResumeSession` | `restart_session` | operate |
+| `RunPreflight` | `run_preflight` | operate |
+| `RunSkillAutopilot` | `run_skill_autopilot` | operate |
+| `SendMessage` | `send_message` | operate |
+| `SendMessageWithImages` | `send_message` | operate |
+| `SessionPreflight` | `session_preflight` | operate |
+| `SetSessionModel` | `set_session_model` | operate |
+| `SetSessionRuntime` | `set_session_runtime` | operate |
+| `SetSkillAutopilot` | `set_skill_autopilot` | admin |
+| `StartAdHocChatSession` | `start_ad_hoc_chat` | operate |
+| `StartProject` | `start_project` | operate |
+| `StartSession` | `start_session` | operate |
+| `StartSessionWithModel` | `start_session` | operate |
+| `StopAll` | `stop_all_sessions` | admin |
+| `StopProject` | `stop_project` | admin |
+| `StopSession` | `stop_session` | operate |
+| `SyncProjectMirrors` | `sync_project_mirrors` | operate |
+| `UnmirrorProject` | `unmirror_project` | admin |
+| `UpdateConfig` | `set_global_settings` | admin |
 
-| Метод `App` | Определён | RPC сейчас | Задача | MCP-инструмент | Уровень | Аннотации | Заметка |
-|---|---|---|---|---|---|---|---|
-| `GetConfig` | `app.go:379` | да | MCP-08 | `get_settings` | read | только чтение | секреты вырезаются |
-| `GetProjects` | `app.go:384` | нет | MCP-08 | `list_projects` | read | только чтение | — |
-| `CheckEnvironment` | `app.go:395` | нет | MCP-08 | `check_environment` | read | только чтение | claude/git/hermes в PATH |
-| `GetAutoModelRouting` | `app.go:404` | нет | MCP-09 | `get_model_advice` | read | только чтение | поле `auto_routing` |
-| `GetModelRecommendation` | `app.go:415` | нет | MCP-09 | `get_model_advice` | read | только чтение | — |
-| `StartSessionWithModel` | `app.go:461` | нет | MCP-06 | `start_session` | operate | идемпотентное | аргументы `model`,`effort` тула start_session |
-| `SessionPreflight` | `app.go:475` | да | MCP-10 | `session_preflight` | operate | аддитивное | тот же гейт, что у кнопки Start |
-| `RunPreflight` | `app.go:481` | да | MCP-10 | `run_preflight` | operate | аддитивное | существующий |
-| `ApprovePlan` | `app.go:487` | да | MCP-07 | `approve_plan` | admin | аддитивное | одобрение плана вместо человека |
-| `ExecutePlan` | `app.go:493` | да | MCP-07 | `execute_plan` | operate | аддитивное | существующий |
-| `GetPlan` | `app.go:498` | да | MCP-07 | `get_plan` | read | только чтение | — |
-| `GenerateRoadmap` | `app.go:505` | нет | MCP-10 | `generate_roadmap` | operate | аддитивное | запускает модель (стоит денег) |
-| `GetLatestDraftRoadmap` | `app.go:514` | нет | MCP-10 | `get_latest_draft_roadmap` | read | только чтение | — |
-| `ApproveRoadmap` | `app.go:524` | нет | MCP-10 | `approve_roadmap` | admin | аддитивное | пишет ROADMAP/задачи в репозиторий |
-| `InstallSessionProtocol` | `app.go:599` | нет | MCP-08 | `install_session_protocol` | admin | идемпотентное | пишет скрипты/скиллы в репозиторий |
-| `HasSessionProtocol` | `app.go:607` | нет | MCP-08 | `get_project_status` | read | только чтение | поле `has_session_protocol` |
-| `HasClaudeMd` | `app.go:614` | нет | MCP-08 | `get_project_status` | read | только чтение | поле `has_claude_md` |
-| `GenerateClaudeMdSession` | `app.go:629` | нет | MCP-08 | `generate_claude_md` | admin | аддитивное | запускает сессию, пишущую CLAUDE.md в репозиторий |
-| `StartAdHocChatSession` | `app.go:686` | нет | MCP-06 | `start_ad_hoc_chat` | operate | аддитивное | ad-hoc сессия проекта |
-| `RegisterMixedBrief` | `app.go:742` | да | MCP-10 | `register_mixed_brief` | operate | аддитивное | существующий |
-| `DispatchMixedTask` | `app.go:750` | да | MCP-10 | `dispatch_mixed_task` | operate | аддитивное | существующий |
-| `GetMixedRounds` | `app.go:755` | да | MCP-10 | `get_mixed_rounds` | read | только чтение | существующий |
-| `GetMixedQuality` | `app.go:761` | да | MCP-10 | `get_mixed_quality` | read | только чтение | — |
-| `CancelMixedTask` | `app.go:766` | да | MCP-10 | `cancel_mixed_task` | operate | разрушительное | — |
-| `StartSession` | `app.go:772` | да | MCP-06 | `start_session` | operate | идемпотентное | существующий; +`model`,`effort` |
-| `StopSession` | `app.go:776` | да | MCP-06 | `stop_session` | operate | идемпотентное | существующий; `after_task` = soft |
-| `InterruptSession` | `app.go:782` | да | MCP-06 | `interrupt_session` | operate | идемпотентное | существующий |
-| `StopAll` | `app.go:786` | да | MCP-06 | `stop_all_sessions` | admin | разрушительное | останавливает чужую работу; требует `confirm=true` |
-| `RestartSession` | `app.go:790` | да | MCP-06 | `restart_session` | operate | аддитивное | существующий, `resume=false` |
-| `ResumeSession` | `app.go:794` | да | MCP-06 | `restart_session` | operate | аддитивное | существующий, `resume=true` |
-| `ClearSessionState` | `app.go:800` | да | MCP-06 | `clear_session_state` | admin | разрушительное | стирает сохранённый CLI session ID |
-| `GetSessionState` | `app.go:808` | да | MCP-06 | `get_session` | read | только чтение | сохранённое состояние — поле `saved_state` ответа get_session |
-| `InitGitRepo` | `app.go:820` | нет | MCP-08 | `init_git_repo` | admin | идемпотентное | пишет в папку пользователя |
-| `StartProject` | `app.go:833` | да | MCP-06 | `start_project` | operate | идемпотентное | все сессии проекта |
-| `StopProject` | `app.go:875` | да | MCP-06 | `stop_project` | admin | разрушительное | останавливает все сессии проекта |
-| `SendMessage` | `app.go:881` | да | MCP-06 | `send_message` | operate | аддитивное | существующий |
-| `SendMessageWithImages` | `app.go:887` | нет | MCP-06 | `send_message` | operate | аддитивное | аргумент `images[]` (base64) к send_message |
-| `ListSlashCommands` | `app.go:893` | да | MCP-06 | `list_slash_commands` | read | только чтение | — |
-| `RespondPermission` | `app.go:897` | да | MCP-07 | `approve_permission` / `deny_permission` | admin (approve) / operate (deny) | аддитивное | существующие; approve — вместо человека |
-| `GetPendingPermissions` | `app.go:901` | да | MCP-07 | `get_pending_permissions` | read | только чтение | существующий |
-| `AnswerQuestion` | `app.go:905` | нет | MCP-07 | `answer_question` | operate | аддитивное | ответ на вопрос сессии (AskUserQuestion) |
-| `GetPendingQuestions` | `app.go:909` | нет | MCP-07 | `get_pending_questions` | read | только чтение | — |
-| `SetSessionModel` | `app.go:922` | нет | MCP-06 | `set_session_model` | operate | идемпотентное | — |
-| `SetSessionRuntime` | `app.go:1002` | нет | MCP-06 | `set_session_runtime` | operate | идемпотентное | claude / hermes; отказ, пока сессия запущена |
-| `GetAllSessions` | `app.go:1063` | да | MCP-06 | `get_sessions` | read | только чтение | существующий; курсор + фильтры |
-| `GetSessionLog` | `app.go:1072` | да | MCP-09 | `get_session_logs` | read | только чтение | существующий; курсор вместо offset/limit |
-| `GetHistory` | `app.go:1076` | да | MCP-09 | `get_history` | read | только чтение | — |
-| `GetSessionMetrics` | `app.go:1080` | да | MCP-09 | `get_session_metrics` | read | только чтение | — |
-| `GetDailyCost` | `app.go:1084` | да | MCP-09 | `get_cost` | read | только чтение | scope=day |
-| `GetDailyTokens` | `app.go:1088` | нет | MCP-09 | `get_cost` | read | только чтение | scope=day, токены |
-| `GetProjectCost` | `app.go:1092` | да | MCP-09 | `get_cost` | read | только чтение | scope=project; существующий get_metrics — алиас |
-| `GetProjectTokens` | `app.go:1096` | нет | MCP-09 | `get_cost` | read | только чтение | scope=project, токены |
-| `GetRateLimitStatus` | `app.go:1100` | да | MCP-09 | `get_rate_limit_status` | read | только чтение | — |
-| `UpdateConfig` | `app.go:1112` | да | MCP-08 | `update_global_settings` / `update_project` / `update_session` / `add_project` / `remove_project` / `add_session` / `remove_session` | admin | идемпотентное | точечные операции вместо целого AppConfig; существующий set_global_settings — алиас |
-| `PickDirectory` | `app.go:1251` | нет | — | **excluded** | — | — | нативный диалог ОС; заменён аргументом `path` у `add_project`/`import_project_logs` |
-| `ShowMainWindow` | `app.go:1264` | нет | — | **excluded** | — | — | оконное действие ОС: у агента нет окна |
-| `MinimizeToTray` | `app.go:1275` | нет | — | **excluded** | — | — | оконное действие ОС: у агента нет окна |
-| `Notify` | `app.go:1313` | нет | — | **excluded** | — | — | тост ОС для человека; агент отвечает через результат инструмента |
-| `ExportLog` | `app.go:1329` | нет | MCP-09 | `export_log` | operate | создаёт файл | без нативного диалога: файл в `~/.claude-manager/exports`, в ответе путь; формат md/json/txt (store.RenderExport) |
-| `CleanOldLogs` | `app.go:1367` | нет | MCP-09 | `clean_old_logs` | admin | разрушительное | удаляет данные |
-| `GetSessionRoadmap` | `app.go:1401` | нет | MCP-10 | `get_session_roadmap` | read | только чтение | — |
-| `GetRoadmapTaskDetail` | `app.go:1417` | нет | MCP-10 | `get_roadmap_detail` | read | только чтение | `kind=task` |
-| `GetRoadmapRowDetail` | `app.go:1430` | нет | MCP-10 | `get_roadmap_detail` | read | только чтение | `kind=row` |
-| `GetTopActions` | `app.go:1462` | нет | MCP-09 | `get_top_actions` | read | только чтение | — |
-| `GetActionSamples` | `app.go:1472` | нет | MCP-09 | `get_action_samples` | read | только чтение | — |
-| `GetDurationProfile` | `app.go:1484` | нет | MCP-09 | `get_duration_profile` | read | только чтение | — |
-| `GetTokenAttribution` | `app.go:1497` | нет | MCP-09 | `get_token_attribution` | read | только чтение | — |
-| `GetPermissionCandidates` | `app.go:1513` | нет | MCP-07 | `get_permission_candidates` | read | только чтение | кандидаты в постоянные правила |
-| `AddPermissionRule` | `app.go:1530` | нет | MCP-07 | `add_permission_rule` | admin | аддитивное | меняет политику permissions проекта |
-| `GetSkillCandidates` | `app.go:1580` | нет | MCP-11 | `get_skill_candidates` | read | только чтение | — |
-| `DistillSkill` | `app.go:1610` | нет | MCP-11 | `distill_skill` | operate | аддитивное | запускает модель; создаёт только черновик |
-| `GetSkills` | `app.go:1660` | нет | MCP-11 | `get_skills` | read | только чтение | — |
-| `ImportProjectLogs` | `app.go:1675` | нет | MCP-09 | `import_project_logs` | operate | аддитивное | аргумент `dir` вместо диалога |
-| `ApproveSkill` | `app.go:1692` | нет | MCP-11 | `approve_skill` | admin | аддитивное | пишет скилл в репозиторий |
-| `ArchiveSkill` | `app.go:1714` | нет | MCP-11 | `archive_skill` | admin | идемпотентное | переносит папку скилла |
-| `RestoreSkill` | `app.go:1731` | нет | MCP-11 | `restore_skill` | admin | аддитивное | пишет скилл в репозиторий |
-| `GetSkillUsage` | `app.go:1750` | нет | MCP-11 | `get_skill_usage` | read | только чтение | — |
-| `GetSkillAutopilot` | `app.go:1772` | нет | MCP-11 | `get_skill_autopilot` | read | только чтение | — |
-| `SetSkillAutopilot` | `app.go:1808` | нет | MCP-11 | `set_skill_autopilot` | admin | идемпотентное | меняет конфиг проекта |
-| `RunSkillAutopilot` | `app.go:1837` | нет | MCP-11 | `run_skill_autopilot` | operate | аддитивное | один шаг; ограничен дневным бюджетом |
-| `GetSkillQuality` | `app.go:1907` | нет | MCP-11 | `get_skill_quality` | read | только чтение | — |
-| `GetProjectLogFiles` | `app.go:1918` | нет | MCP-09 | `get_project_log_files` | read | только чтение | — |
-| `ClearProjectLogs` | `app.go:1930` | нет | MCP-09 | `clear_project_logs` | admin | разрушительное | удаляет данные; `confirm=true` |
-| `MirrorProject` | `app_mirror.go:122` | нет | MCP-08 | `mirror_project` | admin | идемпотентное | — |
-| `UnmirrorProject` | `app_mirror.go:138` | нет | MCP-08 | `unmirror_project` | admin | разрушительное | — |
-| `SyncProjectMirrors` | `app_mirror.go:143` | нет | MCP-08 | `sync_project_mirrors` | operate | идемпотентное | — |
-| `GetProjectMirror` | `app_mirror.go:148` | нет | MCP-08 | `get_project_mirror` | read | только чтение | — |
+<!-- END GENERATED: parity -->
+
 
 ## Сессии
 

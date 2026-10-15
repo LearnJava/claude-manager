@@ -67,8 +67,9 @@ npm --prefix frontend test >> .tmp/gate.log 2>&1; echo "exit=$?"
 5. **Новый пакет или заметный файл** → дерево архитектуры в
    [docs/architecture.md](../../../docs/architecture.md).
 6. **Новый сценарий fakeclaude/fakeworker** → `testdata/scenarios/scenarios_doc.md`.
-7. **Новый инструмент cm-mcp** → таблица «cm-mcp tools available to Claude» в
-   [docs/testing-harness.md](../../../docs/testing-harness.md).
+7. **Новый инструмент cm-mcp** → `go run ./cmd/cm-mcp -gen-docs` (справочник и
+   карта паритета в [docs/mcp.md](../../../docs/mcp.md) генерируются; тест
+   `TestDocsInSync` падает при расхождении).
 
 Если сдвигал строки в мастер-файле задач — переиндексируй указатели в очереди
 (вставил K строк выше строки L → все `NN ≥ L` сдвигаются на +K) и проверь
