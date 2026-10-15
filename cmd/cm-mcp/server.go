@@ -72,7 +72,12 @@ func (s *mcpServer) newSDKServer() *mcp.Server {
 					// Tool failures are results, not JSON-RPC errors, so the model sees them.
 					return &mcp.CallToolResult{
 						IsError: true,
-						Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+						Content: []mcp.Content{&mcp.TextContent{Text: control.ExplainError(name, err, func(tool string) []any {
+							res, lerr := s.callToolCtx(ctx, tool, json.RawMessage(`{"limit":500}`))
+							items, _ := res.([]any)
+							_ = lerr // context is best effort: the plain error still goes out
+							return items
+						})}},
 					}, nil
 				}
 				return &mcp.CallToolResult{

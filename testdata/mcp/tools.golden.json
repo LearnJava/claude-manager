@@ -10,20 +10,26 @@
       "readOnlyHint": false,
       "title": "Approve permission"
     },
-    "description": "Approve a pending permission request for a session (on the human's behalf).",
+    "description": "Approve a pending permission request on the human's behalf. Use when: get_pending_permissions lists a request you are authorised to allow. Not for: refusing a request (use deny_permission). Returns: ok, the ids and the decision sent. Side effects: the session runs the tool it asked for; scope session or always also adds a standing allow rule. Access: admin. Example: {\"session_id\":\"lumen/P1\",\"request_id\":\"req-1\",\"scope\":\"once\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "request_id": {
-          "description": "Permission request ID from get_pending_permissions",
+          "description": "Permission request ID, taken from get_pending_permissions",
           "type": "string"
         },
         "scope": {
-          "description": "Approval scope: once, session or always (default: allow)",
+          "default": "once",
+          "description": "How long the approval lasts: once, session or always (default once)",
+          "enum": [
+            "once",
+            "session",
+            "always"
+          ],
           "type": "string"
         },
         "session_id": {
-          "description": "Session ID in project/session form",
+          "description": "Session ID in project/session form, e.g. lumen/P1",
           "type": "string"
         }
       },
@@ -38,16 +44,19 @@
       "additionalProperties": false,
       "properties": {
         "decision": {
-          "description": "The decision sent: allow, once, session, always or deny",
+          "description": "The decision sent: once, session, always or deny",
           "type": "string"
         },
         "ok": {
+          "description": "True when the decision was delivered",
           "type": "boolean"
         },
         "request_id": {
+          "description": "The permission request that was answered",
           "type": "string"
         },
         "session_id": {
+          "description": "Session ID in project/session form",
           "type": "string"
         }
       },
@@ -72,20 +81,16 @@
       "readOnlyHint": false,
       "title": "Deny permission"
     },
-    "description": "Deny a pending permission request for a session.",
+    "description": "Deny a pending permission request. Use when: get_pending_permissions lists a request that must not run. Not for: approving a request (use approve_permission). Returns: ok, the ids and decision deny. Side effects: the session is told the tool was refused and continues without it. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"request_id\":\"req-1\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "request_id": {
-          "description": "Permission request ID from get_pending_permissions",
-          "type": "string"
-        },
-        "scope": {
-          "description": "Approval scope: once, session or always (default: allow)",
+          "description": "Permission request ID, taken from get_pending_permissions",
           "type": "string"
         },
         "session_id": {
-          "description": "Session ID in project/session form",
+          "description": "Session ID in project/session form, e.g. lumen/P1",
           "type": "string"
         }
       },
@@ -100,16 +105,19 @@
       "additionalProperties": false,
       "properties": {
         "decision": {
-          "description": "The decision sent: allow, once, session, always or deny",
+          "description": "The decision sent: once, session, always or deny",
           "type": "string"
         },
         "ok": {
+          "description": "True when the decision was delivered",
           "type": "boolean"
         },
         "request_id": {
+          "description": "The permission request that was answered",
           "type": "string"
         },
         "session_id": {
+          "description": "Session ID in project/session form",
           "type": "string"
         }
       },
@@ -134,20 +142,20 @@
       "readOnlyHint": false,
       "title": "Dispatch mixed task"
     },
-    "description": "Run the mixed-programming round loop (brief -\u003e patches -\u003e gates -\u003e feedback) for a registered brief against a configured worker model. Blocks until the task is done or needs_human; use wait_for_worker_status/get_mixed_rounds to observe progress from another call.",
+    "description": "Run the brief, patches, checks, feedback loop for a registered brief against a worker model. Use when: a brief is registered and a worker is configured. Not for: watching progress from another call (use wait_for_worker_status or get_mixed_rounds). Returns: the task state: rounds, patches, check results and final status; blocks until done or needs_human. Side effects: calls the worker model (cost) and applies its patches to the project. Access: operate. Example: {\"project\":\"lumen\",\"brief_id\":\"parse-header\",\"worker\":\"step-flash\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "brief_id": {
-          "description": "ID of a brief registered via register_mixed_brief",
+          "description": "ID of a brief registered with register_mixed_brief",
           "type": "string"
         },
         "project": {
-          "description": "Project name",
+          "description": "Project name, e.g. lumen",
           "type": "string"
         },
         "worker": {
-          "description": "Worker name from the [[worker]] config",
+          "description": "Worker name as configured in the project, e.g. step-flash",
           "type": "string"
         }
       },
@@ -184,12 +192,12 @@
       "readOnlyHint": false,
       "title": "Execute plan"
     },
-    "description": "Execute a pre-generated task plan by plan ID.",
+    "description": "Start executing a plan produced by run_preflight. Use when: the plan from run_preflight looks right. Not for: creating a plan (use run_preflight). Returns: ok and the plan_id. Side effects: starts sessions that edit the project and spend tokens. Access: operate. Example: {\"plan_id\":\"7\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "plan_id": {
-          "description": "Plan ID returned by run_preflight",
+          "description": "Plan ID returned by run_preflight, e.g. 7",
           "type": "string"
         }
       },
@@ -203,9 +211,11 @@
       "additionalProperties": false,
       "properties": {
         "ok": {
+          "description": "True when execution started",
           "type": "boolean"
         },
         "plan_id": {
+          "description": "The plan that was started",
           "type": "string"
         }
       },
@@ -228,16 +238,19 @@
       "readOnlyHint": true,
       "title": "Get cost and rate-limit metrics"
     },
-    "description": "Get cost and token metrics for a project over a time period; without a project, the account rate-limit status.",
+    "description": "Get a project's cost over a period, or the account rate-limit status when no project is given. Use when: you check spending or whether sessions are rate limited. Not for: per-session details (use get_sessions). Returns: cost_usd and days for a project, or rate_limit for the account. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\",\"period\":7}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "period": {
-          "description": "Number of days to aggregate (default 7)",
+          "default": 7,
+          "description": "Number of days to aggregate, 1-365 (default 7)",
+          "maximum": 365,
+          "minimum": 1,
           "type": "integer"
         },
         "project": {
-          "description": "Project name; omit for the account rate-limit status",
+          "description": "Project name, e.g. lumen; omit for the account rate-limit status",
           "type": "string"
         }
       },
@@ -255,9 +268,11 @@
           ]
         },
         "days": {
+          "description": "Length of the aggregated period in days",
           "type": "integer"
         },
         "project": {
+          "description": "Project the cost belongs to",
           "type": "string"
         },
         "rate_limit": {
@@ -279,12 +294,23 @@
       "readOnlyHint": true,
       "title": "Get mixed-programming rounds"
     },
-    "description": "Get persisted mixed-programming task state (rounds, patches, gate results, status) for a project.",
+    "description": "List the saved mixed-programming tasks of a project with rounds, patches, check results and status. Use when: you review or resume delegated work. Not for: waiting for a task to finish (use wait_for_worker_status). Returns: tasks, with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\",\"limit\":20}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
         "project": {
-          "description": "Project name",
+          "description": "Project name, e.g. lumen",
           "type": "string"
         }
       },
@@ -297,6 +323,10 @@
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
         "tasks": {
           "description": "Persisted mixed-programming tasks of the project",
           "items": true,
@@ -304,10 +334,15 @@
             "null",
             "array"
           ]
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
         }
       },
       "required": [
-        "tasks"
+        "tasks",
+        "truncated"
       ],
       "type": "object"
     },
@@ -324,15 +359,32 @@
       "readOnlyHint": true,
       "title": "List pending permissions"
     },
-    "description": "Get all pending permission requests across all sessions.",
+    "description": "List permission requests that wait for a decision, across all sessions. Use when: a session shows status waiting_permission, or before approving or denying. Not for: answering them (use approve_permission or deny_permission). Returns: permissions, with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {}",
     "inputSchema": {
       "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
       "type": "object"
     },
     "name": "get_pending_permissions",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
         "permissions": {
           "description": "Pending permission requests across all sessions",
           "items": true,
@@ -340,10 +392,15 @@
             "null",
             "array"
           ]
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
         }
       },
       "required": [
-        "permissions"
+        "permissions",
+        "truncated"
       ],
       "type": "object"
     },
@@ -360,28 +417,36 @@
       "readOnlyHint": true,
       "title": "Get session log"
     },
-    "description": "Get log entries for a session.",
+    "description": "Read a session's log of its latest run, oldest entry first, one page at a time. Use when: you want to know what a session did or said. Not for: live updates (use wait_for_event) or listing sessions (use get_sessions). Returns: entries, with next_cursor and truncated when the log is longer than the page. Side effects: none, read only. Access: read. Example: {\"session_id\":\"lumen/P1\",\"limit\":50}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
         "limit": {
-          "description": "Number of most recent entries (default 100)",
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
           "type": "integer"
         },
         "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id",
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
           "type": "string"
         },
         "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id",
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
           "type": "string"
         },
         "session_id": {
-          "description": "Session ID in project/session form, e.g. lumen/P1",
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
         },
         "tail": {
           "description": "Deprecated alias of limit",
+          "minimum": 1,
           "type": "integer"
         }
       },
@@ -392,20 +457,30 @@
       "additionalProperties": false,
       "properties": {
         "entries": {
-          "description": "Log entries, oldest first",
+          "description": "Log entries, oldest first, starting at the cursor",
           "items": true,
           "type": [
             "null",
             "array"
           ]
         },
-        "session_id": {
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
           "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
         }
       },
       "required": [
         "session_id",
-        "entries"
+        "entries",
+        "truncated"
       ],
       "type": "object"
     },
@@ -422,26 +497,48 @@
       "readOnlyHint": true,
       "title": "List sessions"
     },
-    "description": "Get all sessions with their current status and metrics.",
+    "description": "List all sessions with their status and metrics. Use when: you need a session_id, or want to see what is running, idle or failed. Not for: reading what a session said (use get_session_logs). Returns: sessions, with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {\"limit\":50}",
     "inputSchema": {
       "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
       "type": "object"
     },
     "name": "get_sessions",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
         "sessions": {
-          "description": "All sessions with status and metrics",
+          "description": "Sessions with status and metrics",
           "items": true,
           "type": [
             "null",
             "array"
           ]
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
         }
       },
       "required": [
-        "sessions"
+        "sessions",
+        "truncated"
       ],
       "type": "object"
     },
@@ -458,20 +555,20 @@
       "readOnlyHint": false,
       "title": "Interrupt session"
     },
-    "description": "Interrupt the session's current action (the turn in flight: a running tool call or generation) without stopping the session; it then waits for the next send_message.",
+    "description": "Interrupt the session's current turn (a running tool call or generation) without stopping the session. Use when: the session is going down a wrong path and you want to redirect it with send_message. Not for: ending the session (use stop_session) or answering a permission request (use approve_permission or deny_permission). Returns: ok and the session_id; the session then waits for the next message. Side effects: cancels the work in flight; partial results of that turn are discarded. Access: operate. Example: {\"session_id\":\"lumen/P1\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id",
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
           "type": "string"
         },
         "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id",
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
           "type": "string"
         },
         "session_id": {
-          "description": "Session ID in project/session form, e.g. lumen/P1",
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
         }
       },
@@ -509,20 +606,20 @@
       "readOnlyHint": false,
       "title": "Register mixed brief"
     },
-    "description": "Register a mixed-programming brief so it can be dispatched to a worker model. The brief must be self-contained: task description in English, verbatim code excerpts, accepted decisions, target files.",
+    "description": "Register a self-contained brief (English task text, verbatim code excerpts, decisions, target files) for a worker model. Use when: you delegate a coding subtask to a cheaper worker model. Not for: running it (use dispatch_mixed_task). Returns: the brief_id. Side effects: stores the brief in memory; registering the same id again replaces it. Access: operate. Example: {\"id\":\"parse-header\",\"task\":\"Implement parseHeader in internal/x/header.go\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "id": {
-          "description": "Stable brief ID, e.g. the subtask name",
+          "description": "Stable brief ID, e.g. the subtask name: parse-header",
           "type": "string"
         },
         "system_prompt": {
-          "description": "Optional override of the FIND/REPLACE protocol prompt",
+          "description": "Optional replacement for the default FIND/REPLACE patch protocol prompt",
           "type": "string"
         },
         "task": {
-          "description": "Self-contained task specification sent to the worker",
+          "description": "Self-contained task specification sent to the worker model",
           "type": "string"
         }
       },
@@ -559,24 +656,24 @@
       "readOnlyHint": false,
       "title": "Restart session"
     },
-    "description": "Restart a session. Set resume=true to resume from the saved CLI session ID instead of restarting fresh.",
+    "description": "Restart a session, fresh or resuming its saved conversation. Use when: a session is stuck, errored, or needs a clean process; use resume=true to keep the conversation. Not for: a session that was never started (use start_session). Returns: ok and the session_id. Side effects: stops the current CLI process and launches a new one, which may spend tokens. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"resume\":true}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id",
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
           "type": "string"
         },
         "resume": {
-          "description": "Resume from the saved CLI session ID instead of restarting fresh",
+          "description": "If true, resume the saved CLI conversation instead of starting fresh; default false",
           "type": "boolean"
         },
         "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id",
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
           "type": "string"
         },
         "session_id": {
-          "description": "Session ID in project/session form, e.g. lumen/P1",
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
         }
       },
@@ -614,16 +711,16 @@
       "readOnlyHint": false,
       "title": "Run preflight analysis"
     },
-    "description": "Run a preflight analysis session to generate a task plan for a project.",
+    "description": "Analyse a task in a project and produce an execution plan. Use when: you want a plan before any code is touched. Not for: running the plan (use execute_plan) or ordinary work (use send_message). Returns: the plan, including its plan_id. Side effects: runs an analysis session that spends tokens; the project is not changed. Access: operate. Example: {\"project\":\"lumen\",\"task\":\"Add retry to the HTTP client\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "project": {
-          "description": "Project name",
+          "description": "Project name, e.g. lumen",
           "type": "string"
         },
         "task": {
-          "description": "Task description to analyse",
+          "description": "Task description to analyse, e.g. Add retry to the HTTP client",
           "type": "string"
         }
       },
@@ -659,24 +756,24 @@
       "readOnlyHint": false,
       "title": "Send message"
     },
-    "description": "Send a user message to an active bidirectional session.",
+    "description": "Send a user message to a running session. Use when: you want to give a session new instructions or answer its question. Not for: a session that is not running (use start_session first) or permission requests (use approve_permission). Returns: ok and the session_id; read the reply with get_session_logs or wait_for_status. Side effects: the session processes the message as its next turn, which spends tokens. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"text\":\"Continue with the next task\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id",
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
           "type": "string"
         },
         "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id",
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
           "type": "string"
         },
         "session_id": {
-          "description": "Session ID in project/session form, e.g. lumen/P1",
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
         },
         "text": {
-          "description": "Message text to send",
+          "description": "Message text to send to the session, e.g. Continue with the next task",
           "type": "string"
         }
       },
@@ -717,13 +814,13 @@
       "readOnlyHint": false,
       "title": "Update global settings"
     },
-    "description": "Update global application settings (AppConfig partial update).",
+    "description": "Update global application settings with a partial object. Use when: an application-wide option such as a budget or a default must change. Not for: per-session or per-project options. Returns: ok. Side effects: rewrites the saved application config; applies to new runs and persists across restarts. Access: admin. Example: {\"config\":{\"max_budget_usd\":5}}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "config": {
           "additionalProperties": true,
-          "description": "Partial AppConfig fields to update",
+          "description": "Partial settings object; only the given fields change, e.g. {\"max_budget_usd\": 5}",
           "type": "object"
         }
       },
@@ -737,6 +834,7 @@
       "additionalProperties": false,
       "properties": {
         "ok": {
+          "description": "True when the change was applied",
           "type": "boolean"
         }
       },
@@ -758,20 +856,20 @@
       "readOnlyHint": false,
       "title": "Start session"
     },
-    "description": "Start a session by session_id (or the legacy project+session pair).",
+    "description": "Start a configured session. Use when: a session is idle, stopped or errored and should begin work. Not for: a session that is already running (use send_message) or continuing an old conversation (use restart_session with resume=true). Returns: ok and the session_id. Side effects: launches the CLI process; the session starts working, which may spend tokens. Access: operate. Example: {\"session_id\":\"lumen/P1\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id",
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
           "type": "string"
         },
         "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id",
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
           "type": "string"
         },
         "session_id": {
-          "description": "Session ID in project/session form, e.g. lumen/P1",
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
         }
       },
@@ -809,24 +907,24 @@
       "readOnlyHint": false,
       "title": "Stop session"
     },
-    "description": "Stop a session. Set after_task=true to finish the current task first (soft stop).",
+    "description": "Stop a running session. Use when: a session must end, now or after it finishes its current task. Not for: aborting only the current step while keeping the session alive (use interrupt_session). Returns: ok and the session_id; the stop is requested, confirm it with wait_for_status status=idle. Side effects: terminates the CLI process (at once, or after the task when after_task=true); work in the current turn is lost. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"after_task\":true}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "after_task": {
-          "description": "Finish the current task before stopping (soft stop)",
+          "description": "If true, finish the current task before stopping (soft stop); default false stops at once",
           "type": "boolean"
         },
         "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id",
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
           "type": "string"
         },
         "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id",
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
           "type": "string"
         },
         "session_id": {
-          "description": "Session ID in project/session form, e.g. lumen/P1",
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
         }
       },
@@ -864,7 +962,7 @@
       "readOnlyHint": true,
       "title": "Wait for event"
     },
-    "description": "Block until a matching event is emitted by the control-plane, or until timeout. Checks the ring buffer first so past events are not missed.",
+    "description": "Block until an event whose payload contains the given fields is emitted, or the timeout passes. Use when: you wait for something other than a status, such as session:log or session:permission. Not for: session status changes (use wait_for_status). Returns: the matching event; recent past events count, so a short gap does not lose it; a timeout is an error. Side effects: none, read only. Access: read. Example: {\"event\":\"session:permission\",\"match\":{\"id\":\"lumen/P1\"}}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -874,11 +972,13 @@
         },
         "match": {
           "additionalProperties": true,
-          "description": "Key-value pairs the event data must contain (all must match)",
+          "description": "Fields the event payload must contain, all of them, e.g. {\"id\": \"lumen/P1\"}",
           "type": "object"
         },
         "timeout_ms": {
-          "description": "Timeout in milliseconds (default 5000)",
+          "default": 5000,
+          "description": "How long to wait, in milliseconds (default 5000)",
+          "minimum": 1,
           "type": "integer"
         }
       },
@@ -922,28 +1022,42 @@
       "readOnlyHint": true,
       "title": "Wait for session status"
     },
-    "description": "Block until a session reaches the specified status, or until timeout. Reliable alternative to polling: use after start_session, send_message, or approve_permission.",
+    "description": "Block until a session reports the given status, or the timeout passes. Use when: after start_session, send_message or approve_permission, instead of polling get_sessions. Not for: events other than status changes (use wait_for_event). Returns: the matching session:status event; a timeout is reported as an error. Side effects: none, read only. Access: read. Example: {\"session_id\":\"lumen/P1\",\"status\":\"idle\",\"timeout_ms\":30000}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id",
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
           "type": "string"
         },
         "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id",
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
           "type": "string"
         },
         "session_id": {
-          "description": "Session ID in project/session form, e.g. lumen/P1",
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
         },
         "status": {
-          "description": "Target status, e.g. working, idle, WaitingPermission, RateLimited, Error",
+          "description": "Target status to wait for",
+          "enum": [
+            "idle",
+            "starting",
+            "analyzing",
+            "working",
+            "waiting_permission",
+            "waiting_for_user",
+            "rate_limited",
+            "retrying",
+            "stopping",
+            "error"
+          ],
           "type": "string"
         },
         "timeout_ms": {
-          "description": "Timeout in milliseconds (default 5000)",
+          "default": 5000,
+          "description": "How long to wait, in milliseconds (default 5000)",
+          "minimum": 1,
           "type": "integer"
         }
       },
@@ -987,20 +1101,26 @@
       "readOnlyHint": true,
       "title": "Wait for worker status"
     },
-    "description": "Block until a mixed-programming task reaches a terminal status (done or needs_human), or until timeout. Checks past events first, so it can be called after dispatch_mixed_task returned.",
+    "description": "Block until a mixed-programming task reaches a terminal status, or the timeout passes. Use when: dispatch_mixed_task runs in another call, or has returned and you want its final event. Not for: session status (use wait_for_status). Returns: the worker:done event with its payload; past events count, so a late call still succeeds. Side effects: none, read only; a timeout is reported as an error. Access: read. Example: {\"task_id\":\"lumen/parse-header/step-flash\",\"status\":\"done\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "status": {
-          "description": "Terminal status to wait for: done or needs_human; omit to match either",
+          "description": "Terminal status to wait for: done or needs_human; omit to accept either",
+          "enum": [
+            "done",
+            "needs_human"
+          ],
           "type": "string"
         },
         "task_id": {
-          "description": "Task ID (project/brief/worker) as returned by dispatch_mixed_task",
+          "description": "Task ID in project/brief/worker form, as returned by dispatch_mixed_task, e.g. lumen/parse-header/step-flash",
           "type": "string"
         },
         "timeout_ms": {
-          "description": "Timeout in milliseconds (default 60000)",
+          "default": 60000,
+          "description": "How long to wait, in milliseconds (default 60000)",
+          "minimum": 1,
           "type": "integer"
         }
       },

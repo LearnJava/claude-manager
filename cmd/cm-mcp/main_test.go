@@ -168,8 +168,8 @@ func TestDispatch_ApprovePermission_WithScope(t *testing.T) {
 	call(t, srv, stub, "approve_permission", `{"session_id":"myproj/P1","request_id":"req-abc","scope":"always"}`)
 
 	params := stub.lastBody["params"].(map[string]any)
-	if params["decision"] != "always" {
-		t.Fatalf("decision: want always (scope passed through), got %v", params["decision"])
+	if params["decision"] != "allow_always" {
+		t.Fatalf("decision: want allow_always (scope mapped), got %v", params["decision"])
 	}
 }
 
@@ -256,8 +256,8 @@ func TestDispatch_GetSessionLogs(t *testing.T) {
 		t.Fatalf("id: want myproj/P1, got %v", params["id"])
 	}
 	// JSON numbers unmarshal to float64 in map[string]any
-	if params["limit"] != float64(50) {
-		t.Fatalf("limit: want 50, got %v", params["limit"])
+	if params["limit"] != float64(51) {
+		t.Fatalf("limit: want 50 + 1 probe, got %v", params["limit"])
 	}
 }
 
@@ -267,8 +267,8 @@ func TestDispatch_GetSessionLogs_DefaultTail(t *testing.T) {
 	call(t, srv, stub, "get_session_logs", `{"project":"myproj","session":"P1"}`)
 
 	params := stub.lastBody["params"].(map[string]any)
-	if params["limit"] != float64(100) {
-		t.Fatalf("limit: want default 100, got %v", params["limit"])
+	if params["limit"] != float64(101) {
+		t.Fatalf("limit: want default 100 + 1 probe, got %v", params["limit"])
 	}
 }
 
