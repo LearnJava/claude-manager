@@ -389,7 +389,7 @@ func (s *Server) buildRegistry() map[string]handler {
 			return nil, err
 		}
 		if args.ID == "" || args.Task == "" {
-			return nil, fmt.Errorf("register brief: id and task are required")
+			return nil, fmt.Errorf("register brief: id and task are both required and must be non-empty")
 		}
 		m.RegisterMixedBrief(args.ID, worker.Brief{Task: args.Task, SystemPrompt: args.SystemPrompt})
 		return nil, nil
@@ -462,7 +462,7 @@ func (s *Server) buildRegistry() map[string]handler {
 // a numeric string (the MCP tool schema passes string params).
 func parsePlanID(raw json.RawMessage) (int64, error) {
 	if len(raw) == 0 {
-		return 0, fmt.Errorf("plan_id is required")
+		return 0, fmt.Errorf("plan_id is required: pass the id returned by run_preflight")
 	}
 	var n int64
 	if err := json.Unmarshal(raw, &n); err == nil {
@@ -472,9 +472,9 @@ func parsePlanID(raw json.RawMessage) (int64, error) {
 	if err := json.Unmarshal(raw, &s); err == nil {
 		n, convErr := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 		if convErr != nil {
-			return 0, fmt.Errorf("plan_id %q is not a number", s)
+			return 0, fmt.Errorf("plan_id %q is not a number: pass the id returned by run_preflight, e.g. 7", s)
 		}
 		return n, nil
 	}
-	return 0, fmt.Errorf("plan_id has unsupported type: %s", string(raw))
+	return 0, fmt.Errorf("plan_id has unsupported type %s: pass the id returned by run_preflight as a string or number", string(raw))
 }

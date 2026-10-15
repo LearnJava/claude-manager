@@ -57,7 +57,7 @@ Any normal launch — `wails dev` or the built `claude-manager.exe` — starts t
 | `approve_permission` | Approve a pending permission request |
 | `deny_permission` | Deny a pending permission request |
 | `get_sessions` | Snapshot of all sessions (status, model, metrics) |
-| `get_session_logs` | Tail log entries for a session |
+| `get_session_logs` | Log entries for a session, paged (`limit`, `cursor` → `next_cursor`) |
 | `get_pending_permissions` | List all pending permission requests |
 | `get_metrics` | Cost/token metrics for a project |
 | `wait_for_status` | Block until session reaches a target status |
