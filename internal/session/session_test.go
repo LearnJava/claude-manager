@@ -1139,3 +1139,20 @@ func TestSession_UpdateTodosNilClears(t *testing.T) {
 		t.Errorf("expected cleared state, got task=%q todos=%+v", snap.CurrentTask, snap.Todos)
 	}
 }
+
+// TestInitialPromptText_ContextPrimer_EmptyPromptSendsNothing: an interactive
+// session (no configured prompt) must not send a primer-only first turn —
+// the model would invent a question and the user's real one would queue
+// behind it.
+func TestInitialPromptText_ContextPrimer_EmptyPromptSendsNothing(t *testing.T) {
+	s := New(Params{
+		ProjectName: "proj",
+		Config:      config.SessionConfig{ContextPrimer: true, Name: "Chat"},
+		PrimerFn: func(project, sessionName, projectPath, taskDesc string, gates []string) string {
+			return "Git state: clean"
+		},
+	})
+	if got := s.initialPromptText(false); got != "" {
+		t.Errorf("got %q, want empty", got)
+	}
+}

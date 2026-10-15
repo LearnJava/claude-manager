@@ -880,3 +880,27 @@ func TestParseAskUserQuestion_EmptyQuestionRejected(t *testing.T) {
 		t.Errorf("expected nil for blank question, got %+v", q)
 	}
 }
+
+// TestParseUserReplayBlocks: a user turn sent as content blocks (a pasted
+// screenshot + text) is replayed as an array and must still show as the
+// user's message, with the image noted.
+func TestParseUserReplayBlocks(t *testing.T) {
+	line := `{"type":"user","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAAA"}},{"type":"text","text":"what is this?"}]},"isReplay":true}`
+	ev := parseLineAt(line, testTime)
+	if ev.EventType != EventLog || len(ev.Entries) != 1 {
+		t.Fatalf("expected 1 log entry, got %s / %d", ev.EventType, len(ev.Entries))
+	}
+	e := ev.Entries[0]
+	if e.Level != "user" || e.Message != "what is this?\n\n[1 image(s) attached]" {
+		t.Errorf("got level=%s message=%q", e.Level, e.Message)
+	}
+}
+
+// TestParseUserMetaBlocksSkipped: CLI-injected text (isMeta, e.g. a skill
+// body) is not the user's message.
+func TestParseUserMetaBlocksSkipped(t *testing.T) {
+	line := `{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: ..."}]}}`
+	if ev := parseLineAt(line, testTime); ev.EventType != EventUnknown {
+		t.Errorf("expected %s, got %s with %d entries", EventUnknown, ev.EventType, len(ev.Entries))
+	}
+}
