@@ -36,6 +36,7 @@ type ManagerAPI interface {
 	SendMessageWithImages(id, message string, images []session.ImageAttachment) error
 	SetSessionModel(id, model string) error
 	GetPendingQuestions() []session.QuestionInfo
+	AnswerQuestion(id, questionID, answer string) error
 	ListSlashCommands(id string) ([]session.SlashCommand, error)
 	RespondPermission(id, requestID, decision string) error
 	GetPendingPermissions() []permission.PermissionRequest

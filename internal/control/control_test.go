@@ -34,14 +34,14 @@ func (m *mockManager) StartSession(project, name string) error { return m.startE
 func (m *mockManager) StartSessionWithOverride(project, name, model, effort string) error {
 	return nil
 }
-func (m *mockManager) StopSession(id string, soft bool) error                      { return nil }
-func (m *mockManager) InterruptSession(id string) error                            { return nil }
-func (m *mockManager) StopAll()                                                    {}
-func (m *mockManager) RestartSession(id string) error                              { return nil }
-func (m *mockManager) ResumeSession(id string) error                               { return nil }
-func (m *mockManager) StartProject(project string) error                           { return nil }
-func (m *mockManager) StopProject(project string) error                            { return nil }
-func (m *mockManager) SendMessage(id, message string) error                        { return nil }
+func (m *mockManager) StopSession(id string, soft bool) error { return nil }
+func (m *mockManager) InterruptSession(id string) error       { return nil }
+func (m *mockManager) StopAll()                               {}
+func (m *mockManager) RestartSession(id string) error         { return nil }
+func (m *mockManager) ResumeSession(id string) error          { return nil }
+func (m *mockManager) StartProject(project string) error      { return nil }
+func (m *mockManager) StopProject(project string) error       { return nil }
+func (m *mockManager) SendMessage(id, message string) error   { return nil }
 func (m *mockManager) SendMessageWithImages(id, message string, images []session.ImageAttachment) error {
 	m.record("SendMessageWithImages", id, message, fmt.Sprint(len(images)))
 	return nil
@@ -51,6 +51,10 @@ func (m *mockManager) SetSessionModel(id, model string) error {
 	return nil
 }
 func (m *mockManager) GetPendingQuestions() []session.QuestionInfo { return nil }
+func (m *mockManager) AnswerQuestion(id, qid, answer string) error {
+	m.record("AnswerQuestion", id, qid, answer)
+	return nil
+}
 func (m *mockManager) ListSlashCommands(id string) ([]session.SlashCommand, error) { return nil, nil }
 func (m *mockManager) RespondPermission(id, requestID, decision string) error      { return nil }
 func (m *mockManager) GetPendingPermissions() []permission.PermissionRequest       { return nil }

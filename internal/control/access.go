@@ -73,6 +73,7 @@ var rpcLevels = map[string]AccessLevel{
 	"GetDailyCost": LevelRead, "GetProjectCost": LevelRead, "GetRateLimitStatus": LevelRead,
 	"GetSessionState": LevelRead, "GetPlan": LevelRead, "GetMixedRounds": LevelRead,
 	"GetMixedQuality": LevelRead, "ListSlashCommands": LevelRead, "GetSessionOverview": LevelRead,
+	"GetPendingQuestions": LevelRead, "GetPending": LevelRead, "GetPermissionCandidates": LevelRead,
 	// operate
 	"StartSession": LevelOperate, "StartSessionWithOverride": LevelOperate, "InterruptSession": LevelOperate,
 	"StopSession": LevelOperate, "RestartSession": LevelOperate, "ResumeSession": LevelOperate,
@@ -80,10 +81,10 @@ var rpcLevels = map[string]AccessLevel{
 	"SessionPreflight": LevelOperate, "ExecutePlan": LevelOperate, "RegisterMixedBrief": LevelOperate,
 	"DispatchMixedTask": LevelOperate, "CancelMixedTask": LevelOperate,
 	"StartSessionWithModel": LevelOperate, "StartAdHocChatSession": LevelOperate,
-	"SendMessageWithImages": LevelOperate, "SetSessionRuntime": LevelOperate, "SetSessionModel": LevelOperate,
+	"AnswerQuestion": LevelOperate, "SendMessageWithImages": LevelOperate, "SetSessionRuntime": LevelOperate, "SetSessionModel": LevelOperate,
 	// admin
 	"StopAll": LevelAdmin, "StopProject": LevelAdmin, "ClearSessionState": LevelAdmin,
-	"ApprovePlan": LevelAdmin, "UpdateConfig": LevelAdmin, "GetConfig": LevelAdmin,
+	"ApprovePlan": LevelAdmin, "AddPermissionRule": LevelAdmin, "UpdateConfig": LevelAdmin, "GetConfig": LevelAdmin,
 }
 
 // RPCLevel returns the level needed to call method with decision (only
@@ -205,7 +206,9 @@ func (a auditEntry) log(result string, extra ...any) {
 	}, extra...)...)
 }
 
-func (a auditEntry) deny(reason string, need AccessLevel) { a.log("denied:"+reason, "need", string(need)) }
+func (a auditEntry) deny(reason string, need AccessLevel) {
+	a.log("denied:"+reason, "need", string(need))
+}
 
 func (a auditEntry) done(err error) {
 	if err != nil {

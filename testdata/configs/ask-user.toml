@@ -1,0 +1,13 @@
+[[project]]
+name = "lumen"
+path = "."
+
+[[project.session]]
+name = "P1"
+prompt = "ask-user-marker please"
+auto_restart = true
+max_tasks = 1
+model = "claude-sonnet-4-6"
+# bypassPermissions keeps the scenario free of permission requests: the only
+# thing the session waits for is the ask-user question.
+permission_mode = "bypassPermissions"

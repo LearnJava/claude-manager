@@ -175,7 +175,6 @@ type runtimeIn struct {
 	Runtime string `json:"runtime" jsonschema:"claude or hermes"`
 }
 
-
 type permissionIn struct {
 	SessionID string `json:"session_id" jsonschema:"Session ID in project/session form, e.g. lumen/P1"`
 	RequestID string `json:"request_id" jsonschema:"Permission request ID, taken from get_pending_permissions"`
@@ -459,6 +458,10 @@ func waitSummary(out waitOut) string {
 // ── Tools ─────────────────────────────────────────────────────────────────────
 
 func buildMCPTools() []Tool {
+	return append(buildCoreTools(), interactionTools()...)
+}
+
+func buildCoreTools() []Tool {
 	op := ToolAnnotations{Idempotent: true, OpenWorld: true}
 	add := ToolAnnotations{}
 	ro := ToolAnnotations{ReadOnly: true}

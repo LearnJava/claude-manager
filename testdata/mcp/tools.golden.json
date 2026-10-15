@@ -5,6 +5,145 @@
     },
     "annotations": {
       "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Add permission rule"
+    },
+    "description": "Add a standing allow or deny rule to one session's permission rules. Use when: get_permission_candidates shows a request that should never ask again, or one that must always be refused. Not for: deciding a single pending request (use approve_permission or deny_permission). Returns: ok and the session; a rule that already exists is not duplicated. Side effects: rewrites the saved configuration; the rule applies to the session's later requests and persists across restarts. Access: admin. Example: {\"session_id\":\"lumen/P1\",\"tool\":\"Bash\",\"pattern\":\"git status*\",\"decision\":\"allow\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "description": "allow or deny",
+          "enum": [
+            "allow",
+            "deny"
+          ],
+          "type": "string"
+        },
+        "pattern": {
+          "description": "Pattern matched against the tool input, e.g. git status*; empty matches every call of the tool",
+          "type": "string"
+        },
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
+          "type": "string"
+        },
+        "tool": {
+          "description": "Tool the rule applies to, e.g. Bash, Edit or Write",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool",
+        "decision"
+      ],
+      "type": "object"
+    },
+    "name": "add_permission_rule",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the rule is in the session config (also when it already was)",
+          "type": "boolean"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "title": "Add permission rule"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Answer question"
+    },
+    "description": "Answer a question a session asked the human. Use when: get_pending_questions lists a question you can answer. Not for: permission requests (use approve_permission or deny_permission). Returns: ok, the session and the question id. Side effects: the answer is sent to the session as the user's reply and it continues; a manager question (restart choice) is acted on instead. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"question_id\":\"q-1\",\"answer\":\"Use the second approach\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "description": "The answer: one of the question's options, or free text, e.g. Use the second approach",
+          "type": "string"
+        },
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
+          "type": "string"
+        },
+        "question_id": {
+          "description": "Question ID, taken from get_pending_questions or get_pending",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question_id",
+        "answer"
+      ],
+      "type": "object"
+    },
+    "name": "answer_question",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the answer was delivered",
+          "type": "boolean"
+        },
+        "question_id": {
+          "description": "The question that was answered",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "session_id",
+        "question_id"
+      ],
+      "type": "object"
+    },
+    "title": "Answer question"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
       "idempotentHint": false,
       "openWorldHint": false,
       "readOnlyHint": false,
@@ -69,6 +208,47 @@
       "type": "object"
     },
     "title": "Approve permission"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Approve plan"
+    },
+    "description": "Persist a plan, optionally edited, as approved on the human's behalf. Use when: the plan from run_preflight looks right and execute_plan should follow. Not for: starting the work (use execute_plan afterwards). Returns: the plan as stored, with its plan_id. Side effects: stores the plan as approved; nothing runs until execute_plan. Access: admin. Example: {\"plan\":{\"id\":7,\"steps\":[]}}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "plan": {
+          "additionalProperties": true,
+          "description": "The plan object from run_preflight or get_plan, optionally edited (steps, subtasks); it keeps its plan_id",
+          "type": "object"
+        }
+      },
+      "required": [
+        "plan"
+      ],
+      "type": "object"
+    },
+    "name": "approve_plan",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "plan": {
+          "description": "The plan with its subtasks and their progress; null when no plan has this ID"
+        }
+      },
+      "required": [
+        "plan"
+      ],
+      "type": "object"
+    },
+    "title": "Approve plan"
   },
   {
     "_meta": {
@@ -408,6 +588,70 @@
       "idempotentHint": false,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "List everything waiting for a human"
+    },
+    "description": "List every permission request and question that waits for a human, across all sessions or for one. Use when: you want one answer to what is blocking the sessions, instead of calling get_pending_permissions and get_pending_questions. Not for: answering them (use approve_permission, deny_permission or answer_question). Returns: permissions, questions and their total; plans have no waiting queue, read one with get_plan. Side effects: none, read only. Access: read. Example: {\"session_id\":\"lumen/P1\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_pending",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "permissions": {
+          "description": "Permission requests waiting for approve_permission or deny_permission",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "questions": {
+          "description": "Questions waiting for answer_question",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "total": {
+          "description": "Number of permission requests and questions together",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "permissions",
+        "questions",
+        "total"
+      ],
+      "type": "object"
+    },
+    "title": "List everything waiting for a human"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "List pending permissions"
     },
     "description": "List permission requests that wait for a decision, across all sessions. Use when: a session shows status waiting_permission, or before approving or denying. Not for: answering them (use approve_permission or deny_permission). Returns: permissions, with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {}",
@@ -456,6 +700,176 @@
       "type": "object"
     },
     "title": "List pending permissions"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List pending questions"
+    },
+    "description": "List the questions sessions asked the human (AskUserQuestion, clarify, the manager's own restart choice) that still wait for an answer. Use when: a session is idle after asking something, or before answer_question. Not for: permission requests (use get_pending_permissions). Returns: questions, with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {\"session_id\":\"lumen/P1\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_pending_questions",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
+        "questions": {
+          "description": "Questions waiting for an answer, each with session_id and question (id, question, options, asked_at)",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "questions",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "title": "List pending questions"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Suggest permission rules"
+    },
+    "description": "Suggest auto-allow rules from a project's permission history: requests that keep recurring and were always approved. Use when: sessions keep stopping on the same permission prompts. Not for: listing what waits now (use get_pending_permissions). Returns: safe (read-only, ready for add_permission_rule) and needs_review; both are empty unless experience tracking was on. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\",\"days\":30}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "days": {
+          "default": 30,
+          "description": "How many past days of permission history to analyse (default 30)",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Project name as in get_sessions, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_permission_candidates",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "needs_review": {
+          "description": "Frequent requests that are not provably read-only; a human decides",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "safe": {
+          "description": "Rules that keep being asked for, were always approved and are read-only: candidates for add_permission_rule",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "safe",
+        "needs_review"
+      ],
+      "type": "object"
+    },
+    "title": "Suggest permission rules"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get plan"
+    },
+    "description": "Get a persisted plan with its subtasks and their progress. Use when: you follow a plan started with execute_plan, or review one before approve_plan. Not for: creating a plan (use run_preflight). Returns: the plan, or null when no plan has this id. Side effects: none, read only. Access: read. Example: {\"plan_id\":\"7\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "plan_id": {
+          "description": "Plan ID returned by run_preflight, e.g. 7",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_plan",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "plan": {
+          "description": "The plan with its subtasks and their progress; null when no plan has this ID"
+        }
+      },
+      "required": [
+        "plan"
+      ],
+      "type": "object"
+    },
+    "title": "Get plan"
   },
   {
     "_meta": {
