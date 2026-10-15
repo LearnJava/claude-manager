@@ -99,6 +99,12 @@ func isSessionNotFoundError(line string) bool {
 // "allowed"/"allowed_warning" status is informational, so the boolean
 // throttled() decision has to run before a TurnFailure is worth building.
 func ClassifyStderrLine(line string) *TurnFailure {
+	// A --resume target the CLI cannot find (e.g. its transcript lives under
+	// another working folder, as after switching use_worktree on) is not an
+	// error to retry: the run loop drops the id and starts a fresh conversation.
+	if strings.Contains(line, "No conversation found with session ID") {
+		return &TurnFailure{Kind: KindSessionNotFound, Message: line}
+	}
 	if isAuthError(line) {
 		return &TurnFailure{Kind: KindAuth, Message: line}
 	}

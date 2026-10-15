@@ -410,6 +410,8 @@ type Session struct {
 	stateStore      *StateStore
 	crashRecovery   bool
 	resumeSessionID string // set before Run loop; cleared after first runOnce
+	workDir         string // directory the CLI runs in (pool slot or project root), see prepareWorkDir
+	startW          *startWatch // narrates CLI start-up until the init event
 
 	pythonUTF8   bool // see Params.PythonUTF8
 	commandGuard bool // see Params.CommandGuard
@@ -1515,12 +1517,15 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	s.handoffTag, s.handoffNotes, s.handoffCalls, s.handoffLastCtx = "", 0, 0, 0
 	s.mu.Unlock()
 
+	s.emitManagerLog("Готовлю промпт…")
+	workDir, slot := s.prepareWorkDir(ctx)
 	args := s.runtime.Args(s, autonomous, "", "")
 
 	logger.L.Debug("session.launch",
 		"id", s.ID,
 		"claude", s.claudePath,
-		"cwd", s.ProjectPath,
+		"cwd", workDir,
+		"slot", slot,
 		"args", strings.Join(args, " "),
 	)
 
@@ -1533,8 +1538,8 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	if s.pythonUTF8 {
 		cmd.Env = utf8Env(cmd.Env)
 	}
-	if s.ProjectPath != "" {
-		cmd.Dir = s.ProjectPath
+	if workDir != "" {
+		cmd.Dir = workDir
 	}
 
 	stdout, err := cmd.StdoutPipe()
@@ -1555,6 +1560,8 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 		return fmt.Errorf("start claude: %w", err)
 	}
 	logger.L.Info("session.spawned", "id", s.ID, "pid", cmd.Process.Pid)
+	s.beginStartWatch(cmd.Process.Pid)
+	defer s.endStartWatch()
 
 	// Group the CLI with everything it spawns (bash, cargo, subagents) so the
 	// whole tree is reaped when this run ends, however it ends.
@@ -1819,6 +1826,12 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 				s.mu.Lock()
 				s.initCommands = c
 				s.mu.Unlock()
+			}
+			s.mu.Lock()
+			w := s.startW
+			s.mu.Unlock()
+			if w != nil {
+				w.gotInit()
 			}
 			s.emit(SessionEvent{Type: EvtInit, Init: ev.Init})
 		}
@@ -2482,18 +2495,8 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 	if s.excludeDynamic {
 		args = append(args, "--exclude-dynamic-system-prompt-sections")
 	}
-	if s.Config.UseWorktree {
-		// Pass an explicit name only when configured. A bare `--worktree` lets the
-		// CLI create a FRESH worktree from current HEAD on every run — which the
-		// autonomous restart loop relies on (a fixed name reuses a possibly-stale
-		// worktree, so the task file inside it can lag behind the main repo).
-		// `--worktree` takes an optional [name] argument (claude CLI v2.1+).
-		if name := strings.TrimSpace(s.Config.WorktreeName); name != "" {
-			args = append(args, "--worktree", name)
-		} else {
-			args = append(args, "--worktree")
-		}
-	}
+	// No --worktree: the CLI runs inside the session's persistent pool slot
+	// (prepareWorkDir), never in a throwaway worktree of its own.
 	if len(s.Config.AllowedTools) > 0 {
 		args = append(args, "--allowedTools", strings.Join(s.Config.AllowedTools, " "))
 	}

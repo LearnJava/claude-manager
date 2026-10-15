@@ -132,6 +132,8 @@ type hermesTurn struct {
 
 func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) error {
 	autonomous := (s.Config.AutoRestart || s.Config.StopWhenNoTasks) && !forceInteractive
+	s.emitManagerLog("Готовлю промпт…")
+	s.prepareWorkDir(ctx)
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -248,7 +250,8 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 		}
 	}
 	turnStart := time.Now()
-	logger.L.Debug("session.launch", "id", s.ID, "hermes", s.hermesPath, "cwd", s.ProjectPath,
+	workDir := s.runDir()
+	logger.L.Debug("session.launch", "id", s.ID, "hermes", s.hermesPath, "cwd", workDir,
 		"args", strings.Join(args, " "))
 
 	// turnCtx lets a `clarify` call end this one process without ending the run.
@@ -256,8 +259,8 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 	defer cancelTurn()
 	cmd := exec.CommandContext(turnCtx, s.hermesPath, args...)
 	proc.HideConsole(cmd)
-	if s.ProjectPath != "" {
-		cmd.Dir = s.ProjectPath
+	if workDir != "" {
+		cmd.Dir = workDir
 	}
 	// The query goes through stdin (--query-file -), never argv: nothing is
 	// shell- or argv-quoted, so any prompt text arrives verbatim.
@@ -277,6 +280,8 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 		return turn, fmt.Errorf("start hermes: %w", err)
 	}
 	logger.L.Info("session.spawned", "id", s.ID, "pid", cmd.Process.Pid, "runtime", "hermes")
+	s.beginStartWatch(cmd.Process.Pid)
+	defer s.endStartWatch()
 
 	job, jobErr := proc.NewJob()
 	if jobErr != nil {
@@ -430,9 +435,6 @@ func (s *Session) buildHermesArgs(convID, imagePath string) []string {
 	}
 	if s.Config.PermissionMode == "bypassPermissions" {
 		args = append(args, "--yolo")
-	}
-	if s.Config.UseWorktree {
-		args = append(args, "--worktree")
 	}
 	if imagePath != "" {
 		args = append(args, "--image", imagePath)

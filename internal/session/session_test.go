@@ -98,8 +98,8 @@ func TestBuildCLIArgs_OptionalFlags(t *testing.T) {
 	if v := findFlag(args, "--max-budget-usd"); v != "12.5" {
 		t.Errorf("--max-budget-usd=%q", v)
 	}
-	if !hasFlag(args, "--worktree") {
-		t.Error("missing --worktree")
+	if hasFlag(args, "--worktree") {
+		t.Error("--worktree must not be passed (the slot is cmd.Dir)")
 	}
 	if v := findFlag(args, "--allowedTools"); v != "Bash(npm test) Read" {
 		t.Errorf("--allowedTools=%q", v)

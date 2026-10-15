@@ -190,11 +190,13 @@ path = 'D:\RustProjects\lumen-browser'
 
   # Worktree
   use_worktree = true
-  # Optional stable worktree/branch name passed to `--worktree <name>`. Leave
-  # empty (default) to let the CLI create a FRESH worktree from HEAD on every run
-  # — required for the autonomous restart loop. Set a name only for a long-lived,
-  # manually-managed worktree (note: a fixed name reuses an existing worktree,
-  # which can go stale relative to the main repo).
+  # use_worktree runs the CLI inside the session's persistent work folder — a slot of
+  # the project's worktree pool, <project>/.claude/worktrees/<slot> — created on first
+  # start and reused afterwards. The CLI is NOT given `--worktree` (it would make a
+  # fresh nameless worktree per process and lose interrupted work). Which branch the
+  # slot sits on is the task protocol's business (scripts/worktree-pool.sh).
+  # Slot name: worktree_name if set, else p<N>-work for a STATUS-P<N>.md task_source,
+  # else "<session-name>-work". Two running sessions of one project cannot share a slot.
   worktree_name = ""
 
   # Additional context
