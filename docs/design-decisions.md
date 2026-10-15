@@ -2939,7 +2939,7 @@ process with `cmd.Dir` = the session's persistent pool slot
   (no CGO), supports both eras, derives schemas from Go structs. MCP-02 must
   prove dual-era over stdio and measure start time before committing to it.
 - **One session address, `session_id = "project/session"`**; the old
-  `project`+`session` pairs stay as aliases until MCP-17.
+  `project`+`session` pairs stay as aliases; removal is MCP-18 (after MCP-17 closed the block).
 - **Access levels `read` < `operate` (default) < `admin`.** Anything that
   approves in place of a human, writes into the user's repository, changes
   config, deletes data or stops work in bulk is `admin`; the human sets the

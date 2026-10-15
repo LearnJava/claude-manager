@@ -352,6 +352,8 @@ claude-manager/
 
 ## Wails Bindings (app.go)
 
+> `cm-mcp` + the control-plane (`internal/control`) are the public interface to these bindings: every method below has an MCP tool or a reasoned `parityExcluded` entry (`app_parity_test.go`; `parityPending` is empty). Guide: [mcp.md](./mcp.md).
+
 All exported methods become async JS functions via auto-generated bindings in `frontend/wailsjs/`.
 
 | Method | Description |
