@@ -63,6 +63,8 @@ type ManagerAPI interface {
 	GetMixedRounds(project string) ([]*worker.MixedTask, error)
 	GetMixedQuality(project string) ([]worker.ModelQuality, error)
 	CancelMixedTask(id string) error
+	GenerateRoadmap(project, idea, model string) (*analysis.TaskPlan, error)
+	GetLatestDraftRoadmap(project string) (*analysis.TaskPlan, error)
 }
 
 // AppAPI is the subset of *App used for config read/write.

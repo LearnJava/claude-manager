@@ -82,6 +82,9 @@ var rpcLevels = map[string]AccessLevel{
 	"GetModelRecommendation": LevelRead, "GetModelAdvice": LevelRead,
 	"ExportLog": LevelOperate, "ImportProjectLogs": LevelOperate,
 	"ClearProjectLogs": LevelAdmin, "CleanOldLogs": LevelAdmin,
+	"GetLatestDraftRoadmap": LevelRead, "GetSessionRoadmap": LevelRead, "GetRoadmapTaskDetail": LevelRead,
+	"GetRoadmapRowDetail": LevelRead,
+	"GenerateRoadmap": LevelOperate, "ApproveRoadmap": LevelAdmin,
 	// operate
 	"StartSession": LevelOperate, "StartSessionWithOverride": LevelOperate, "InterruptSession": LevelOperate,
 	"StopSession": LevelOperate, "RestartSession": LevelOperate, "ResumeSession": LevelOperate,
