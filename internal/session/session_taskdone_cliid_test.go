@@ -243,6 +243,11 @@ func TestRun_SoftStopIsRecordedOnTheIdleSession(t *testing.T) {
 	if snap.StoppedAfterTaskAt.Before(before) {
 		t.Errorf("StoppedAfterTaskAt = %v, want the request time (after %v)", snap.StoppedAfterTaskAt, before)
 	}
+	// The request is honoured, so it must not be reported as still pending:
+	// a later GetAllSessions would bring the sidebar's ⏳ back.
+	if snap.StopRequested {
+		t.Errorf("StopRequested = true on the idle session, want false once the stop is done")
+	}
 	found := false
 	for _, l := range logs {
 		found = found || strings.Contains(l, "Stopped on the \"Stop after task\" request")

@@ -684,6 +684,15 @@ func (s *Session) Stop(soft bool) {
 	}
 }
 
+// clearSoftStop drops a pending "stop after task" request; stoppedAfterTaskAt
+// is kept — it marks how the last run ended until the session runs again.
+func (s *Session) clearSoftStop() {
+	s.mu.Lock()
+	s.softStopAt = time.Time{}
+	s.mu.Unlock()
+	s.softStop.Store(false)
+}
+
 // SendMessage writes a user_message to the session's stdin via the input
 // channel. Returns an error if the session is not in a state that accepts
 // input.
@@ -958,6 +967,10 @@ func (s *Session) Run(ctx context.Context) {
 			s.emitErr(fmt.Errorf("session panic: %v", r))
 		}
 	}()
+	// A "stop after task" request belongs to this run only. Left set, every
+	// later GetAllSessions snapshot of the now-idle session would report it
+	// again and bring back the sidebar's ⏳ after the idle event cleared it.
+	defer s.clearSoftStop()
 
 	s.mu.Lock()
 	s.startedAt = time.Now()
@@ -1025,6 +1038,9 @@ func (s *Session) Run(ctx context.Context) {
 					"Stopped on the \"Stop after task\" request made at %s — the queue was not continued. Start the session to resume it.",
 					requestedAt.Format("15:04:05")),
 			}})
+			// Clear before the idle event so no snapshot taken after it
+			// still reports the request (the deferred clear runs too late).
+			s.clearSoftStop()
 			s.setStatus(config.StatusIdle)
 			return
 		}
