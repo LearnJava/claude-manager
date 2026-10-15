@@ -2915,3 +2915,35 @@ process with `cmd.Dir` = the session's persistent pool slot
   `CLAUDE.md` first, so this is where it learns about its slot and the two
   skills; a project that already links the workflow doc (Lumen) has its own
   wording and is never touched, and the check also makes a second call a no-op.
+
+## Why cm-mcp is a public interface with full GUI parity
+
+*Decided in MCP-01 (2026-10-15). Tables and the parity map: [mcp.md](./mcp.md).*
+
+- **Why.** `cm-mcp` started as a test bridge (19 tools over 33 RPC methods,
+  while `App` exports 87). Third-party agents (Claude Code/Desktop, Cursor,
+  Codex, Hermes) should do everything the GUI does without reading our code,
+  so it becomes a public MCP server driven by the same `App` methods the
+  buttons call.
+- **Spec target `2026-07-28`, dual-era.** The current revision removed
+  `initialize`, `ping` and `logging/setLevel` and added `server/discover` and
+  per-request `_meta`; clients in the field still speak `2025-11-25`, so the
+  server answers both. Not doing: Streamable HTTP (local control-plane, every
+  target client has stdio, HTTP adds auth surface), sampling/roots/
+  elicitation/MRTR (the server asks nothing of the client; roots, sampling and
+  logging are deprecated), the tasks extension (`wait_for_*` + progress do).
+- **Official Go SDK (`go-sdk` v1.8.0+), not a hand-rolled `main.go`.** Pure Go
+  (no CGO), supports both eras, derives schemas from Go structs. MCP-02 must
+  prove dual-era over stdio and measure start time before committing to it.
+- **One session address, `session_id = "project/session"`**; the old
+  `project`+`session` pairs stay as aliases until MCP-17.
+- **Access levels `read` < `operate` (default) < `admin`.** Anything that
+  approves in place of a human, writes into the user's repository, changes
+  config, deletes data or stops work in bulk is `admin`; the human sets the
+  level in the client config, the agent cannot raise it, and the control-plane
+  re-checks it.
+- **Parity is a test, not a promise.** Every exported `App` method has an MCP
+  tool or an `excluded` entry with a reason (OS window actions, native
+  dialogs); the list lives in one Go registry (MCP-03) and the test stays in
+  the gate. Frontend-only state (`localStorage` view prefs) is purely visual
+  and excluded. No tool may kill or restart the manager process.

@@ -30,7 +30,7 @@ Hermes…) может сделать через MCP — без чтения на
 
 | Слой | Где | Методов |
 |---|---|---|
-| GUI — Wails-биндинги `*App` | `app.go`, `app_*.go` | 84 |
+| GUI — Wails-биндинги `*App` | `app.go`, `app_*.go` | 87 |
 | control-plane RPC | `internal/control/rpc.go:buildRegistry` | 34 |
 | MCP-инструменты | `internal/control/mcptools.go:buildMCPTools` | 19 |
 
@@ -147,7 +147,7 @@ Hermes…) может сделать через MCP — без чтения на
 
 | Задача | Статус | Ключевые файлы |
 |---|---|---|
-| MCP-01 | ○ TODO | docs/mcp.md, docs/design-decisions.md |
+| MCP-01 | ✓ DONE (2026-10-15) | docs/mcp.md, docs/design-decisions.md |
 | MCP-02 | ○ TODO | cmd/cm-mcp/, go.mod |
 | MCP-03 | ○ TODO | internal/control/mcptools.go → реестр, тест паритета |
 | MCP-04 | ○ TODO | реестр, internal/control/rpc.go, тест-линтер |
@@ -221,7 +221,7 @@ Hermes…) может сделать через MCP — без чтения на
 **Files:** `cmd/cm-mcp/main.go` (+ новые файлы рядом), `go.mod`/`go.sum`
 (если выбран SDK), `cmd/cm-mcp/main_test.go`.
 
-**Что сделать.** Перевести транспорт и жизненный цикл на решение MCP-01,
+**Что сделать.** Перевести транспорт и жизненный цикл на решение MCP-01, **Поправка MCP-01: см. «Поправки по итогам MCP-01» в конце файла — целевая ревизия `2026-07-28`, сервер dual-era.**
 **не меняя набор и поведение инструментов**:
 
 - согласование `protocolVersion` (клиент просит старую поддерживаемую —
@@ -621,3 +621,16 @@ Inspector в `docs/mcp.md` («Проверка»).
 **Готово когда:** `pending` пуст; агент, не видевший этот блок, по
 `instructions` + `cm://guide` + `docs/mcp.md` полностью управляет
 менеджером (подтверждено MCP-16); ссылки актуальны; гейт зелёный.
+
+---
+
+## Поправки по итогам MCP-01
+
+Решения — в `docs/mcp.md`. Исполнители задач ниже читают это раньше текста самой задачи.
+
+- **MCP-02.** Целевая ревизия — `2026-07-28` (current), а не `2025-11-25`. Нет `initialize`/`ping`/`logging/setLevel`; версия и capabilities — в `_meta` каждого запроса, есть обязательный `server/discover`. Сервер **dual-era**: legacy (`initialize`, `ping`) + modern. SDK — `github.com/modelcontextprotocol/go-sdk` `v1.8.0`+. Тест handshake — в обоих режимах; обязательно проверить, что SDK по stdio отвечает на оба вида запросов, и замерить старт `cm-mcp` (иначе запасной путь — только `2025-11-25`, см. «SDK» в `docs/mcp.md`).
+- **MCP-03.** Инструменты `tools/list` — в детерминированном порядке (сортировка по имени). Реестр хранит для каждого метода `App`: имя инструмента, уровень, аннотации; исходные данные — таблица «Карта паритета» в `docs/mcp.md` (87 методов, 4 excluded). Тест паритета сверяет реестр с `grep` по экспортированным методам `*App` в `app*.go`.
+- **MCP-12.** Вместо `notifications/resources/updated` — `subscriptions/listen` (modern) и `resources/subscribe` (legacy), только если SDK даёт их без собственного кода; иначе подписок нет, остаются `wait_for_*`.
+- **MCP-13/14.** Capability `logging` не объявлять (deprecated, SEP-2577); диагностика — `stderr`.
+- **MCP-05.** Уровни и правила отнесения уже зафиксированы в `docs/mcp.md` («Уровни доступа»); тестовая обвязка GUI запускается с `CM_MCP_LEVEL=admin`.
+- **MCP-08.** Имена проектов и сессий не должны содержать `/`.
