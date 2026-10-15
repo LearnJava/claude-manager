@@ -488,6 +488,16 @@ consumed, so `stores/queues.ts` and `RoadmapTree.svelte` re-read the roadmap on 
 resolves the *description* of the top task; it does not change which task
 `hasTasks()`/Claude picks.
 
+**`session:queue_changed` (QV-02).** The description signal above only fires when a
+pointer is consumed; a pointer *appended* to the queue file, or a task file edited, was
+invisible until the next task finished. `internal/session/queuewatch.go` polls every
+configured session with a `task_source` every 2 s: it reads the (small) queue file and
+`os.Stat`s it plus each file its pointers name, comparing `(path, mtime, size)` with the
+previous pass (a vanished file counts as a change). The first pass only records state. A
+change emits `session:queue_changed {id}`; `stores/sessions.ts` debounces it 300 ms per
+session and calls `loadQueue`. Started from `startup` (`StartQueueWatch`), stopped by
+`Shutdown`.
+
 ### AI-Generated Project Roadmap → P1 Session Bootstrap
 Bridges "describe a project idea" to a running `task_source`-driven session, so
 `ROADMAP.md`/`STATUS-P1.md` no longer have to be hand-authored before the Task

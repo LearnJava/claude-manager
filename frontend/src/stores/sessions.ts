@@ -9,6 +9,7 @@ import {
 } from '../../wailsjs/go/main/App';
 import { t } from '../lib/i18n';
 import { beep } from '../lib/beep';
+import { loadQueue } from './queues';
 
 // ---- Types mirroring Go SessionState / event payloads ----
 
@@ -407,6 +408,8 @@ export async function initSessions(): Promise<void> {
     refreshTodayCost();
 }
 
+const queueTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 // ---- Wails event subscriptions ----
 function subscribeEvents() {
     // Backend finished startup(): a snapshot taken before that came back empty.
@@ -448,6 +451,18 @@ function subscribeEvents() {
         if (!evt || !evt.id) return;
         appendLog(evt.id, evt.entry);
         setSession(evt.id, (s) => ({ ...s, last_activity: evt.entry?.time ?? s.last_activity }));
+    });
+
+    // Queue/task file changed on disk: re-read the queue (debounced per session).
+    EventsOn('session:queue_changed', (evt: { id: string }) => {
+        if (!evt || !evt.id) return;
+        const prev = queueTimers.get(evt.id);
+        if (prev) clearTimeout(prev);
+        queueTimers.set(evt.id, setTimeout(() => {
+            queueTimers.delete(evt.id);
+            const s = get(sessions)[evt.id];
+            if (s) void loadQueue(s);
+        }, 300));
     });
 
     EventsOn('session:task_done', (evt: { id: string; tasks_done: number }) => {
