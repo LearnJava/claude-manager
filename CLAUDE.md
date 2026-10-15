@@ -108,7 +108,7 @@ Update docs **in the same change** as the code, not as a follow-up:
 
 | Change | Update |
 |---|---|
-| New/changed Wails-bound method on `App` | Row in `docs/architecture.md`'s "Wails Bindings (app.go)" table |
+| New/changed Wails-bound method on `App` | Row in `docs/architecture.md`'s "Wails Bindings (app.go)" table + an MCP tool in the registry (`internal/control/mcptools.go`) or an entry in `parityExcluded` (`app_parity_test.go`, the parity test) |
 | New `SessionConfig`/`ProjectConfig`/`GlobalSettings` field | `config.example.toml` + relevant PLAN.md section |
 | New stream-json event type or field the parser handles | "Stream-JSON Events (stdout)" section in `docs/design-decisions.md` |
 | New `cm-mcp` tool | "cm-mcp tools available to Claude" table in `docs/testing-harness.md` |

@@ -210,6 +210,37 @@ Control-plane проверяет уровень и на своей сторон�
 
 Новых недостающих действий GUI, требующих переноса на бэкенд, нет.
 
+## Реестр инструментов и тест паритета
+
+Реализован в MCP-03. Каждый инструмент объявляется **один раз** в
+`internal/control/mcptools.go` (`buildMCPTools`, обобщённый `define[In, Out]`):
+
+- Go-структуры входа и выхода → `inputSchema` и `outputSchema`
+  (`google/jsonschema-go`); описания полей — в теге `jsonschema:"…"`.
+  Рукописных JSON-схем нет.
+- `Title`, `Description`, `Annotations` (`readOnlyHint`, `destructiveHint`,
+  `idempotentHint`, `openWorldHint`), `Level` (`read`/`operate`/`admin`;
+  в `tools/list` уходит как `_meta["cm/accessLevel"]`, фильтрация — MCP-05),
+  `Covers` — какие методы `App` покрывает инструмент.
+- `Translate` (аргументы → вызов control-plane) и `Result`/`Summary`
+  (ответ → `structuredContent` по `outputSchema` **и** короткая фраза в
+  `content`, не дамп JSON). Списки оборачиваются в объект
+  (`{"sessions": […]}`): `structuredContent` — всегда объект.
+- Сессии адресуются `session_id`; пара `project`+`session` — алиас (оба
+  сразу — ошибка).
+
+Контракт фиксирует golden `testdata/mcp/tools.golden.json` (реальный
+`tools/list`); намеренное изменение —
+`go test ./cmd/cm-mcp -run TestToolsListGolden -update`. Корректность каждого
+`structuredContent` проверяет `internal/control/mcptools_test.go`.
+
+**Тест паритета** — `app_parity_test.go` (корень, пакет `main`): через
+`reflect` перебирает экспортированные методы `*App`; каждый обязан быть в
+`Covers` инструмента, в `parityExcluded` (с причиной) или в `parityPending`
+(задача блока, которая его закроет). Метод из `parityPending`, уже покрытый
+инструментом, роняет тест — список сокращается вместе с работой; новый
+метод `App` без MCP не пройдёт гейт.
+
 ## Карта паритета
 
 Таблица охватывает **все 87 экспортированных методов `*App`**

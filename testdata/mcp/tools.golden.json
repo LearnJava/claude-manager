@@ -1,0 +1,1036 @@
+[
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Approve permission"
+    },
+    "description": "Approve a pending permission request for a session (on the human's behalf).",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "description": "Permission request ID from get_pending_permissions",
+          "type": "string"
+        },
+        "scope": {
+          "description": "Approval scope: once, session or always (default: allow)",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "request_id"
+      ],
+      "type": "object"
+    },
+    "name": "approve_permission",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "description": "The decision sent: allow, once, session, always or deny",
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "session_id",
+        "request_id",
+        "decision"
+      ],
+      "type": "object"
+    },
+    "title": "Approve permission"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Deny permission"
+    },
+    "description": "Deny a pending permission request for a session.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "description": "Permission request ID from get_pending_permissions",
+          "type": "string"
+        },
+        "scope": {
+          "description": "Approval scope: once, session or always (default: allow)",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "request_id"
+      ],
+      "type": "object"
+    },
+    "name": "deny_permission",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "description": "The decision sent: allow, once, session, always or deny",
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "session_id",
+        "request_id",
+        "decision"
+      ],
+      "type": "object"
+    },
+    "title": "Deny permission"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Dispatch mixed task"
+    },
+    "description": "Run the mixed-programming round loop (brief -\u003e patches -\u003e gates -\u003e feedback) for a registered brief against a configured worker model. Blocks until the task is done or needs_human; use wait_for_worker_status/get_mixed_rounds to observe progress from another call.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "brief_id": {
+          "description": "ID of a brief registered via register_mixed_brief",
+          "type": "string"
+        },
+        "project": {
+          "description": "Project name",
+          "type": "string"
+        },
+        "worker": {
+          "description": "Worker name from the [[worker]] config",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "brief_id",
+        "worker"
+      ],
+      "type": "object"
+    },
+    "name": "dispatch_mixed_task",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "description": "Mixed-programming task state: rounds, patches, gate results, status"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "type": "object"
+    },
+    "title": "Dispatch mixed task"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Execute plan"
+    },
+    "description": "Execute a pre-generated task plan by plan ID.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "plan_id": {
+          "description": "Plan ID returned by run_preflight",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_id"
+      ],
+      "type": "object"
+    },
+    "name": "execute_plan",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "plan_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "plan_id"
+      ],
+      "type": "object"
+    },
+    "title": "Execute plan"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get cost and rate-limit metrics"
+    },
+    "description": "Get cost and token metrics for a project over a time period; without a project, the account rate-limit status.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "period": {
+          "description": "Number of days to aggregate (default 7)",
+          "type": "integer"
+        },
+        "project": {
+          "description": "Project name; omit for the account rate-limit status",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_metrics",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cost_usd": {
+          "description": "Project cost over the period in USD",
+          "type": [
+            "null",
+            "number"
+          ]
+        },
+        "days": {
+          "type": "integer"
+        },
+        "project": {
+          "type": "string"
+        },
+        "rate_limit": {
+          "description": "Account rate-limit status, when no project was given"
+        }
+      },
+      "type": "object"
+    },
+    "title": "Get cost and rate-limit metrics"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get mixed-programming rounds"
+    },
+    "description": "Get persisted mixed-programming task state (rounds, patches, gate results, status) for a project.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_mixed_rounds",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "tasks": {
+          "description": "Persisted mixed-programming tasks of the project",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "tasks"
+      ],
+      "type": "object"
+    },
+    "title": "Get mixed-programming rounds"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List pending permissions"
+    },
+    "description": "Get all pending permission requests across all sessions.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "name": "get_pending_permissions",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "permissions": {
+          "description": "Pending permission requests across all sessions",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "permissions"
+      ],
+      "type": "object"
+    },
+    "title": "List pending permissions"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get session log"
+    },
+    "description": "Get log entries for a session.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "description": "Number of most recent entries (default 100)",
+          "type": "integer"
+        },
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1",
+          "type": "string"
+        },
+        "tail": {
+          "description": "Deprecated alias of limit",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_session_logs",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "description": "Log entries, oldest first",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "entries"
+      ],
+      "type": "object"
+    },
+    "title": "Get session log"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List sessions"
+    },
+    "description": "Get all sessions with their current status and metrics.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "name": "get_sessions",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "sessions": {
+          "description": "All sessions with status and metrics",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "sessions"
+      ],
+      "type": "object"
+    },
+    "title": "List sessions"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Interrupt session"
+    },
+    "description": "Interrupt the session's current action (the turn in flight: a running tool call or generation) without stopping the session; it then waits for the next send_message.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "interrupt_session",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was accepted",
+          "type": "boolean"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "title": "Interrupt session"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Register mixed brief"
+    },
+    "description": "Register a mixed-programming brief so it can be dispatched to a worker model. The brief must be self-contained: task description in English, verbatim code excerpts, accepted decisions, target files.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable brief ID, e.g. the subtask name",
+          "type": "string"
+        },
+        "system_prompt": {
+          "description": "Optional override of the FIND/REPLACE protocol prompt",
+          "type": "string"
+        },
+        "task": {
+          "description": "Self-contained task specification sent to the worker",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "task"
+      ],
+      "type": "object"
+    },
+    "name": "register_mixed_brief",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "brief_id": {
+          "description": "ID of the registered brief",
+          "type": "string"
+        }
+      },
+      "required": [
+        "brief_id"
+      ],
+      "type": "object"
+    },
+    "title": "Register mixed brief"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Restart session"
+    },
+    "description": "Restart a session. Set resume=true to resume from the saved CLI session ID instead of restarting fresh.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id",
+          "type": "string"
+        },
+        "resume": {
+          "description": "Resume from the saved CLI session ID instead of restarting fresh",
+          "type": "boolean"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "restart_session",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was accepted",
+          "type": "boolean"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "title": "Restart session"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Run preflight analysis"
+    },
+    "description": "Run a preflight analysis session to generate a task plan for a project.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name",
+          "type": "string"
+        },
+        "task": {
+          "description": "Task description to analyse",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "task"
+      ],
+      "type": "object"
+    },
+    "name": "run_preflight",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "plan": {
+          "description": "The generated task plan, including its plan_id"
+        }
+      },
+      "required": [
+        "plan"
+      ],
+      "type": "object"
+    },
+    "title": "Run preflight analysis"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Send message"
+    },
+    "description": "Send a user message to an active bidirectional session.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1",
+          "type": "string"
+        },
+        "text": {
+          "description": "Message text to send",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "send_message",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was accepted",
+          "type": "boolean"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "title": "Send message"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Update global settings"
+    },
+    "description": "Update global application settings (AppConfig partial update).",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": true,
+          "description": "Partial AppConfig fields to update",
+          "type": "object"
+        }
+      },
+      "required": [
+        "config"
+      ],
+      "type": "object"
+    },
+    "name": "set_global_settings",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "title": "Update global settings"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Start session"
+    },
+    "description": "Start a session by session_id (or the legacy project+session pair).",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "start_session",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was accepted",
+          "type": "boolean"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "title": "Start session"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Stop session"
+    },
+    "description": "Stop a session. Set after_task=true to finish the current task first (soft stop).",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "after_task": {
+          "description": "Finish the current task before stopping (soft stop)",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "stop_session",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was accepted",
+          "type": "boolean"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "title": "Stop session"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Wait for event"
+    },
+    "description": "Block until a matching event is emitted by the control-plane, or until timeout. Checks the ring buffer first so past events are not missed.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "description": "Event name, e.g. session:status, session:log, session:permission",
+          "type": "string"
+        },
+        "match": {
+          "additionalProperties": true,
+          "description": "Key-value pairs the event data must contain (all must match)",
+          "type": "object"
+        },
+        "timeout_ms": {
+          "description": "Timeout in milliseconds (default 5000)",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event"
+      ],
+      "type": "object"
+    },
+    "name": "wait_for_event",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "description": "Event payload"
+        },
+        "event": {
+          "description": "Name of the event that matched",
+          "type": "string"
+        },
+        "ts": {
+          "description": "Emission time, RFC 3339",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event",
+        "data"
+      ],
+      "type": "object"
+    },
+    "title": "Wait for event"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Wait for session status"
+    },
+    "description": "Block until a session reaches the specified status, or until timeout. Reliable alternative to polling: use after start_session, send_message, or approve_permission.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1",
+          "type": "string"
+        },
+        "status": {
+          "description": "Target status, e.g. working, idle, WaitingPermission, RateLimited, Error",
+          "type": "string"
+        },
+        "timeout_ms": {
+          "description": "Timeout in milliseconds (default 5000)",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "name": "wait_for_status",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "description": "Event payload"
+        },
+        "event": {
+          "description": "Name of the event that matched",
+          "type": "string"
+        },
+        "ts": {
+          "description": "Emission time, RFC 3339",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event",
+        "data"
+      ],
+      "type": "object"
+    },
+    "title": "Wait for session status"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Wait for worker status"
+    },
+    "description": "Block until a mixed-programming task reaches a terminal status (done or needs_human), or until timeout. Checks past events first, so it can be called after dispatch_mixed_task returned.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "description": "Terminal status to wait for: done or needs_human; omit to match either",
+          "type": "string"
+        },
+        "task_id": {
+          "description": "Task ID (project/brief/worker) as returned by dispatch_mixed_task",
+          "type": "string"
+        },
+        "timeout_ms": {
+          "description": "Timeout in milliseconds (default 60000)",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "name": "wait_for_worker_status",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "description": "Event payload"
+        },
+        "event": {
+          "description": "Name of the event that matched",
+          "type": "string"
+        },
+        "ts": {
+          "description": "Emission time, RFC 3339",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event",
+        "data"
+      ],
+      "type": "object"
+    },
+    "title": "Wait for worker status"
+  }
+]

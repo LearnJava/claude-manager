@@ -40,14 +40,34 @@ func (s *mcpServer) newSDKServer() *mcp.Server {
 	)
 	for _, def := range control.MCPTools {
 		name := def.Name
+		ann := def.Annotations
 		srv.AddTool(
-			&mcp.Tool{Name: name, Description: def.Description, InputSchema: def.InputSchema},
+			&mcp.Tool{
+				Name:         name,
+				Title:        def.Title,
+				Description:  def.Description,
+				InputSchema:  def.InputSchema,
+				OutputSchema: def.OutputSchema,
+				Annotations: &mcp.ToolAnnotations{
+					Title:           def.Title,
+					ReadOnlyHint:    ann.ReadOnly,
+					DestructiveHint: &ann.Destructive,
+					IdempotentHint:  ann.Idempotent,
+					OpenWorldHint:   &ann.OpenWorld,
+				},
+				Meta: mcp.Meta{"cm/accessLevel": string(def.Level)},
+			},
 			func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				args := req.Params.Arguments
 				if len(args) == 0 {
 					args = json.RawMessage(`{}`)
 				}
 				result, err := s.callToolCtx(ctx, name, args)
+				var out any
+				var summary string
+				if err == nil {
+					out, summary, err = control.ShapeResult(name, args, result)
+				}
 				if err != nil {
 					// Tool failures are results, not JSON-RPC errors, so the model sees them.
 					return &mcp.CallToolResult{
@@ -55,8 +75,10 @@ func (s *mcpServer) newSDKServer() *mcp.Server {
 						Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
 					}, nil
 				}
-				text, _ := json.MarshalIndent(result, "", "  ")
-				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(text)}}}, nil
+				return &mcp.CallToolResult{
+					StructuredContent: out,
+					Content:           []mcp.Content{&mcp.TextContent{Text: summary}},
+				}, nil
 			},
 		)
 	}
