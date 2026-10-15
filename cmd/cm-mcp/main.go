@@ -122,6 +122,13 @@ func newMCPServer() (*mcpServer, error) {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	if ok, err := runGenDocs(os.Args[1:]); ok {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "cm-mcp:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	// stdout carries the protocol only; everything else goes to stderr.
 	srv, err := newMCPServer()
 	if err != nil {

@@ -49,49 +49,7 @@ Any normal launch — `wails dev` or the built `claude-manager.exe` — starts t
 
 #### cm-mcp tools available to Claude
 
-| Tool | What it does |
-|---|---|
-| `start_session` | Start a session by `session_id`, optionally with `model`, `effort`, `runtime` |
-| `stop_session` | Stop a session (soft=true waits for current task) |
-| `interrupt_session` | Abort the current action (turn) without stopping the session; it then waits for `send_message` |
-| `restart_session` | Hard restart or resume from saved CLI session ID |
-| `send_message` | Send a user message (optionally `images[]`) to a running session |
-| `start_ad_hoc_chat` | Open an unconfigured `Chat` session in a project |
-| `start_project` / `stop_project` / `stop_all_sessions` | Start or stop every session of a project / of all projects (`confirm=true`) |
-| `set_session_model` / `set_session_runtime` | Switch a session's model live / its CLI (claude or hermes) while stopped |
-| `clear_session_state` | Forget the saved conversation so the next start is fresh |
-| `get_session` | One session in full: status, task, pending questions/permissions, saved state |
-| `list_slash_commands` | Slash commands and skills a session offers |
-| `approve_permission` | Approve a pending permission request |
-| `deny_permission` | Deny a pending permission request |
-| `get_pending` | Everything waiting for a human (permissions + questions), all sessions or one |
-| `get_pending_questions` / `answer_question` | List the questions sessions asked the human / answer one |
-| `add_permission_rule` / `get_permission_candidates` | Add a standing allow/deny rule to a session / suggest rules from permission history |
-| `get_plan` / `approve_plan` | Read a persisted plan / persist an (edited) plan as approved |
-| `get_sessions` | Snapshot of all sessions (status, model, metrics) |
-| `get_session_logs` | Log entries for a session, paged (`limit`, `cursor` → `next_cursor`) |
-| `get_pending_permissions` | List all pending permission requests |
-| `get_metrics` | Cost/token metrics for a project |
-| `search_session_log` / `get_history` / `get_session_metrics` | Filter a session log by level/tool/text; past runs; one session's tokens and cost |
-| `get_cost` / `export_log` / `get_top_actions` / `get_model_advice` | Day or project cost and tokens; log to a file (returns the path); experience tables; model recommendation (see docs/mcp.md "Логи и метрики" for the rest) |
-| `session_preflight` / `generate_roadmap` / `approve_roadmap` / `get_session_roadmap` / `get_mixed_quality` / `cancel_mixed_task` | Preflight gate of a session; draft roadmap from an idea and its approval (writes ROADMAP.md); roadmap tree and row/task text; worker comparison; cancel a mixed task (see docs/mcp.md "Планирование и mixed" for the rest) |
-| `get_skill_candidates` / `distill_skill` / `get_skills` / `approve_skill` / `archive_skill` / `restore_skill` / `get_skill_usage` / `get_skill_quality` / `get_skill_autopilot` / `set_skill_autopilot` / `run_skill_autopilot` | Experience layer: candidate patterns, distil a draft, list, write into the project, switch off and back, usage and effect, autopilot state, switch and one step (see docs/mcp.md "Навыки") |
-| `wait_for_status` | Block until session reaches a target status |
-| `wait_for_event` | Block until a specific event is emitted (`event` is an enum of `control.EventNames`) |
-| `wait_for_any` | Block until the first of several sessions needs a human (question, permission, error, finished task); a timeout is `reached=false`, not an error |
-| `set_global_settings` | Deprecated alias of a whole-config write; use `update_global_settings` |
-| `get_projects` / `get_config` / `check_environment` / `get_project_setup` | Projects, effective config (TOML shape, no secrets, with `version`), installed programs, CLAUDE.md / protocol / mirror state of a project |
-| `add_project` / `update_project` / `remove_project` | Point edits of a project; `dry_run` returns the was/now diff and saves nothing |
-| `add_session` / `update_session` / `remove_session` | Point edits of a session by `config.toml` field names |
-| `update_global_settings` / `update_config` | White-listed global settings / whole config guarded by the `version` from `get_config` |
-| `init_git_repo` / `generate_claude_md` / `install_session_protocol` | Write into the project folder (admin) |
-| `mirror_project` / `unmirror_project` / `sync_project_mirrors` | Project mirror on / off / sync now |
-| `run_preflight` | Run pre-flight analysis for a task |
-| `execute_plan` | Execute a pre-generated task plan |
-| `register_mixed_brief` | Register a mixed-programming brief for dispatch |
-| `dispatch_mixed_task` | Run the mixed-programming round loop (brief → patches → gates) |
-| `get_mixed_rounds` | Persisted mixed-task state (rounds, patches, gates) per project |
-| `wait_for_worker_status` | Block until a mixed task reaches done / needs_human |
+The tool reference (name, access level, annotations, what it does) and the `App`-method parity map are generated from the registry — see "Справочник инструментов" and "Карта паритета" in [docs/mcp.md](./mcp.md). Regenerate with `go run ./cmd/cm-mcp -gen-docs`; `TestDocsInSync` fails when they drift.
 
 #### Typical test workflow
 
