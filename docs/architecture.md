@@ -324,6 +324,7 @@ claude-manager/
 │                                    #   wait/wait-for-worker, MCP tools, e2e runner,
 │                                    #   access.go (levels, self-protection, audit log),
 │                                    #   rpc_projects.go + cfgops.go (point config edits, dry_run diff, version)
+│                                    #   rpc_logs.go + mcptools_logs.go (log search/export, cost, experience tables)
 ├── testdata/                        # scenarios/ (fakeclaude), worker-scenarios/ (fakeworker),
 │                                    #   e2e/ (runner, incl. mixed-*.json), configs/,
 │                                    #   transcripts/ (LN-01: trimmed real JSONL fixtures)

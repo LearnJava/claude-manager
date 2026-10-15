@@ -24,32 +24,18 @@ var parityExcluded = map[string]string{
 // task of MCP-TASKS.md (value = that task). The list only shrinks: once a
 // tool covers a method it must leave this map, and the test fails until it does.
 var parityPending = map[string]string{
-	"GetAutoModelRouting": "MCP-09",
-	"GetModelRecommendation": "MCP-09",
 	"SessionPreflight": "MCP-10",
 	"GenerateRoadmap": "MCP-10",
 	"GetLatestDraftRoadmap": "MCP-10",
 	"ApproveRoadmap": "MCP-10",
 	"GetMixedQuality": "MCP-10",
 	"CancelMixedTask": "MCP-10",
-	"GetHistory": "MCP-09",
-	"GetSessionMetrics": "MCP-09",
-	"GetDailyCost": "MCP-09",
-	"GetDailyTokens": "MCP-09",
-	"GetProjectTokens": "MCP-09",
-	"ExportLog": "MCP-09",
-	"CleanOldLogs": "MCP-09",
 	"GetSessionRoadmap": "MCP-10",
 	"GetRoadmapTaskDetail": "MCP-10",
 	"GetRoadmapRowDetail": "MCP-10",
-	"GetTopActions": "MCP-09",
-	"GetActionSamples": "MCP-09",
-	"GetDurationProfile": "MCP-09",
-	"GetTokenAttribution": "MCP-09",
 	"GetSkillCandidates": "MCP-11",
 	"DistillSkill": "MCP-11",
 	"GetSkills": "MCP-11",
-	"ImportProjectLogs": "MCP-09",
 	"ApproveSkill": "MCP-11",
 	"ArchiveSkill": "MCP-11",
 	"RestoreSkill": "MCP-11",
@@ -58,8 +44,6 @@ var parityPending = map[string]string{
 	"SetSkillAutopilot": "MCP-11",
 	"RunSkillAutopilot": "MCP-11",
 	"GetSkillQuality": "MCP-11",
-	"GetProjectLogFiles": "MCP-09",
-	"ClearProjectLogs": "MCP-09",
 }
 
 // TestMCPParity: every exported *App method (the Wails bindings = every GUI

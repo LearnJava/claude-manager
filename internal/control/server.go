@@ -47,6 +47,8 @@ type ManagerAPI interface {
 	GetHistory(project string, limit int) ([]*store.SessionRun, error)
 	GetSessionMetrics(id string) (session.SessionMetrics, error)
 	GetDailyCost(date string) (float64, error)
+	GetDailyTokens(date string) (session.DailyTokens, error)
+	GetProjectTokens(project string, days int) (session.DailyTokens, error)
 	GetProjectCost(project string, days int) (float64, error)
 	GetRateLimitStatus() *session.RateLimitInfo
 	ClearSessionState(project, name string)
@@ -79,6 +81,8 @@ type Server struct {
 	srv      *http.Server
 	// cfgMu serialises read-modify-write config edits (MCP-08).
 	cfgMu sync.Mutex
+	// exportDir overrides where ExportLog writes (tests); empty means the default.
+	exportDir string
 }
 
 // NewServer creates a Server and wires the HTTP mux.

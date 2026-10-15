@@ -412,7 +412,7 @@ preflight, roadmap, distill); остальные — `false`.
 | `ShowMainWindow` | `app.go:1264` | нет | — | **excluded** | — | — | оконное действие ОС: у агента нет окна |
 | `MinimizeToTray` | `app.go:1275` | нет | — | **excluded** | — | — | оконное действие ОС: у агента нет окна |
 | `Notify` | `app.go:1313` | нет | — | **excluded** | — | — | тост ОС для человека; агент отвечает через результат инструмента |
-| `ExportLog` | `app.go:1329` | нет | MCP-09 | `export_log` | read | только чтение | без нативного диалога: текст в ответе, формат md/json/txt (store.RenderExport) |
+| `ExportLog` | `app.go:1329` | нет | MCP-09 | `export_log` | operate | создаёт файл | без нативного диалога: файл в `~/.claude-manager/exports`, в ответе путь; формат md/json/txt (store.RenderExport) |
 | `CleanOldLogs` | `app.go:1367` | нет | MCP-09 | `clean_old_logs` | admin | разрушительное | удаляет данные |
 | `GetSessionRoadmap` | `app.go:1401` | нет | MCP-10 | `get_session_roadmap` | read | только чтение | — |
 | `GetRoadmapTaskDetail` | `app.go:1417` | нет | MCP-10 | `get_roadmap_detail` | read | только чтение | `kind=task` |
@@ -554,3 +554,40 @@ the wrong type». Правки идут под одним замком серв�
 **App или менеджер.** Действия над папкой и зеркалом нужны GUI-приложению; в `playwright-server`
 они отвечают ошибкой «needs the Claude Manager app». Правки конфига работают с любым сервером,
 у которого есть `AppAPI`.
+
+## Логи и метрики
+
+Область MCP-09: логи сессий и проектов, расход, таблицы слоя опыта. Реализация —
+`internal/control/rpc_logs.go` (RPC), `mcptools_logs.go` (инструменты). Каждый список режется
+страницей и по байтам (`MaxResponseBytes`), в ответе `next_cursor` и `truncated`.
+
+| Инструмент | Уровень | Что делает |
+|---|---|---|
+| `get_session_logs` | read | Лог последнего запуска сессии по порядку, страницами |
+| `search_session_log` | read | Записи лога по `level` (`text`, `tool`, `error`, `result`, `system`), `tool` и подстроке `contains`; нужен хотя бы один фильтр. Поиск идёт на стороне менеджера: агент не выкачивает весь лог |
+| `get_history` | read | Прошлые запуски проекта (или всех), новые первыми: статус, стоимость, токены |
+| `get_session_metrics` | read | Токены, ходы, стоимость, заполнение контекста, длительность одной сессии |
+| `get_cost` | read | `scope=day` (дата `YYYY-MM-DD`, по умолчанию сегодня, все проекты) или `scope=project` (`project`, `period` дней): `cost_usd` и токены |
+| `get_metrics` | read | Стоимость проекта за период, без проекта — статус rate-limit (существующий) |
+| `export_log` | operate | Пишет лог сессии в файл `~/.claude-manager/exports/<сессия>-<время>.<md\|json\|txt>` и возвращает путь, а не содержимое |
+| `import_project_logs` | operate | Читает папку сохранённых логов CLI (по умолчанию `.claude-manager/logs` проекта) в таблицы опыта; повторный импорт папки пропускает уже учтённое |
+| `get_project_log_files` | read | Автосохранённые логи проекта: имя, путь, размер, время |
+| `clear_project_logs` | admin | Удаляет файлы логов проекта и их строки в базе; история запусков остаётся. Нужен `confirm: true` |
+| `clean_old_logs` | admin | Удаляет строки логов старше `retention_days` во всех проектах. Нужен `confirm: true` |
+| `get_top_actions` | read | Самые частые сигнатуры вызовов инструментов проекта за `days` |
+| `get_action_samples` | read | Конкретные вызовы за одной сигнатурой (`signature` из `get_top_actions`) |
+| `get_duration_profile` | read | Медиана, p90, максимум, сумма и доля отказов по сигнатурам |
+| `get_token_attribution` | read | Оценка токенов контекста по сигнатурам, инструментам и длине результата; `top_n` самых дорогих |
+| `get_model_advice` | read | Включена ли авто-маршрутизация моделей и какую модель/усилие она советует для промпта сессии |
+
+**Новые RPC.** `GetDailyTokens`, `GetProjectTokens`, `SearchSessionLog`, `GetModelAdvice`
+добавлены в control-plane; `ExportLog` в RPC — не диалог `App.ExportLog`, а запись файла
+в папку экспорта. `get_cost` вызывает токенные методы: их `cost_usd` берётся из тех же строк
+`daily_metrics`, что и `GetDailyCost`.
+
+**Таблицы опыта пусты, пока выключен `experience_tracking`** в настройках проекта
+(`get_top_actions`, `get_action_samples`, `get_duration_profile`, `get_token_attribution`).
+
+**App или менеджер.** Файлы логов, очистка, импорт, таблицы опыта и совет по модели нужны
+GUI-приложению; в `playwright-server` они отвечают ошибкой «needs the Claude Manager app».
+Логи, поиск, экспорт, история и расход работают с любым менеджером.

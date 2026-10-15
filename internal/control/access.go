@@ -76,6 +76,12 @@ var rpcLevels = map[string]AccessLevel{
 	"GetProjects": LevelRead, "GetConfigView": LevelRead, "CheckEnvironment": LevelRead,
 	"HasClaudeMd": LevelRead, "HasSessionProtocol": LevelRead, "GetProjectMirror": LevelRead, "GetProjectSetup": LevelRead,
 	"GetPendingQuestions": LevelRead, "GetPending": LevelRead, "GetPermissionCandidates": LevelRead,
+	"GetDailyTokens": LevelRead, "GetProjectTokens": LevelRead, "SearchSessionLog": LevelRead,
+	"GetProjectLogFiles": LevelRead, "GetTopActions": LevelRead, "GetActionSamples": LevelRead,
+	"GetDurationProfile": LevelRead, "GetTokenAttribution": LevelRead, "GetAutoModelRouting": LevelRead,
+	"GetModelRecommendation": LevelRead, "GetModelAdvice": LevelRead,
+	"ExportLog": LevelOperate, "ImportProjectLogs": LevelOperate,
+	"ClearProjectLogs": LevelAdmin, "CleanOldLogs": LevelAdmin,
 	// operate
 	"StartSession": LevelOperate, "StartSessionWithOverride": LevelOperate, "InterruptSession": LevelOperate,
 	"StopSession": LevelOperate, "RestartSession": LevelOperate, "ResumeSession": LevelOperate,

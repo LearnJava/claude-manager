@@ -437,6 +437,109 @@
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": false,
+      "title": "Delete old logs"
+    },
+    "description": "Delete the stored log lines of runs older than a number of days, in every project. Use when: the database grows and old logs are not needed. Not for: clearing one project (use clear_project_logs). Returns: ok and the retention_days applied. Side effects: deletes data for good and cannot be undone. Access: admin. Example: {\"retention_days\":30,\"confirm\":true}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "confirm": {
+          "description": "Must be true: acknowledges that old log lines of every project are deleted",
+          "type": "boolean"
+        },
+        "retention_days": {
+          "description": "Delete log lines of runs older than this many days, at least 1, e.g. 30",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "retention_days",
+        "confirm"
+      ],
+      "type": "object"
+    },
+    "name": "clean_old_logs",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the cleanup finished",
+          "type": "boolean"
+        },
+        "retention_days": {
+          "description": "The age limit that was applied",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ok",
+        "retention_days"
+      ],
+      "type": "object"
+    },
+    "title": "Delete old logs"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Clear project logs"
+    },
+    "description": "Delete every saved log file of a project and its stored log lines. Use when: a project's logs are no longer needed and take space. Not for: removing run history (it stays, so get_history still works) or logs older than a limit only (use clean_old_logs). Returns: ok and the project. Side effects: deletes data for good and cannot be undone. Access: admin. Example: {\"project\":\"lumen\",\"confirm\":true}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "confirm": {
+          "description": "Must be true: acknowledges that the project's saved log files and stored log lines are deleted",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "confirm"
+      ],
+      "type": "object"
+    },
+    "name": "clear_project_logs",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was accepted",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "The project acted on",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "project"
+      ],
+      "type": "object"
+    },
+    "title": "Clear project logs"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
       "title": "Clear saved session state"
     },
     "description": "Delete a session's saved crash-recovery state so its next start opens a fresh conversation. Use when: a stopped session keeps resuming a conversation that went wrong. Not for: a running session (stop_session first) or restarting one (use restart_session). Returns: ok and the session_id. Side effects: the saved CLI conversation id is forgotten; the old conversation can no longer be resumed. Access: admin. Example: {\"session_id\":\"lumen/P1\"}",
@@ -638,6 +741,77 @@
   },
   {
     "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Export session log to a file"
+    },
+    "description": "Write a session's latest log to a file in the manager's exports folder and return its path. Use when: a human or another tool needs the whole log as a file, which is too large to read through get_session_logs. Not for: reading the log into your context (use get_session_logs or search_session_log). Returns: path, format, entries and bytes; the path is on the machine running Claude Manager. Side effects: creates one file under the user folder .claude-manager/exports. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"format\":\"md\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "default": "txt",
+          "description": "File format: md, json or txt (default txt)",
+          "enum": [
+            "md",
+            "json",
+            "txt"
+          ],
+          "type": "string"
+        },
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "export_log",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "description": "File size in bytes",
+          "type": "integer"
+        },
+        "entries": {
+          "description": "Number of log entries written",
+          "type": "integer"
+        },
+        "format": {
+          "description": "md, json or txt",
+          "type": "string"
+        },
+        "path": {
+          "description": "Absolute path of the written file on the machine running Claude Manager; read it from there",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "format",
+        "entries",
+        "bytes"
+      ],
+      "type": "object"
+    },
+    "title": "Export session log to a file"
+  },
+  {
+    "_meta": {
       "cm/accessLevel": "admin"
     },
     "annotations": {
@@ -691,6 +865,76 @@
       "idempotentHint": false,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "List calls behind an action"
+    },
+    "description": "List concrete calls that make up one action signature of a project. Use when: get_top_actions shows a signature and you want to see what it covers. Not for: the signature table itself (use get_top_actions). Returns: samples, with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\",\"signature\":\"Bash:go test\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        },
+        "signature": {
+          "description": "Action signature, the Sig value of a get_top_actions row, e.g. Bash:go test",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "signature"
+      ],
+      "type": "object"
+    },
+    "name": "get_action_samples",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
+        "samples": {
+          "description": "Concrete calls behind the signature: Session, Tool, Arg, IsError, OutTokens and when they ran",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "samples",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "title": "List calls behind an action"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Get effective config"
     },
     "description": "Return the effective application config (global settings, optimization, projects with sessions, workers) in config.toml shape, without secrets, with its version. Use when: you need a setting's value, or before update_config, which needs the version. Not for: listing projects (use get_projects) or changing one setting (use update_session, update_project or update_global_settings). Returns: version and config; pass section to get one part, the full config can be large. Side effects: none, read only. Access: read. Example: {\"section\":\"settings\"}",
@@ -731,6 +975,235 @@
       "type": "object"
     },
     "title": "Get effective config"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get cost and tokens"
+    },
+    "description": "Get the cost and token volume of one day across all projects, or of one project over a period. Use when: you check spending against a budget, or compare days or projects. Not for: one session (use get_session_metrics) or the rate-limit status (use get_metrics without a project). Returns: cost_usd and the input, output, cache and total token counts. Side effects: none, read only. Access: read. Example: {\"scope\":\"project\",\"project\":\"lumen\",\"period\":7}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "date": {
+          "description": "Day as YYYY-MM-DD for scope day, e.g. 2026-10-15; default today",
+          "type": "string"
+        },
+        "period": {
+          "default": 7,
+          "description": "Number of days for scope project, 1-365 (default 7)",
+          "maximum": 365,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Project name for scope project, e.g. lumen",
+          "type": "string"
+        },
+        "scope": {
+          "description": "day for one date across all projects, project for one project over a period",
+          "enum": [
+            "day",
+            "project"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope"
+      ],
+      "type": "object"
+    },
+    "name": "get_cost",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cache_creation": {
+          "description": "Cache creation tokens",
+          "type": "integer"
+        },
+        "cache_read": {
+          "description": "Cache read tokens",
+          "type": "integer"
+        },
+        "cost_usd": {
+          "description": "Cost in USD",
+          "type": "number"
+        },
+        "date": {
+          "description": "The day, for scope day",
+          "type": "string"
+        },
+        "days": {
+          "description": "Length of the period in days, for scope project",
+          "type": "integer"
+        },
+        "input_tokens": {
+          "description": "Input tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "description": "Output tokens",
+          "type": "integer"
+        },
+        "project": {
+          "description": "The project, for scope project",
+          "type": "string"
+        },
+        "scope": {
+          "description": "day or project, as asked",
+          "type": "string"
+        },
+        "total": {
+          "description": "All tokens together",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "scope",
+        "cost_usd",
+        "input_tokens",
+        "output_tokens",
+        "cache_read",
+        "cache_creation",
+        "total"
+      ],
+      "type": "object"
+    },
+    "title": "Get cost and tokens"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get action durations"
+    },
+    "description": "Show how long each kind of tool call takes in a project: median, 90th percentile, maximum, total and failure rate. Use when: you look for where a project's run time goes. Not for: token cost (use get_token_attribution) or call counts (use get_top_actions). Returns: durations, with next_cursor and truncated when more exist; empty unless experience tracking was on. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_duration_profile",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "durations": {
+          "description": "Per signature: Sig, Tool, Count, MedianSec, P90Sec, MaxSec, TotalSec, FailRate; slowest first",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "durations",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "title": "Get action durations"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List past runs"
+    },
+    "description": "List the past runs of a project's sessions, or of all projects, newest first. Use when: you want to know what ran before, how it ended and what it cost. Not for: a running session (use get_session) or what a run said (use get_session_logs). Returns: runs, with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\",\"limit\":20}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Project name, e.g. lumen; omit for the runs of every project",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_history",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
+        "runs": {
+          "description": "Past runs, newest first: project, session, model, started and finished times, status, cost and token counts",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "runs",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "title": "List past runs"
   },
   {
     "_meta": {
@@ -852,6 +1325,56 @@
       "type": "object"
     },
     "title": "Get mixed-programming rounds"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get model recommendation"
+    },
+    "description": "Say whether automatic model routing is on and which model and effort it recommends for a configured session's prompt. Use when: you pick a model for a session before start_session or set_session_model. Not for: changing the model (use set_session_model) or analysing a new task (use run_preflight). Returns: auto_routing and recommendation; recommendation is null when routing is off or the session has no prompt. Side effects: none, read only. Access: read. Example: {\"session_id\":\"lumen/P1\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_model_advice",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "auto_routing": {
+          "description": "True when auto_model_routing is on in the config",
+          "type": "boolean"
+        },
+        "recommendation": {
+          "description": "model, effort, complexity and reason for the session's prompt; null when routing is off or the session has no prompt"
+        }
+      },
+      "required": [
+        "auto_routing",
+        "recommendation"
+      ],
+      "type": "object"
+    },
+    "title": "Get model recommendation"
   },
   {
     "_meta": {
@@ -1154,6 +1677,71 @@
       "idempotentHint": false,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "List saved log files"
+    },
+    "description": "List the session logs the manager saved automatically in a project's .claude-manager/logs folder, newest first. Use when: you check how many logs a project keeps and how large they are, before clearing them. Not for: reading a session's log (use get_session_logs). Returns: files, with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_project_log_files",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "description": "Saved log files, newest first: name, path, size in bytes and mod_time",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "files",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "title": "List saved log files"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Get project setup"
     },
     "description": "Report whether a project's folder has a CLAUDE.md and the developer-session protocol, and its mirror state. Use when: before generate_claude_md, install_session_protocol or mirror_project, or to audit a project. Not for: the project's config (use get_config). Returns: claude_md, session_protocol and mirror. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\"}",
@@ -1414,6 +2002,56 @@
       "idempotentHint": false,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Get session metrics"
+    },
+    "description": "Get a session's token counts, turns, cost, context use and duration. Use when: you check what one session has spent or how full its context is. Not for: totals over days or projects (use get_cost). Returns: session_id and metrics. Side effects: none, read only. Access: read. Example: {\"session_id\":\"lumen/P1\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_session_metrics",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "metrics": {
+          "description": "Token counts, num_turns, total_cost_usd, context_window, context_util and duration_ms of the session"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "metrics"
+      ],
+      "type": "object"
+    },
+    "title": "Get session metrics"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "List sessions"
     },
     "description": "List all sessions with their status and metrics. Use when: you need a session_id, or want to see what is running, idle or failed. Not for: reading what a session said (use get_session_logs). Returns: sessions, with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {\"limit\":50}",
@@ -1462,6 +2100,190 @@
       "type": "object"
     },
     "title": "List sessions"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get token cost by tool"
+    },
+    "description": "Estimate which tool calls fill a project's context: tokens per signature, per tool and per result length. Use when: you look for the calls that cost the most context, to trim or replace them. Not for: dollar cost (use get_cost) or timing (use get_duration_profile). Returns: report with the totals and the three tables; empty unless experience tracking was on. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\",\"top_n\":10}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        },
+        "top_n": {
+          "default": 20,
+          "description": "Keep this many most expensive signatures, 1-100 (default 20)",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_token_attribution",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "report": {
+          "description": "TotalEstTokens, TotalLifetimeTokens and the BySignature, ByTool and ByLength tables, most expensive first"
+        }
+      },
+      "required": [
+        "report"
+      ],
+      "type": "object"
+    },
+    "title": "Get token cost by tool"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List most frequent actions"
+    },
+    "description": "List the tool calls a project's sessions repeat most, grouped by signature, with error rate and token weight. Use when: you look for repeated work worth a permission rule, a skill or a shortcut. Not for: where time or tokens went (use get_duration_profile or get_token_attribution). Returns: actions, with next_cursor and truncated when more exist; empty unless experience tracking was on. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\",\"days\":30}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "days": {
+          "default": 30,
+          "description": "Look back this many days, 1-365 (default 30)",
+          "maximum": 365,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_top_actions",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "description": "Action signatures, most frequent first: Sig, Tool, Count, DistinctRuns, ErrorRate, SumOutTokens, SampleArgs, FirstSeen, LastSeen",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "actions",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "title": "List most frequent actions"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Import saved CLI logs"
+    },
+    "description": "Read a folder of saved CLI logs into the project's experience tables. Use when: you bring the history of earlier runs, or a log corpus from another machine, into the experience layer. Not for: listing the saved logs (use get_project_log_files). Returns: files, runs, actions, skipped and errors counts; importing a folder again skips what it already covered. Side effects: adds rows to the manager's database; needs experience tracking on in the project settings. Access: operate. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "dir": {
+          "description": "Absolute path of a folder of saved CLI logs on the machine running Claude Manager, e.g. D:\\logs\\lumen; default the project's own .claude-manager/logs",
+          "type": "string"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "import_project_logs",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "description": "Actions added to the experience tables",
+          "type": "integer"
+        },
+        "errors": {
+          "description": "Files that could not be read",
+          "type": "integer"
+        },
+        "files": {
+          "description": "Log files read",
+          "type": "integer"
+        },
+        "runs": {
+          "description": "Runs found in them",
+          "type": "integer"
+        },
+        "skipped": {
+          "description": "Files skipped because an earlier import already covered them",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "files",
+        "runs",
+        "actions",
+        "skipped",
+        "errors"
+      ],
+      "type": "object"
+    },
+    "title": "Import saved CLI logs"
   },
   {
     "_meta": {
@@ -2018,6 +2840,100 @@
       "type": "object"
     },
     "title": "Run preflight analysis"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Search session log"
+    },
+    "description": "Find log entries of a session's latest run by kind, tool or text, oldest first, one page at a time. Use when: you look for an error, a tool call or a phrase in a long log without reading all of it. Not for: reading the log in order (use get_session_logs). Returns: matching entries, with next_cursor and truncated when more match. Side effects: none, read only. Access: read. Example: {\"session_id\":\"lumen/P1\",\"level\":\"error\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "contains": {
+          "description": "Keep only entries whose message or tool input contains this text (case does not matter), e.g. permission denied",
+          "type": "string"
+        },
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "level": {
+          "description": "Keep only entries of this kind: text, tool, error, result or system",
+          "enum": [
+            "text",
+            "tool",
+            "error",
+            "result",
+            "system"
+          ],
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
+          "type": "string"
+        },
+        "tool": {
+          "description": "Keep only entries of this tool, e.g. Bash or Edit (case does not matter)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "search_session_log",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "description": "Log entries, oldest first, starting at the cursor",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "session_id",
+        "entries",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "title": "Search session log"
   },
   {
     "_meta": {

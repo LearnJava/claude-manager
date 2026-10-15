@@ -458,7 +458,7 @@ func waitSummary(out waitOut) string {
 // ── Tools ─────────────────────────────────────────────────────────────────────
 
 func buildMCPTools() []Tool {
-	return append(append(buildCoreTools(), interactionTools()...), projectsTools()...)
+	return append(append(append(buildCoreTools(), interactionTools()...), projectsTools()...), logsTools()...)
 }
 
 func buildCoreTools() []Tool {
