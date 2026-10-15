@@ -1550,7 +1550,7 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 
 	cmd := exec.CommandContext(runCtx, s.claudePath, args...)
 	proc.HideConsole(cmd)
-	cmd.Env = sessionEnv()
+	cmd.Env = withSessionID(sessionEnv(), s.ID)
 	if s.pythonUTF8 {
 		cmd.Env = utf8Env(cmd.Env)
 	}

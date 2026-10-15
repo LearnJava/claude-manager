@@ -38,7 +38,11 @@ func (s *mcpServer) newSDKServer() *mcp.Server {
 			Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{}},
 		},
 	)
+	srv.AddReceivingMiddleware(s.levelMiddleware)
 	for _, def := range control.MCPTools {
+		if !s.effectiveLevel().Allows(def.Level) {
+			continue // not listed; a call by name is answered by levelMiddleware
+		}
 		name := def.Name
 		ann := def.Annotations
 		srv.AddTool(
@@ -58,6 +62,7 @@ func (s *mcpServer) newSDKServer() *mcp.Server {
 				Meta: mcp.Meta{"cm/accessLevel": string(def.Level)},
 			},
 			func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				ctx = withClient(ctx, req.Session)
 				args := req.Params.Arguments
 				if len(args) == 0 {
 					args = json.RawMessage(`{}`)
@@ -88,6 +93,32 @@ func (s *mcpServer) newSDKServer() *mcp.Server {
 		)
 	}
 	return srv
+}
+
+// withClient records the MCP clientInfo for the control-plane audit log.
+func withClient(ctx context.Context, ss *mcp.ServerSession) context.Context {
+	if ss == nil {
+		return ctx
+	}
+	if p := ss.InitializeParams(); p != nil && p.ClientInfo != nil {
+		return context.WithValue(ctx, clientKey{}, p.ClientInfo.Name+" "+p.ClientInfo.Version)
+	}
+	return ctx
+}
+
+// levelMiddleware answers a tools/call for a tool above the configured level
+// with an actionable tool error instead of the SDK's bare "unknown tool".
+func (s *mcpServer) levelMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		if method == "tools/call" {
+			if call, ok := req.(*mcp.CallToolRequest); ok && call.Params != nil {
+				if err := s.checkLevel(call.Params.Name); err != nil {
+					return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
+				}
+			}
+		}
+		return next(ctx, method, req)
+	}
 }
 
 // serve runs the MCP server over in/out until the client closes in or ctx ends.

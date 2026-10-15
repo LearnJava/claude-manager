@@ -73,3 +73,11 @@ func TestSessionEnvPreservesParentEnvironment(t *testing.T) {
 		t.Fatalf("parent variable lost: value=%q count=%d", v, n)
 	}
 }
+
+func TestWithSessionIDReplacesInherited(t *testing.T) {
+	env := withSessionID([]string{"A=1", "cm_session_id=outer/X"}, "lumen/P1")
+	v, n := envValue(env, EnvSessionID)
+	if n != 1 || v != "lumen/P1" {
+		t.Fatalf("%s = %q (%d times), want lumen/P1 once", EnvSessionID, v, n)
+	}
+}

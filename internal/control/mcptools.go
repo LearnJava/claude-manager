@@ -136,7 +136,7 @@ var MCPTools = buildMCPTools()
 // request. Returns the endpoint ("/rpc" or "/wait") and a JSON-serialisable
 // request body. Returns an error for unknown tools or bad arguments.
 func TranslateTool(name string, args json.RawMessage) (endpoint string, body any, err error) {
-	t := findTool(name)
+	t := FindTool(name)
 	if t == nil {
 		return "", nil, fmt.Errorf("unknown tool: %s", name)
 	}
@@ -147,14 +147,15 @@ func TranslateTool(name string, args json.RawMessage) (endpoint string, body any
 // structuredContent object (valid against the tool's OutputSchema) and a
 // short text summary for content.
 func ShapeResult(name string, args json.RawMessage, raw any) (out any, summary string, err error) {
-	t := findTool(name)
+	t := FindTool(name)
 	if t == nil {
 		return nil, "", fmt.Errorf("unknown tool: %s", name)
 	}
 	return t.shape(args, raw)
 }
 
-func findTool(name string) *Tool {
+// FindTool returns the registry entry for name, or nil.
+func FindTool(name string) *Tool {
 	for i := range MCPTools {
 		if MCPTools[i].Name == name {
 			return &MCPTools[i]

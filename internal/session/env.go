@@ -24,7 +24,25 @@ import (
 const (
 	EnvManagerPID = "CLAUDE_MANAGER_PID"
 	EnvManagerExe = "CLAUDE_MANAGER_EXE"
+
+	// EnvSessionID carries the "{project}/{session}" id of the session that owns
+	// the child process. cm-mcp forwards it to the control-plane so a session
+	// cannot stop, restart or clear itself through MCP by accident (MCP-05).
+	EnvSessionID = "CM_SESSION_ID"
 )
+
+// withSessionID returns env with CM_SESSION_ID set to id, replacing any
+// inherited value (a nested manager would otherwise leak the outer id).
+func withSessionID(env []string, id string) []string {
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if name, _, ok := strings.Cut(kv, "="); ok && strings.EqualFold(name, EnvSessionID) {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return append(out, EnvSessionID+"="+id)
+}
 
 // sessionEnv returns the parent environment with the manager identity added.
 // Any inherited value of these names is dropped first: when the manager is

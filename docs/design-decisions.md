@@ -896,6 +896,9 @@ every session then running.
 - `internal/session/env.go` puts `CLAUDE_MANAGER_PID` and `CLAUDE_MANAGER_EXE`
   into every session's environment. Inherited values are dropped first, so a
   manager launched *from* a session does not pass on a stale PID.
+- It also sets `CM_SESSION_ID=project/session`, which `cm-mcp` forwards so the
+  control-plane can refuse a session stopping/restarting/clearing itself
+  (MCP-05, docs/mcp.md "Безопасность").
 - `.claude/hooks/guard-self-kill.py`, registered as a `PreToolUse` hook in
   `.claude/settings.json`, refuses shell commands aimed at the manager — by
   name, by the advertised PID, or by resolving a numeric PID through the OS
