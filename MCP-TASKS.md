@@ -157,7 +157,7 @@ Hermes…) может сделать через MCP — без чтения на
 | MCP-08 | ✓ DONE (2026-10-15) | internal/control/rpc_projects.go, cfgops.go, mcptools_projects.go, docs/mcp.md |
 | MCP-09 | ✓ DONE (2026-10-15) | internal/control/rpc_logs.go, mcptools_logs.go, docs/mcp.md |
 | MCP-10 | ✓ DONE (2026-10-15) | internal/control/rpc_planning.go, mcptools_planning.go, docs/mcp.md |
-| MCP-11 | ○ TODO | навыки: rpc.go, реестр |
+| MCP-11 | ✓ DONE (2026-10-15) | internal/control/rpc_skills.go, mcptools_skills.go, docs/mcp.md |
 | MCP-12 | ○ TODO | ожидание и события: cmd/cm-mcp/, internal/control/wait.go, emit.go |
 | MCP-13 | ○ TODO | ресурсы и промпты: cmd/cm-mcp/ |
 | MCP-14 | ○ TODO | conformance и e2e: cmd/cm-mcp/*_test.go, testdata/scenarios/ |
