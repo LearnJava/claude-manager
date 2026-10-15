@@ -322,7 +322,8 @@ claude-manager/
 │   │                                #   fakeworker handler (MP-07)
 │   └── control/                     # Headless control-plane: Emitter, RPC (incl. mixed), WS,
 │                                    #   wait/wait-for-worker, MCP tools, e2e runner,
-│                                    #   access.go (levels, self-protection, audit log)
+│                                    #   access.go (levels, self-protection, audit log),
+│                                    #   rpc_projects.go + cfgops.go (point config edits, dry_run diff, version)
 ├── testdata/                        # scenarios/ (fakeclaude), worker-scenarios/ (fakeworker),
 │                                    #   e2e/ (runner, incl. mixed-*.json), configs/,
 │                                    #   transcripts/ (LN-01: trimmed real JSONL fixtures)

@@ -74,7 +74,13 @@ Any normal launch — `wails dev` or the built `claude-manager.exe` — starts t
 | `get_metrics` | Cost/token metrics for a project |
 | `wait_for_status` | Block until session reaches a target status |
 | `wait_for_event` | Block until a specific event is emitted |
-| `set_global_settings` | Partial-update AppConfig at runtime |
+| `set_global_settings` | Deprecated alias of a whole-config write; use `update_global_settings` |
+| `get_projects` / `get_config` / `check_environment` / `get_project_setup` | Projects, effective config (TOML shape, no secrets, with `version`), installed programs, CLAUDE.md / protocol / mirror state of a project |
+| `add_project` / `update_project` / `remove_project` | Point edits of a project; `dry_run` returns the was/now diff and saves nothing |
+| `add_session` / `update_session` / `remove_session` | Point edits of a session by `config.toml` field names |
+| `update_global_settings` / `update_config` | White-listed global settings / whole config guarded by the `version` from `get_config` |
+| `init_git_repo` / `generate_claude_md` / `install_session_protocol` | Write into the project folder (admin) |
+| `mirror_project` / `unmirror_project` / `sync_project_mirrors` | Project mirror on / off / sync now |
 | `run_preflight` | Run pre-flight analysis for a task |
 | `execute_plan` | Execute a pre-generated task plan |
 | `register_mixed_brief` | Register a mixed-programming brief for dispatch |

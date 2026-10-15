@@ -458,7 +458,7 @@ func waitSummary(out waitOut) string {
 // ── Tools ─────────────────────────────────────────────────────────────────────
 
 func buildMCPTools() []Tool {
-	return append(buildCoreTools(), interactionTools()...)
+	return append(append(buildCoreTools(), interactionTools()...), projectsTools()...)
 }
 
 func buildCoreTools() []Tool {
@@ -749,7 +749,7 @@ func buildCoreTools() []Tool {
 		define(spec[settingsIn, okOut]{
 			Name: "set_global_settings", Title: "Update global settings",
 			Doc: Doc{
-				What:    "Update global application settings with a partial object.",
+				What:    "Deprecated, use update_global_settings: sends a partial object as the whole config.",
 				UseWhen: "an application-wide option such as a budget or a default must change.",
 				NotFor:  "per-session or per-project options.",
 				Returns: "ok.",

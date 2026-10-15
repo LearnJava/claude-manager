@@ -507,3 +507,50 @@ preflight, roadmap, distill); остальные — `false`.
 **App или менеджер.** `add_permission_rule` и `get_permission_candidates` читают
 хранилище опыта и правят конфиг, поэтому нужны GUI-приложение; в `playwright-server`
 они отвечают ошибкой «needs the Claude Manager app».
+
+## Проекты и конфигурация
+
+Область MCP-08: проекты, конфиг, действия над папкой проекта. Реализация —
+`internal/control/rpc_projects.go` (RPC), `cfgops.go` (точечные правки, версия, маскировка),
+`mcptools_projects.go` (инструменты). Конфиг читается и пишется в форме `config.toml`
+(ключи из `config.example.toml`), а не в Go-именах полей GUI.
+
+| Инструмент | Уровень | Что делает |
+|---|---|---|
+| `get_projects` | read | Проекты: `name`, `path`, имена сессий, флаги `mirror` и `mixed_programming`; постранично |
+| `get_config` | read | Эффективный конфиг в форме `config.toml` без секретов + `version`; `section` отдаёт одну часть (`settings`, `optimization`, `project`, `worker`) |
+| `check_environment` | read | Найденные программы (Claude CLI, Git, Python, сборка) и команда установки для недостающих |
+| `get_project_setup` | read | Есть ли в папке `CLAUDE.md` и протокол сессий, состояние зеркала |
+| `add_project` / `remove_project` | admin | Регистрация папки под новым именем / снятие с учёта. Путь должен существовать и быть абсолютным; удаление отказывает, пока в проекте идут сессии; файлы не трогаются |
+| `update_project` | admin | Поля проекта по именам `config.toml` (`gates`, `mixed_programming`, `journal`, `mirror`, …); `name`, `path`, `session` не правятся |
+| `add_session` / `remove_session` | admin | Сессия проекта, с начальными `fields`; удаление отказывает, пока сессия идёт |
+| `update_session` | admin | Поля сессии (`model`, `prompt`, `max_budget_usd`, …); `null` сбрасывает поле |
+| `update_global_settings` | admin | Белый список глобальных настроек: бюджеты и пороги, permissions, ретраи, язык, карточки. Пути к исполняемым файлам (`claude_path`, `hermes_path`) и `mirror_dir` — нет |
+| `update_config` | admin | Конфиг целиком (то, что вернул `get_config`, после правки) с `version`; если конфиг изменился с тех пор — отказ «call get_config again» |
+| `init_git_repo`, `generate_claude_md`, `install_session_protocol` | admin | Пишут в папку пользователя (`git init`, `CLAUDE.md` через сессию Init, файлы протокола) |
+| `mirror_project` / `unmirror_project` | admin | Флаг зеркала проекта и немедленная синхронизация / снятие флага |
+| `sync_project_mirrors` | operate | Пересинхронизировать все зеркала; проекты не меняются |
+
+**Точечные правки.** Каждая (`add_*`, `update_*`, `remove_*`) работает на копии конфига,
+проверяет её тем же `config.Validate`, что и загрузка с диска, возвращает diff
+`changes: {поле: {was, now}}` и сохраняет через тот же `UpdateConfig`, что и GUI
+(папка проекта получает свой оверлей). `dry_run: true` возвращает тот же diff и ничего не
+пишет. Повтор правки, которая ничего не меняет, не пишет файл (`changed: false`).
+Неизвестное поле — ошибка со списком допустимых; число там, где нужна строка — «a value has
+the wrong type». Правки идут под одним замком сервера, поэтому два вызова агента не затирают
+друг друга; против GUI защищает `version` у `update_config`.
+
+**`set_global_settings` — устаревший алиас** (`deprecated` в описании): он шлёт частичный
+объект как весь конфиг. Вместо него — `update_global_settings`; алиас удаляется отдельной
+задачей после MCP-17.
+
+**Секреты.** В конфиге их нет: воркер называет переменную окружения ключа (`key_env`), сам
+ключ не хранится. `get_config` всё равно маскирует значения под ключами `api_key`, `secret`,
+`token`, `password` — на случай полей, которые появятся позже.
+
+**`PickDirectory`** в MCP нет: путь передаётся аргументом `path` у `add_project`; несуществующий,
+относительный или файловый путь отвечает понятной ошибкой до обращения к менеджеру.
+
+**App или менеджер.** Действия над папкой и зеркалом нужны GUI-приложению; в `playwright-server`
+они отвечают ошибкой «needs the Claude Manager app». Правки конфига работают с любым сервером,
+у которого есть `AppAPI`.
