@@ -73,6 +73,8 @@ var rpcLevels = map[string]AccessLevel{
 	"GetDailyCost": LevelRead, "GetProjectCost": LevelRead, "GetRateLimitStatus": LevelRead,
 	"GetSessionState": LevelRead, "GetPlan": LevelRead, "GetMixedRounds": LevelRead,
 	"GetMixedQuality": LevelRead, "ListSlashCommands": LevelRead, "GetSessionOverview": LevelRead,
+	"GetProjects": LevelRead, "GetConfigView": LevelRead, "CheckEnvironment": LevelRead,
+	"HasClaudeMd": LevelRead, "HasSessionProtocol": LevelRead, "GetProjectMirror": LevelRead, "GetProjectSetup": LevelRead,
 	"GetPendingQuestions": LevelRead, "GetPending": LevelRead, "GetPermissionCandidates": LevelRead,
 	// operate
 	"StartSession": LevelOperate, "StartSessionWithOverride": LevelOperate, "InterruptSession": LevelOperate,
@@ -81,10 +83,15 @@ var rpcLevels = map[string]AccessLevel{
 	"SessionPreflight": LevelOperate, "ExecutePlan": LevelOperate, "RegisterMixedBrief": LevelOperate,
 	"DispatchMixedTask": LevelOperate, "CancelMixedTask": LevelOperate,
 	"StartSessionWithModel": LevelOperate, "StartAdHocChatSession": LevelOperate,
-	"AnswerQuestion": LevelOperate, "SendMessageWithImages": LevelOperate, "SetSessionRuntime": LevelOperate, "SetSessionModel": LevelOperate,
+	"SyncProjectMirrors": LevelOperate,
+	"AnswerQuestion":     LevelOperate, "SendMessageWithImages": LevelOperate, "SetSessionRuntime": LevelOperate, "SetSessionModel": LevelOperate,
 	// admin
 	"StopAll": LevelAdmin, "StopProject": LevelAdmin, "ClearSessionState": LevelAdmin,
-	"ApprovePlan": LevelAdmin, "AddPermissionRule": LevelAdmin, "UpdateConfig": LevelAdmin, "GetConfig": LevelAdmin,
+	"ApprovePlan": LevelAdmin, "AddPermissionRule": LevelAdmin, "UpdateConfig": LevelAdmin,
+	"AddProject": LevelAdmin, "RemoveProject": LevelAdmin, "UpdateProject": LevelAdmin, "AddSession": LevelAdmin,
+	"RemoveSession": LevelAdmin, "UpdateSession": LevelAdmin, "UpdateGlobalSettings": LevelAdmin, "ReplaceConfig": LevelAdmin,
+	"InitGitRepo": LevelAdmin, "GenerateClaudeMdSession": LevelAdmin, "InstallSessionProtocol": LevelAdmin,
+	"MirrorProject": LevelAdmin, "UnmirrorProject": LevelAdmin, "GetConfig": LevelAdmin,
 }
 
 // RPCLevel returns the level needed to call method with decision (only

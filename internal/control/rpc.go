@@ -482,6 +482,7 @@ func (s *Server) buildRegistry() map[string]handler {
 
 	s.registerSessionRPCs(reg)
 	s.registerInteractionRPCs(reg)
+	s.registerProjectRPCs(reg)
 
 	return reg
 }

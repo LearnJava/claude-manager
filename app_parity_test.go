@@ -13,6 +13,7 @@ import (
 // tool, each with the reason. Adding a method here is a decision: say why an
 // agent does not need it.
 var parityExcluded = map[string]string{
+	"GetConfig": "заменён `get_config`: тот читает `GetConfigView` — вид config.toml без секретов и с версией; сырой `GetConfig` остаётся admin-вызовом GUI-харнесса",
 	"PickDirectory": "нативный диалог ОС; заменён аргументом `path` у `add_project`/`import_project_logs`",
 	"ShowMainWindow": "оконное действие ОС: у агента нет окна",
 	"MinimizeToTray": "оконное действие ОС: у агента нет окна",
@@ -23,22 +24,14 @@ var parityExcluded = map[string]string{
 // task of MCP-TASKS.md (value = that task). The list only shrinks: once a
 // tool covers a method it must leave this map, and the test fails until it does.
 var parityPending = map[string]string{
-	"GetConfig": "MCP-08",
-	"GetProjects": "MCP-08",
-	"CheckEnvironment": "MCP-08",
 	"GetAutoModelRouting": "MCP-09",
 	"GetModelRecommendation": "MCP-09",
 	"SessionPreflight": "MCP-10",
 	"GenerateRoadmap": "MCP-10",
 	"GetLatestDraftRoadmap": "MCP-10",
 	"ApproveRoadmap": "MCP-10",
-	"InstallSessionProtocol": "MCP-08",
-	"HasSessionProtocol": "MCP-08",
-	"HasClaudeMd": "MCP-08",
-	"GenerateClaudeMdSession": "MCP-08",
 	"GetMixedQuality": "MCP-10",
 	"CancelMixedTask": "MCP-10",
-	"InitGitRepo": "MCP-08",
 	"GetHistory": "MCP-09",
 	"GetSessionMetrics": "MCP-09",
 	"GetDailyCost": "MCP-09",
@@ -67,10 +60,6 @@ var parityPending = map[string]string{
 	"GetSkillQuality": "MCP-11",
 	"GetProjectLogFiles": "MCP-09",
 	"ClearProjectLogs": "MCP-09",
-	"MirrorProject": "MCP-08",
-	"UnmirrorProject": "MCP-08",
-	"SyncProjectMirrors": "MCP-08",
-	"GetProjectMirror": "MCP-08",
 }
 
 // TestMCPParity: every exported *App method (the Wails bindings = every GUI

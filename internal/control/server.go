@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"claude-manager/internal/analysis"
@@ -76,6 +77,8 @@ type Server struct {
 	token    string
 	registry map[string]handler
 	srv      *http.Server
+	// cfgMu serialises read-modify-write config edits (MCP-08).
+	cfgMu sync.Mutex
 }
 
 // NewServer creates a Server and wires the HTTP mux.

@@ -72,6 +72,153 @@
   },
   {
     "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Add project"
+    },
+    "description": "Register a project folder under a new name. dry_run:true returns the diff and saves nothing. Use when: a folder should be managed; add its sessions with add_session afterwards. Not for: creating the folder (it must already exist) or adding a session. Returns: the diff, whether it was saved and the new config version. Side effects: rewrites the saved configuration and the project's .claude-manager folder; the GUI shows it after its next reload. A folder that already carries a .claude-manager config brings its sessions along. Access: admin. Example: {\"name\":\"lumen\",\"path\":\"D:\\\\Projects\\\\lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "description": "True to validate and show the diff without saving",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "New project name, unique, no slash, e.g. lumen",
+          "type": "string"
+        },
+        "path": {
+          "description": "Absolute path of the project folder on the machine running Claude Manager, e.g. D:\\Projects\\lumen; it must exist",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path"
+      ],
+      "type": "object"
+    },
+    "name": "add_project",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "changed": {
+          "description": "True when the config was changed and saved",
+          "type": "boolean"
+        },
+        "changes": {
+          "additionalProperties": true,
+          "description": "Per field, was and now; empty when the request changes nothing",
+          "type": "object"
+        },
+        "dry_run": {
+          "description": "True when nothing was saved because dry_run was set",
+          "type": "boolean"
+        },
+        "ok": {
+          "description": "True when the request was valid",
+          "type": "boolean"
+        },
+        "version": {
+          "description": "Config version after the call",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "dry_run",
+        "changed",
+        "changes",
+        "version"
+      ],
+      "type": "object"
+    },
+    "title": "Add project"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Add session"
+    },
+    "description": "Add a session to a project, optionally with initial fields. dry_run:true returns the diff and saves nothing. Use when: a project needs another long-lived session. Not for: an ad-hoc chat (use start_ad_hoc_chat) or changing an existing session (use update_session). Returns: the diff, whether it was saved and the new config version. Side effects: rewrites the saved configuration and the project's .claude-manager folder; the GUI shows it after its next reload. The session is not started: use start_session. Access: admin. Example: {\"project\":\"lumen\",\"name\":\"P1\",\"fields\":{\"model\":\"sonnet\"}}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "description": "True to validate and show the diff without saving",
+          "type": "boolean"
+        },
+        "fields": {
+          "additionalProperties": true,
+          "description": "Optional initial fields by their config.toml names, e.g. {\"model\": \"sonnet\", \"prompt\": \"Work through the queue\"}",
+          "type": "object"
+        },
+        "name": {
+          "description": "New session name, unique in the project, no slash, e.g. P1",
+          "type": "string"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "add_session",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "changed": {
+          "description": "True when the config was changed and saved",
+          "type": "boolean"
+        },
+        "changes": {
+          "additionalProperties": true,
+          "description": "Per field, was and now; empty when the request changes nothing",
+          "type": "object"
+        },
+        "dry_run": {
+          "description": "True when nothing was saved because dry_run was set",
+          "type": "boolean"
+        },
+        "ok": {
+          "description": "True when the request was valid",
+          "type": "boolean"
+        },
+        "version": {
+          "description": "Config version after the call",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "dry_run",
+        "changed",
+        "changes",
+        "version"
+      ],
+      "type": "object"
+    },
+    "title": "Add session"
+  },
+  {
+    "_meta": {
       "cm/accessLevel": "operate"
     },
     "annotations": {
@@ -249,6 +396,37 @@
       "type": "object"
     },
     "title": "Approve plan"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": true,
+      "title": "Check the environment"
+    },
+    "description": "Find the programs sessions rely on (Claude CLI, Git, Git Bash, Python, build tools) and the install command for each missing one. Use when: a session fails to start or a tool is missing. Not for: a session's own state (use get_session). Returns: the report of found and missing programs. Side effects: runs each found program's version command, one to two seconds; changes nothing. Access: read. Example: {}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "name": "check_environment",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "report": {
+          "description": "The programs found (Claude CLI, Git, Python, build tools) with versions, and for each missing one the command that installs it"
+        }
+      },
+      "required": [
+        "report"
+      ],
+      "type": "object"
+    },
+    "title": "Check the environment"
   },
   {
     "_meta": {
@@ -457,6 +635,102 @@
       "type": "object"
     },
     "title": "Execute plan"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Generate CLAUDE.md"
+    },
+    "description": "Create or re-point the Init session of a project and start it, so Claude writes (or refines) the project's CLAUDE.md. Use when: get_project_setup shows claude_md false, or the file is stale. Not for: writing CLAUDE.md yourself. Returns: ok and the project; follow the Init session with get_session_logs. Side effects: adds or edits the Init session in the config, starts it and spends tokens; it writes CLAUDE.md into the user's project folder. Access: admin. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "generate_claude_md",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was accepted",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "The project acted on",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "project"
+      ],
+      "type": "object"
+    },
+    "title": "Generate CLAUDE.md"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get effective config"
+    },
+    "description": "Return the effective application config (global settings, optimization, projects with sessions, workers) in config.toml shape, without secrets, with its version. Use when: you need a setting's value, or before update_config, which needs the version. Not for: listing projects (use get_projects) or changing one setting (use update_session, update_project or update_global_settings). Returns: version and config; pass section to get one part, the full config can be large. Side effects: none, read only. Access: read. Example: {\"section\":\"settings\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "section": {
+          "description": "Part of the config to return: settings, optimization, project or worker; omit for all of it",
+          "enum": [
+            "settings",
+            "optimization",
+            "project",
+            "worker"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_config",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": true,
+          "description": "The effective config in config.toml shape, without secrets",
+          "type": "object"
+        },
+        "version": {
+          "description": "Version of the config, to pass to update_config",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "config"
+      ],
+      "type": "object"
+    },
+    "title": "Get effective config"
   },
   {
     "_meta": {
@@ -880,6 +1154,124 @@
       "idempotentHint": false,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Get project setup"
+    },
+    "description": "Report whether a project's folder has a CLAUDE.md and the developer-session protocol, and its mirror state. Use when: before generate_claude_md, install_session_protocol or mirror_project, or to audit a project. Not for: the project's config (use get_config). Returns: claude_md, session_protocol and mirror. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_project_setup",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "claude_md": {
+          "description": "True when the folder has a CLAUDE.md",
+          "type": "boolean"
+        },
+        "mirror": {
+          "description": "Mirror state: enabled, dir, last_sync, files, error"
+        },
+        "path": {
+          "description": "The project folder",
+          "type": "string"
+        },
+        "project": {
+          "description": "The project asked about",
+          "type": "string"
+        },
+        "session_protocol": {
+          "description": "True when the folder carries the developer-session protocol",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project",
+        "path",
+        "claude_md",
+        "session_protocol",
+        "mirror"
+      ],
+      "type": "object"
+    },
+    "title": "Get project setup"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List projects"
+    },
+    "description": "List the configured projects with their folder, session names and mirror and mixed-programming flags. Use when: you need a project name or folder before calling another tool. Not for: a project's full settings (use get_config) or session states (use get_sessions). Returns: projects, with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_projects",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
+        "projects": {
+          "description": "Projects with name, path, session names, mirror and mixed_programming",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "projects",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "title": "List projects"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Get session"
     },
     "description": "Get one session's full state: status, model, runtime, current task, pending questions and permissions, saved conversation state. Use when: you decide what to do next with a session. Not for: listing sessions (use get_sessions) or reading its output (use get_session_logs). Returns: session, saved_state, pending_permissions and pending_question; an error status is explained in get_session_logs. Side effects: none, read only. Access: read. Example: {\"session_id\":\"lumen/P1\"}",
@@ -1073,6 +1465,109 @@
   },
   {
     "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Initialise a git repository"
+    },
+    "description": "Run git init in the project folder if it is not a repository yet, and make an initial commit if HEAD cannot be resolved. Use when: a session with use_worktree fails because the folder is not a usable git repository. Not for: projects that already are repositories (it changes nothing there). Returns: ok and the project. Side effects: writes .git and possibly one commit into the user's project folder; restart the session afterwards. Access: admin. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "init_git_repo",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was accepted",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "The project acted on",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "project"
+      ],
+      "type": "object"
+    },
+    "title": "Initialise a git repository"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Install the session protocol"
+    },
+    "description": "Write the developer-session protocol (docs/git-workflow.md, scripts/worktree-pool.sh, the cm-task skills) into a project and gitignore its worktree pool. Use when: get_project_setup shows session_protocol false for a project that runs queue-driven sessions. Not for: projects that already have their own protocol: existing files are never overwritten. Returns: the files created; empty when everything was already there. Side effects: writes files into the user's project folder and edits its .gitignore. Access: admin. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "install_session_protocol",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "created": {
+          "description": "Files created; files that already existed are left untouched",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "ok": {
+          "description": "True when the action finished",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "The project acted on",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "project",
+        "created"
+      ],
+      "type": "object"
+    },
+    "title": "Install the session protocol"
+  },
+  {
+    "_meta": {
       "cm/accessLevel": "operate"
     },
     "annotations": {
@@ -1194,6 +1689,51 @@
   },
   {
     "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Mirror project"
+    },
+    "description": "Turn on \"Mirror into Claude Manager\" for a project and copy its settings and saved run logs now. Use when: the project's setup should be readable from the manager's own checkout. Not for: writing into the project (the copy is read-only). Returns: the mirror state: dir, last_sync, files. Side effects: sets the project's mirror flag in the config and writes a copy into the manager's mirror folder; the project is not changed. Access: admin. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "mirror_project",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "mirror": {
+          "description": "Mirror state: enabled, dir, last_sync, files, error; or the per-project sync results"
+        },
+        "ok": {
+          "description": "True when the action finished",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok",
+        "mirror"
+      ],
+      "type": "object"
+    },
+    "title": "Mirror project"
+  },
+  {
+    "_meta": {
       "cm/accessLevel": "operate"
     },
     "annotations": {
@@ -1241,6 +1781,143 @@
       "type": "object"
     },
     "title": "Register mixed brief"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Remove project"
+    },
+    "description": "Remove a project from the manager's registry. dry_run:true returns the diff and saves nothing. Use when: a project should no longer be managed. Not for: deleting files: the folder and its .claude-manager config stay, and adding the folder again restores its sessions. Returns: the diff, whether it was saved and the new config version. Side effects: rewrites the saved configuration and the project's .claude-manager folder; the GUI shows it after its next reload. Refused while any session of the project is running. Access: admin. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "description": "True to validate and show the diff without saving",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "remove_project",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "changed": {
+          "description": "True when the config was changed and saved",
+          "type": "boolean"
+        },
+        "changes": {
+          "additionalProperties": true,
+          "description": "Per field, was and now; empty when the request changes nothing",
+          "type": "object"
+        },
+        "dry_run": {
+          "description": "True when nothing was saved because dry_run was set",
+          "type": "boolean"
+        },
+        "ok": {
+          "description": "True when the request was valid",
+          "type": "boolean"
+        },
+        "version": {
+          "description": "Config version after the call",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "dry_run",
+        "changed",
+        "changes",
+        "version"
+      ],
+      "type": "object"
+    },
+    "title": "Remove project"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Remove session"
+    },
+    "description": "Remove a session from its project's config. dry_run:true returns the diff and saves nothing. Use when: a session is no longer needed. Not for: stopping a running session (use stop_session) or clearing its saved state (use clear_session_state). Returns: the diff, whether it was saved and the new config version. Side effects: rewrites the saved configuration and the project's .claude-manager folder; the GUI shows it after its next reload. Refused while the session is running. Access: admin. Example: {\"session_id\":\"lumen/P1\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "description": "True to validate and show the diff without saving",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "remove_session",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "changed": {
+          "description": "True when the config was changed and saved",
+          "type": "boolean"
+        },
+        "changes": {
+          "additionalProperties": true,
+          "description": "Per field, was and now; empty when the request changes nothing",
+          "type": "object"
+        },
+        "dry_run": {
+          "description": "True when nothing was saved because dry_run was set",
+          "type": "boolean"
+        },
+        "ok": {
+          "description": "True when the request was valid",
+          "type": "boolean"
+        },
+        "version": {
+          "description": "Config version after the call",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "dry_run",
+        "changed",
+        "changes",
+        "version"
+      ],
+      "type": "object"
+    },
+    "title": "Remove session"
   },
   {
     "_meta": {
@@ -1436,7 +2113,7 @@
       "readOnlyHint": false,
       "title": "Update global settings"
     },
-    "description": "Update global application settings with a partial object. Use when: an application-wide option such as a budget or a default must change. Not for: per-session or per-project options. Returns: ok. Side effects: rewrites the saved application config; applies to new runs and persists across restarts. Access: admin. Example: {\"config\":{\"max_budget_usd\":5}}",
+    "description": "Deprecated, use update_global_settings: sends a partial object as the whole config. Use when: an application-wide option such as a budget or a default must change. Not for: per-session or per-project options. Returns: ok. Side effects: rewrites the saved application config; applies to new runs and persists across restarts. Access: admin. Example: {\"config\":{\"max_budget_usd\":5}}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1887,6 +2564,358 @@
       "type": "object"
     },
     "title": "Stop session"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Sync project mirrors"
+    },
+    "description": "Re-sync every mirrored project now. Use when: a mirror should be current before you read it. Not for: turning mirroring on or off (use mirror_project or unmirror_project). Returns: one result per mirrored project: files, changed, error. Side effects: writes into the manager's mirror folder; projects are not changed. Access: operate. Example: {}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "name": "sync_project_mirrors",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "mirror": {
+          "description": "Mirror state: enabled, dir, last_sync, files, error; or the per-project sync results"
+        },
+        "ok": {
+          "description": "True when the action finished",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok",
+        "mirror"
+      ],
+      "type": "object"
+    },
+    "title": "Sync project mirrors"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Stop mirroring a project"
+    },
+    "description": "Stop re-syncing a project's mirror. Use when: the copy is no longer wanted up to date. Not for: deleting the copy: it and its history stay in the mirror folder. Returns: ok and the project. Side effects: clears the project's mirror flag in the config. Access: admin. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "unmirror_project",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was accepted",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "The project acted on",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "project"
+      ],
+      "type": "object"
+    },
+    "title": "Stop mirroring a project"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Replace the whole config"
+    },
+    "description": "Replace the whole application config with an edited copy of what get_config returned. Use when: an edit needs fields the point tools do not reach, such as executable paths or workers. Not for: ordinary edits (use update_project, update_session or update_global_settings). Returns: the new config version; refused when the config changed since the version you pass. Side effects: rewrites the saved configuration and the project's .claude-manager folder; the GUI shows it after its next reload. Whatever you leave out is removed. Access: admin. Example: {\"config\":{\"settings\":{}},\"version\":\"3f9a1c2b4d5e6f70\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": true,
+          "description": "The whole config in the shape get_config returns (settings, optimization, project, worker), edited",
+          "type": "object"
+        },
+        "version": {
+          "description": "The version returned by the get_config call the edit is based on",
+          "type": "string"
+        }
+      },
+      "required": [
+        "config",
+        "version"
+      ],
+      "type": "object"
+    },
+    "name": "update_config",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the config was replaced",
+          "type": "boolean"
+        },
+        "version": {
+          "description": "Config version after the call",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "version"
+      ],
+      "type": "object"
+    },
+    "title": "Replace the whole config"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Update global settings"
+    },
+    "description": "Change application-wide settings: budgets and alerts, permission handling, retry and log retention, language, cards. dry_run:true returns the diff and saves nothing. Use when: an application-wide option must change; only the fields you give change. Not for: executable paths or the whole config (use update_config) and per-project or per-session options. Returns: the diff (was and now per field), whether it was saved and the new config version. Side effects: rewrites the saved configuration and the project's .claude-manager folder; the GUI shows it after its next reload. Access: admin. Example: {\"fields\":{\"daily_budget_alert\":20}}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "description": "True to validate and show the diff without saving",
+          "type": "boolean"
+        },
+        "fields": {
+          "additionalProperties": true,
+          "description": "Settings to change by their config.toml names, e.g. {\"daily_budget_alert\": 20, \"language\": \"ru\"}; only the editable settings listed in the error of an unknown name are accepted",
+          "type": "object"
+        }
+      },
+      "required": [
+        "fields"
+      ],
+      "type": "object"
+    },
+    "name": "update_global_settings",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "changed": {
+          "description": "True when the config was changed and saved",
+          "type": "boolean"
+        },
+        "changes": {
+          "additionalProperties": true,
+          "description": "Per field, was and now; empty when the request changes nothing",
+          "type": "object"
+        },
+        "dry_run": {
+          "description": "True when nothing was saved because dry_run was set",
+          "type": "boolean"
+        },
+        "ok": {
+          "description": "True when the request was valid",
+          "type": "boolean"
+        },
+        "version": {
+          "description": "Config version after the call",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "dry_run",
+        "changed",
+        "changes",
+        "version"
+      ],
+      "type": "object"
+    },
+    "title": "Update global settings"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Update project settings"
+    },
+    "description": "Change fields of a project: default permission mode, mixed programming, gates, journal, skills and mirror flags. dry_run:true returns the diff and saves nothing. Use when: a project-level option must change. Not for: session options (use update_session), the project's name or folder (remove and add it again) or mirroring now (use mirror_project). Returns: the diff (was and now per field), whether it was saved and the new config version. Side effects: rewrites the saved configuration and the project's .claude-manager folder; the GUI shows it after its next reload. Access: admin. Example: {\"project\":\"lumen\",\"fields\":{\"gates\":[\"go test ./...\"]},\"dry_run\":true}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "description": "True to validate and show the diff without saving",
+          "type": "boolean"
+        },
+        "fields": {
+          "additionalProperties": true,
+          "description": "Fields to change by their config.toml names, e.g. {\"mixed_programming\": true, \"gates\": [\"go test ./...\"]}; null resets a field. name, path and session are not editable here",
+          "type": "object"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "fields"
+      ],
+      "type": "object"
+    },
+    "name": "update_project",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "changed": {
+          "description": "True when the config was changed and saved",
+          "type": "boolean"
+        },
+        "changes": {
+          "additionalProperties": true,
+          "description": "Per field, was and now; empty when the request changes nothing",
+          "type": "object"
+        },
+        "dry_run": {
+          "description": "True when nothing was saved because dry_run was set",
+          "type": "boolean"
+        },
+        "ok": {
+          "description": "True when the request was valid",
+          "type": "boolean"
+        },
+        "version": {
+          "description": "Config version after the call",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "dry_run",
+        "changed",
+        "changes",
+        "version"
+      ],
+      "type": "object"
+    },
+    "title": "Update project settings"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Update session settings"
+    },
+    "description": "Change fields of a session: model, prompt, budget, permission mode, hooks and the rest of its config. dry_run:true returns the diff and saves nothing. Use when: a session's saved options must change; a running session picks them up on its next start. Not for: switching the model of a running session at once (use set_session_model) or the project's options (use update_project). Returns: the diff (was and now per field), whether it was saved and the new config version. Side effects: rewrites the saved configuration and the project's .claude-manager folder; the GUI shows it after its next reload. Access: admin. Example: {\"session_id\":\"lumen/P1\",\"fields\":{\"model\":\"opus\"}}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "description": "True to validate and show the diff without saving",
+          "type": "boolean"
+        },
+        "fields": {
+          "additionalProperties": true,
+          "description": "Fields to change by their config.toml names, e.g. {\"model\": \"opus\", \"max_budget_usd\": 5}; null resets a field. name is not editable",
+          "type": "object"
+        },
+        "project": {
+          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
+          "type": "string"
+        },
+        "session": {
+          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fields"
+      ],
+      "type": "object"
+    },
+    "name": "update_session",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "changed": {
+          "description": "True when the config was changed and saved",
+          "type": "boolean"
+        },
+        "changes": {
+          "additionalProperties": true,
+          "description": "Per field, was and now; empty when the request changes nothing",
+          "type": "object"
+        },
+        "dry_run": {
+          "description": "True when nothing was saved because dry_run was set",
+          "type": "boolean"
+        },
+        "ok": {
+          "description": "True when the request was valid",
+          "type": "boolean"
+        },
+        "version": {
+          "description": "Config version after the call",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "dry_run",
+        "changed",
+        "changes",
+        "version"
+      ],
+      "type": "object"
+    },
+    "title": "Update session settings"
   },
   {
     "_meta": {

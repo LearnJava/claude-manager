@@ -255,7 +255,7 @@ func (a *App) startup(ctx context.Context) {
 
 	// Start the control-plane server (no-op when CM_CONTROL disables it).
 	if controlEmitter != nil {
-		srv, err := control.StartFromEnv(ctx, a.manager, a, controlEmitter)
+		srv, err := control.StartFromEnv(ctx, a.manager, controlApp{a}, controlEmitter)
 		if err != nil {
 			logger.L.Error("control.start", "error", err)
 		} else {
