@@ -163,7 +163,7 @@ Hermes…) может сделать через MCP — без чтения на
 | MCP-14 | ✓ DONE (2026-10-15) | conformance и e2e: cmd/cm-mcp/*_test.go, testdata/scenarios/ |
 | MCP-15 | ✓ DONE (2026-10-15) | docs/mcp.md, README.md, CLAUDE.md, docs/testing-harness.md |
 | MCP-16 | ✓ DONE (2026-10-15) | cmd/cm-mcp-eval/, testdata/mcp-eval/, docs/mcp.md («Оценка реальным агентом») |
-| MCP-17 | ○ TODO | docs/mcp.md, docs/design-decisions.md, CLAUDE.md |
+| MCP-17 | ✓ DONE (2026-10-15) | docs/mcp.md, docs/design-decisions.md, CLAUDE.md |
 
 ---
 
@@ -634,3 +634,19 @@ Inspector в `docs/mcp.md` («Проверка»).
 - **MCP-13/14.** Capability `logging` не объявлять (deprecated, SEP-2577); диагностика — `stderr`.
 - **MCP-05.** Уровни и правила отнесения уже зафиксированы в `docs/mcp.md` («Уровни доступа»); тестовая обвязка GUI запускается с `CM_MCP_LEVEL=admin`.
 - **MCP-08.** Имена проектов и сессий не должны содержать `/`.
+
+---
+
+## MCP-18: Удалить deprecated-алиасы
+
+**Зависит от:** MCP-17
+**Files:** `internal/control/mcptools_defs.go`, `cmd/cm-mcp/`, `docs/mcp.md`, этот файл.
+
+**Что сделать.** Удалить алиасы, оставленные блоком для совместимости:
+пара `project`+`session` вместо `session_id` (start/stop/interrupt/restart_session,
+send_message, get_session_logs, wait_for_status), `tail` (вместо `limit`),
+инструменты `get_metrics` (→ `get_cost`) и `set_global_settings`
+(→ `update_global_settings`). Обновить тесты, `docs/mcp.md` (таблица
+«Старые → новые аргументы»), `cm://guide`.
+
+**Готово когда:** `grep -i deprecated` по реестру пуст; гейт зелёный.
