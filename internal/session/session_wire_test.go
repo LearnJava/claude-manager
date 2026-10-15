@@ -89,55 +89,14 @@ func TestUserMessageWithImages_NoImagesFallsBackToPlainString(t *testing.T) {
 	}
 }
 
-// TestBuildCLIArgs_WorktreeNameExplicit verifies an explicit WorktreeName is
-// passed as the --worktree argument so branches aren't randomly named.
-func TestBuildCLIArgs_WorktreeNameExplicit(t *testing.T) {
-	s := New(Params{
-		Config: config.SessionConfig{
-			Name:         "P4",
-			UseWorktree:  true,
-			WorktreeName: "p4-feature",
-		},
-	})
-	if v := findFlag(s.buildCLIArgs(false), "--worktree"); v != "p4-feature" {
-		t.Errorf("--worktree = %q, want \"p4-feature\"", v)
-	}
-}
-
-// TestBuildCLIArgs_WorktreeBareWhenNameUnset verifies that without an explicit
-// WorktreeName the flag stays bare (no value), so the CLI creates a fresh
-// worktree from HEAD each run — even when the session has a name. A fixed name
-// would reuse a stale worktree across the autonomous restart loop.
-func TestBuildCLIArgs_WorktreeBareWhenNameUnset(t *testing.T) {
-	s := New(Params{
-		Config: config.SessionConfig{
-			Name:        "P4",
-			UseWorktree: true,
-		},
-	})
-	args := s.buildCLIArgs(false)
-	if !hasFlag(args, "--worktree") {
-		t.Fatal("missing --worktree")
-	}
-	if v := findFlag(args, "--worktree"); v != "" && v[0] != '-' {
-		t.Errorf("--worktree should be bare when WorktreeName unset, got value %q", v)
-	}
-}
-
-// TestBuildCLIArgs_WorktreeBareWhenNoName keeps the bare flag when neither a
-// worktree name nor a session name is available.
-func TestBuildCLIArgs_WorktreeBareWhenNoName(t *testing.T) {
-	s := New(Params{
-		Config: config.SessionConfig{UseWorktree: true},
-	})
-	args := s.buildCLIArgs(false)
-	if !hasFlag(args, "--worktree") {
-		t.Fatal("missing --worktree")
-	}
-	// The token after --worktree must not be a value (it should be the end of
-	// args or another flag).
-	if v := findFlag(args, "--worktree"); v != "" && v[0] != '-' {
-		t.Errorf("--worktree unexpectedly has value %q", v)
+// TestBuildCLIArgs_NoWorktreeFlag: the CLI runs inside the session's pool
+// slot (cmd.Dir), never with its own --worktree.
+func TestBuildCLIArgs_NoWorktreeFlag(t *testing.T) {
+	for _, name := range []string{"", "p4-feature"} {
+		s := New(Params{Config: config.SessionConfig{Name: "P4", UseWorktree: true, WorktreeName: name}})
+		if hasFlag(s.buildCLIArgs(false), "--worktree") {
+			t.Errorf("WorktreeName=%q: --worktree must not be passed", name)
+		}
 	}
 }
 

@@ -2855,3 +2855,29 @@ to on the event and filtered by `dismissRegression(seq)` on click — client-sid
 only, matching every other "closes on click, not persisted" convention in
 this app (no `window.confirm()`, no re-fetch).
 
+## Session work folder (slot)
+
+`use_worktree` no longer passes `--worktree` to the CLI. Both runtimes launch the
+process with `cmd.Dir` = the session's persistent pool slot
+(`<project>/.claude/worktrees/<slot>`, `internal/worktree`: `SlotName`,
+`EnsureSlot`; wiring in `internal/session/workdir.go:prepareWorkDir`).
+
+- **Why not `--worktree`:** it creates a nameless worktree from HEAD on every
+  process start — slow (checkout before the first line), and an interrupted task's
+  work is left in a worktree nobody returns to (the 2026-09-08 LN-01 incident:
+  seven sessions, seven throwaway worktrees). The slot keeps the branch, the
+  uncommitted work and `node_modules` between runs.
+- **Invariants:** the manager only guarantees the folder exists and is sound; it
+  never switches/commits/resets the slot's branch. `s.ProjectPath` stays the
+  project root for everything the manager itself does (task queue, logs, hooks,
+  primer). A slot failure never fails the session: it logs
+  `Рабочая папка не готова…` (+ `session.slot_failed`) and runs in the project root.
+- **One slot, one running session:** `SessionManager.slotConflictLocked` rejects a
+  start when another non-idle session of the project has the same `SlotName`.
+- **Start stages in the feed** (`emitManagerLog`): `Готовлю промпт…`, `Рабочая папка: …`,
+  `CLI запущен (pid N)…`, then `CLI ещё инициализируется (15 с)…` (repeating every
+  30 s) until the `init` event, which prints `CLI готов за X с` only if X ≥ 3 s.
+- **Resume:** the CLI's transcript is tied to its cwd, so `--resume` runs in the
+  same slot. After switching `use_worktree` on, the old transcript (root cwd) is
+  not found: Claude's `No conversation found with session ID` stderr is classified
+  `KindSessionNotFound`, and the run loop drops the id and starts fresh.

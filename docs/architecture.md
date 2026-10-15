@@ -40,6 +40,7 @@ claude-manager/
 │   ├── session/
 │   │   ├── manager.go               # SessionManager: Start/Stop/Resume/Override/SendMessage/GetAll
 │   │   │                            #   + ClearSessionState/GetSessionState (crash recovery)
+│   │   ├── workdir.go               # prepareWorkDir (CLI cwd = pool slot), start-stage narration (startWatch), slot-conflict guard helper
 │   │   ├── session.go               # Session goroutine: bidirectional streaming, CLI args builder,
 │   │   │                            #   task source check (hasTasks), crash recovery (--resume),
 │   │   │                            #   rate-limit fallback restart, auth error (403) handling,

@@ -16,6 +16,7 @@ import (
 	"claude-manager/internal/permission"
 	"claude-manager/internal/store"
 	"claude-manager/internal/worker"
+	"claude-manager/internal/worktree"
 )
 
 // Emitter broadcasts named session events to one or more consumers.
@@ -657,6 +658,10 @@ func (m *SessionManager) StartSession(project, name string) error {
 	)
 
 	m.mu.Lock()
+	if err := m.slotConflictLocked(project, id, sc); err != nil {
+		m.mu.Unlock()
+		return err
+	}
 	if existing, ok := m.sessions[id]; ok {
 		st := existing.session.Status()
 		if st != config.StatusIdle && st != config.StatusError {
@@ -735,6 +740,10 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 	id := sessionID(project, name)
 
 	m.mu.Lock()
+	if err := m.slotConflictLocked(project, id, sc); err != nil {
+		m.mu.Unlock()
+		return err
+	}
 	if existing, ok := m.sessions[id]; ok {
 		st := existing.session.Status()
 		if st != config.StatusIdle && st != config.StatusError {
@@ -994,6 +1003,10 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 	id := sessionID(project, name)
 
 	m.mu.Lock()
+	if err := m.slotConflictLocked(project, id, sc); err != nil {
+		m.mu.Unlock()
+		return err
+	}
 	if existing, ok := m.sessions[id]; ok {
 		st := existing.session.Status()
 		if st != config.StatusIdle && st != config.StatusError {
@@ -2814,4 +2827,26 @@ func (m *SessionManager) managerCardFor(proj *config.ProjectConfig, session stri
 		return ""
 	}
 	return managerCard(proj.Name, proj.Path, proj.Sessions, session)
+}
+
+// slotConflictLocked refuses to start a session whose work folder (pool slot)
+// is already held by another running session of the same project: two CLIs in
+// one checkout would trample each other's branch and index. Caller holds m.mu.
+func (m *SessionManager) slotConflictLocked(project, id string, sc *config.SessionConfig) error {
+	if !sc.UseWorktree {
+		return nil
+	}
+	slot := worktree.SlotName(*sc)
+	for oid, o := range m.sessions {
+		if oid == id || o.project != project || o.session == nil || !o.session.Config.UseWorktree {
+			continue
+		}
+		if st := o.session.Status(); st == config.StatusIdle || st == config.StatusError {
+			continue
+		}
+		if worktree.SlotName(o.session.Config) == slot {
+			return fmt.Errorf("слот %s занят сессией %s", slot, o.name)
+		}
+	}
+	return nil
 }

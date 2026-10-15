@@ -76,3 +76,13 @@ func MainBranch(ctx context.Context, root string) string {
 	}
 	return "main"
 }
+
+// CurrentBranch returns the branch checked out in dir, or "" for a detached
+// HEAD (or when dir is not a repository).
+func CurrentBranch(ctx context.Context, dir string) string {
+	out, err := runGit(ctx, dir, "symbolic-ref", "--short", "-q", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
