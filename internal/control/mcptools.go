@@ -3,6 +3,8 @@ package control
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -185,3 +187,21 @@ func waitCallBody(event string, match any, timeoutMs int64) map[string]any {
 		"timeout_ms": timeoutMs,
 	}
 }
+
+// longRunning are the tools that block for a long time: the wait_* family
+// and the ones that run a model. cm-mcp sends notifications/progress for them
+// and bounds the model-running ones by LongToolTimeout.
+var longRunning = map[string]bool{
+	"wait_for_status": true, "wait_for_event": true, "wait_for_worker_status": true, "wait_for_any": true,
+	"run_preflight": true, "session_preflight": true, "generate_roadmap": true, "distill_skill": true,
+}
+
+// IsLongRunning reports whether tool name may block for minutes.
+func IsLongRunning(name string) bool { return longRunning[name] }
+
+// IsWaitTool reports whether the tool is a wait_* call, which the control-plane
+// bounds itself (MaxWaitTimeout).
+func IsWaitTool(name string) bool { return strings.HasPrefix(name, "wait_for_") }
+
+// LongToolTimeout is the upper bound for a model-running tool call.
+const LongToolTimeout = 15 * time.Minute

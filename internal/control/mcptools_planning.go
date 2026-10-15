@@ -11,7 +11,7 @@ import (
 
 // Tools of the preflight, roadmap and mixed-programming area (MCP-10). The
 // operations that run a model (session_preflight, generate_roadmap) answer when
-// the model is done; progress and waiting for them come with MCP-12.
+// the model is done; cm-mcp sends progress notifications meanwhile (MCP-12).
 
 type sessionPreflightIn struct{ sessionRef }
 

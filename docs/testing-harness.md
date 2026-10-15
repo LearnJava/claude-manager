@@ -77,7 +77,8 @@ Any normal launch — `wails dev` or the built `claude-manager.exe` — starts t
 | `session_preflight` / `generate_roadmap` / `approve_roadmap` / `get_session_roadmap` / `get_mixed_quality` / `cancel_mixed_task` | Preflight gate of a session; draft roadmap from an idea and its approval (writes ROADMAP.md); roadmap tree and row/task text; worker comparison; cancel a mixed task (see docs/mcp.md "Планирование и mixed" for the rest) |
 | `get_skill_candidates` / `distill_skill` / `get_skills` / `approve_skill` / `archive_skill` / `restore_skill` / `get_skill_usage` / `get_skill_quality` / `get_skill_autopilot` / `set_skill_autopilot` / `run_skill_autopilot` | Experience layer: candidate patterns, distil a draft, list, write into the project, switch off and back, usage and effect, autopilot state, switch and one step (see docs/mcp.md "Навыки") |
 | `wait_for_status` | Block until session reaches a target status |
-| `wait_for_event` | Block until a specific event is emitted |
+| `wait_for_event` | Block until a specific event is emitted (`event` is an enum of `control.EventNames`) |
+| `wait_for_any` | Block until the first of several sessions needs a human (question, permission, error, finished task); a timeout is `reached=false`, not an error |
 | `set_global_settings` | Deprecated alias of a whole-config write; use `update_global_settings` |
 | `get_projects` / `get_config` / `check_environment` / `get_project_setup` | Projects, effective config (TOML shape, no secrets, with `version`), installed programs, CLAUDE.md / protocol / mirror state of a project |
 | `add_project` / `update_project` / `remove_project` | Point edits of a project; `dry_run` returns the was/now diff and saves nothing |

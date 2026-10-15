@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -67,7 +70,18 @@ func (s *mcpServer) newSDKServer() *mcp.Server {
 				if len(args) == 0 {
 					args = json.RawMessage(`{}`)
 				}
+				if control.IsLongRunning(name) {
+					defer s.reportProgress(ctx, req, name)()
+					if !control.IsWaitTool(name) {
+						var cancel context.CancelFunc
+						ctx, cancel = context.WithTimeout(ctx, control.LongToolTimeout)
+						defer cancel()
+					}
+				}
 				result, err := s.callToolCtx(ctx, name, args)
+				if errors.Is(err, context.DeadlineExceeded) {
+					err = fmt.Errorf("%s still running after %s; it keeps running in the app, so check the outcome there (or in the matching get_* tool) instead of repeating the call", name, control.LongToolTimeout)
+				}
 				var out any
 				var summary string
 				if err == nil {
@@ -93,6 +107,48 @@ func (s *mcpServer) newSDKServer() *mcp.Server {
 		)
 	}
 	return srv
+}
+
+// defaultProgressInterval is how often a long call tells the client it is alive.
+const defaultProgressInterval = 10 * time.Second
+
+// reportProgress sends notifications/progress for a tools/call that carries a
+// progressToken, every progress interval until the returned stop func runs.
+// progress is the elapsed seconds: the total is unknown, the value only has
+// to grow. Without a token it does nothing.
+func (s *mcpServer) reportProgress(ctx context.Context, req *mcp.CallToolRequest, name string) (stop func()) {
+	token := req.Params.GetProgressToken()
+	if token == nil || req.Session == nil {
+		return func() {}
+	}
+	interval := s.progressInterval
+	if interval <= 0 {
+		interval = defaultProgressInterval
+	}
+	done := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		start := time.Now()
+		tick := time.NewTicker(interval)
+		defer tick.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				elapsed := time.Since(start).Round(time.Second)
+				_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
+					ProgressToken: token,
+					Progress:      elapsed.Seconds(),
+					Message:       fmt.Sprintf("%s: still running, %s elapsed", name, elapsed),
+				})
+			}
+		}
+	}()
+	return func() { close(done); <-finished }
 }
 
 // withClient records the MCP clientInfo for the control-plane audit log.

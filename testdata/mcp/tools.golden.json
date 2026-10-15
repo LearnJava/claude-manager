@@ -5083,14 +5083,121 @@
       "idempotentHint": false,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Wait for any session to need a human"
+    },
+    "description": "Block until the first of several sessions needs a human (question, permission, plan, error, finished task or turn), or the timeout passes. Use when: you operate several sessions and want one loop without polling: wait, handle what came, wait again. Not for: one specific status or event (use wait_for_status or wait_for_event). Returns: the first attention event with its session id in data.id; something already pending counts at once; on timeout reached=false with every session's status, not an error. Side effects: none, read only. Access: read. Example: {\"session_ids\":[\"lumen/P1\",\"lumen/P2\"],\"timeout_ms\":60000}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "session_ids": {
+          "description": "Sessions to watch, each in project/session form, e.g. [\"lumen/P1\",\"lumen/P2\"]",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "timeout_ms": {
+          "default": 60000,
+          "description": "How long to wait, in milliseconds (default 60000, at most 600000)",
+          "maximum": 600000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session_ids"
+      ],
+      "type": "object"
+    },
+    "name": "wait_for_any",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "current_status": {
+          "description": "Status of the awaited session right now (when not reached)",
+          "type": "string"
+        },
+        "data": {
+          "description": "Event payload (when reached)"
+        },
+        "event": {
+          "description": "Name of the event that matched (when reached)",
+          "type": "string"
+        },
+        "hint": {
+          "description": "What to do next (when not reached)",
+          "type": "string"
+        },
+        "reached": {
+          "description": "True when the awaited event arrived; false when the wait timed out (not an error)",
+          "type": "boolean"
+        },
+        "statuses": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Status of every awaited session right now (when not reached)",
+          "type": "object"
+        },
+        "timeout_ms": {
+          "description": "How long the wait lasted (when not reached)",
+          "type": "integer"
+        },
+        "ts": {
+          "description": "Emission time, RFC 3339 (when reached)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reached"
+      ],
+      "type": "object"
+    },
+    "title": "Wait for any session to need a human"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Wait for event"
     },
-    "description": "Block until an event whose payload contains the given fields is emitted, or the timeout passes. Use when: you wait for something other than a status, such as session:log or session:permission. Not for: session status changes (use wait_for_status). Returns: the matching event; recent past events count, so a short gap does not lose it; a timeout is an error. Side effects: none, read only. Access: read. Example: {\"event\":\"session:permission\",\"match\":{\"id\":\"lumen/P1\"}}",
+    "description": "Block until an event whose payload contains the given fields is emitted, or the timeout passes. Use when: you wait for something other than a status, such as session:log or session:permission. Not for: session status changes (use wait_for_status). Returns: the matching event; recent past events count, so a short gap does not lose it; on timeout reached=false with a hint, not an error. Side effects: none, read only. Access: read. Example: {\"event\":\"session:permission\",\"match\":{\"id\":\"lumen/P1\"}}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "event": {
           "description": "Event name, e.g. session:status, session:log, session:permission",
+          "enum": [
+            "session:status",
+            "session:log",
+            "session:task_done",
+            "session:rate_limit",
+            "session:permission",
+            "session:question",
+            "session:context",
+            "session:todo",
+            "session:activity",
+            "session:task_source",
+            "session:init",
+            "session:result",
+            "session:error",
+            "session:stop_requested",
+            "session:queue_changed",
+            "plan:status",
+            "plan:roadmap_progress",
+            "worker:round",
+            "worker:patch",
+            "worker:gate",
+            "worker:done"
+          ],
           "type": "string"
         },
         "match": {
@@ -5100,7 +5207,8 @@
         },
         "timeout_ms": {
           "default": 5000,
-          "description": "How long to wait, in milliseconds (default 5000)",
+          "description": "How long to wait, in milliseconds (default 5000, at most 600000)",
+          "maximum": 600000,
           "minimum": 1,
           "type": "integer"
         }
@@ -5114,21 +5222,43 @@
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
-        "data": {
-          "description": "Event payload"
-        },
-        "event": {
-          "description": "Name of the event that matched",
+        "current_status": {
+          "description": "Status of the awaited session right now (when not reached)",
           "type": "string"
         },
+        "data": {
+          "description": "Event payload (when reached)"
+        },
+        "event": {
+          "description": "Name of the event that matched (when reached)",
+          "type": "string"
+        },
+        "hint": {
+          "description": "What to do next (when not reached)",
+          "type": "string"
+        },
+        "reached": {
+          "description": "True when the awaited event arrived; false when the wait timed out (not an error)",
+          "type": "boolean"
+        },
+        "statuses": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Status of every awaited session right now (when not reached)",
+          "type": "object"
+        },
+        "timeout_ms": {
+          "description": "How long the wait lasted (when not reached)",
+          "type": "integer"
+        },
         "ts": {
-          "description": "Emission time, RFC 3339",
+          "description": "Emission time, RFC 3339 (when reached)",
           "type": "string"
         }
       },
       "required": [
-        "event",
-        "data"
+        "reached"
       ],
       "type": "object"
     },
@@ -5145,7 +5275,7 @@
       "readOnlyHint": true,
       "title": "Wait for session status"
     },
-    "description": "Block until a session reports the given status, or the timeout passes. Use when: after start_session, send_message or approve_permission, instead of polling get_sessions. Not for: events other than status changes (use wait_for_event). Returns: the matching session:status event; a timeout is reported as an error. Side effects: none, read only. Access: read. Example: {\"session_id\":\"lumen/P1\",\"status\":\"idle\",\"timeout_ms\":30000}",
+    "description": "Block until a session reports the given status, or the timeout passes. Use when: after start_session, send_message or approve_permission, instead of polling get_sessions. Not for: events other than status changes (use wait_for_event). Returns: the matching session:status event; on timeout reached=false with the current status and a hint, not an error. Side effects: none, read only. Access: read. Example: {\"session_id\":\"lumen/P1\",\"status\":\"idle\",\"timeout_ms\":30000}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -5179,7 +5309,8 @@
         },
         "timeout_ms": {
           "default": 5000,
-          "description": "How long to wait, in milliseconds (default 5000)",
+          "description": "How long to wait, in milliseconds (default 5000, at most 600000)",
+          "maximum": 600000,
           "minimum": 1,
           "type": "integer"
         }
@@ -5193,21 +5324,43 @@
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
-        "data": {
-          "description": "Event payload"
-        },
-        "event": {
-          "description": "Name of the event that matched",
+        "current_status": {
+          "description": "Status of the awaited session right now (when not reached)",
           "type": "string"
         },
+        "data": {
+          "description": "Event payload (when reached)"
+        },
+        "event": {
+          "description": "Name of the event that matched (when reached)",
+          "type": "string"
+        },
+        "hint": {
+          "description": "What to do next (when not reached)",
+          "type": "string"
+        },
+        "reached": {
+          "description": "True when the awaited event arrived; false when the wait timed out (not an error)",
+          "type": "boolean"
+        },
+        "statuses": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Status of every awaited session right now (when not reached)",
+          "type": "object"
+        },
+        "timeout_ms": {
+          "description": "How long the wait lasted (when not reached)",
+          "type": "integer"
+        },
         "ts": {
-          "description": "Emission time, RFC 3339",
+          "description": "Emission time, RFC 3339 (when reached)",
           "type": "string"
         }
       },
       "required": [
-        "event",
-        "data"
+        "reached"
       ],
       "type": "object"
     },
@@ -5224,7 +5377,7 @@
       "readOnlyHint": true,
       "title": "Wait for worker status"
     },
-    "description": "Block until a mixed-programming task reaches a terminal status, or the timeout passes. Use when: dispatch_mixed_task runs in another call, or has returned and you want its final event. Not for: session status (use wait_for_status). Returns: the worker:done event with its payload; past events count, so a late call still succeeds. Side effects: none, read only; a timeout is reported as an error. Access: read. Example: {\"task_id\":\"lumen/parse-header/step-flash\",\"status\":\"done\"}",
+    "description": "Block until a mixed-programming task reaches a terminal status, or the timeout passes. Use when: dispatch_mixed_task runs in another call, or has returned and you want its final event. Not for: session status (use wait_for_status). Returns: the worker:done event with its payload; past events count, so a late call still succeeds. Side effects: none, read only; a timeout is reported as reached=false, not an error. Access: read. Example: {\"task_id\":\"lumen/parse-header/step-flash\",\"status\":\"done\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -5242,7 +5395,8 @@
         },
         "timeout_ms": {
           "default": 60000,
-          "description": "How long to wait, in milliseconds (default 60000)",
+          "description": "How long to wait, in milliseconds (default 60000, at most 600000)",
+          "maximum": 600000,
           "minimum": 1,
           "type": "integer"
         }
@@ -5256,21 +5410,43 @@
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
-        "data": {
-          "description": "Event payload"
-        },
-        "event": {
-          "description": "Name of the event that matched",
+        "current_status": {
+          "description": "Status of the awaited session right now (when not reached)",
           "type": "string"
         },
+        "data": {
+          "description": "Event payload (when reached)"
+        },
+        "event": {
+          "description": "Name of the event that matched (when reached)",
+          "type": "string"
+        },
+        "hint": {
+          "description": "What to do next (when not reached)",
+          "type": "string"
+        },
+        "reached": {
+          "description": "True when the awaited event arrived; false when the wait timed out (not an error)",
+          "type": "boolean"
+        },
+        "statuses": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Status of every awaited session right now (when not reached)",
+          "type": "object"
+        },
+        "timeout_ms": {
+          "description": "How long the wait lasted (when not reached)",
+          "type": "integer"
+        },
         "ts": {
-          "description": "Emission time, RFC 3339",
+          "description": "Emission time, RFC 3339 (when reached)",
           "type": "string"
         }
       },
       "required": [
-        "event",
-        "data"
+        "reached"
       ],
       "type": "object"
     },

@@ -592,13 +592,46 @@ the wrong type». Правки идут под одним замком серв�
 GUI-приложению; в `playwright-server` они отвечают ошибкой «needs the Claude Manager app».
 Логи, поиск, экспорт, история и расход работают с любым менеджером.
 
+## Ожидание и события
+
+Область MCP-12. Реализация — `internal/control/wait.go` (`POST /wait`), `emit.go` (`EventNames`),
+`cmd/cm-mcp/server.go` (progress, таймаут долгих инструментов).
+
+| Инструмент | Что ждёт |
+|---|---|
+| `wait_for_status` | Статус одной сессии |
+| `wait_for_event` | Событие по имени и полям `match`; `event` — `enum` из `control.EventNames` (те же константы, что эмитят `session`/`worker`) |
+| `wait_for_worker_status` | Конец mixed-задачи (`worker:done`) |
+| `wait_for_any` | Первое из событий «нужен человек» по набору `session_ids`: вопрос, permission, ошибка, конец задачи или хода (`session:result`), статус `waiting_permission` / `waiting_for_user` / `error`. Уже висящий вопрос, permission или такой статус засчитывается сразу (читается состояние менеджера, не кольцо событий — старый ответ не сработает повторно) |
+
+Цикл агента-оператора без опроса: `wait_for_any` → разобрать пришедшее (`data.id` — сессия) → ответить
+(`answer_question`, `approve_permission`, `send_message`) → снова `wait_for_any`.
+
+- **Таймаут.** По умолчанию 5 с (`wait_for_worker_status`, `wait_for_any` — 60 с), максимум 10 минут
+  (`MaxWaitTimeout`, `maximum` в схеме; больший `timeout_ms` обрезается, не отвергается).
+- **Истечение — результат, не ошибка.** `{reached: false, timeout_ms, current_status, statuses, hint}`:
+  `current_status` — статус ожидаемой сессии сейчас, `statuses` — по каждой сессии `wait_for_any`,
+  `hint` — «вызови снова». При успехе `reached: true` и `event`/`data`/`ts`.
+- **Progress.** Если вызов `tools/call` несёт `_meta.progressToken`, долгий инструмент (`wait_for_*`,
+  `run_preflight`, `session_preflight`, `generate_roadmap`, `distill_skill`) раз в 10 с шлёт
+  `notifications/progress`: `progress` — прошедшие секунды (общее неизвестно), `message` — «still running».
+  Без токена уведомлений нет.
+- **Отмена.** `notifications/cancelled` отменяет контекст вызова; HTTP-запрос к control-plane обрывается, и
+  `handleWait` по `r.Context().Done()` выходит и снимает подписку на события (тест
+  `TestWait_CancelReleasesSubscription`, `TestProtocol_CancelAbortsWait`).
+- **Верхняя граница инструментов, что запускают модель** (`session_preflight`, `run_preflight`,
+  `generate_roadmap`, `distill_skill`): 15 минут (`LongToolTimeout`); по истечении — ошибка с подсказкой, что
+  операция продолжается в приложении и результат смотреть через `get_*`.
+- **Подписки.** `notifications/resources/updated` не реализованы: ресурсов `cm://sessions/…` ещё нет (MCP-13),
+  и подписываться не на что. До тех пор живые обновления — `wait_for_*`.
+
 ## Планирование и mixed
 
 Область MCP-10: preflight, roadmap и mixed programming. Реализация — `internal/control/rpc_planning.go`
 (RPC roadmap), `mcptools_planning.go` (новые инструменты); остальные инструменты области
 (`run_preflight`, `execute_plan`, `register_mixed_brief`, `dispatch_mixed_task`, `get_mixed_rounds`) появились раньше.
 Долгие операции (`session_preflight`, `generate_roadmap`, `dispatch_mixed_task`) пока отвечают, когда модель закончила;
-прогресс и ожидание — в MCP-12.
+прогресс, отмена и таймаут — в «Ожидание и события».
 
 | Инструмент | Уровень | Что делает |
 |---|---|---|

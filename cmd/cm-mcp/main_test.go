@@ -384,18 +384,19 @@ func TestDispatch_WaitForEvent_NoMatch(t *testing.T) {
 	// match field may be nil/absent when not provided
 }
 
-func TestDispatch_WaitTimeout(t *testing.T) {
+func TestDispatch_WaitTimeoutIsAResult(t *testing.T) {
 	stub := &stubCP{
 		statusCode: http.StatusRequestTimeout,
-		response:   `{"error":"timeout"}`,
+		response:   `{"error":"timeout","reached":false,"timeout_ms":5000,"current_status":"working"}`,
 	}
 	srv := newTestMCPServer(t, stub)
-	_, err := srv.callTool("wait_for_status", json.RawMessage(`{"project":"p","session":"s","status":"idle"}`))
-	if err == nil {
-		t.Fatal("expected error for timeout response")
+	res, err := srv.callTool("wait_for_status", json.RawMessage(`{"project":"p","session":"s","status":"idle"}`))
+	if err != nil {
+		t.Fatalf("a timeout is a result, not an error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "timeout") {
-		t.Fatalf("error should mention timeout, got: %v", err)
+	m, _ := res.(map[string]any)
+	if m["reached"] != false || m["current_status"] != "working" {
+		t.Fatalf("unexpected result: %v", m)
 	}
 }
 

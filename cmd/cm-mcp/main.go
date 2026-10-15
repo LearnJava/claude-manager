@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"time"
 
 	"claude-manager/internal/control"
 )
@@ -54,6 +55,8 @@ type mcpServer struct {
 	// self-protection for it.
 	callerSession string
 	allowSelf     bool
+	// progressInterval overrides defaultProgressInterval (tests).
+	progressInterval time.Duration
 }
 
 // effectiveLevel is level with the safe default applied.
@@ -205,7 +208,13 @@ func (s *mcpServer) decodeRPCResponse(resp *http.Response) (any, error) {
 
 func (s *mcpServer) decodeWaitResponse(resp *http.Response) (any, error) {
 	if resp.StatusCode == http.StatusRequestTimeout {
-		return nil, fmt.Errorf("wait timeout")
+		// A wait that ran out is a result (reached=false), not a failure.
+		var result map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || result == nil {
+			result = map[string]any{}
+		}
+		result["reached"] = false
+		return result, nil
 	}
 	var result any
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
