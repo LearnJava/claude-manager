@@ -64,13 +64,24 @@ func run(args []string, in io.Reader, out io.Writer, scenarioEnv string) int {
 	}
 
 	if info.IsDir() {
-		// Directory mode: read first stdin line to match scenario.
-		firstLine, restReader, err := readFirstLine(in)
-		if err != nil && err != io.EOF {
-			fmt.Fprintf(os.Stderr, "fakeclaude: reading first line: %v\n", err)
-			return 1
+		// Directory mode: read first stdin line to match scenario. A one-shot
+		// analysis run (`claude -p ... "<prompt>"`, e.g. the roadmap generator)
+		// carries its prompt as the last argument instead and reads no stdin.
+		var firstLine, prompt string
+		restReader := in
+		if oneShot, ok := printModePrompt(args); ok {
+			prompt = oneShot
+			in = strings.NewReader("")
+			restReader = in
+		} else {
+			var err error
+			firstLine, restReader, err = readFirstLine(in)
+			if err != nil && err != io.EOF {
+				fmt.Fprintf(os.Stderr, "fakeclaude: reading first line: %v\n", err)
+				return 1
+			}
+			prompt = extractPrompt(firstLine)
 		}
-		prompt := extractPrompt(firstLine)
 
 		scenarios, err := testkit.LoadScenariosDir(scenarioEnv)
 		if err != nil {
@@ -178,4 +189,26 @@ func extractPrompt(line string) string {
 		}
 	}
 	return ""
+}
+
+// printModePrompt reports whether args describe a one-shot `-p` run and
+// returns its prompt, the last argument.
+func printModePrompt(args []string) (string, bool) {
+	hasP := false
+	for _, a := range args {
+		if a == "-p" || a == "--print" {
+			hasP = true
+		}
+		if a == "--input-format" || strings.HasPrefix(a, "--input-format=") {
+			return "", false // a session: the prompt arrives on stdin
+		}
+	}
+	if !hasP || len(args) == 0 {
+		return "", false
+	}
+	last := args[len(args)-1]
+	if strings.HasPrefix(last, "-") {
+		return "", false
+	}
+	return last, true
 }

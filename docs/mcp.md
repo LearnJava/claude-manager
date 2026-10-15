@@ -943,6 +943,61 @@ read-инструмент (ни токена control-plane, ни секрето�
   `set_session_model` → `stop_project` → `remove_session` → `remove_project`. Сценарий fakeclaude —
   `testdata/scenarios/mcp-full-control.json`.
 
+### Оценка реальным агентом
+
+Opt-in (`CM_MCP_EVAL=1`), тратит токены API. `cmd/cm-mcp-eval` на каждую из 13 задач поднимает свежий
+экземпляр менеджера (настоящие `SessionManager`, хранилище и control-plane на `fakeclaude`) и запускает
+`claude -p` в пустой папке только с сервером `cm-mcp` (`--strict-mcp-config`, `--tools ""`): ни
+репозитория, ни встроенных инструментов, ни `docs/mcp.md`. Агент знает только `instructions`,
+`cm://guide` и описания инструментов. Исход проверяется **по состоянию менеджера** (конфиг, статусы,
+очереди permissions и вопросов, файлы roadmap, решения в `permission_events`); у задач «узнай и скажи»
+агент пишет строку `ANSWER: …`, которую сверяют со значением из состояния.
+
+```bash
+CM_MCP_EVAL=1 go run ./cmd/cm-mcp-eval -model sonnet -out testdata/mcp-eval/last-run.md
+CM_MCP_EVAL=1 go run ./cmd/cm-mcp-eval -list                 # задачи, области, уровни
+CM_MCP_EVAL=1 go run ./cmd/cm-mcp-eval -only remove-project  # одна задача
+```
+
+Задачи и проверки — `cmd/cm-mcp-eval/tasks.go`. Без модели те же задачи гоняет обычный
+`go test ./cmd/cm-mcp-eval`: скриптовый «агент» (`solutions.go`) решает каждую через `cm-mcp`, а проверка
+должна быть красной до его действий и зелёной после — так ловятся нерешаемая задача и пустая проверка.
+Экземпляр не умеет то, что требует GUI (`ProjectsApp` и часть `LogsApp`/`SkillsApp` отвечают
+«not available in the evaluation instance»), поэтому задачи на эти методы не входят. Область
+mixed-программирования (`get_mixed_quality` и др.) в оценку не вошла: нужен `fakeworker` и заранее
+посеянные задачи — это отдельная доработка.
+
+Метрики на задачу: успех, вызовы инструментов, вызовы с `is_error`, ходы, токены (вход + выход + кэш),
+стоимость. Результат прогона 2026-10-15 (`sonnet`, по одному прогону на задачу, `testdata/mcp-eval/last-run.md`):
+
+| Task | Area | OK | Calls | Failed calls | Turns | Tokens | Cost, USD |
+|---|---|---|---|---|---|---|---|
+| setup-from-scratch | sessions+config | yes | 5 | 0 | 6 | 216446 | 0.065 |
+| run-and-report-cost | sessions+metrics | yes | 2 | 0 | 3 | 79168 | 0.119 |
+| answer-question | interaction | yes | 2 | 0 | 3 | 79286 | 0.030 |
+| approve-one-permission | interaction | yes | 3 | 0 | 4 | 107113 | 0.036 |
+| switch-model-and-restart | sessions | yes | 3 | 0 | 4 | 106392 | 0.037 |
+| stop-project | sessions | yes | 1 | 0 | 2 | 70701 | 0.025 |
+| update-session-config | projects+config | yes | 2 | 0 | 3 | 107223 | 0.037 |
+| remove-project | projects+config | yes | 1 | 0 | 2 | 70795 | 0.025 |
+| find-failed-session | logs | yes | 2 | 0 | 3 | 55211 | 0.086 |
+| project-cost | metrics | yes | 1 | 0 | 2 | 35186 | 0.019 |
+| generate-and-approve-roadmap | planning | yes | 3 | 0 | 4 | 146522 | 0.051 |
+| skill-candidates | skills | yes | 1 | 0 | 2 | 35300 | 0.019 |
+| wait-for-permission | events | yes | 2 | 0 | 3 | 79656 | 0.031 |
+
+Success: 13/13 (100%). Failed calls per task: 0.00. Calls per task: 2.2. Tokens per task: 91461. Cost: $0.58.
+
+**До/после правок.** Правок описаний и ошибок по итогам прогона не потребовалось: первый же прогон дал
+13/13 и 0 ошибочных вызовов, так что колонки «после» нет — «до» и есть итог. Критерий закрытия
+(успех ≥ 90%, ошибочных вызовов < 1 на задачу) выполнен. Оговорка: одна модель, один прогон на задачу и
+задачи в основном прямолинейные; при изменении описаний инструментов прогон стоит повторить и
+сравнить с этой таблицей.
+
+**Находка по ходу.** Три сессии, запущенные в один и тот же момент, теряют строки запусков в
+`session_runs` (в базе остаётся одна), и лог упавшей сессии после этого недоступен через
+`get_session_logs`. Менеджер не правился; задачи оценки поэтому запускают сессии по одной.
+
 ### MCP Inspector
 
 Вручную (нужны Node/npx и сеть при первом запуске) официальный

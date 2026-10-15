@@ -316,6 +316,7 @@ claude-manager/
 │   ├── fakeworker/                  # Scripted OpenAI-compatible worker double (SSE, MP-07)
 │   ├── fakehermes/                  # Scripted `hermes chat --format stream-json` double
 │   ├── guardaudit/                  # CLI front end of internal/guardaudit (`go run ./cmd/guardaudit`)
+│   ├── cm-mcp-eval/                 # MCP-16 opt-in (CM_MCP_EVAL=1) evaluation: real `claude -p` with only cm-mcp over a throw-away manager on fakeclaude; tasks.go (13 tasks + state checks), solutions.go (scripted agents for the offline test), claude.go (runner, stream metrics), instance.go/evalapp.go (headless manager + app)
 │   └── cm-mcp/                      # MCP server on the official go-sdk: main.go (control-plane proxy), server.go (protocol layer), resources.go (cm:// resources), prompts.go (scenario prompts), conformance_test.go + e2e_test.go (stdio subprocess + full control through MCP), scripts/mcp-inspect.sh (manual Inspector run); docs/embed.go embeds mcp.md as cm://guide
 ├── internal/
 │   ├── testkit/                     # Scenario loaders + fakeclaude<->parser conformance,

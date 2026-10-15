@@ -302,3 +302,26 @@ the second turn's `result` reports cost 0.02 / 2 turns, and a last
 a live session to act on. Used by `cmd/cm-mcp/e2e_test.go`
 (`TestE2E_FullControlThroughMCP`); the session prompt must contain
 `mcp-full-control`, which also makes every restarted process replay the script.
+
+---
+
+### eval-roadmap.json
+**State/Feature:** one-shot analysis run (`claude -p ... "<prompt>"`) used by the roadmap generator (MCP-16)
+**Match:** `eval-roadmap`
+
+Emits a single `result` event whose payload is a three-task roadmap
+(EV-01..EV-03, each depending on the previous). fakeclaude takes the prompt
+from the last argument when `-p` is present and reads no stdin. Used by the
+`cm-mcp-eval` task "generate and approve a roadmap" and `TestPrintModeRoadmap`
+in `cmd/fakeclaude`.
+
+---
+
+### eval-failing.json
+**State/Feature:** a session that fails with a recognisable cause (MCP-16)
+**Match:** `eval-failing`
+
+Like `error-exit`, but the last assistant message and the `error` result name
+the cause (`migration 0042 failed ... users_email_key`), so an agent that
+inspects the log can be checked against it. Exit code 1. Used by the
+`cm-mcp-eval` task "find the failed session and name the cause".
