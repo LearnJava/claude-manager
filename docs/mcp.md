@@ -477,3 +477,33 @@ preflight, roadmap, distill); остальные — `false`.
 
 **Что `get_session` не знает.** Отдельного поля «последняя ошибка» у сессии нет: при
 `status = error` причина — в `get_session_logs`.
+
+## Вопросы и permissions
+
+Область MCP-07: всё, что ждёт человека. Реализация — `internal/control/rpc_interaction.go`
+(RPC) и `mcptools_interaction.go` (инструменты).
+
+| Инструмент | Уровень | Что делает |
+|---|---|---|
+| `get_pending` | read | Сводка «что ждёт человека»: `permissions`, `questions`, `total`; необязательный фильтр по сессии. Один вызов вместо двух |
+| `get_pending_questions` | read | Вопросы сессий (`AskUserQuestion`, `clarify`, ```` ```ask-user ````, выбор менеджера при рестарте контекста), постранично |
+| `answer_question` | operate | Ответ: один из `options` или свободный текст; сессия продолжает тот же процесс |
+| `get_pending_permissions` | read | Запросы permissions, постранично |
+| `approve_permission` | admin | `scope`: `once` / `session` / `always` (последние два добавляют постоянное правило) |
+| `deny_permission` | operate | Отказ |
+| `get_permission_candidates` | read | Кандидаты в правила из истории permissions за `days` (30): `safe` (read-only, готовы к `add_permission_rule`) и `needs_review`. Пусты, если `experience_tracking` был выключен |
+| `add_permission_rule` | admin | Постоянное правило `allow`/`deny` для сессии: `tool`, `pattern`; повтор не дублируется |
+| `get_plan` | read | Сохранённый план с подзадачами и прогрессом; `null`, если плана нет |
+| `approve_plan` | admin | Сохраняет (отредактированный) план как одобренный; запуск — отдельно, `execute_plan` |
+
+**Решение за человека — admin.** Одобрение permission, постоянное правило и одобрение
+плана ставят агента на место человека, поэтому требуют `admin` (MCP-05); отказ и ответ
+на вопрос — `operate`. Вопрос адресуется парой `session_id` + `question_id`
+(id берётся из `get_pending_questions`).
+
+**Планов в `get_pending` нет.** У плана нет очереди ожидания: он создаётся
+`run_preflight`, читается `get_plan` по известному `plan_id`.
+
+**App или менеджер.** `add_permission_rule` и `get_permission_candidates` читают
+хранилище опыта и правят конфиг, поэтому нужны GUI-приложение; в `playwright-server`
+они отвечают ошибкой «needs the Claude Manager app».

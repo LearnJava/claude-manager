@@ -64,6 +64,10 @@ Any normal launch — `wails dev` or the built `claude-manager.exe` — starts t
 | `list_slash_commands` | Slash commands and skills a session offers |
 | `approve_permission` | Approve a pending permission request |
 | `deny_permission` | Deny a pending permission request |
+| `get_pending` | Everything waiting for a human (permissions + questions), all sessions or one |
+| `get_pending_questions` / `answer_question` | List the questions sessions asked the human / answer one |
+| `add_permission_rule` / `get_permission_candidates` | Add a standing allow/deny rule to a session / suggest rules from permission history |
+| `get_plan` / `approve_plan` | Read a persisted plan / persist an (edited) plan as approved |
 | `get_sessions` | Snapshot of all sessions (status, model, metrics) |
 | `get_session_logs` | Log entries for a session, paged (`limit`, `cursor` → `next_cursor`) |
 | `get_pending_permissions` | List all pending permission requests |
