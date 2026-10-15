@@ -133,10 +133,48 @@ type restartIn struct {
 	Resume bool `json:"resume,omitempty" jsonschema:"If true, resume the saved CLI conversation instead of starting fresh; default false"`
 }
 
+type imageIn struct {
+	Path       string `json:"path,omitempty" jsonschema:"Absolute path of a png, jpg, gif or webp file on the machine running Claude Manager, e.g. C:/shots/bug.png; use this or data_base64"`
+	DataBase64 string `json:"data_base64,omitempty" jsonschema:"Base64 of the image bytes, standard alphabet, no data: prefix; use this or path"`
+	MediaType  string `json:"media_type,omitempty" jsonschema:"image/png, image/jpeg, image/gif or image/webp; guessed from the file extension for path, required for data_base64"`
+}
+
 type sendIn struct {
 	sessionRef
-	Text string `json:"text" jsonschema:"Message text to send to the session, e.g. Continue with the next task"`
+	Text   string    `json:"text" jsonschema:"Message text to send to the session, e.g. Continue with the next task"`
+	Images []imageIn `json:"images,omitempty" jsonschema:"Images to attach, at most 4, each at most 5 MiB"`
 }
+
+type startIn struct {
+	sessionRef
+	Model   string `json:"model,omitempty" jsonschema:"Model for this and later starts, e.g. opus or sonnet; omit to keep the configured one"`
+	Effort  string `json:"effort,omitempty" jsonschema:"Reasoning effort, e.g. low, medium, high, xhigh or max; omit to keep the configured one"`
+	Runtime string `json:"runtime,omitempty" jsonschema:"Agent CLI to drive the session: claude or hermes; persisted in the session config; omit to keep the configured one"`
+}
+
+type sessionSlashIn struct {
+	sessionRef
+	pageIn
+}
+
+type confirmIn struct {
+	Confirm bool `json:"confirm" jsonschema:"Must be true: acknowledges that sessions of every project are stopped"`
+}
+
+type projectIn struct {
+	Project string `json:"project" jsonschema:"Project name as in get_sessions, e.g. lumen"`
+}
+
+type modelIn struct {
+	sessionRef
+	Model string `json:"model" jsonschema:"Model to switch to, e.g. opus or sonnet"`
+}
+
+type runtimeIn struct {
+	sessionRef
+	Runtime string `json:"runtime" jsonschema:"claude or hermes"`
+}
+
 
 type permissionIn struct {
 	SessionID string `json:"session_id" jsonschema:"Session ID in project/session form, e.g. lumen/P1"`
@@ -277,6 +315,23 @@ type permissionAck struct {
 	Decision  string `json:"decision" jsonschema:"The decision sent: once, session, always or deny"`
 }
 
+type projectAck struct {
+	OK      bool   `json:"ok" jsonschema:"True when the action was accepted"`
+	Project string `json:"project" jsonschema:"The project acted on"`
+}
+
+type sessionDetailOut struct {
+	Session            any   `json:"session" jsonschema:"Status, model, effort, runtime, current task, task counters, todos, branch, tokens and cost"`
+	SavedState         any   `json:"saved_state" jsonschema:"Crash-recovery state used by restart_session resume=true (CLI session id, started_at, task); null when none"`
+	PendingPermissions []any `json:"pending_permissions" jsonschema:"Permission requests waiting for approve_permission or deny_permission"`
+	PendingQuestion    any   `json:"pending_question" jsonschema:"Question the session asked the human, waiting for an answer; null when none"`
+}
+
+type slashOut struct {
+	Commands []any `json:"commands" jsonschema:"Slash commands and skills the session offers, each with name, description and kind"`
+	pageOut
+}
+
 type okOut struct {
 	OK bool `json:"ok" jsonschema:"True when the change was applied"`
 }
@@ -363,6 +418,21 @@ func listPage(p pageIn, raw any) ([]any, pageOut) {
 	return page, pageInfo(0, next, more)
 }
 
+// projectTool declares a tool taking a project name and answering with projectAck.
+func projectTool(name, title, method string, level AccessLevel, ann ToolAnnotations, doc Doc, verb string) Tool {
+	return define(spec[projectIn, projectAck]{
+		Name: name, Title: title, Doc: doc, Level: level, Annotations: ann, Covers: []string{method},
+		Translate: func(in projectIn) (string, any, error) {
+			if in.Project == "" {
+				return "", nil, fmt.Errorf(`project is required, e.g. "lumen"; list projects with get_sessions`)
+			}
+			return "/rpc", rpcCallBody(method, map[string]string{"project": in.Project}), nil
+		},
+		Result:  func(in projectIn, _ any) projectAck { return projectAck{OK: true, Project: in.Project} },
+		Summary: func(in projectIn, _ projectAck) string { return "Project " + in.Project + " " + verb + "." },
+	})
+}
+
 // sessionTool declares a lifecycle tool taking a session reference and
 // answering with sessionAck; verb is the past-tense word for the summary.
 func sessionTool[In any](s spec[In, sessionAck], ref func(In) sessionRef, verb string) Tool {
@@ -395,25 +465,33 @@ func buildMCPTools() []Tool {
 
 	return []Tool{
 		// ── Actions ──────────────────────────────────────────────────────────
-		sessionTool(spec[sessionIn, sessionAck]{
+		sessionTool(spec[startIn, sessionAck]{
 			Name: "start_session", Title: "Start session",
 			Doc: Doc{
-				What:    "Start a configured session.",
+				What:    "Start a configured session, optionally with a model, effort or runtime override.",
 				UseWhen: "a session is idle, stopped or errored and should begin work.",
-				NotFor:  "a session that is already running (use send_message) or continuing an old conversation (use restart_session with resume=true).",
+				NotFor:  "a session that is already running (use send_message or set_session_model) or continuing an old conversation (use restart_session with resume=true).",
 				Returns: "ok and the session_id.",
-				Effects: "launches the CLI process; the session starts working, which may spend tokens.",
-				Example: `{"session_id":"lumen/P1"}`,
+				Effects: "launches the CLI process, which may spend tokens; model and effort are remembered as the session's defaults and runtime is saved to its config.",
+				Example: `{"session_id":"lumen/P1","model":"opus","effort":"high"}`,
 			},
-			Level: LevelOperate, Annotations: op, Covers: []string{"StartSession"},
-			Translate: func(in sessionIn) (string, any, error) {
+			Input: func(props map[string]*jsonschema.Schema) {
+				props["runtime"].Enum = []any{"claude", "hermes"}
+			},
+			Level: LevelOperate, Annotations: op, Covers: []string{"StartSession", "StartSessionWithModel"},
+			Translate: func(in startIn) (string, any, error) {
 				p, s, err := in.parts()
 				if err != nil {
 					return "", nil, err
 				}
-				return "/rpc", rpcCallBody("StartSession", map[string]string{"project": p, "session": s}), nil
+				if in.Model == "" && in.Effort == "" && in.Runtime == "" {
+					return "/rpc", rpcCallBody("StartSession", map[string]string{"project": p, "session": s}), nil
+				}
+				return "/rpc", rpcCallBody("StartSessionWithModel", map[string]string{
+					"project": p, "session": s, "model": in.Model, "effort": in.Effort, "runtime": in.Runtime,
+				}), nil
 			},
-		}, func(in sessionIn) sessionRef { return in.sessionRef }, "started"),
+		}, func(in startIn) sessionRef { return in.sessionRef }, "started"),
 		sessionTool(spec[stopIn, sessionAck]{
 			Name: "stop_session", Title: "Stop session",
 			Doc: Doc{
@@ -478,22 +556,139 @@ func buildMCPTools() []Tool {
 		sessionTool(spec[sendIn, sessionAck]{
 			Name: "send_message", Title: "Send message",
 			Doc: Doc{
-				What:    "Send a user message to a running session.",
+				What:    "Send a user message, optionally with images, to a running session.",
 				UseWhen: "you want to give a session new instructions or answer its question.",
 				NotFor:  "a session that is not running (use start_session first) or permission requests (use approve_permission).",
 				Returns: "ok and the session_id; read the reply with get_session_logs or wait_for_status.",
 				Effects: "the session processes the message as its next turn, which spends tokens.",
 				Example: `{"session_id":"lumen/P1","text":"Continue with the next task"}`,
 			},
-			Level: LevelOperate, Annotations: ToolAnnotations{OpenWorld: true}, Covers: []string{"SendMessage"},
+			Level: LevelOperate, Annotations: ToolAnnotations{OpenWorld: true}, Covers: []string{"SendMessage", "SendMessageWithImages"},
 			Translate: func(in sendIn) (string, any, error) {
 				id, err := in.id()
 				if err != nil {
 					return "", nil, err
 				}
-				return "/rpc", rpcCallBody("SendMessage", map[string]string{"id": id, "message": in.Text}), nil
+				if len(in.Images) == 0 {
+					return "/rpc", rpcCallBody("SendMessage", map[string]string{"id": id, "message": in.Text}), nil
+				}
+				return "/rpc", rpcCallBody("SendMessageWithImages", map[string]any{"id": id, "message": in.Text, "images": in.Images}), nil
 			},
 		}, func(in sendIn) sessionRef { return in.sessionRef }, "message sent"),
+		sessionTool(spec[modelIn, sessionAck]{
+			Name: "set_session_model", Title: "Switch session model",
+			Doc: Doc{
+				What:    "Switch a session's model, live if it is running.",
+				UseWhen: "a task needs a stronger or cheaper model than the session currently uses.",
+				NotFor:  "starting a session (use start_session with model) or changing the CLI (use set_session_runtime).",
+				Returns: "ok and the session_id.",
+				Effects: "a running session is restarted on the new model with its conversation resumed; the choice is remembered as the session's default.",
+				Example: `{"session_id":"lumen/P1","model":"sonnet"}`,
+			},
+			Level: LevelOperate, Annotations: ToolAnnotations{Idempotent: true}, Covers: []string{"SetSessionModel"},
+			Translate: func(in modelIn) (string, any, error) {
+				id, err := in.id()
+				if err != nil {
+					return "", nil, err
+				}
+				if in.Model == "" {
+					return "", nil, fmt.Errorf(`model is required, e.g. "opus" or "sonnet"`)
+				}
+				return "/rpc", rpcCallBody("SetSessionModel", map[string]string{"id": id, "model": in.Model}), nil
+			},
+		}, func(in modelIn) sessionRef { return in.sessionRef }, "model switched"),
+		sessionTool(spec[runtimeIn, sessionAck]{
+			Name: "set_session_runtime", Title: "Set session runtime",
+			Doc: Doc{
+				What:    "Choose which agent CLI (claude or hermes) a session drives.",
+				UseWhen: "a stopped session should run on another CLI the next time it starts.",
+				NotFor:  "a running session (stop_session first) or changing the model (use set_session_model).",
+				Returns: "ok and the session_id.",
+				Effects: "rewrites the session's runtime in the saved configuration; refused while the session runs.",
+				Example: `{"session_id":"lumen/P1","runtime":"hermes"}`,
+			},
+			Input: func(props map[string]*jsonschema.Schema) {
+				props["runtime"].Enum = []any{"claude", "hermes"}
+			},
+			Level: LevelOperate, Annotations: ToolAnnotations{Idempotent: true}, Covers: []string{"SetSessionRuntime"},
+			Translate: func(in runtimeIn) (string, any, error) {
+				id, err := in.id()
+				if err != nil {
+					return "", nil, err
+				}
+				if in.Runtime == "" {
+					return "", nil, fmt.Errorf("runtime is required: claude or hermes")
+				}
+				return "/rpc", rpcCallBody("SetSessionRuntime", map[string]string{"id": id, "runtime": in.Runtime}), nil
+			},
+		}, func(in runtimeIn) sessionRef { return in.sessionRef }, "runtime set"),
+		sessionTool(spec[sessionIn, sessionAck]{
+			Name: "clear_session_state", Title: "Clear saved session state",
+			Doc: Doc{
+				What:    "Delete a session's saved crash-recovery state so its next start opens a fresh conversation.",
+				UseWhen: "a stopped session keeps resuming a conversation that went wrong.",
+				NotFor:  "a running session (stop_session first) or restarting one (use restart_session).",
+				Returns: "ok and the session_id.",
+				Effects: "the saved CLI conversation id is forgotten; the old conversation can no longer be resumed.",
+				Example: `{"session_id":"lumen/P1"}`,
+			},
+			Level: LevelAdmin, Annotations: ToolAnnotations{Destructive: true, Idempotent: true}, Covers: []string{"ClearSessionState"},
+			Translate: func(in sessionIn) (string, any, error) {
+				p, s, err := in.parts()
+				if err != nil {
+					return "", nil, err
+				}
+				return "/rpc", rpcCallBody("ClearSessionState", map[string]string{"project": p, "session": s}), nil
+			},
+		}, func(in sessionIn) sessionRef { return in.sessionRef }, "state cleared"),
+		projectTool("start_project", "Start project sessions", "StartProject", LevelOperate, op,
+			Doc{
+				What:    "Start every configured session of a project.",
+				UseWhen: "a whole project should begin work at once.",
+				NotFor:  "starting one session (use start_session).",
+				Returns: "ok and the project.",
+				Effects: "launches one CLI process per session, which may spend tokens.",
+				Example: `{"project":"lumen"}`,
+			}, "started"),
+		projectTool("stop_project", "Stop project sessions", "StopProject", LevelAdmin,
+			ToolAnnotations{Destructive: true, Idempotent: true},
+			Doc{
+				What:    "Stop every running session of a project.",
+				UseWhen: "a whole project must halt at once.",
+				NotFor:  "stopping one session (use stop_session) or every project (use stop_all_sessions).",
+				Returns: "ok and the project.",
+				Effects: "terminates all CLI processes of the project; work in their current turns is lost.",
+				Example: `{"project":"lumen"}`,
+			}, "stopped"),
+		define(spec[confirmIn, okOut]{
+			Name: "stop_all_sessions", Title: "Stop all sessions",
+			Doc: Doc{
+				What:    "Stop every running session of every project.",
+				UseWhen: "everything must halt, e.g. a runaway cost or a rate limit.",
+				NotFor:  "stopping one session or one project (use stop_session or stop_project).",
+				Returns: "ok.",
+				Effects: "terminates all CLI processes; work in their current turns is lost.",
+				Example: `{"confirm":true}`,
+			},
+			Level: LevelAdmin, Annotations: ToolAnnotations{Destructive: true, Idempotent: true}, Covers: []string{"StopAll"},
+			Translate: func(in confirmIn) (string, any, error) {
+				if !in.Confirm {
+					return "", nil, fmt.Errorf("stop_all_sessions stops work in every project: call it again with confirm=true if that is intended, or use stop_project / stop_session for a narrower stop")
+				}
+				return "/rpc", rpcCallBody("StopAll", nil), nil
+			},
+			Result:  func(confirmIn, any) okOut { return okOut{OK: true} },
+			Summary: func(confirmIn, okOut) string { return "All sessions stopped." },
+		}),
+		projectTool("start_ad_hoc_chat", "Start ad-hoc chat session", "StartAdHocChatSession", LevelOperate, op,
+			Doc{
+				What:    "Open an unconfigured Chat session in a project, with no task source and no first prompt.",
+				UseWhen: "you want a free-form session to instruct with send_message.",
+				NotFor:  "running a configured session (use start_session).",
+				Returns: "ok and the project; the session_id is project/Chat.",
+				Effects: "adds or reuses a Chat session in the saved configuration and launches it, idle until the first message.",
+				Example: `{"project":"lumen"}`,
+			}, "chat session started"),
 		define(spec[permissionIn, permissionAck]{
 			Name: "approve_permission", Title: "Approve permission",
 			Doc: Doc{
@@ -724,6 +919,67 @@ func buildMCPTools() []Tool {
 			},
 			Summary: func(_ pageIn, out sessionsOut) string {
 				return plural(len(out.Sessions), "session", "sessions") + "." + moreHint(out.pageOut)
+			},
+		}),
+		define(spec[sessionIn, sessionDetailOut]{
+			Name: "get_session", Title: "Get session",
+			Doc: Doc{
+				What:    "Get one session's full state: status, model, runtime, current task, pending questions and permissions, saved conversation state.",
+				UseWhen: "you decide what to do next with a session.",
+				NotFor:  "listing sessions (use get_sessions) or reading its output (use get_session_logs).",
+				Returns: "session, saved_state, pending_permissions and pending_question; an error status is explained in get_session_logs.",
+				Effects: "none, read only.",
+				Example: `{"session_id":"lumen/P1"}`,
+			},
+			Level: LevelRead, Annotations: ro, Covers: []string{"GetSessionState"},
+			Translate: func(in sessionIn) (string, any, error) {
+				id, err := in.id()
+				if err != nil {
+					return "", nil, err
+				}
+				return "/rpc", rpcCallBody("GetSessionOverview", map[string]string{"id": id}), nil
+			},
+			Result: func(_ sessionIn, raw any) sessionDetailOut {
+				m, _ := raw.(map[string]any)
+				return sessionDetailOut{
+					Session: m["session"], SavedState: m["saved_state"],
+					PendingPermissions: list(m["pending_permissions"]), PendingQuestion: m["pending_question"],
+				}
+			},
+			Summary: func(_ sessionIn, out sessionDetailOut) string {
+				st, _ := out.Session.(map[string]any)
+				return fmt.Sprintf("Session %v is %v; %s pending.", st["id"], st["status"],
+					plural(len(out.PendingPermissions), "permission", "permissions"))
+			},
+		}),
+		define(spec[sessionSlashIn, slashOut]{
+			Name: "list_slash_commands", Title: "List slash commands",
+			Doc: Doc{
+				What:    "List the slash commands and skills a session offers after a leading /.",
+				UseWhen: "you want to invoke a skill or command through send_message.",
+				NotFor:  "managing this app's skills (use the skills tools).",
+				Returns: "commands, with next_cursor and truncated when more exist.",
+				Effects: "none, read only.",
+				Example: `{"session_id":"lumen/P1"}`,
+			},
+			Input: tunePage,
+			Level: LevelRead, Annotations: ro, Covers: []string{"ListSlashCommands"},
+			Translate: func(in sessionSlashIn) (string, any, error) {
+				id, err := in.id()
+				if err != nil {
+					return "", nil, err
+				}
+				if _, _, err := in.pageIn.window(); err != nil {
+					return "", nil, err
+				}
+				return "/rpc", rpcCallBody("ListSlashCommands", map[string]string{"id": id}), nil
+			},
+			Result: func(in sessionSlashIn, raw any) slashOut {
+				page, p := listPage(in.pageIn, raw)
+				return slashOut{Commands: page, pageOut: p}
+			},
+			Summary: func(_ sessionSlashIn, out slashOut) string {
+				return plural(len(out.Commands), "command", "commands") + "." + moreHint(out.pageOut)
 			},
 		}),
 		define(spec[logsIn, logsOut]{

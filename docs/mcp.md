@@ -385,7 +385,7 @@ preflight, roadmap, distill); остальные — `false`.
 | `RestartSession` | `app.go:790` | да | MCP-06 | `restart_session` | operate | аддитивное | существующий, `resume=false` |
 | `ResumeSession` | `app.go:794` | да | MCP-06 | `restart_session` | operate | аддитивное | существующий, `resume=true` |
 | `ClearSessionState` | `app.go:800` | да | MCP-06 | `clear_session_state` | admin | разрушительное | стирает сохранённый CLI session ID |
-| `GetSessionState` | `app.go:808` | да | MCP-06 | `get_session_state` | read | только чтение | сохранённое состояние для resume |
+| `GetSessionState` | `app.go:808` | да | MCP-06 | `get_session` | read | только чтение | сохранённое состояние — поле `saved_state` ответа get_session |
 | `InitGitRepo` | `app.go:820` | нет | MCP-08 | `init_git_repo` | admin | идемпотентное | пишет в папку пользователя |
 | `StartProject` | `app.go:833` | да | MCP-06 | `start_project` | operate | идемпотентное | все сессии проекта |
 | `StopProject` | `app.go:875` | да | MCP-06 | `stop_project` | admin | разрушительное | останавливает все сессии проекта |
@@ -397,7 +397,7 @@ preflight, roadmap, distill); остальные — `false`.
 | `AnswerQuestion` | `app.go:905` | нет | MCP-07 | `answer_question` | operate | аддитивное | ответ на вопрос сессии (AskUserQuestion) |
 | `GetPendingQuestions` | `app.go:909` | нет | MCP-07 | `get_pending_questions` | read | только чтение | — |
 | `SetSessionModel` | `app.go:922` | нет | MCP-06 | `set_session_model` | operate | идемпотентное | — |
-| `SetSessionRuntime` | `app.go:1002` | нет | MCP-06 | `set_session_runtime` | operate | идемпотентное | claude / hermes |
+| `SetSessionRuntime` | `app.go:1002` | нет | MCP-06 | `set_session_runtime` | operate | идемпотентное | claude / hermes; отказ, пока сессия запущена |
 | `GetAllSessions` | `app.go:1063` | да | MCP-06 | `get_sessions` | read | только чтение | существующий; курсор + фильтры |
 | `GetSessionLog` | `app.go:1072` | да | MCP-09 | `get_session_logs` | read | только чтение | существующий; курсор вместо offset/limit |
 | `GetHistory` | `app.go:1076` | да | MCP-09 | `get_history` | read | только чтение | — |
@@ -441,3 +441,39 @@ preflight, roadmap, distill); остальные — `false`.
 | `UnmirrorProject` | `app_mirror.go:138` | нет | MCP-08 | `unmirror_project` | admin | разрушительное | — |
 | `SyncProjectMirrors` | `app_mirror.go:143` | нет | MCP-08 | `sync_project_mirrors` | operate | идемпотентное | — |
 | `GetProjectMirror` | `app_mirror.go:148` | нет | MCP-08 | `get_project_mirror` | read | только чтение | — |
+
+## Сессии
+
+Область MCP-06: полный жизненный цикл сессии. Реализация — `internal/control/rpc_sessions.go`
+(RPC) и `mcptools_defs.go` (инструменты); сессия везде адресуется `session_id = "project/session"`.
+
+| Инструмент | Уровень | Что делает |
+|---|---|---|
+| `start_session` | operate | Запуск; необязательные `model`, `effort`, `runtime` (`claude`/`hermes`) — вместо отдельных инструментов. Модель и effort запоминаются как умолчания сессии, runtime пишется в конфиг |
+| `start_ad_hoc_chat` | operate | Сессия `Chat` в проекте без task source и первого промпта |
+| `stop_session` | operate | Жёстко или `after_task=true` (мягко) |
+| `restart_session` | operate | Перезапуск; `resume=true` продолжает сохранённую беседу |
+| `start_project` / `stop_project` | operate / admin | Все сессии проекта |
+| `stop_all_sessions` | admin | Все сессии всех проектов; требует `confirm=true` |
+| `set_session_model` | operate | Смена модели на лету (запущенная сессия перезапускается с resume) |
+| `set_session_runtime` | operate | Смена CLI у остановленной сессии; у запущенной — отказ |
+| `clear_session_state` | admin | Забыть сохранённую беседу: следующий старт — с чистого листа |
+| `send_message` | operate | Текст и необязательные `images[]` |
+| `get_session` | read | Всё для решения «что дальше»: `session` (статус, модель, effort, runtime, текущая задача, todo, токены), `saved_state`, `pending_permissions`, `pending_question` |
+| `get_sessions` | read | Список, постранично |
+| `list_slash_commands` | read | Slash-команды и скиллы сессии |
+| `get_metrics` | read | Без `project` — состояние rate limit (`GetRateLimitStatus`) |
+
+**Изображения.** Каждое — `path` (абсолютный путь к png/jpg/gif/webp на машине, где
+запущен Claude Manager) **или** `data_base64` (+ `media_type`). Лимиты: не более
+4 изображений на сообщение, не более 5 МиБ каждое (после декодирования); нарушение —
+ошибка с подсказкой, сообщение не отправляется. Путь читает GUI-процесс, поэтому он
+должен существовать там, а не в песочнице агента; для удалённого агента — base64.
+
+**App или менеджер.** `set_session_runtime` и `start_ad_hoc_chat` требуют GUI-приложение
+(правят конфиг); `start_session` с `model`/`effort`, `set_session_model`, `start_project`
+идут через `App`, если он есть (запоминают выбор / порядок cache-affinity), иначе —
+напрямую через менеджер (`playwright-server`).
+
+**Что `get_session` не знает.** Отдельного поля «последняя ошибка» у сессии нет: при
+`status = error` причина — в `get_session_logs`.

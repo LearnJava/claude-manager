@@ -33,6 +33,9 @@ type ManagerAPI interface {
 	StartProject(project string) error
 	StopProject(project string) error
 	SendMessage(id, message string) error
+	SendMessageWithImages(id, message string, images []session.ImageAttachment) error
+	SetSessionModel(id, model string) error
+	GetPendingQuestions() []session.QuestionInfo
 	ListSlashCommands(id string) ([]session.SlashCommand, error)
 	RespondPermission(id, requestID, decision string) error
 	GetPendingPermissions() []permission.PermissionRequest

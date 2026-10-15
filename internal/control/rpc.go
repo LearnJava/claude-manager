@@ -480,6 +480,8 @@ func (s *Server) buildRegistry() map[string]handler {
 		}
 	}
 
+	s.registerSessionRPCs(reg)
+
 	return reg
 }
 
