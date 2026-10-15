@@ -89,6 +89,37 @@
 Если п.1 не выполняется, запасной путь — писать только `2025-11-25` (SDK это
 умеет) и вернуться к `2026-07-28` обновлением SDK.
 
+## Протокол
+
+Реализован в MCP-02. `cmd/cm-mcp/server.go` — тонкий слой над
+`github.com/modelcontextprotocol/go-sdk` `v1.8.0`; транспорт — stdio
+(`mcp.IOTransport`), набор и поведение инструментов не менялись
+(`internal/control/mcptools.go`, `main.go:callToolCtx`).
+
+- **Dual-era.** Один сервер отвечает и на `initialize` (клиент просит
+  `2025-11-25`/`2024-11-05` — получает её же; неизвестную версию — получает
+  поддерживаемую), и на запросы с `_meta` без рукопожатия плюс
+  `server/discover` (`2026-07-28`). Проверено тестами
+  `cmd/cm-mcp/protocol_test.go` по сырому JSON-RPC.
+- `serverInfo`: `name=cm-mcp`, `title=Claude Manager`, `version` из
+  `-ldflags "-X main.version=…"` (по умолчанию `dev`). В modern-режиме
+  идентичность лежит в `_meta["io.modelcontextprotocol/serverInfo"]`.
+- `instructions` — 8 строк: что такое менеджер, формат `project/session`,
+  жизненный цикл статусов, «не опрашивай — жди через `wait_for_*`»,
+  экономия вывода, как читать ошибку «control-plane unreachable», ссылка на
+  этот файл (ресурс `cm://guide` — MCP-13).
+- `capabilities`: только `tools` (без `listChanged`: набор фиксирован) —
+  capability `logging` намеренно не объявляется.
+- `ping` и `notifications/cancelled` обрабатывает SDK; отмена доходит до
+  обработчика через `ctx` и обрывает HTTP-вызов в control-plane (в том числе
+  долгий `wait_for_*`).
+- stdout — только протокол; логгер SDK пишет в stderr (уровень warn).
+- Недоступный control-plane — результат инструмента `isError: true` с
+  подсказкой «start Claude Manager and retry …», сервер продолжает работать.
+
+Замер (Windows, go1.27.1): бинарник 16,4 → 19,1 МБ; запуск процесса с
+`initialize` ~270 мс как до, так и после (доминирует старт процесса).
+
 ## Идентификаторы
 
 **Один способ адресовать сессию: `session_id = "project/session"`**
