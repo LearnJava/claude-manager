@@ -246,11 +246,6 @@ func TestSessionLogs_Paging(t *testing.T) {
 	if len(lo.Entries) != 2 || lo.NextCursor != "6" || !lo.Truncated || !strings.Contains(summary, `cursor="6"`) {
 		t.Errorf("page: %+v summary %q", lo, summary)
 	}
-	// The tail alias still works as a limit.
-	_, body, _ = TranslateTool("get_session_logs", json.RawMessage(`{"session_id":"p/s","tail":5}`))
-	if p := body.(map[string]any)["params"].(map[string]any); p["limit"] != 6 || p["offset"] != 0 {
-		t.Errorf("tail alias: %v", p)
-	}
 }
 
 func TestPaging_RejectsBadArguments(t *testing.T) {

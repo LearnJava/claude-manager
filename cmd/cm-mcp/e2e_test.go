@@ -235,7 +235,7 @@ func TestE2E_FullControlThroughMCP(t *testing.T) {
 	waitStatus(t, cs, id, "idle")
 
 	// Log and metrics.
-	logs, _ := json.Marshal(tool(t, cs, "get_session_logs", map[string]any{"session_id": id, "tail": 50}))
+	logs, _ := json.Marshal(tool(t, cs, "get_session_logs", map[string]any{"session_id": id, "limit": 50}))
 	if !strings.Contains(string(logs), "the file is updated") {
 		t.Fatalf("log lacks the final reply: %s", logs)
 	}

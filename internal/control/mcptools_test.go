@@ -15,7 +15,7 @@ var toolSamples = map[string]struct {
 	raw  string
 }{
 	"start_session":             {`{"session_id":"p/s"}`, `null`},
-	"stop_session":              {`{"project":"p","session":"s","after_task":true}`, `null`},
+	"stop_session":              {`{"session_id":"p/s","after_task":true}`, `null`},
 	"interrupt_session":         {`{"session_id":"p/s"}`, `null`},
 	"restart_session":           {`{"session_id":"p/s","resume":true}`, `null`},
 	"send_message":              {`{"session_id":"p/s","text":"hi"}`, `null`},
@@ -55,7 +55,6 @@ var toolSamples = map[string]struct {
 	"approve_plan":              {`{"plan":{"id":7}}`, `{"id":7}`},
 	"approve_permission":        {`{"session_id":"p/s","request_id":"r1","scope":"once"}`, `null`},
 	"deny_permission":           {`{"session_id":"p/s","request_id":"r1"}`, `null`},
-	"set_global_settings":       {`{"config":{"a":1}}`, `null`},
 	"run_preflight":             {`{"project":"p","task":"t"}`, `{"id":7,"steps":[]}`},
 	"execute_plan":              {`{"plan_id":"7"}`, `null`},
 	"register_mixed_brief":      {`{"id":"b","task":"t"}`, `null`},
@@ -63,9 +62,9 @@ var toolSamples = map[string]struct {
 	"get_mixed_rounds":          {`{"project":"p"}`, `[{"id":"p/b/w"}]`},
 	"wait_for_worker_status":    {`{"task_id":"p/b/w"}`, `{"event":"worker:done","data":{"status":"done"},"ts":"2026-10-15T10:00:00Z"}`},
 	"get_sessions":              {`{}`, `[{"id":"p/s","status":"idle"}]`},
-	"get_session_logs":          {`{"session_id":"p/s","tail":5}`, `[{"text":"x"}]`},
+	"get_session_logs":          {`{"session_id":"p/s","limit":5}`, `[{"text":"x"}]`},
 	"get_pending_permissions":   {`{}`, `null`},
-	"get_metrics":               {`{"project":"p","period":3}`, `1.25`},
+	"get_rate_limit":            {`{}`, `{"remaining":1}`},
 	"get_history":               {`{"project":"p"}`, `[{"Project":"p","Session":"s"}]`},
 	"search_session_log":        {`{"session_id":"p/s","level":"error"}`, `[{"Level":"error","Message":"x"}]`},
 	"get_session_metrics":       {`{"session_id":"p/s"}`, `{"session_id":"p/s","total_cost_usd":1.5}`},
@@ -176,13 +175,9 @@ func TestMCPTools_RegistryInvariants(t *testing.T) {
 	}
 }
 
-func TestSessionRef_AliasesAndConflict(t *testing.T) {
-	_, body, err := TranslateTool("interrupt_session", json.RawMessage(`{"project":"p","session":"s"}`))
-	if err != nil || !strings.Contains(mustJSON(body), `"id":"p/s"`) {
-		t.Fatalf("legacy pair: %v %v", body, err)
-	}
-	if _, _, err := TranslateTool("interrupt_session", json.RawMessage(`{"session_id":"p/s","project":"p"}`)); err == nil {
-		t.Error("session_id together with project must be an error")
+func TestSessionRef_Required(t *testing.T) {
+	if _, _, err := TranslateTool("interrupt_session", json.RawMessage(`{"session_id":"p/s"}`)); err != nil {
+		t.Fatalf("session_id: %v", err)
 	}
 	if _, _, err := TranslateTool("interrupt_session", json.RawMessage(`{}`)); err == nil {
 		t.Error("missing session reference must be an error")

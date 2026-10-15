@@ -11,24 +11,15 @@ import (
 
 // ── Arguments ─────────────────────────────────────────────────────────────────
 
-// sessionRef addresses a session. session_id is the one form; project+session
-// is the legacy pair, kept as an alias until MCP-17.
+// sessionRef addresses a session by its "project/session" ID.
 type sessionRef struct {
 	SessionID string `json:"session_id,omitempty" jsonschema:"Session ID in project/session form, e.g. lumen/P1; list them with get_sessions"`
-	Project   string `json:"project,omitempty" jsonschema:"Deprecated alias: project name, used together with session instead of session_id, e.g. lumen"`
-	Session   string `json:"session,omitempty" jsonschema:"Deprecated alias: session name, used together with project instead of session_id, e.g. P1"`
 }
 
 // id resolves the reference to "project/session".
 func (r sessionRef) id() (string, error) {
-	pair := r.Project != "" || r.Session != ""
-	switch {
-	case r.SessionID != "" && pair:
-		return "", fmt.Errorf("pass either session_id or project+session, not both")
-	case r.SessionID != "":
+	if r.SessionID != "" {
 		return r.SessionID, nil
-	case r.Project != "" && r.Session != "":
-		return r.Project + "/" + r.Session, nil
 	}
 	return "", fmt.Errorf(`session_id is required ("project/session", e.g. "lumen/P1"); list sessions with get_sessions`)
 }
@@ -186,10 +177,6 @@ type denyIn struct {
 	RequestID string `json:"request_id" jsonschema:"Permission request ID, taken from get_pending_permissions"`
 }
 
-type settingsIn struct {
-	Config map[string]any `json:"config" jsonschema:"Partial settings object; only the given fields change, e.g. {\"max_budget_usd\": 5}"`
-}
-
 type preflightIn struct {
 	Project string `json:"project" jsonschema:"Project name, e.g. lumen"`
 	Task    string `json:"task" jsonschema:"Task description to analyse, e.g. Add retry to the HTTP client"`
@@ -225,24 +212,9 @@ type workerWaitIn struct {
 type logsIn struct {
 	sessionRef
 	pageIn
-	Tail int64 `json:"tail,omitempty" jsonschema:"Deprecated alias of limit"`
-}
-
-// paging merges the tail alias into the paging arguments.
-func (l logsIn) paging() pageIn {
-	p := l.pageIn
-	if p.Limit == 0 {
-		p.Limit = l.Tail
-	}
-	return p
 }
 
 type noIn struct{}
-
-type metricsIn struct {
-	Project string `json:"project,omitempty" jsonschema:"Project name, e.g. lumen; omit for the account rate-limit status"`
-	Period  int64  `json:"period,omitempty" jsonschema:"Number of days to aggregate, 1-365 (default 7)"`
-}
 
 type waitStatusIn struct {
 	sessionRef
@@ -378,11 +350,8 @@ type permissionsOut struct {
 	pageOut
 }
 
-type metricsOut struct {
-	Project   string   `json:"project,omitempty" jsonschema:"Project the cost belongs to"`
-	Days      int64    `json:"days,omitempty" jsonschema:"Length of the aggregated period in days"`
-	CostUSD   *float64 `json:"cost_usd,omitempty" jsonschema:"Project cost over the period in USD"`
-	RateLimit any      `json:"rate_limit,omitempty" jsonschema:"Account rate-limit status, when no project was given"`
+type rateLimitOut struct {
+	RateLimit any `json:"rate_limit" jsonschema:"Account rate-limit status"`
 }
 
 type waitOut struct {
@@ -779,27 +748,6 @@ func buildCoreTools() []Tool {
 				return fmt.Sprintf("Permission %s denied for %s.", out.RequestID, out.SessionID)
 			},
 		}),
-		define(spec[settingsIn, okOut]{
-			Name: "set_global_settings", Title: "Update global settings",
-			Doc: Doc{
-				What:    "Deprecated, use update_global_settings: sends a partial object as the whole config.",
-				UseWhen: "an application-wide option such as a budget or a default must change.",
-				NotFor:  "per-session or per-project options.",
-				Returns: "ok.",
-				Effects: "rewrites the saved application config; applies to new runs and persists across restarts.",
-				Example: `{"config":{"max_budget_usd":5}}`,
-			},
-			Level: LevelAdmin, Annotations: ToolAnnotations{Idempotent: true}, Covers: []string{"UpdateConfig"},
-			Translate: func(in settingsIn) (string, any, error) {
-				cfg := in.Config
-				if cfg == nil {
-					cfg = map[string]any{}
-				}
-				return "/rpc", rpcCallBody("UpdateConfig", map[string]any{"config": cfg}), nil
-			},
-			Result:  func(settingsIn, any) okOut { return okOut{OK: true} },
-			Summary: func(settingsIn, okOut) string { return "Global settings updated." },
-		}),
 		define(spec[preflightIn, planOut]{
 			Name: "run_preflight", Title: "Run preflight analysis",
 			Doc: Doc{
@@ -1028,16 +976,14 @@ func buildCoreTools() []Tool {
 				Effects: "none, read only.",
 				Example: `{"session_id":"lumen/P1","limit":50}`,
 			},
-			Input: tuneAll(tunePage, func(props map[string]*jsonschema.Schema) {
-				props["tail"].Minimum = fptr(1)
-			}),
+			Input: tunePage,
 			Level: LevelRead, Annotations: ro, Covers: []string{"GetSessionLog"},
 			Translate: func(in logsIn) (string, any, error) {
 				id, err := in.id()
 				if err != nil {
 					return "", nil, err
 				}
-				offset, limit, err := in.paging().window()
+				offset, limit, err := in.window()
 				if err != nil {
 					return "", nil, err
 				}
@@ -1046,7 +992,7 @@ func buildCoreTools() []Tool {
 			},
 			Result: func(in logsIn, raw any) logsOut {
 				id, _ := in.id()
-				offset, limit, _ := in.paging().window()
+				offset, limit, _ := in.window()
 				page, next, more := pageOf(list(raw), 0, limit)
 				return logsOut{SessionID: id, Entries: page, pageOut: pageInfo(offset, next, more)}
 			},
@@ -1080,45 +1026,22 @@ func buildCoreTools() []Tool {
 				return plural(len(out.Permissions), "pending permission", "pending permissions") + "." + moreHint(out.pageOut)
 			},
 		}),
-		define(spec[metricsIn, metricsOut]{
-			Name: "get_metrics", Title: "Get cost and rate-limit metrics",
+		define(spec[noIn, rateLimitOut]{
+			Name: "get_rate_limit", Title: "Get rate-limit status",
 			Doc: Doc{
-				What:    "Get a project's cost over a period, or the account rate-limit status when no project is given.",
-				UseWhen: "you check spending or whether sessions are rate limited.",
-				NotFor:  "per-session details (use get_sessions).",
-				Returns: "cost_usd and days for a project, or rate_limit for the account.",
+				What:    "Get the account rate-limit status.",
+				UseWhen: "sessions report rate_limited, or before starting a large batch of work.",
+				NotFor:  "spending (use get_cost).",
+				Returns: "rate_limit, the account status as the app reports it.",
 				Effects: "none, read only.",
-				Example: `{"project":"lumen","period":7}`,
+				Example: `{}`,
 			},
-			Input: func(props map[string]*jsonschema.Schema) {
-				p := props["period"]
-				p.Default, p.Minimum, p.Maximum = json.RawMessage(`7`), fptr(1), fptr(365)
-			},
-			Level: LevelRead, Annotations: ro, Covers: []string{"GetProjectCost", "GetRateLimitStatus"},
-			Translate: func(in metricsIn) (string, any, error) {
-				if in.Project != "" {
-					return "/rpc", rpcCallBody("GetProjectCost", map[string]any{
-						"project": in.Project, "days": orDefault(in.Period, 7),
-					}), nil
-				}
+			Level: LevelRead, Annotations: ro, Covers: []string{"GetRateLimitStatus"},
+			Translate: func(noIn) (string, any, error) {
 				return "/rpc", rpcCallBody("GetRateLimitStatus", map[string]any{}), nil
 			},
-			Result: func(in metricsIn, raw any) metricsOut {
-				if in.Project == "" {
-					return metricsOut{RateLimit: raw}
-				}
-				out := metricsOut{Project: in.Project, Days: orDefault(in.Period, 7)}
-				if c, ok := raw.(float64); ok {
-					out.CostUSD = &c
-				}
-				return out
-			},
-			Summary: func(_ metricsIn, out metricsOut) string {
-				if out.CostUSD == nil {
-					return "Rate-limit status."
-				}
-				return fmt.Sprintf("%s: $%.2f over %d days.", out.Project, *out.CostUSD, out.Days)
-			},
+			Result:  func(_ noIn, raw any) rateLimitOut { return rateLimitOut{RateLimit: raw} },
+			Summary: func(noIn, rateLimitOut) string { return "Rate-limit status." },
 		}),
 		// ── Blocking primitives ───────────────────────────────────────────────
 		define(spec[waitStatusIn, waitOut]{

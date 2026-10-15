@@ -26,14 +26,6 @@
           "description": "Pattern matched against the tool input, e.g. git status*; empty matches every call of the tool",
           "type": "string"
         },
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
@@ -236,16 +228,8 @@
           "description": "The answer: one of the question's options, or free text, e.g. Use the second approach",
           "type": "string"
         },
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
         "question_id": {
           "description": "Question ID, taken from get_pending_questions or get_pending",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
           "type": "string"
         },
         "session_id": {
@@ -749,14 +733,6 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
@@ -1026,14 +1002,6 @@
           ],
           "type": "string"
         },
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
@@ -1298,7 +1266,7 @@
       "readOnlyHint": true,
       "title": "Get cost and tokens"
     },
-    "description": "Get the cost and token volume of one day across all projects, or of one project over a period. Use when: you check spending against a budget, or compare days or projects. Not for: one session (use get_session_metrics) or the rate-limit status (use get_metrics without a project). Returns: cost_usd and the input, output, cache and total token counts. Side effects: none, read only. Access: read. Example: {\"scope\":\"project\",\"project\":\"lumen\",\"period\":7}",
+    "description": "Get the cost and token volume of one day across all projects, or of one project over a period. Use when: you check spending against a budget, or compare days or projects. Not for: one session (use get_session_metrics) or the rate-limit status (use get_rate_limit). Returns: cost_usd and the input, output, cache and total token counts. Side effects: none, read only. Access: read. Example: {\"scope\":\"project\",\"project\":\"lumen\",\"period\":7}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1570,62 +1538,6 @@
       "idempotentHint": false,
       "openWorldHint": false,
       "readOnlyHint": true,
-      "title": "Get cost and rate-limit metrics"
-    },
-    "description": "Get a project's cost over a period, or the account rate-limit status when no project is given. Use when: you check spending or whether sessions are rate limited. Not for: per-session details (use get_sessions). Returns: cost_usd and days for a project, or rate_limit for the account. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\",\"period\":7}",
-    "inputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "period": {
-          "default": 7,
-          "description": "Number of days to aggregate, 1-365 (default 7)",
-          "maximum": 365,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "project": {
-          "description": "Project name, e.g. lumen; omit for the account rate-limit status",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "get_metrics",
-    "outputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "cost_usd": {
-          "description": "Project cost over the period in USD",
-          "type": [
-            "null",
-            "number"
-          ]
-        },
-        "days": {
-          "description": "Length of the aggregated period in days",
-          "type": "integer"
-        },
-        "project": {
-          "description": "Project the cost belongs to",
-          "type": "string"
-        },
-        "rate_limit": {
-          "description": "Account rate-limit status, when no project was given"
-        }
-      },
-      "type": "object"
-    },
-    "title": "Get cost and rate-limit metrics"
-  },
-  {
-    "_meta": {
-      "cm/accessLevel": "read"
-    },
-    "annotations": {
-      "destructiveHint": false,
-      "idempotentHint": false,
-      "openWorldHint": false,
-      "readOnlyHint": true,
       "title": "Compare worker quality"
     },
     "description": "Compare the worker models of the mixed-programming tasks of a project: tasks done, rounds to green, clean patch rate and failures per worker. Use when: you choose which worker model gets the next brief. Not for: the rounds of one task (use get_mixed_rounds). Returns: workers, with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\"}",
@@ -1762,14 +1674,6 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
@@ -1812,14 +1716,6 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
@@ -1944,14 +1840,6 @@
           "maximum": 500,
           "minimum": 1,
           "type": "integer"
-        },
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
         },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
@@ -2281,6 +2169,37 @@
       "idempotentHint": false,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Get rate-limit status"
+    },
+    "description": "Get the account rate-limit status. Use when: sessions report rate_limited, or before starting a large batch of work. Not for: spending (use get_cost). Returns: rate_limit, the account status as the app reports it. Side effects: none, read only. Access: read. Example: {}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "name": "get_rate_limit",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "rate_limit": {
+          "description": "Account rate-limit status"
+        }
+      },
+      "required": [
+        "rate_limit"
+      ],
+      "type": "object"
+    },
+    "title": "Get rate-limit status"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Get roadmap row text"
     },
     "description": "Read the long text of one roadmap row: its note column, else the raw row. Use when: a roadmap keeps task descriptions inline and you need the full text of one task. Not for: rows with a task file (use get_roadmap_task_detail). Returns: the text, with next_cursor and truncated when it is longer than one response. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\",\"roadmap_file\":\"ROADMAP.md\",\"line\":42}",
@@ -2411,14 +2330,6 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
@@ -2484,22 +2395,9 @@
           "minimum": 1,
           "type": "integer"
         },
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
-        },
-        "tail": {
-          "description": "Deprecated alias of limit",
-          "minimum": 1,
-          "type": "integer"
         }
       },
       "type": "object"
@@ -2553,14 +2451,6 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
@@ -2613,14 +2503,6 @@
           "maximum": 500,
           "minimum": 1,
           "type": "integer"
-        },
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
         },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
@@ -3389,14 +3271,6 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
@@ -3450,14 +3324,6 @@
           "maximum": 500,
           "minimum": 1,
           "type": "integer"
-        },
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
         },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
@@ -3675,14 +3541,6 @@
           "description": "True to validate and show the diff without saving",
           "type": "boolean"
         },
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
@@ -3742,17 +3600,9 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
         "resume": {
           "description": "If true, resume the saved CLI conversation instead of starting fresh; default false",
           "type": "boolean"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
         },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
@@ -4007,14 +3857,6 @@
           "minimum": 1,
           "type": "integer"
         },
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
@@ -4100,14 +3942,6 @@
             "array"
           ]
         },
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
@@ -4158,14 +3992,6 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
@@ -4195,48 +4021,6 @@
   },
   {
     "_meta": {
-      "cm/accessLevel": "admin"
-    },
-    "annotations": {
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false,
-      "readOnlyHint": false,
-      "title": "Update global settings"
-    },
-    "description": "Deprecated, use update_global_settings: sends a partial object as the whole config. Use when: an application-wide option such as a budget or a default must change. Not for: per-session or per-project options. Returns: ok. Side effects: rewrites the saved application config; applies to new runs and persists across restarts. Access: admin. Example: {\"config\":{\"max_budget_usd\":5}}",
-    "inputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "config": {
-          "additionalProperties": true,
-          "description": "Partial settings object; only the given fields change, e.g. {\"max_budget_usd\": 5}",
-          "type": "object"
-        }
-      },
-      "required": [
-        "config"
-      ],
-      "type": "object"
-    },
-    "name": "set_global_settings",
-    "outputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "ok": {
-          "description": "True when the change was applied",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "ok"
-      ],
-      "type": "object"
-    },
-    "title": "Update global settings"
-  },
-  {
-    "_meta": {
       "cm/accessLevel": "operate"
     },
     "annotations": {
@@ -4252,14 +4036,6 @@
       "properties": {
         "model": {
           "description": "Model to switch to, e.g. opus or sonnet",
-          "type": "string"
-        },
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
           "type": "string"
         },
         "session_id": {
@@ -4308,20 +4084,12 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
         "runtime": {
           "description": "claude or hermes",
           "enum": [
             "claude",
             "hermes"
           ],
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
           "type": "string"
         },
         "session_id": {
@@ -4536,20 +4304,12 @@
           "description": "Model for this and later starts, e.g. opus or sonnet; omit to keep the configured one",
           "type": "string"
         },
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
         "runtime": {
           "description": "Agent CLI to drive the session: claude or hermes; persisted in the session config; omit to keep the configured one",
           "enum": [
             "claude",
             "hermes"
           ],
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
           "type": "string"
         },
         "session_id": {
@@ -4685,14 +4445,6 @@
         "after_task": {
           "description": "If true, finish the current task before stopping (soft stop); default false stops at once",
           "type": "boolean"
-        },
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
         },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
@@ -5019,14 +4771,6 @@
           "description": "Fields to change by their config.toml names, e.g. {\"model\": \"opus\", \"max_budget_usd\": 5}; null resets a field. name is not editable",
           "type": "object"
         },
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
@@ -5279,14 +5023,6 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
-        "project": {
-          "description": "Deprecated alias: project name, used together with session instead of session_id, e.g. lumen",
-          "type": "string"
-        },
-        "session": {
-          "description": "Deprecated alias: session name, used together with project instead of session_id, e.g. P1",
-          "type": "string"
-        },
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"

@@ -106,7 +106,7 @@ Read the cm://guide resource first if you are unsure about identifiers or access
 			return fmt.Sprintf(`Report Claude Manager spending for the last %[1]s days.
 1. get_cost with scope "project" and period %[1]s for %[2]s.
 2. get_cost with scope "day" for today.
-3. get_metrics for the rate-limit status.
+3. get_rate_limit for the rate-limit status.
 Give a small table (project, cost_usd, total tokens), the most expensive project, and one observation on where the cost comes from (get_top_actions or get_token_attribution may help). Do not change any setting.`, days, scope)
 		},
 	},
