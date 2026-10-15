@@ -17,7 +17,7 @@ func TestWriteProtocolFiles_WritesAllArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteProtocolFiles: %v", err)
 	}
-	if len(written) != len(protocolFiles) {
+	if len(written) != len(protocolFiles)+1 { // + CLAUDE.md
 		t.Fatalf("written = %v, want %d files", written, len(protocolFiles))
 	}
 	for _, f := range protocolFiles {
@@ -205,4 +205,91 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(b)
+}
+
+func TestProtocolTemplates_SlotAndPrefixFromQueue(t *testing.T) {
+	render := func(queue string) map[string]string {
+		dir := t.TempDir()
+		if _, err := WriteProtocolFiles(dir, ProtocolParams{QueueFile: queue, MainBranch: "master"}); err != nil {
+			t.Fatalf("WriteProtocolFiles: %v", err)
+		}
+		out := map[string]string{}
+		for _, f := range protocolFiles {
+			b, err := os.ReadFile(filepath.Join(dir, f.rel))
+			if err != nil {
+				t.Fatal(err)
+			}
+			out[f.rel] = string(b)
+		}
+		return out
+	}
+	p1, p3 := render("STATUS-P1.md"), render("STATUS-P3.md")
+	for rel, body := range p3 {
+		if strings.Contains(body, "p1-") {
+			t.Errorf("%s: P3 render still mentions p1-", rel)
+		}
+		if strings.NewReplacer("p3-", "p1-", "STATUS-P3.md", "STATUS-P1.md").Replace(body) != p1[rel] {
+			t.Errorf("%s: P3 render differs from P1 beyond the prefix", rel)
+		}
+	}
+	if !strings.Contains(p3[filepath.Join(".claude", "skills", "cm-task-start", "SKILL.md")], "worktree-pool.sh p3-work p3-$ARGUMENTS") {
+		t.Errorf("cm-task-start does not use the p3 slot and prefix")
+	}
+	if !strings.Contains(p1[filepath.Join(".claude", "skills", "cm-task-start", "SKILL.md")], "worktree-pool.sh p1-work p1-$ARGUMENTS") {
+		t.Errorf("P1 render changed")
+	}
+}
+
+func TestWriteProtocolFiles_ClaudeMdSection(t *testing.T) {
+	params := ProtocolParams{QueueFile: "STATUS-P2.md", MainBranch: "main"}
+	md := func(dir string) string {
+		b, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+		return string(b)
+	}
+
+	// No CLAUDE.md: created with the section.
+	dir := t.TempDir()
+	written, err := WriteProtocolFiles(dir, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(written, "CLAUDE.md") || !strings.Contains(md(dir), ".claude/worktrees/p2-work") {
+		t.Fatalf("CLAUDE.md not created with section: written=%v md=%q", written, md(dir))
+	}
+	// Second call appends nothing.
+	first := md(dir)
+	if written, _ = WriteProtocolFiles(dir, params); contains(written, "CLAUDE.md") || md(dir) != first {
+		t.Errorf("second call changed CLAUDE.md")
+	}
+
+	// Already links the workflow doc: untouched.
+	dir = t.TempDir()
+	own := "# X\nsee docs/git-workflow.md\n"
+	os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(own), 0o644)
+	if _, err := WriteProtocolFiles(dir, params); err != nil {
+		t.Fatal(err)
+	}
+	if md(dir) != own {
+		t.Errorf("CLAUDE.md with a link was modified: %q", md(dir))
+	}
+
+	// CLAUDE.md without the link: section appended once, original kept.
+	dir = t.TempDir()
+	os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte("# X"), 0o644)
+	if _, err := WriteProtocolFiles(dir, params); err != nil {
+		t.Fatal(err)
+	}
+	got := md(dir)
+	if !strings.HasPrefix(got, "# X\n") || strings.Count(got, "## Developer sessions") != 1 {
+		t.Errorf("unexpected CLAUDE.md: %q", got)
+	}
+}
+
+func contains(ss []string, s string) bool {
+	for _, x := range ss {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }

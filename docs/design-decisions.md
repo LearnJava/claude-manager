@@ -686,8 +686,8 @@ win, so an operator edit in the Plan Review UI is never overwritten.
 `default_permission_mode` or `bypassPermissions` if unset — an autonomous
 `auto_restart` loop with nobody watching to answer a permission prompt needs
 full permissions, not `acceptEdits`, or it silently stalls on the first
-disallowed `Bash` call — `use_worktree = false` (see "Developer-Session
-Protocol" below: the protocol written into the project owns the worktree),
+disallowed `Bash` call — `use_worktree = true` (see "Session work folder"
+below: the flag prepares the same slot the protocol occupies),
 `task_source = "STATUS-P1.md"`, `stop_when_no_tasks = true`, `auto_restart =
 true`, and `analysis.DefaultP1SessionPrompt`) into the project — reusing the
 exact `GetConfig`→mutate→`UpdateConfig` round-trip every other project/session
@@ -729,10 +729,11 @@ branch behind, and the next session finds it with `git branch` and continues it.
 Without that, an interrupted task is silently re-implemented from scratch —
 observed in this repo on 2026-09-08: the same task was implemented seven times
 in seven anonymous worktrees, four of them to a green committed state, none
-reaching `master`, for ~$12. That is also why `use_worktree` is forced **off**
-for such a session (`upsertP1Session`): the manager's bare `--worktree` makes a
-fresh anonymous worktree from HEAD on every process start, which is exactly the
-mechanism that loses the previous attempt.
+reaching `master`, for ~$12. That is also why a bare `--worktree` is never
+used: it makes a fresh anonymous worktree from HEAD on every process start,
+which is exactly the mechanism that loses the previous attempt. `use_worktree`
+for such a session (`upsertP1Session`) is forced **on** and means the permanent
+slot instead — see "Session work folder".
 
 **Why files rather than a longer prompt.** A prompt is invisible to git,
 unversioned, unreviewable, cannot be improved by the sessions working under it,
@@ -2881,3 +2882,24 @@ process with `cmd.Dir` = the session's persistent pool slot
   same slot. After switching `use_worktree` on, the old transcript (root cwd) is
   not found: Claude's `No conversation found with session ID` stderr is classified
   `KindSessionNotFound`, and the run loop drops the id and starts fresh.
+
+### Checkbox ↔ protocol, `CLAUDE.md`
+
+- **The flag and the protocol meet in one folder.** The templates take `Slot` /
+  `BranchPrefix` (`ProtocolParams`, derived from the queue file through
+  `worktree.SlotName`: `STATUS-P3.md` → `p3-work` / `p3-`), so the slot the app
+  prepares for `use_worktree` is the slot `/cm-task-start` occupies. A queue not
+  named `STATUS-P<N>.md` falls back to `p1-work`; P1 output is byte-identical to
+  the pre-parameter templates.
+- **Defaults:** a session added in Settings (and the auto-created Chat) has
+  `use_worktree = false`; the manager-created P1 has it `true`.
+- **Banner:** enabling the checkbox in a project with neither
+  `scripts/worktree-pool.sh` nor `docs/git-workflow.md` (`HasSessionProtocol`)
+  shows an inline banner with an "Install session protocol" button — without a
+  protocol the slot works but nobody manages task branches in it.
+- **`CLAUDE.md` section.** `WriteProtocolFiles` appends a short
+  `## Developer sessions` section (creating the file if absent) only when
+  `CLAUDE.md` does not already contain `docs/git-workflow.md`. A session reads
+  `CLAUDE.md` first, so this is where it learns about its slot and the two
+  skills; a project that already links the workflow doc (Lumen) has its own
+  wording and is never touched, and the check also makes a second call a no-op.

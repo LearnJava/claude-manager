@@ -88,7 +88,7 @@ git push origin {{.MainBranch}}
 Order matters: while the slot holds the branch, `git branch -d` refuses.
 
 ```bash
-bash scripts/worktree-pool.sh release p1-work
+bash scripts/worktree-pool.sh release {{.Slot}}
 git branch -d $ARGUMENTS
 git push origin --delete $ARGUMENTS     # if the branch was published
 ```

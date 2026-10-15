@@ -1,6 +1,7 @@
 package session
 
 import (
+	"os"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -2639,6 +2640,22 @@ func (m *SessionManager) InstallProtocol(project string) ([]string, error) {
 	}
 	logger.L.Info("manager.protocol_installed", "project", project, "files", strings.Join(files, ", "))
 	return files, nil
+}
+
+// HasProtocol reports whether project's folder already has a developer-session
+// protocol: either the pool script or the workflow doc counts, so a project
+// with its own protocol (lumen-browser) is not nagged to install ours.
+func (m *SessionManager) HasProtocol(project string) (bool, error) {
+	path, err := m.projectPath(project)
+	if err != nil {
+		return false, err
+	}
+	for _, rel := range []string{filepath.Join("scripts", "worktree-pool.sh"), filepath.Join("docs", "git-workflow.md")} {
+		if _, err := os.Stat(filepath.Join(path, rel)); err == nil {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // projectQueueFile returns the task_source of project's first queue-driven

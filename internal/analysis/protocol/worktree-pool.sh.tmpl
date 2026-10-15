@@ -14,7 +14,7 @@
 #   bash scripts/worktree-pool.sh release <slot> [base]    # free a slot
 #   bash scripts/worktree-pool.sh list                     # what each slot holds
 #
-#   slot   — a directory under .claude/worktrees/: p1-work, p2-work, ...
+#   slot   — a directory under .claude/worktrees/: {{.Slot}}, p2-work, ...
 #   branch — the task branch (p<N>-<task>); an existing one is checked out,
 #            a new one is created from base
 #   base   — base for a new branch, default {{.MainBranch}}

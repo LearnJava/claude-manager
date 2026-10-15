@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 
 	"claude-manager/internal/config"
+	"claude-manager/internal/worktree"
 )
 
 //go:embed protocol/*.tmpl
@@ -31,6 +33,13 @@ type ProtocolParams struct {
 	// .Gates). Empty is normal: the protocol then describes the gate in
 	// language-agnostic terms instead of naming commands it cannot know.
 	Gates []string
+	// Slot is the session's pool slot under .claude/worktrees/ ("p1-work").
+	// Derived from QueueFile via worktree.SlotName when empty, so the protocol
+	// occupies the same folder the app prepares for the session.
+	Slot string
+	// BranchPrefix is the owner prefix of task branches ("p1-"). Derived from
+	// Slot when empty.
+	BranchPrefix string
 }
 
 // protocolFile is one rendered artifact: an embedded template and where it
@@ -90,6 +99,12 @@ func WriteProtocolFiles(projectPath string, p ProtocolParams) ([]string, error) 
 		written = append(written, filepath.ToSlash(f.rel))
 	}
 
+	if wrote, err := ensureDeveloperSessionsSection(projectPath, p); err != nil {
+		return written, err
+	} else if wrote {
+		written = append(written, "CLAUDE.md")
+	}
+
 	// Pool slots are working copies of this same repository; committing them
 	// would be committing the repo into itself.
 	if err := config.EnsureGitignore(projectPath, ".claude/worktrees/"); err != nil {
@@ -106,7 +121,19 @@ func (p *ProtocolParams) applyDefaults() {
 	if strings.TrimSpace(p.MainBranch) == "" {
 		p.MainBranch = "main"
 	}
+	if strings.TrimSpace(p.Slot) == "" {
+		slot := worktree.SlotName(config.SessionConfig{TaskSource: p.QueueFile})
+		if !devSlotRe.MatchString(slot) {
+			slot = "p1-work" // queue not named STATUS-P<N>.md
+		}
+		p.Slot = slot
+	}
+	if strings.TrimSpace(p.BranchPrefix) == "" {
+		p.BranchPrefix = strings.TrimSuffix(p.Slot, "work")
+	}
 }
+
+var devSlotRe = regexp.MustCompile(`^p\d+-work$`)
 
 // templateData expands ProtocolParams into what the templates reference,
 // including the two gate renderings: a shell snippet for the workflow doc and
@@ -115,6 +142,8 @@ func (p ProtocolParams) templateData() map[string]string {
 	return map[string]string{
 		"QueueFile":        p.QueueFile,
 		"MainBranch":       p.MainBranch,
+		"Slot":             p.Slot,
+		"BranchPrefix":     p.BranchPrefix,
 		"GateBlock":        p.gateBlock(),
 		"GateInstructions": p.gateInstructions(),
 	}
@@ -187,4 +216,45 @@ func renderProtocolTemplate(name string, data map[string]string) (string, error)
 	// the embedded bytes — carries CRLF; a shell script written out that way
 	// dies on its own shebang under bash ("\r: command not found").
 	return strings.ReplaceAll(buf.String(), "\r\n", "\n"), nil
+}
+
+// developerSessionsSection is appended to a project's CLAUDE.md so a session
+// that reads only CLAUDE.md still learns it works in a permanent slot and which
+// skills drive the protocol.
+const developerSessionsSection = `
+## Developer sessions
+
+A session driven by a task queue works in its own permanent slot,
+` + "`.claude/worktrees/%s`" + `, not in the main checkout. Take a task with
+` + "`/cm-task-start`" + ` and finish it with ` + "`/cm-task-finish`" + `.
+Full protocol: ` + "`docs/git-workflow.md`" + `.
+`
+
+// ensureDeveloperSessionsSection appends the section to projectPath/CLAUDE.md
+// (creating the file) unless it already links docs/git-workflow.md — a project
+// that documents the protocol itself, such as Lumen, keeps its own wording.
+func ensureDeveloperSessionsSection(projectPath string, p ProtocolParams) (bool, error) {
+	path := filepath.Join(projectPath, "CLAUDE.md")
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return false, fmt.Errorf("analysis: read CLAUDE.md: %w", err)
+	}
+	if strings.Contains(string(existing), "docs/git-workflow.md") {
+		return false, nil
+	}
+	body := fmt.Sprintf(developerSessionsSection, p.Slot)
+	if len(existing) == 0 {
+		body = strings.TrimLeft(body, "\n")
+	} else if !strings.HasSuffix(string(existing), "\n") {
+		body = "\n" + body
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return false, fmt.Errorf("analysis: open CLAUDE.md: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(body); err != nil {
+		return false, fmt.Errorf("analysis: write CLAUDE.md: %w", err)
+	}
+	return true, nil
 }

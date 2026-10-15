@@ -13,6 +13,7 @@
         UnmirrorProject,
         SyncProjectMirrors,
         InstallSessionProtocol,
+        HasSessionProtocol,
     } from '../../wailsjs/go/main/App';
     import { EventsOn } from '../../wailsjs/runtime/runtime';
     import { initProjects } from '../stores/projects';
@@ -174,7 +175,7 @@
             DisallowedTools: [],
             PermissionRules: [],
             MaxBudgetUSD: 0,
-            UseWorktree: true,
+            UseWorktree: false,
             SystemPromptAppend: '',
             AddDirs: [],
             Preflight: 'auto',
@@ -572,12 +573,29 @@
                 : $t('settings.msg.alreadyPresent');
             protocolResult = protocolResult;
             info = $t('settings.msg.protocolChecked', { project: p.Name });
+            await checkProtocol(p.Name, true);
         } catch (e: any) {
             error = $t('settings.msg.installProtocolFailed', { error: e?.message ?? String(e) });
         } finally {
             protocolBusy = null;
         }
     }
+
+    // "Use worktree" prepares a permanent slot; without a protocol in the
+    // project nobody manages task branches in it, so say so under the checkbox.
+    let noProtocol = false;
+    async function checkProtocol(name: string | undefined, useWorktree: boolean | undefined) {
+        if (!name || !useWorktree) {
+            noProtocol = false;
+            return;
+        }
+        try {
+            noProtocol = !(await HasSessionProtocol(name));
+        } catch {
+            noProtocol = false; // project not saved yet: nothing to check
+        }
+    }
+    $: checkProtocol(proj?.Name, sess?.UseWorktree);
 
     let logsBusy: number | null = null;
     let logsPendingClear: number | null = null;
@@ -1697,9 +1715,24 @@
                                                 </label>
                                                 <label class="flex items-center gap-2 text-sm text-text">
                                                     <input type="checkbox" bind:checked={sess.UseWorktree} />
-                                                    {$t('settings.sessions.useWorktree')}
+                                                    <span title={$t('settings.sessions.useWorktreeTitle')}>{$t('settings.sessions.useWorktree')}</span>
                                                 </label>
                                             </div>
+                                            {#if noProtocol}
+                                                <div class="rounded border border-status-waiting/40 bg-status-waiting/10 px-2 py-1.5 text-xs text-text space-y-1" data-testid="no-protocol-banner">
+                                                    <p>{$t('settings.sessions.noProtocol')}</p>
+                                                    <button
+                                                        type="button"
+                                                        on:click={() => installProtocol(selectedProjectIdx)}
+                                                        disabled={protocolBusy !== null}
+                                                        class="px-2 py-0.5 rounded bg-bg border border-bg-border text-text-muted hover:text-text disabled:opacity-40">
+                                                        {$t('settings.protocol.installButton')}
+                                                    </button>
+                                                </div>
+                                            {/if}
+                                            {#if protocolResult[selectedProjectIdx]}
+                                                <p class="text-[11px] text-status-ok/90 leading-snug">{protocolResult[selectedProjectIdx]}</p>
+                                            {/if}
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
                                                 {$t('settings.sessions.preflightLabel')}
                                                 <select
