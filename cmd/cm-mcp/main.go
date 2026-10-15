@@ -15,43 +15,25 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 
 	"claude-manager/internal/control"
 )
 
 const (
-	mcpProtocolVersion = "2024-11-05"
-	mcpServerName      = "cm-mcp"
-	mcpServerVersion   = "1.0.0"
+	mcpServerName  = "cm-mcp"
+	mcpServerTitle = "Claude Manager"
 )
 
-// mcpRequest is a JSON-RPC 2.0 request or notification from the MCP client.
-type mcpRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      any             `json:"id"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params"`
-}
-
-// mcpResponse is a JSON-RPC 2.0 response written to the MCP client.
-type mcpResponse struct {
-	JSONRPC string    `json:"jsonrpc"`
-	ID      any       `json:"id,omitempty"`
-	Result  any       `json:"result,omitempty"`
-	Error   *mcpError `json:"error,omitempty"`
-}
-
-type mcpError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
+// version is stamped at build time: -ldflags "-X main.version=1.2.3".
+var version = "dev"
 
 // mcpServer is the stdio MCP proxy server.
 type mcpServer struct {
@@ -88,110 +70,24 @@ func newMCPServer() *mcpServer {
 }
 
 func main() {
-	srv := newMCPServer()
-	if err := srv.run(os.Stdin, os.Stdout); err != nil && err != io.EOF {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	// stdout carries the protocol only; everything else goes to stderr.
+	if err := newMCPServer().serve(ctx, os.Stdin, os.Stdout); err != nil && err != io.EOF {
 		fmt.Fprintln(os.Stderr, "cm-mcp:", err)
 		os.Exit(1)
-	}
-}
-
-// run reads newline-delimited JSON-RPC requests from in, processes each one,
-// and writes JSON-RPC responses to out. It returns when in reaches EOF.
-func (s *mcpServer) run(in io.Reader, out io.Writer) error {
-	scanner := bufio.NewScanner(in)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1 MB max per line
-	enc := json.NewEncoder(out)
-
-	for scanner.Scan() {
-		line := bytes.TrimSpace(scanner.Bytes())
-		if len(line) == 0 {
-			continue
-		}
-		var req mcpRequest
-		if err := json.Unmarshal(line, &req); err != nil {
-			_ = enc.Encode(mcpResponse{
-				JSONRPC: "2.0",
-				Error:   &mcpError{Code: -32700, Message: "parse error: " + err.Error()},
-			})
-			continue
-		}
-		// Notifications have no id — no response required.
-		if req.ID == nil {
-			continue
-		}
-		_ = enc.Encode(s.handle(req))
-	}
-	return scanner.Err()
-}
-
-// handle dispatches one JSON-RPC request and returns the response.
-func (s *mcpServer) handle(req mcpRequest) mcpResponse {
-	switch req.Method {
-	case "initialize":
-		return mcpResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result: map[string]any{
-				"protocolVersion": mcpProtocolVersion,
-				"capabilities":    map[string]any{"tools": map[string]any{}},
-				"serverInfo":      map[string]any{"name": mcpServerName, "version": mcpServerVersion},
-			},
-		}
-
-	case "tools/list":
-		tools := make([]map[string]any, len(control.MCPTools))
-		for i, t := range control.MCPTools {
-			tools[i] = map[string]any{
-				"name":        t.Name,
-				"description": t.Description,
-				"inputSchema": t.InputSchema,
-			}
-		}
-		return mcpResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result:  map[string]any{"tools": tools},
-		}
-
-	case "tools/call":
-		var params struct {
-			Name      string          `json:"name"`
-			Arguments json.RawMessage `json:"arguments"`
-		}
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return errResp(req.ID, -32602, "invalid params: "+err.Error())
-		}
-		if params.Arguments == nil {
-			params.Arguments = json.RawMessage(`{}`)
-		}
-		result, callErr := s.callTool(params.Name, params.Arguments)
-		if callErr != nil {
-			return mcpResponse{
-				JSONRPC: "2.0",
-				ID:      req.ID,
-				Result: map[string]any{
-					"content": []map[string]any{{"type": "text", "text": callErr.Error()}},
-					"isError": true,
-				},
-			}
-		}
-		text, _ := json.MarshalIndent(result, "", "  ")
-		return mcpResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result: map[string]any{
-				"content": []map[string]any{{"type": "text", "text": string(text)}},
-			},
-		}
-
-	default:
-		return errResp(req.ID, -32601, "method not found: "+req.Method)
 	}
 }
 
 // callTool translates a tool invocation into a control-plane HTTP call and
 // returns the parsed result.
 func (s *mcpServer) callTool(name string, args json.RawMessage) (any, error) {
+	return s.callToolCtx(context.Background(), name, args)
+}
+
+// callToolCtx is callTool bound to ctx: cancelling the MCP request aborts the
+// in-flight control-plane call (notably a long wait_for_*).
+func (s *mcpServer) callToolCtx(ctx context.Context, name string, args json.RawMessage) (any, error) {
 	endpoint, body, err := control.TranslateTool(name, args)
 	if err != nil {
 		return nil, err
@@ -202,7 +98,7 @@ func (s *mcpServer) callTool(name string, args json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, s.baseURL+endpoint, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+endpoint, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -211,7 +107,11 @@ func (s *mcpServer) callTool(name string, args json.RawMessage) (any, error) {
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("control-plane: %w", err)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("control-plane unreachable at %s (%v): start Claude Manager and retry; "+
+			"the address and token come from ~/.claude-manager/control.json, which the running app writes", s.baseURL, err)
 	}
 	defer resp.Body.Close()
 
@@ -247,12 +147,4 @@ func (s *mcpServer) decodeWaitResponse(resp *http.Response) (any, error) {
 		return nil, fmt.Errorf("decode wait response: %w", err)
 	}
 	return result, nil
-}
-
-func errResp(id any, code int, msg string) mcpResponse {
-	return mcpResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Error:   &mcpError{Code: code, Message: msg},
-	}
 }

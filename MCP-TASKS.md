@@ -148,7 +148,7 @@ Hermes…) может сделать через MCP — без чтения на
 | Задача | Статус | Ключевые файлы |
 |---|---|---|
 | MCP-01 | ✓ DONE (2026-10-15) | docs/mcp.md, docs/design-decisions.md |
-| MCP-02 | ○ TODO | cmd/cm-mcp/, go.mod |
+| MCP-02 | ✓ DONE (2026-10-15) | cmd/cm-mcp/, go.mod |
 | MCP-03 | ○ TODO | internal/control/mcptools.go → реестр, тест паритета |
 | MCP-04 | ○ TODO | реестр, internal/control/rpc.go, тест-линтер |
 | MCP-05 | ○ TODO | cmd/cm-mcp/, internal/control/ |
