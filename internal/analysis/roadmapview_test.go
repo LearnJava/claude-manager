@@ -906,3 +906,104 @@ func TestStatusWord_GlyphOnlyStatus(t *testing.T) {
 		t.Errorf("🚫 → %q, want blocked", got)
 	}
 }
+
+func writeFiles(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+const headingOnlyTasks = "# Tasks\n\n## AA-01: first\n\nbody one\n\n---\n\n## AA-02: second\n\nbody two\n\n### sub\n\nmore two\n\n## AA-03: third\n\nbody three\n"
+
+func TestReadRoadmap_HeadingOnlyFile(t *testing.T) {
+	dir := writeFiles(t, map[string]string{
+		"F.md":         headingOnlyTasks,
+		"STATUS-P1.md": "F.md:9\nF.md:17\n",
+	})
+	view, err := ReadRoadmap(dir, "STATUS-P1.md")
+	if err != nil {
+		t.Fatalf("ReadRoadmap: %v", err)
+	}
+	if view.Total != 3 || view.Done != 1 || view.StatusModel != StatusModelPointer {
+		t.Fatalf("counts/model: %d/%d %s", view.Done, view.Total, view.StatusModel)
+	}
+	byID := map[string]*RoadmapNode{}
+	for _, n := range flattenNodes(view.Nodes) {
+		byID[n.ID] = n
+	}
+	if n := byID["AA-01"]; n == nil || n.Status != RoadmapTaskDone || n.InQueue {
+		t.Errorf("AA-01: %+v", n)
+	}
+	if n := byID["AA-02"]; n == nil || !n.Current || n.Status != RoadmapTaskActive || n.Name != "second" || !n.HasDetail {
+		t.Errorf("AA-02: %+v", n)
+	}
+	if n := byID["AA-03"]; n == nil || n.Current || !n.InQueue || n.Status != RoadmapTaskPending {
+		t.Errorf("AA-03: %+v", n)
+	}
+}
+
+func TestReadRoadmap_IndexTableAndHeadingFile(t *testing.T) {
+	index := "# Index\n\n| ID | Task | Status |\n|---|---|---|\n| MM-01 | **One** | planned |\n\n## MM-01: One\n\nbody\n"
+	dir := writeFiles(t, map[string]string{
+		"M.md":         index,
+		"F.md":         headingOnlyTasks,
+		"STATUS-P1.md": "F.md:9\nM.md:7\n",
+	})
+	view, err := ReadRoadmap(dir, "STATUS-P1.md")
+	if err != nil {
+		t.Fatalf("ReadRoadmap: %v", err)
+	}
+	if len(view.Nodes) != 2 {
+		t.Fatalf("want 2 file groups, got %d", len(view.Nodes))
+	}
+	var current []string
+	for _, n := range flattenNodes(view.Nodes) {
+		if n.Current {
+			current = append(current, n.ID)
+		}
+	}
+	if len(current) != 1 || current[0] != "AA-02" {
+		t.Errorf("current = %v, want [AA-02]", current)
+	}
+}
+
+func TestReadRoadmap_HeadingMissingFromTableStaysQueued(t *testing.T) {
+	doc := "| ID | Task | Status |\n|---|---|---|\n| MM-01 | **One** | planned |\n\n## MM-01: One\n\n## MM-02: Two\n"
+	dir := writeFiles(t, map[string]string{"M.md": doc, "STATUS-P1.md": "M.md:7\n"})
+	view, err := ReadRoadmap(dir, "STATUS-P1.md")
+	if err != nil {
+		t.Fatalf("ReadRoadmap: %v", err)
+	}
+	found := false
+	for _, n := range flattenNodes(view.Nodes) {
+		if n.ID == "MM-02" {
+			found = n.InQueue && n.Current
+		}
+	}
+	if !found {
+		t.Errorf("MM-02 not queued: %+v", view)
+	}
+}
+
+func TestReadRoadmapRowDetail_HeadingSection(t *testing.T) {
+	dir := writeFiles(t, map[string]string{"F.md": headingOnlyTasks})
+	got, err := ReadRoadmapRowDetail(dir, "F.md", 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "body two") || !strings.Contains(got, "more two") {
+		t.Errorf("section lost its body: %q", got)
+	}
+	if strings.Contains(got, "AA-03") || strings.Contains(got, "body three") {
+		t.Errorf("section leaked the next task: %q", got)
+	}
+	first, _ := ReadRoadmapRowDetail(dir, "F.md", 3)
+	if strings.Contains(first, "body two") || !strings.Contains(first, "body one") {
+		t.Errorf("first section wrong: %q", first)
+	}
+}
