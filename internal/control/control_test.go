@@ -72,6 +72,12 @@ func (m *mockManager) GetSessionMetrics(id string) (session.SessionMetrics, erro
 	return session.SessionMetrics{}, nil
 }
 func (m *mockManager) GetDailyCost(date string) (float64, error)                    { return 0, nil }
+func (m *mockManager) GetDailyTokens(date string) (session.DailyTokens, error) {
+	return session.DailyTokens{Date: date}, nil
+}
+func (m *mockManager) GetProjectTokens(project string, days int) (session.DailyTokens, error) {
+	return session.DailyTokens{}, nil
+}
 func (m *mockManager) GetProjectCost(project string, days int) (float64, error)     { return 0, nil }
 func (m *mockManager) GetRateLimitStatus() *session.RateLimitInfo                   { return nil }
 func (m *mockManager) ClearSessionState(project, name string)                       {}
