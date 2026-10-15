@@ -76,6 +76,9 @@ claude-manager/
 │   │   ├── interrupt.go             # Session.Interrupt: control_request interrupt aborts the turn in flight, session waits for the next message
 │   │   ├── slashcmds.go             # "/" autocomplete catalog per runtime; Hermes `/skill` → `-s`
 │   │   └── ratelimit.go             # Rate limit detection, retry logic, timers
+│   ├── worktree/
+│   │   └── slot.go                  # Session work folder: SlotName (worktree_name / p<N>-work / <name>-work), EnsureSlot (pool slot
+│   │                                #   under .claude/worktrees/, repairs an interrupted checkout, never deletes)
 │   ├── permission/
 │   │   ├── handler.go               # Handle permission_request: auto-approve rules -> UI queue -> stdin
 │   │   ├── rules.go                 # Match rules from TOML + runtime (glob patterns)
