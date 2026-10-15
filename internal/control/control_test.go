@@ -42,6 +42,15 @@ func (m *mockManager) ResumeSession(id string) error                            
 func (m *mockManager) StartProject(project string) error                           { return nil }
 func (m *mockManager) StopProject(project string) error                            { return nil }
 func (m *mockManager) SendMessage(id, message string) error                        { return nil }
+func (m *mockManager) SendMessageWithImages(id, message string, images []session.ImageAttachment) error {
+	m.record("SendMessageWithImages", id, message, fmt.Sprint(len(images)))
+	return nil
+}
+func (m *mockManager) SetSessionModel(id, model string) error {
+	m.record("SetSessionModel", id, model)
+	return nil
+}
+func (m *mockManager) GetPendingQuestions() []session.QuestionInfo { return nil }
 func (m *mockManager) ListSlashCommands(id string) ([]session.SlashCommand, error) { return nil, nil }
 func (m *mockManager) RespondPermission(id, requestID, decision string) error      { return nil }
 func (m *mockManager) GetPendingPermissions() []permission.PermissionRequest       { return nil }

@@ -1,0 +1,15 @@
+{
+  "name": "session-lifecycle",
+  "fakeclaude_dir": "testdata/scenarios",
+  "config": "testdata/configs/no-tasks-interactive.toml",
+  "steps": [
+    {"do": "StartSessionWithModel", "with": {"project": "lumen", "session": "P1", "model": "sonnet", "effort": "low"}},
+    {"wait": "session:status", "match": {"id": "lumen/P1", "status": "idle"}, "timeout_ms": 8000},
+    {"assert": "GetSessionOverview", "with": {"id": "lumen/P1"}, "expect": {"pending_permissions": [], "pending_question": null}},
+    {"assert": "ListSlashCommands", "with": {"id": "lumen/P1"}},
+    {"wait": "session:status", "match": {"id": "lumen/P1", "status": "idle"}, "timeout_ms": 8000},
+    {"do": "StopAll"},
+    {"do": "ClearSessionState", "with": {"project": "lumen", "session": "P1"}},
+    {"assert": "GetSessionState", "with": {"project": "lumen", "session": "P1"}}
+  ]
+}

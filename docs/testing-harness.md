@@ -51,11 +51,17 @@ Any normal launch — `wails dev` or the built `claude-manager.exe` — starts t
 
 | Tool | What it does |
 |---|---|
-| `start_session` | Start a session by project + name |
+| `start_session` | Start a session by `session_id`, optionally with `model`, `effort`, `runtime` |
 | `stop_session` | Stop a session (soft=true waits for current task) |
 | `interrupt_session` | Abort the current action (turn) without stopping the session; it then waits for `send_message` |
 | `restart_session` | Hard restart or resume from saved CLI session ID |
-| `send_message` | Send a user message to a running session |
+| `send_message` | Send a user message (optionally `images[]`) to a running session |
+| `start_ad_hoc_chat` | Open an unconfigured `Chat` session in a project |
+| `start_project` / `stop_project` / `stop_all_sessions` | Start or stop every session of a project / of all projects (`confirm=true`) |
+| `set_session_model` / `set_session_runtime` | Switch a session's model live / its CLI (claude or hermes) while stopped |
+| `clear_session_state` | Forget the saved conversation so the next start is fresh |
+| `get_session` | One session in full: status, task, pending questions/permissions, saved state |
+| `list_slash_commands` | Slash commands and skills a session offers |
 | `approve_permission` | Approve a pending permission request |
 | `deny_permission` | Deny a pending permission request |
 | `get_sessions` | Snapshot of all sessions (status, model, metrics) |
