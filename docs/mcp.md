@@ -616,3 +616,35 @@ GUI-приложению; в `playwright-server` они отвечают оши�
 
 **App или менеджер.** `approve_roadmap` и чтение roadmap нужны GUI-приложению (конфиг и папка проекта);
 в `playwright-server` они отвечают ошибкой «needs the Claude Manager app». Остальное работает с любым менеджером.
+
+## Навыки
+
+Область MCP-11: experience layer (кандидаты в навыки, их дистилляция, применение, автопилот). Реализация —
+`internal/control/rpc_skills.go` (RPC), `mcptools_skills.go` (инструменты). Окон, ожидающих решения, нет:
+`parityPending` для этой области пуст.
+
+**Флаги.** MCP ничего не включает в обход флагов, а сообщает, какой нужен. Кандидаты берутся из истории
+действий, которая пишется только при `[optimization] experience_tracking = true`; с выключенным флагом или
+короткой историей `get_skill_candidates` отвечает пустым списком, а сводка называет флаг. Автопилот работает
+только при `auto_skills` проекта: `run_skill_autopilot` при выключенном отвечает ошибкой с подсказкой
+`set_skill_autopilot`. Единственный явный способ включить — `set_skill_autopilot` (admin); он же включает
+`experience_tracking`. Ничего не пишется в репозиторий без `approve_skill` / `restore_skill` (admin) или
+включённого автопилота.
+
+| Инструмент | Уровень | Что делает |
+|---|---|---|
+| `get_skill_candidates` | read | Повторяющиеся паттерны действий проекта, лучшие первыми; `sig` кандидата идёт в `distill_skill`. Страницами |
+| `distill_skill` | operate | Запускает модель и сохраняет черновик навыка (`status=draft`) с `id` и `md`; кандидат ищется по `sig`, ворота берутся из конфига проекта. Стоит денег, в проект ничего не пишет; ниже порога — ошибка со счётом |
+| `get_skills` | read | Навыки проекта во всех статусах (draft, trial, approved, rejected, archived); фильтр `status`, текст `md` только с `include_md=true`. Страницами |
+| `approve_skill` | admin | Пишет `.claude/skills/<name>/SKILL.md`; без `md` берётся сохранённый черновик. С `auto_skills` навык идёт в испытание, иначе одобрен. Существующий файл без `overwrite=true` не трогает |
+| `archive_skill` | operate | Убирает папку навыка из `.claude/skills` в `.claude-manager/archived-skills` |
+| `restore_skill` | admin | Возвращает архивный навык (или применяет отклонённый); `overwrite` как у `approve_skill` |
+| `get_skill_usage` | read | Сколько раз агенты загружали каждый навык |
+| `get_skill_quality` | read | Прогоны до и после одобрения навыка; флаги `insufficient_data` и `stale` |
+| `get_skill_autopilot` | read | `enabled` (auto_skills), `tracking` (experience_tracking), бюджет и расход |
+| `set_skill_autopilot` | admin | Включает или выключает автопилот проекта и задаёт дневной бюджет (0 — без лимита) |
+| `run_skill_autopilot` | operate | Один шаг автопилота сейчас; отчёт о применённых, оставленных, архивированных и отклонённых |
+
+**App или менеджер.** Все инструменты области нужны GUI-приложению (хранилище навыков, дистиллятор, автопилот);
+в `playwright-server` они отвечают ошибкой «needs the Claude Manager app». Идентификатор навыка `skill_id` —
+строка или число.

@@ -24,3 +24,12 @@ func (c controlApp) SyncProjectMirrorsResults() (any, error) {
 func (c controlApp) MirrorStatusOf(project string) any {
 	return c.App.GetProjectMirror(project)
 }
+
+// The App, wrapped as controlApp, must keep serving the skills RPCs (MCP-11).
+var _ control.SkillsApp = controlApp{}
+
+// SkillAutopilotOf is GetSkillAutopilot with its package-main result type
+// returned as a plain value (control.SkillsApp).
+func (c controlApp) SkillAutopilotOf(project string) (any, error) {
+	return c.App.GetSkillAutopilot(project)
+}

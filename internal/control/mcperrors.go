@@ -14,6 +14,7 @@ var (
 	reNoPermission  = regexp.MustCompile(`no pending permission with id "([^"]*)"`)
 	reAlreadyRun    = regexp.MustCompile(`session "([^"]*)" already running \(status=([a-z_]+)\)`)
 	reTaskNotRun    = regexp.MustCompile(`mixed task "([^"]*)" is not running`)
+	reAutopilotOff  = regexp.MustCompile(`skill autopilot is off for (\S+)`)
 )
 
 // ExplainError turns a control-plane failure into an actionable tool error:
@@ -47,6 +48,8 @@ func ExplainError(tool string, err error, lookup func(tool string) []any) string
 		return fmt.Sprintf("Session %q is already running (status %s). To talk to it use send_message; to cancel its current turn use interrupt_session; to restart it use stop_session, then start_session.", m[1], m[2])
 	case reTaskNotRun.MatchString(msg):
 		return fmt.Sprintf("Mixed task %q is not running, so it cannot be cancelled. Its final state is in get_mixed_rounds.", reTaskNotRun.FindStringSubmatch(msg)[1])
+	case reAutopilotOff.MatchString(msg):
+		return fmt.Sprintf("The skill autopilot is off for %q (auto_skills). It is not switched on behind your back: if you are authorised, call set_skill_autopilot with enabled=true (it also turns on [optimization] experience_tracking); get_skill_autopilot shows the current state.", reAutopilotOff.FindStringSubmatch(msg)[1])
 	case msg == "wait timeout":
 		return fmt.Sprintf("%s timed out: the awaited condition did not happen in time. Check the current state with get_sessions or get_session_logs, then call again, optionally with a larger timeout_ms.", tool)
 	case strings.HasPrefix(msg, "method not found"):

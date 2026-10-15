@@ -443,6 +443,119 @@
   },
   {
     "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Approve skill"
+    },
+    "description": "Write a skill draft into the project as .claude/skills/\u003cname\u003e/SKILL.md so the agents load it. Use when: distill_skill or get_skills gave a draft you are authorised to make real. Not for: bringing back an archived skill (use restore_skill). Returns: ok, the skill_id and the path of the file written. Side effects: writes a file into the project folder; with the project's auto_skills on the skill starts a trial the autopilot judges, otherwise it is approved; overwrite=true replaces an existing file. Access: admin. Example: {\"project\":\"lumen\",\"skill_id\":\"7\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "md": {
+          "description": "Final skill text (SKILL.md) to write; omit to write the draft as distilled",
+          "type": "string"
+        },
+        "overwrite": {
+          "description": "True to replace a skill file that already exists in the project; otherwise the call fails when it exists",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen; used to find the stored draft text when md is omitted",
+          "type": "string"
+        },
+        "skill_id": {
+          "description": "Skill ID, the id of an item of get_skills or distill_skill, e.g. 7",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "skill_id"
+      ],
+      "type": "object"
+    },
+    "name": "approve_skill",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was done",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "File written into the project; empty when the action writes none",
+          "type": "string"
+        },
+        "skill_id": {
+          "description": "The skill acted on",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "skill_id"
+      ],
+      "type": "object"
+    },
+    "title": "Approve skill"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Archive skill"
+    },
+    "description": "Switch a skill off: an applied skill's folder is moved out of .claude/skills so the agents stop seeing it. Use when: a skill is stale or hurts, and you want it off without losing it. Not for: deleting it for good, or bringing it back (use restore_skill). Returns: ok and the skill_id. Side effects: moves the skill folder to .claude-manager/archived-skills inside the project; a draft or rejected row is only marked archived. Access: operate. Example: {\"skill_id\":\"7\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "skill_id": {
+          "description": "Skill ID, the id of an item of get_skills or distill_skill, e.g. 7",
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill_id"
+      ],
+      "type": "object"
+    },
+    "name": "archive_skill",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was done",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "File written into the project; empty when the action writes none",
+          "type": "string"
+        },
+        "skill_id": {
+          "description": "The skill acted on",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "skill_id"
+      ],
+      "type": "object"
+    },
+    "title": "Archive skill"
+  },
+  {
+    "_meta": {
       "cm/accessLevel": "operate"
     },
     "annotations": {
@@ -782,6 +895,65 @@
       "type": "object"
     },
     "title": "Dispatch mixed task"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Distil a skill"
+    },
+    "description": "Turn one skill candidate into a skill draft with a model run and save it as a draft; nothing is written into the project yet. Use when: get_skill_candidates lists a pattern worth capturing and you want its draft to review. Not for: writing the skill into the project (use approve_skill) or the automatic loop (use run_skill_autopilot). Returns: the draft skill, including its id and md; fails with the score and threshold when the candidate is below the threshold. Side effects: runs a model session that spends tokens; the project is not changed until approve_skill. Access: operate. Example: {\"project\":\"lumen\",\"sig\":[\"Bash:go test\",\"Edit\"]}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "min_score": {
+          "description": "Lowest candidate score to accept; omit or 0 for the relative threshold (the best share of the project's candidates)",
+          "type": "number"
+        },
+        "model": {
+          "description": "Model that writes the skill, e.g. sonnet; default the distiller model",
+          "type": "string"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        },
+        "sig": {
+          "description": "Signature sequence of the candidate to distil, the sig of an item of get_skill_candidates, e.g. [\"Bash:go test\",\"Edit\"]",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "project",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "name": "distill_skill",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "skill": {
+          "description": "The skill draft: id, name, status, md and the other fields of get_skills"
+        }
+      },
+      "required": [
+        "skill"
+      ],
+      "type": "object"
+    },
+    "title": "Distil a skill"
   },
   {
     "_meta": {
@@ -2583,6 +2755,347 @@
       "idempotentHint": false,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Get skill autopilot"
+    },
+    "description": "Show whether the skill autopilot is on for a project, its daily budget and what it has spent. Use when: you check the experience layer's switches before relying on candidates or the autopilot. Not for: changing them (use set_skill_autopilot). Returns: enabled (auto_skills), tracking (experience_tracking), budget and spending, trial_runs. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name as in get_sessions, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_skill_autopilot",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "daily_budget_usd": {
+          "description": "Daily spending cap in US dollars; 0 means no cap",
+          "type": "number"
+        },
+        "enabled": {
+          "description": "True when auto_skills is on for the project",
+          "type": "boolean"
+        },
+        "spent_today_usd": {
+          "description": "Spent today on auto-distilled skills",
+          "type": "number"
+        },
+        "spent_total_usd": {
+          "description": "Spent in all on auto-distilled skills",
+          "type": "number"
+        },
+        "tracking": {
+          "description": "True when [optimization] experience_tracking is on; without it nothing is indexed and the autopilot does not run",
+          "type": "boolean"
+        },
+        "trial_runs": {
+          "description": "Runs a skill stays in trial before the autopilot judges it",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "enabled",
+        "tracking",
+        "daily_budget_usd",
+        "spent_today_usd",
+        "spent_total_usd",
+        "trial_runs"
+      ],
+      "type": "object"
+    },
+    "title": "Get skill autopilot"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get skill candidates"
+    },
+    "description": "List the action patterns of a project's past runs that are worth turning into a skill, best first. Use when: you look for a repeated workflow to capture before distill_skill. Not for: skills that already exist (use get_skills). Returns: candidates with their sig, score and run counts, with next_cursor and truncated when more exist; empty when experience tracking is off or the history is short. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Project name, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_skill_candidates",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "candidates": {
+          "description": "Ranked skill candidates: sig, distinct_runs, run_share, score, kind, context_loss_suspect, imported, related_failures (count), first_seen and last_seen; empty without enough history",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "candidates",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "title": "Get skill candidates"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get skill quality"
+    },
+    "description": "Compare the runs before and after each approved skill of a project: does the skill help. Use when: you judge a skill's effect before keeping or archiving it. Not for: how often a skill is loaded (use get_skill_usage). Returns: one effect per approved skill, with insufficient_data and stale flags, with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Project name, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_skill_quality",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "effects": {
+          "description": "Per approved skill: skill_id, skill_name, approved_at and the before and after run statistics, insufficient_data and stale",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "effects",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "title": "Get skill quality"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get skill usage"
+    },
+    "description": "Show how often agents actually load each skill of a project. Use when: you decide whether a skill is used or should be archived. Not for: whether a skill improves runs (use get_skill_quality). Returns: one entry per skill with loads and runs counts, with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Project name, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_skill_usage",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
+        },
+        "usage": {
+          "description": "Per skill: skill_id, name, loads, last_loaded_at, runs_since_applied, runs_with_load and runs_since_last_load",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "usage",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "title": "Get skill usage"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get skills"
+    },
+    "description": "List the skills of a project in every status: drafts, trials, approved, rejected and archived. Use when: you review what the experience layer produced or look up a skill id. Not for: how much a skill is used (use get_skill_usage) or whether it helps (use get_skill_quality). Returns: skills with id, name, status, origin and dates (and md when asked), with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\",\"status\":\"draft\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "include_md": {
+          "description": "True to include the skill text (md) of every item; off by default because skill texts are long",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Project name, e.g. lumen",
+          "type": "string"
+        },
+        "status": {
+          "description": "Only skills in this status: draft, rejected, trial, approved or archived; omit for all",
+          "enum": [
+            "draft",
+            "rejected",
+            "trial",
+            "approved",
+            "archived"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_skills",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
+        "skills": {
+          "description": "Skills of the project: id, name, status, origin, reason, cost_usd, created_at, approved_at, archived_at, updated_at, and md when asked",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "skills",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "title": "Get skills"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Get token cost by tool"
     },
     "description": "Estimate which tool calls fill a project's context: tokens per signature, per tool and per result length. Use when: you look for the calls that cost the most context, to trim or replace them. Not for: dollar cost (use get_cost) or timing (use get_duration_profile). Returns: report with the totals and the three tables; empty unless experience tracking was on. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\",\"top_n\":10}",
@@ -3271,6 +3784,60 @@
   },
   {
     "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Restore skill"
+    },
+    "description": "Bring an archived skill back into .claude/skills, or apply a rejected one anyway. Use when: an archived skill is needed again, or you overrule the autopilot's rejection. Not for: a fresh draft (use approve_skill). Returns: ok, the skill_id and the path of the file written. Side effects: writes a file into the project folder; with the project's auto_skills on a new trial starts, otherwise the skill is approved; overwrite=true replaces an existing file. Access: admin. Example: {\"skill_id\":\"7\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "overwrite": {
+          "description": "True to replace a skill file that already exists in the project; otherwise the call fails when it exists",
+          "type": "boolean"
+        },
+        "skill_id": {
+          "description": "Skill ID of an archived or rejected skill, the id of an item of get_skills, e.g. 7",
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill_id"
+      ],
+      "type": "object"
+    },
+    "name": "restore_skill",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was done",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "File written into the project; empty when the action writes none",
+          "type": "string"
+        },
+        "skill_id": {
+          "description": "The skill acted on",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "skill_id"
+      ],
+      "type": "object"
+    },
+    "title": "Restore skill"
+  },
+  {
+    "_meta": {
       "cm/accessLevel": "operate"
     },
     "annotations": {
@@ -3313,6 +3880,91 @@
       "type": "object"
     },
     "title": "Run preflight analysis"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Run skill autopilot"
+    },
+    "description": "Run one autopilot step for a project now instead of waiting for the next finished run. Use when: get_skill_autopilot shows it on and you want a step immediately. Not for: turning it on (use set_skill_autopilot); it fails while auto_skills is off. Returns: what the step applied, kept, archived and rejected, or why it was idle. Side effects: may run model sessions up to the daily budget and write or archive skill files in the project. Access: operate. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name as in get_sessions, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "run_skill_autopilot",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "applied": {
+          "description": "Skills put into the project as a trial in this step",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "archived": {
+          "description": "Skills switched off in this step",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "idle": {
+          "description": "Why nothing happened, e.g. not enough runs; empty when something did",
+          "type": "string"
+        },
+        "kept": {
+          "description": "Trial skills judged good and approved",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "rejected": {
+          "description": "Drafts the reviewer turned down",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "applied",
+        "kept",
+        "archived",
+        "rejected",
+        "idle"
+      ],
+      "type": "object"
+    },
+    "title": "Run skill autopilot"
   },
   {
     "_meta": {
@@ -3702,6 +4354,72 @@
       "type": "object"
     },
     "title": "Set session runtime"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Set skill autopilot"
+    },
+    "description": "Turn the skill autopilot on or off for a project and set its daily budget. Use when: you are authorised to let the experience layer distil, trial and judge skills on its own. Not for: a single manual step (use distill_skill and approve_skill) or running one step now (use run_skill_autopilot). Returns: ok and the state and budget now in force. Side effects: writes the project's private config.local.toml; turning it on also turns on [optimization] experience_tracking, and the autopilot then spends tokens and writes skills into the project. Access: admin. Example: {\"project\":\"lumen\",\"enabled\":true,\"daily_budget_usd\":2}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "daily_budget_usd": {
+          "description": "Most the autopilot may spend on distilling per day, in US dollars; 0 or omitted means no cap",
+          "minimum": 0,
+          "type": "number"
+        },
+        "enabled": {
+          "description": "True to turn the skill autopilot on for the project, false to turn it off",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "name": "set_skill_autopilot",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "daily_budget_usd": {
+          "description": "The daily cap now; 0 means no cap",
+          "type": "number"
+        },
+        "enabled": {
+          "description": "The autopilot state now",
+          "type": "boolean"
+        },
+        "ok": {
+          "description": "True when the setting was saved",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "The project changed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "project",
+        "enabled",
+        "daily_budget_usd"
+      ],
+      "type": "object"
+    },
+    "title": "Set skill autopilot"
   },
   {
     "_meta": {

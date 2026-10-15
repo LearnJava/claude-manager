@@ -326,6 +326,7 @@ claude-manager/
 │                                    #   rpc_projects.go + cfgops.go (point config edits, dry_run diff, version)
 │                                    #   rpc_logs.go + mcptools_logs.go (log search/export, cost, experience tables)
 │                                    #   rpc_planning.go + mcptools_planning.go (roadmap RPCs; preflight, roadmap and mixed tools)
+│                                    #   rpc_skills.go + mcptools_skills.go (experience layer: skill candidates, distil, approve, autopilot)
 ├── testdata/                        # scenarios/ (fakeclaude), worker-scenarios/ (fakeworker),
 │                                    #   e2e/ (runner, incl. mixed-*.json), configs/,
 │                                    #   transcripts/ (LN-01: trimmed real JSONL fixtures)

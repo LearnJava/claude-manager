@@ -24,17 +24,6 @@ var parityExcluded = map[string]string{
 // task of MCP-TASKS.md (value = that task). The list only shrinks: once a
 // tool covers a method it must leave this map, and the test fails until it does.
 var parityPending = map[string]string{
-	"GetSkillCandidates": "MCP-11",
-	"DistillSkill": "MCP-11",
-	"GetSkills": "MCP-11",
-	"ApproveSkill": "MCP-11",
-	"ArchiveSkill": "MCP-11",
-	"RestoreSkill": "MCP-11",
-	"GetSkillUsage": "MCP-11",
-	"GetSkillAutopilot": "MCP-11",
-	"SetSkillAutopilot": "MCP-11",
-	"RunSkillAutopilot": "MCP-11",
-	"GetSkillQuality": "MCP-11",
 }
 
 // TestMCPParity: every exported *App method (the Wails bindings = every GUI

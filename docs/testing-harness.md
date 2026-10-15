@@ -75,6 +75,7 @@ Any normal launch — `wails dev` or the built `claude-manager.exe` — starts t
 | `search_session_log` / `get_history` / `get_session_metrics` | Filter a session log by level/tool/text; past runs; one session's tokens and cost |
 | `get_cost` / `export_log` / `get_top_actions` / `get_model_advice` | Day or project cost and tokens; log to a file (returns the path); experience tables; model recommendation (see docs/mcp.md "Логи и метрики" for the rest) |
 | `session_preflight` / `generate_roadmap` / `approve_roadmap` / `get_session_roadmap` / `get_mixed_quality` / `cancel_mixed_task` | Preflight gate of a session; draft roadmap from an idea and its approval (writes ROADMAP.md); roadmap tree and row/task text; worker comparison; cancel a mixed task (see docs/mcp.md "Планирование и mixed" for the rest) |
+| `get_skill_candidates` / `distill_skill` / `get_skills` / `approve_skill` / `archive_skill` / `restore_skill` / `get_skill_usage` / `get_skill_quality` / `get_skill_autopilot` / `set_skill_autopilot` / `run_skill_autopilot` | Experience layer: candidate patterns, distil a draft, list, write into the project, switch off and back, usage and effect, autopilot state, switch and one step (see docs/mcp.md "Навыки") |
 | `wait_for_status` | Block until session reaches a target status |
 | `wait_for_event` | Block until a specific event is emitted |
 | `set_global_settings` | Deprecated alias of a whole-config write; use `update_global_settings` |
