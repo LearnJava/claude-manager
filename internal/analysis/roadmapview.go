@@ -542,8 +542,10 @@ func parseRoadmap(content string, open map[int]bool, firstOpen int) *RoadmapView
 	return view
 }
 
-// headingTaskRe matches a task heading: "## QV-01: title" (levels 2-4).
-var headingTaskRe = regexp.MustCompile(`^(#{2,4})\s+([A-Za-zА-Яа-я]+[-_]?\d+(?:\.\d+)*):\s*(.*?)\s*$`)
+// headingTaskRe matches a task heading: "## QV-01: title" (levels 2-4). The
+// id may carry further numeric parts — "LN-03.1", "ARB1026-02" (a Jira key
+// plus a step number).
+var headingTaskRe = regexp.MustCompile(`^(#{2,4})\s+([A-Za-zА-Яа-я]+[-_]?\d+(?:[-_.]\d+)*):\s*(.*?)\s*$`)
 
 // appendHeadingTasks adds tasks that live only as `## <ID>: <title>` headings.
 //
@@ -1042,8 +1044,9 @@ func confinedPath(root, rel string) (string, error) {
 // ---- pointer remapping ----
 
 // pointerIDRe pulls the task id out of a pointed-at line that is not a table
-// row: "## LN-02: Сигнатуры…" → "LN-02", "### BUG-349 …" → "BUG-349".
-var pointerIDRe = regexp.MustCompile(`^[#>\-*\s\x60]*([A-Za-zА-Яа-я]+[-_]?\d+(?:\.\d+)*)`)
+// row: "## LN-02: Сигнатуры…" → "LN-02", "### BUG-349 …" → "BUG-349",
+// "## ARB1026-02: …" → "ARB1026-02".
+var pointerIDRe = regexp.MustCompile(`^[#>\-*\s\x60]*([A-Za-zА-Яа-я]+[-_]?\d+(?:[-_.]\d+)*)`)
 
 // remapPointers resolves pointer lines that do not land on a table row.
 //
