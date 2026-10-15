@@ -163,3 +163,31 @@ func ensureIgnored(ctx context.Context, projectPath string) error {
 	}
 	return nil
 }
+
+// Release frees the branch a slot sits on so another checkout (the project
+// root, once use_worktree is off) can take it: the slot is switched to a
+// detached HEAD at the same commit, nothing is lost. branch is "" when path
+// is not a worktree or already detached. A slot with uncommitted changes to
+// tracked files is left alone and reported as dirty — moving them is the
+// session's job, not the manager's.
+func Release(ctx context.Context, path string) (branch string, dirty bool, err error) {
+	if _, ok := readGitdir(path); !ok {
+		return "", false, nil
+	}
+	out, err := runGit(ctx, path, "symbolic-ref", "--short", "-q", "HEAD")
+	branch = strings.TrimSpace(out)
+	if err != nil || branch == "" {
+		return "", false, nil
+	}
+	out, err = runGit(ctx, path, "status", "--porcelain", "--untracked-files=no")
+	if err != nil {
+		return branch, false, err
+	}
+	if strings.TrimSpace(out) != "" {
+		return branch, true, nil
+	}
+	if _, err := runGit(ctx, path, "switch", "-q", "--detach"); err != nil {
+		return branch, false, err
+	}
+	return branch, false, nil
+}

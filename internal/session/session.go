@@ -411,6 +411,13 @@ type Session struct {
 	crashRecovery   bool
 	resumeSessionID string // set before Run loop; cleared after first runOnce
 	workDir         string // directory the CLI runs in (pool slot or project root), see prepareWorkDir
+	// prevWorkDir is the work folder of the interrupted run a crash recovery
+	// resumes (PersistedState.WorkDir); prepareWorkDir compares it with the
+	// new one when s.workDir is still empty (first run of this Session).
+	prevWorkDir string
+	// pendingWorkDirNote tells the next prompt that the work folder changed
+	// (see workDirSwitchNote; protected by mu; consumed by initialPromptText).
+	pendingWorkDirNote string
 	startW          *startWatch // narrates CLI start-up until the init event
 
 	pythonUTF8   bool // see Params.PythonUTF8
@@ -997,6 +1004,7 @@ func (s *Session) Run(ctx context.Context) {
 				)
 				s.mu.Lock()
 				s.resumeSessionID = saved.SessionID
+				s.prevWorkDir = saved.WorkDir
 				s.mu.Unlock()
 			} else {
 				// State file exists but session_id was never written (crash before
@@ -1711,11 +1719,27 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	return nil
 }
 
-// initialPromptText returns the prompt to send at session start.
+// initialPromptText returns the prompt to send at session start, preceded by
+// the work-folder note when the folder changed since the previous run (see
+// workDirSwitchNote). An empty prompt stays empty: the note alone must not
+// start a turn in a session waiting for the user.
+func (s *Session) initialPromptText(forceInteractive bool) string {
+	s.mu.Lock()
+	note := s.pendingWorkDirNote
+	s.pendingWorkDirNote = ""
+	s.mu.Unlock()
+	prompt := s.initialPromptBody(forceInteractive)
+	if note != "" && prompt != "" {
+		prompt = note + "\n\n" + prompt
+	}
+	return prompt
+}
+
+// initialPromptBody returns the prompt to send at session start.
 // When recovering from a crash, returns the CrashRecoveryPrompt (or a default).
 // forceInteractive (no queued tasks, see Run()) takes over only when there is
 // nothing to recover — an interrupted task still takes priority.
-func (s *Session) initialPromptText(forceInteractive bool) string {
+func (s *Session) initialPromptBody(forceInteractive bool) string {
 	s.mu.Lock()
 	recovering := s.resumeSessionID != ""
 	taskDesc := s.taskSourceDesc
