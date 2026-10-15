@@ -1,0 +1,14 @@
+{
+  "name": "eval-roadmap",
+  "match": "(?i)eval-roadmap",
+  "model": "claude-opus-4-6",
+  "context_window": 200000,
+  "exit_code": 0,
+  "steps": [
+    {
+      "type": "emit",
+      "delay_ms": 0,
+      "event": {"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.05,"result":{"feasibility":{"single_session":false,"confidence":0.8,"reasoning":"Three phases of work","estimated_complexity":"medium","estimated_files_affected":6,"estimated_tokens":90000,"risks":[]},"recommended_approach":"Build storage first, then the API, then the UI.","recommended_model":"sonnet","recommended_effort":"medium","subtasks":[{"id":"EV-01","name":"Storage layer","summary":"Bookmark storage","prompt":"Implement the bookmark storage layer.","model":"sonnet"},{"id":"EV-02","name":"HTTP API","summary":"REST API over storage","prompt":"Implement the HTTP API.","depends_on":["EV-01"],"model":"sonnet"},{"id":"EV-03","name":"Web UI","summary":"Single page UI","prompt":"Implement the web UI.","depends_on":["EV-02"],"model":"sonnet"}],"execution_order":[["EV-01"],["EV-02"],["EV-03"]],"shared_context":"Go service with a small web UI."}}
+    }
+  ]
+}

@@ -212,3 +212,31 @@ func TestErrorExit(t *testing.T) {
 		t.Errorf("result subtype = %q, want error", resultEvent["subtype"])
 	}
 }
+
+// TestPrintModeRoadmap: a one-shot `-p` run takes its prompt from the last
+// argument, reads no stdin and emits the matched scenario's result.
+func TestPrintModeRoadmap(t *testing.T) {
+	t.Setenv("FAKECLAUDE_SPEED", "1000")
+	var buf bytes.Buffer
+	args := []string{"-p", "--verbose", "--model", "opus", "Analyze this task: eval-roadmap bookmarks"}
+	code := run(args, strings.NewReader(""), &buf, "../../testdata/scenarios")
+	if code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	events := parseEvents(t, buf.String())
+	if len(events) != 1 || events[0]["type"] != "result" {
+		t.Fatalf("want one result event, got %v", events)
+	}
+}
+
+func TestPrintModePrompt(t *testing.T) {
+	if _, ok := printModePrompt([]string{"--model", "x"}); ok {
+		t.Error("no -p: not a one-shot run")
+	}
+	if _, ok := printModePrompt([]string{"-p", "--verbose"}); ok {
+		t.Error("last arg is a flag: no prompt")
+	}
+	if p, ok := printModePrompt([]string{"-p", "hello"}); !ok || p != "hello" {
+		t.Errorf("got %q %v", p, ok)
+	}
+}

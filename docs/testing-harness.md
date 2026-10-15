@@ -63,6 +63,10 @@ The tool reference (name, access level, annotations, what it does) and the `App`
 7. Claude asserts final state via get_sessions / get_metrics
 ```
 
+#### Evaluating the tools with a real agent
+
+`CM_MCP_EVAL=1 go run ./cmd/cm-mcp-eval` (spends tokens) lets `claude -p` manage a throw-away manager through `cm-mcp` alone and judges the outcome by the manager's state; `go test ./cmd/cm-mcp-eval` checks the same tasks with scripted agents, free. See "Оценка реальным агентом" in [docs/mcp.md](./mcp.md).
+
 #### Using fakeclaude for deterministic scenarios
 
 Set `claude_path` in the config to `build/fakeclaude.exe` and point `FAKECLAUDE_SCENARIO` at `testdata/scenarios/`. Each scenario file is a JSON array of stream-json events that fakeclaude emits deterministically — no real Claude CLI, no API tokens spent.
