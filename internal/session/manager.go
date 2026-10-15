@@ -386,6 +386,10 @@ type SessionManager struct {
 	// experience_tracking and the project's own AutoSkills flag.
 	skillPilotFn SkillAutopilotFunc
 
+	// queueWatchCancel stops the queue-file poller (queuewatch.go); nil when
+	// not running. Guarded by mu.
+	queueWatchCancel context.CancelFunc
+
 	runtimeRules *permission.RuntimeRuleSet
 	queue        *permission.PendingQueue
 
@@ -559,6 +563,7 @@ func (m *SessionManager) runSkillAutopilot(project, projectPath string) {
 
 // Shutdown stops every session and waits briefly. Safe to call multiple times.
 func (m *SessionManager) Shutdown() {
+	m.stopQueueWatch()
 	m.StopAll()
 }
 

@@ -126,6 +126,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	a.manager = session.NewSessionManager(cfg, a.cfgPath, a.store, sessionEmitter)
+	a.manager.StartQueueWatch() // session:queue_changed (QUEUE-TASKS.md QV-02)
 
 	// Wire the experience-layer indexer (LEARN-TASKS.md LN-03): finishRun
 	// calls this after every run, but only actually opens a transcript when

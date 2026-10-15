@@ -117,3 +117,22 @@ test.describe('Task queue views', () => {
     await expect(page.getByTestId(`queue-mini-${SID}`)).toHaveCount(0);
   });
 });
+
+test('session:queue_changed re-reads the queue (debounced)', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).__roadmapCalls = 0;
+    (window as any).go.main.App.GetSessionRoadmap = () => {
+      (window as any).__roadmapCalls++;
+      return Promise.resolve(null);
+    };
+  });
+  await openS1(page);
+  const calls = () => page.evaluate(() => (window as any).__roadmapCalls as number);
+  await expect.poll(calls).toBeGreaterThan(0);
+  const before = await calls();
+  await page.evaluate((id) => {
+    const w = window as any;
+    for (let i = 0; i < 3; i++) w.__dispatchWailsEvent('session:queue_changed', { id });
+  }, SID);
+  await expect.poll(calls).toBe(before + 1);
+});

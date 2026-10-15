@@ -40,6 +40,7 @@ claude-manager/
 │   ├── session/
 │   │   ├── manager.go               # SessionManager: Start/Stop/Resume/Override/SendMessage/GetAll
 │   │   │                            #   + ClearSessionState/GetSessionState (crash recovery)
+│   │   ├── queuewatch.go            # 2 s poller of every task_source queue file + files its pointers name (Stat only); emits session:queue_changed (QV-02)
 │   │   ├── workdir.go               # prepareWorkDir (CLI cwd = pool slot), start-stage narration (startWatch), slot-conflict guard helper
 │   │   ├── session.go               # Session goroutine: bidirectional streaming, CLI args builder,
 │   │   │                            #   task source check (hasTasks), crash recovery (--resume),
