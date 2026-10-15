@@ -107,8 +107,8 @@
 - `instructions` — 8 строк: что такое менеджер, формат `project/session`,
   жизненный цикл статусов, «не опрашивай — жди через `wait_for_*`»,
   экономия вывода, как читать ошибку «control-plane unreachable», ссылка на
-  этот файл (ресурс `cm://guide` — MCP-13).
-- `capabilities`: только `tools` (без `listChanged`: набор фиксирован) —
+  этот файл (ресурс `cm://guide`).
+- `capabilities`: `tools`, `resources`, `prompts` (без `listChanged`: наборы фиксированы) —
   capability `logging` намеренно не объявляется.
 - `ping` и `notifications/cancelled` обрабатывает SDK; отмена доходит до
   обработчика через `ctx` и обрывает HTTP-вызов в control-plane (в том числе
@@ -681,3 +681,38 @@ GUI-приложению; в `playwright-server` они отвечают оши�
 **App или менеджер.** Все инструменты области нужны GUI-приложению (хранилище навыков, дистиллятор, автопилот);
 в `playwright-server` они отвечают ошибкой «needs the Claude Manager app». Идентификатор навыка `skill_id` —
 строка или число.
+
+## Ресурсы
+
+Область MCP-13. Реализация — `cmd/cm-mcp/resources.go`. Ресурсы только читают; тело каждого строится теми же
+инструментами и тем же кодом `ShapeResult`, что и `tools/call`, поэтому ресурс не показывает больше, чем
+read-инструмент (ни токена control-plane, ни секретов конфига). `resources/list` и
+`resources/templates/list` постраничные средствами SDK; неизвестный URI — JSON-RPC ошибка «resource not found».
+
+| URI | Данные | Источник |
+|---|---|---|
+| `cm://guide` | Это руководство (`text/markdown`). Встроено в бинарник из `docs/mcp.md` через пакет `docs` — второй копии нет | — |
+| `cm://projects` | Проекты, первая страница | `get_projects` |
+| `cm://projects/{project}/config` | Настройки одного проекта и его сессий без секретов, с `version` | `get_config` (`section=project`) |
+| `cm://sessions` | Сессии со статусом и метриками, первая страница | `get_sessions` |
+| `cm://sessions/{project}/{session}` | Полное состояние сессии | `get_session` |
+| `cm://sessions/{project}/{session}/log{?cursor}` | Страница лога; `next_cursor` предыдущей страницы — в `?cursor=` | `get_session_logs` |
+
+У каждого ресурса есть `name`, `title`, `description`, `mimeType` (`application/json`, кроме гайда).
+`instructions` отсылает к `cm://guide`. Capability `resources` объявлена без `listChanged`/`subscribe`.
+
+## Промпты
+
+Готовые сценарии для пользователя клиента (`prompts/list`, `prompts/get`); реализация —
+`cmd/cm-mcp/prompts.go`. Промпт только отдаёт сообщение, а вызовы делает модель клиента — с правами
+текущего уровня доступа. Тест проверяет, что каждый названный в тексте инструмент есть в реестре.
+
+| Промпт | Аргументы | Что ведёт по шагам |
+|---|---|---|
+| `setup_project` | `path`*, `name` | `check_environment` → `add_project` → `get_project_setup` → `generate_claude_md`/`install_session_protocol` → `add_session` → `start_session` |
+| `run_task` | `session_id`*, `task`* | `get_session` → `send_message` → цикл `wait_for_any` с `approve_permission`/`deny_permission`/`answer_question` → `get_session_logs`, `get_cost` |
+| `diagnose_session` | `session_id`* | `get_session` → `get_session_logs`/`search_session_log` → `get_history` → один следующий шаг |
+| `triage_waiting` | — | `get_pending` → решение по каждому → `approve_permission`/`deny_permission`/`answer_question` |
+| `cost_report` | `days`, `project` | `get_cost` (project, day) → `get_metrics` |
+
+`*` — обязательный аргумент; пропуск — ошибка.

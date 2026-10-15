@@ -24,7 +24,7 @@ const serverInstructions = `Claude Manager runs several Claude Code sessions per
 - Do not poll in a loop. Block with wait_for_status or wait_for_event (they take timeout_ms), then act on the result.
 - Keep output small: get_session_logs takes a tail, get_sessions returns summaries.
 - Tool errors come back with isError=true and a hint; a "control-plane unreachable" error means the Claude Manager app is not running - ask the user to start it.
-- Full guide: docs/mcp.md in the claude-manager repository (the cm://guide resource will carry it once resources are added).`
+- Full guide: read the cm://guide resource (also docs/mcp.md in the claude-manager repository). Ready-made scenarios are in prompts/list.`
 
 // newSDKServer builds the protocol layer. The SDK negotiates the protocol
 // revision (legacy initialize and 2026-07-28 _meta/server/discover), handles
@@ -36,12 +36,14 @@ func (s *mcpServer) newSDKServer() *mcp.Server {
 		&mcp.ServerOptions{
 			Instructions: serverInstructions,
 			Logger:       logger,
-			// Tools only: the set is fixed for the process lifetime, and the
+			// Tools, resources, prompts: fixed sets, so no listChanged. The
 			// logging capability is deprecated (diagnostics go to stderr).
-			Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{}},
+			Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{}, Resources: &mcp.ResourceCapabilities{}, Prompts: &mcp.PromptCapabilities{}},
 		},
 	)
 	srv.AddReceivingMiddleware(s.levelMiddleware)
+	s.addResources(srv)
+	s.addPrompts(srv)
 	for _, def := range control.MCPTools {
 		if !s.effectiveLevel().Allows(def.Level) {
 			continue // not listed; a call by name is answered by levelMiddleware
