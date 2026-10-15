@@ -286,3 +286,19 @@ gets a normal reply and a `success` result. Drives
 `TestInterrupt_AbortsTurnAndWaitsForUser`: the interrupted turn neither closes
 stdin nor counts as a failure, the session waits in `waiting_for_user`, and
 the following message continues the same process.
+
+---
+
+### mcp-full-control.json
+**State/Feature:** full management through `cm-mcp` only (MCP-14)
+**Match:** `mcp-full-control`
+
+One interactive process that walks the whole agent-facing surface in order:
+first turn's `result` carries an ```` ```ask-user ```` marker (status
+`waiting_for_user`, answered by `answer_question`); the answer is followed by
+a `permission_request` (`Edit`, id `p1`, answered by `approve_permission`);
+the second turn's `result` reports cost 0.02 / 2 turns, and a last
+`await_stdin` keeps the process open so a model switch, restart and stop have
+a live session to act on. Used by `cmd/cm-mcp/e2e_test.go`
+(`TestE2E_FullControlThroughMCP`); the session prompt must contain
+`mcp-full-control`, which also makes every restarted process replay the script.

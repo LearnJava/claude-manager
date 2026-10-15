@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"claude-manager/internal/control"
@@ -164,10 +165,19 @@ func withClient(ctx context.Context, ss *mcp.ServerSession) context.Context {
 	return ctx
 }
 
+// undeclared lists the methods of capabilities this server does not declare.
+// The SDK answers them anyway (an empty result, or invalid params); a client
+// that probes by method name should get the standard "method not found".
+var undeclared = map[string]bool{"logging/setLevel": true, "completion/complete": true}
+
 // levelMiddleware answers a tools/call for a tool above the configured level
-// with an actionable tool error instead of the SDK's bare "unknown tool".
+// with an actionable tool error instead of the SDK's bare "unknown tool", and
+// refuses the methods of capabilities the server does not declare.
 func (s *mcpServer) levelMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		if undeclared[method] {
+			return nil, &jsonrpc.Error{Code: jsonrpc.CodeMethodNotFound, Message: fmt.Sprintf("method %q is not supported", method)}
+		}
 		if method == "tools/call" {
 			if call, ok := req.(*mcp.CallToolRequest); ok && call.Params != nil {
 				if err := s.checkLevel(call.Params.Name); err != nil {

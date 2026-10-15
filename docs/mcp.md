@@ -716,3 +716,31 @@ read-инструмент (ни токена control-plane, ни секрето�
 | `cost_report` | `days`, `project` | `get_cost` (project, day) → `get_metrics` |
 
 `*` — обязательный аргумент; пропуск — ошибка.
+
+## Проверка
+
+Соответствие спецификации и сквозной сценарий входят в обычный `go test ./cmd/cm-mcp/`:
+
+- `conformance_test.go` собирает настоящий `cm-mcp`, запускает его подпроцессом по stdio и проходит
+  `initialize`, `ping`, `tools/list` и `tools/call`, `resources/list`, `resources/templates/list`,
+  `resources/read`, `prompts/list`, `prompts/get`. Методы необъявленных возможностей
+  (`logging/setLevel`, `completion/complete`, `tasks/*`, `resources/subscribe`) отвечают `-32601`.
+- `e2e_test.go` поднимает настоящий control-plane с `fakeclaude` и ведёт всё только через MCP
+  (клиент из SDK): пустой конфиг → `add_project` → `add_session` → `start_session` → вопрос и
+  `answer_question` → `approve_permission` → логи и метрики → `restart_session` →
+  `set_session_model` → `stop_project` → `remove_session` → `remove_project`. Сценарий fakeclaude —
+  `testdata/scenarios/mcp-full-control.json`.
+
+### MCP Inspector
+
+Вручную (нужны Node/npx и сеть при первом запуске) официальный
+[MCP Inspector](https://github.com/modelcontextprotocol/inspector) в CLI-режиме:
+
+```bash
+scripts/mcp-inspect.sh                                   # tools, resources, templates, prompts
+scripts/mcp-inspect.sh tools/call --tool-name get_sessions
+```
+
+Скрипт собирает `cm-mcp` во временную папку. Запущенное приложение подхватывается из
+`~/.claude-manager/control.json` (или `CM_CONTROL_ADDR` / `CM_CONTROL_TOKEN`); без него списки
+работают, а `tools/call` вернёт «control-plane unreachable».
