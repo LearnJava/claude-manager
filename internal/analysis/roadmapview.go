@@ -495,6 +495,7 @@ func parseRoadmap(content string, open map[int]bool, firstOpen int) *RoadmapView
 		}
 	}
 	if len(tasks) == 0 {
+		appendHeadingTasks(view, content, nil, open, firstOpen, true)
 		return view
 	}
 
@@ -530,7 +531,106 @@ func parseRoadmap(content string, open map[int]bool, firstOpen int) *RoadmapView
 		view.Done += n.Done
 		view.Total += n.Total
 	}
+	known := make(map[int]bool, len(tasks)+len(phaseCandidates))
+	for _, n := range tasks {
+		known[n.Line] = true
+	}
+	for _, n := range phaseCandidates {
+		known[n.Line] = true
+	}
+	appendHeadingTasks(view, content, known, open, firstOpen, false)
 	return view
+}
+
+// headingTaskRe matches a task heading: "## QV-01: title" (levels 2-4).
+var headingTaskRe = regexp.MustCompile(`^(#{2,4})\s+([A-Za-zА-Яа-я]+[-_]?\d+(?:\.\d+)*):\s*(.*?)\s*$`)
+
+// appendHeadingTasks adds tasks that live only as `## <ID>: <title>` headings.
+//
+// A pointer that lands on such a heading but on no table row becomes a queued
+// task (the table, if any, is only an index and may lack it). When the file
+// has no task table at all (noTable), headings without a pointer are added as
+// done — under the pointer model a task is finished once its pointer is gone.
+// With a table present, unpointed headings are left to the table's status.
+// These nodes follow the tabular ones, in line order.
+func appendHeadingTasks(view *RoadmapView, content string, known, open map[int]bool, firstOpen int, noTable bool) {
+	lines := strings.Split(content, "\n")
+	inFence := false
+	var added []*RoadmapNode
+	for i, raw := range lines {
+		line := i + 1
+		trimmed := strings.TrimSpace(raw)
+		if strings.HasPrefix(trimmed, "```") {
+			inFence = !inFence
+			continue
+		}
+		if inFence || known[line] {
+			continue
+		}
+		m := headingTaskRe.FindStringSubmatch(strings.TrimRight(raw, "\n"))
+		if m == nil || (!open[line] && !noTable) {
+			continue
+		}
+		n := &RoadmapNode{
+			Kind: RoadmapNodeTask, ID: m[2], Name: m[3], Line: line,
+			InQueue: open[line], Current: line == firstOpen, HasDetail: true,
+		}
+		n.Status = resolveStatus(n, StatusModelPointer, open)
+		added = append(added, n)
+	}
+	if len(added) == 0 {
+		return
+	}
+	if view.StatusModel == "" {
+		view.StatusModel = StatusModelPointer
+	}
+	for _, n := range added {
+		rollUp(n)
+		view.Nodes = append(view.Nodes, n)
+		view.Done += n.Done
+		view.Total += n.Total
+	}
+}
+
+// maxSectionBytes caps the body returned for a heading-only task.
+const maxSectionBytes = 32 * 1024
+
+// headingSection returns the text from the heading at lines[idx] up to the
+// next heading of the same or higher level (or a `---` rule).
+func headingSection(lines []string, idx int) (string, bool) {
+	m := headingTaskRe.FindStringSubmatch(strings.TrimRight(lines[idx], "\n"))
+	if m == nil {
+		return "", false
+	}
+	level := len(m[1])
+	end := len(lines)
+	inFence := false
+	for j := idx + 1; j < len(lines); j++ {
+		t := strings.TrimSpace(lines[j])
+		if strings.HasPrefix(t, "```") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		if t == "---" {
+			end = j
+			break
+		}
+		if strings.HasPrefix(t, "#") {
+			l := len(t) - len(strings.TrimLeft(t, "#"))
+			if l <= level && l < len(t) && t[l] == ' ' {
+				end = j
+				break
+			}
+		}
+	}
+	body := strings.TrimSpace(strings.Join(lines[idx:end], "\n"))
+	if len(body) > maxSectionBytes {
+		body = body[:maxSectionBytes]
+	}
+	return body, true
 }
 
 // rowToNode converts one table row into a node, reporting whether it looks
@@ -892,6 +992,15 @@ func ReadRoadmapRowDetail(projectPath, roadmapFile string, line int) (string, er
 		return "", fmt.Errorf("analysis: roadmap has no line %d", line)
 	}
 	rows, _, _ := parseTables(string(data))
+	isRow := false
+	for _, row := range rows {
+		isRow = isRow || row.line == line
+	}
+	if !isRow {
+		if body, ok := headingSection(lines, line-1); ok {
+			return body, nil
+		}
+	}
 	for _, row := range rows {
 		if row.line != line {
 			continue

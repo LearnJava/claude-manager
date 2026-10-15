@@ -148,5 +148,5 @@
 
 | Задача | Статус | Ключевые файлы |
 |---|---|---|
-| QV-01 | ○ TODO | internal/analysis/roadmapview.go, roadmapview_test.go |
+| QV-01 | ✓ DONE | internal/analysis/roadmapview.go, roadmapview_test.go |
 | QV-02 | ○ TODO | internal/session/queuewatch.go, frontend/src/stores/queues.ts, sessions.ts |
