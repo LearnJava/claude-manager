@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -556,6 +557,7 @@ func parseTodoInput(input json.RawMessage) ([]TodoItem, bool) {
 // can take: a replayed user turn (message.content is a plain string) or a batch
 // of tool results echoed back to us (message.content is an array of blocks).
 type rawUserEnvelope struct {
+	IsMeta  bool `json:"isMeta"` // CLI-injected context (skill bodies etc.), not typed by the user
 	Message struct {
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
@@ -619,11 +621,32 @@ func handleUser(line string, now time.Time) ParsedEvent {
 	if err := json.Unmarshal(env.Message.Content, &blocks); err != nil {
 		return ParsedEvent{EventType: EventUnknown}
 	}
+	// A user turn sent as content blocks — the message box sends this shape
+	// when a screenshot is pasted — is replayed as an array too: its text and
+	// image blocks are the user's prompt, not tool output.
 	var entries []config.LogEntry
+	var turn []string
+	images := 0
+	hasToolResult := false
+	for _, b := range blocks {
+		if b.Type == "tool_result" {
+			hasToolResult = true
+		}
+	}
 	for _, b := range blocks {
 		if b.Type == "text" && isTaskNotification(b.Text) {
 			entries = append(entries, taskNotificationEvent(b.Text, now).Entries...)
 			continue
+		}
+		if !hasToolResult && !env.IsMeta {
+			switch b.Type {
+			case "text":
+				if strings.TrimSpace(b.Text) != "" {
+					turn = append(turn, b.Text)
+				}
+			case "image":
+				images++
+			}
 		}
 		if b.Type != "tool_result" {
 			continue
@@ -643,6 +666,18 @@ func handleUser(line string, now time.Time) ParsedEvent {
 			Message:   out,
 			ToolUseID: b.ToolUseID,
 		})
+	}
+	if len(turn) > 0 || images > 0 {
+		text := strings.Join(turn, "\n\n")
+		if images > 0 {
+			note := fmt.Sprintf("[%d image(s) attached]", images)
+			if text == "" {
+				text = note
+			} else {
+				text += "\n\n" + note
+			}
+		}
+		entries = append(entries, config.LogEntry{Time: now, Level: "user", Source: "claude", Message: text})
 	}
 	if len(entries) == 0 {
 		return ParsedEvent{EventType: EventUnknown}

@@ -1743,7 +1743,10 @@ func (s *Session) initialPromptText(forceInteractive bool) string {
 	// crash recovery and the no-tasks fallback above have their own semantics
 	// and are never prefixed. With the flag off (default) or no PrimerFn wired,
 	// prompt is unchanged, so this is byte-identical to before LN-05 existed.
-	if s.Config.ContextPrimer && s.primerFn != nil {
+	// An empty prompt (an interactive session waiting for the user's first
+	// message) gets no primer: sent alone, a primer-only turn makes the model
+	// invent a question of its own and the user's real one waits behind it.
+	if prompt != "" && s.Config.ContextPrimer && s.primerFn != nil {
 		if primer := s.primerFn(s.ProjectName, s.Config.Name, s.ProjectPath, taskDesc, s.gates); primer != "" {
 			prompt = "--- Project state (auto-generated) ---\n" + primer + "\n\n" + prompt
 		}
