@@ -7,6 +7,9 @@ import (
 	"time"
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"claude-manager/internal/session"
+	"claude-manager/internal/worker"
 )
 
 // Emitter broadcasts named events. Structurally identical to session.Emitter;
@@ -166,4 +169,25 @@ func appendRing(buf []EnvelopedEvent, ev EnvelopedEvent, max int) []EnvelopedEve
 		buf = buf[len(buf)-max:]
 	}
 	return buf
+}
+
+// EventNames lists every event name the app emits, built from the constants
+// of the emitting packages: it is the enum of wait_for_event and the single
+// source for what a subscriber can wait on.
+var EventNames = []string{
+	session.EventNameStatus, session.EventNameLog, session.EventNameTaskDone,
+	session.EventNameRateLimit, session.EventNamePermission, session.EventNameQuestion,
+	session.EventNameContext, session.EventNameTodo, session.EventNameActivity,
+	session.EventNameTaskSource, session.EventNameInit, session.EventNameResult,
+	session.EventNameError, session.EventNameStopReq, session.EventNameQueueChanged,
+	session.EventNamePlanStatus, session.EventNameRoadmapProgress,
+	worker.EventRound, worker.EventPatch, worker.EventGate, worker.EventDone,
+}
+
+// SubscriberCount is the number of live Subscribe channels (tests use it to
+// prove that a cancelled wait released its subscription).
+func (c *ControlEmitter) SubscriberCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.subs)
 }

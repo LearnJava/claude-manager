@@ -216,3 +216,113 @@ func TestProtocol_CancelAbortsInFlightCall(t *testing.T) {
 	p.send(`{"jsonrpc":"2.0","id":3,"method":"ping"}`)
 	p.result(3)
 }
+
+func TestProtocol_ProgressForLongCall(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		time.Sleep(400 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusRequestTimeout)
+		_, _ = io.WriteString(w, `{"error":"timeout","reached":false,"timeout_ms":400,"current_status":"working"}`)
+	}))
+	t.Cleanup(ts.Close)
+	srv := newTestMCPServer(t, &stubCP{})
+	srv.baseURL, srv.client = ts.URL, ts.Client()
+	srv.progressInterval = 50 * time.Millisecond
+	p := startPeer(t, srv)
+	p.handshake("2025-11-25")
+	p.send(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"wait_for_status","arguments":{"session_id":"p/s","status":"idle","timeout_ms":400},"_meta":{"progressToken":"tok-1"}}}`)
+
+	var progress []float64
+	var final map[string]any
+	deadline := time.After(10 * time.Second)
+	for final == nil {
+		select {
+		case m, ok := <-p.lines:
+			if !ok {
+				t.Fatal("server closed stdout")
+			}
+			if m["method"] == "notifications/progress" {
+				params, _ := m["params"].(map[string]any)
+				if params["progressToken"] != "tok-1" {
+					t.Fatalf("wrong token: %v", params)
+				}
+				progress = append(progress, params["progress"].(float64))
+			} else if m["id"] == float64(2) {
+				final, _ = m["result"].(map[string]any)
+			}
+		case <-deadline:
+			t.Fatal("no result")
+		}
+	}
+	if len(progress) == 0 {
+		t.Fatal("no notifications/progress while the call was running")
+	}
+	for i := 1; i < len(progress); i++ {
+		if progress[i] < progress[i-1] {
+			t.Fatalf("progress must not decrease: %v", progress)
+		}
+	}
+	// A timeout is a result, not an error.
+	if final["isError"] == true {
+		t.Fatalf("timeout must not be an error: %v", final)
+	}
+	sc, _ := final["structuredContent"].(map[string]any)
+	if sc["reached"] != false || sc["current_status"] != "working" || sc["hint"] == nil {
+		t.Fatalf("structuredContent: %v", sc)
+	}
+}
+
+func TestProtocol_NoProgressWithoutToken(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusRequestTimeout)
+		_, _ = io.WriteString(w, `{"error":"timeout"}`)
+	}))
+	t.Cleanup(ts.Close)
+	srv := newTestMCPServer(t, &stubCP{})
+	srv.baseURL, srv.client = ts.URL, ts.Client()
+	srv.progressInterval = 20 * time.Millisecond
+	p := startPeer(t, srv)
+	p.handshake("2025-11-25")
+	p.send(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"wait_for_event","arguments":{"event":"session:log"}}}`)
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case m := <-p.lines:
+			if m["method"] == "notifications/progress" {
+				t.Fatalf("progress sent without a progressToken: %v", m)
+			}
+			if m["id"] == float64(2) {
+				return
+			}
+		case <-deadline:
+			t.Fatal("no result")
+		}
+	}
+}
+
+func TestProtocol_CancelAbortsWait(t *testing.T) {
+	hit := make(chan struct{}, 1)
+	released := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		hit <- struct{}{}
+		<-r.Context().Done() // the control-plane's handleWait returns on exactly this
+		close(released)
+	}))
+	t.Cleanup(ts.Close)
+	srv := newTestMCPServer(t, &stubCP{})
+	srv.baseURL, srv.client = ts.URL, ts.Client()
+	p := startPeer(t, srv)
+	p.handshake("2025-11-25")
+	p.send(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"wait_for_any","arguments":{"session_ids":["p/s"],"timeout_ms":600000}}}`)
+	<-hit
+	p.send(`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":2,"reason":"test"}}`)
+	select {
+	case <-released:
+	case <-time.After(10 * time.Second):
+		t.Fatal("cancelling wait_for_any did not release the control-plane wait")
+	}
+}

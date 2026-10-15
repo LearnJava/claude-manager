@@ -102,6 +102,7 @@ var toolSamples = map[string]struct {
 	"cancel_mixed_task":         {`{"task_id":"p/b/w"}`, `null`},
 	"wait_for_status":           {`{"session_id":"p/s","status":"idle"}`, `{"event":"session:status","data":{"id":"p/s"},"ts":"2026-10-15T10:00:00Z"}`},
 	"wait_for_event":            {`{"event":"session:log"}`, `{"event":"session:log","data":null,"ts":"2026-10-15T10:00:00Z"}`},
+	"wait_for_any":              {`{"session_ids":["p/s"]}`, `{"event":"session:question","data":{"id":"p/s"},"ts":"2026-10-15T10:00:00Z"}`},
 }
 
 func TestMCPTools_StructuredContentMatchesOutputSchema(t *testing.T) {

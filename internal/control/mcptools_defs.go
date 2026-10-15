@@ -219,7 +219,7 @@ type projectPageIn struct {
 type workerWaitIn struct {
 	TaskID    string `json:"task_id" jsonschema:"Task ID in project/brief/worker form, as returned by dispatch_mixed_task, e.g. lumen/parse-header/step-flash"`
 	Status    string `json:"status,omitempty" jsonschema:"Terminal status to wait for: done or needs_human; omit to accept either"`
-	TimeoutMs int64  `json:"timeout_ms,omitempty" jsonschema:"How long to wait, in milliseconds (default 60000)"`
+	TimeoutMs int64  `json:"timeout_ms,omitempty" jsonschema:"How long to wait, in milliseconds (default 60000, at most 600000)"`
 }
 
 type logsIn struct {
@@ -247,13 +247,18 @@ type metricsIn struct {
 type waitStatusIn struct {
 	sessionRef
 	Status    string `json:"status" jsonschema:"Target status to wait for"`
-	TimeoutMs int64  `json:"timeout_ms,omitempty" jsonschema:"How long to wait, in milliseconds (default 5000)"`
+	TimeoutMs int64  `json:"timeout_ms,omitempty" jsonschema:"How long to wait, in milliseconds (default 5000, at most 600000)"`
+}
+
+type waitAnyIn struct {
+	SessionIDs []string `json:"session_ids" jsonschema:"Sessions to watch, each in project/session form, e.g. [\"lumen/P1\",\"lumen/P2\"]"`
+	TimeoutMs  int64    `json:"timeout_ms,omitempty" jsonschema:"How long to wait, in milliseconds (default 60000, at most 600000)"`
 }
 
 type waitEventIn struct {
 	Event     string         `json:"event" jsonschema:"Event name, e.g. session:status, session:log, session:permission"`
 	Match     map[string]any `json:"match,omitempty" jsonschema:"Fields the event payload must contain, all of them, e.g. {\"id\": \"lumen/P1\"}"`
-	TimeoutMs int64          `json:"timeout_ms,omitempty" jsonschema:"How long to wait, in milliseconds (default 5000)"`
+	TimeoutMs int64          `json:"timeout_ms,omitempty" jsonschema:"How long to wait, in milliseconds (default 5000, at most 600000)"`
 }
 
 // sessionStatuses are the values of a session's status as the app reports it.
@@ -287,7 +292,7 @@ func tunePage(props map[string]*jsonschema.Schema) {
 func tuneTimeout(def int) refine {
 	return func(props map[string]*jsonschema.Schema) {
 		t := props["timeout_ms"]
-		t.Default, t.Minimum = json.RawMessage(strconv.Itoa(def)), fptr(1)
+		t.Default, t.Minimum, t.Maximum = json.RawMessage(strconv.Itoa(def)), fptr(1), fptr(float64(MaxWaitTimeout.Milliseconds()))
 	}
 }
 
@@ -381,9 +386,14 @@ type metricsOut struct {
 }
 
 type waitOut struct {
-	Event string `json:"event" jsonschema:"Name of the event that matched"`
-	Data  any    `json:"data" jsonschema:"Event payload"`
-	TS    string `json:"ts,omitempty" jsonschema:"Emission time, RFC 3339"`
+	Reached       bool              `json:"reached" jsonschema:"True when the awaited event arrived; false when the wait timed out (not an error)"`
+	Event         string            `json:"event,omitempty" jsonschema:"Name of the event that matched (when reached)"`
+	Data          any               `json:"data,omitempty" jsonschema:"Event payload (when reached)"`
+	TS            string            `json:"ts,omitempty" jsonschema:"Emission time, RFC 3339 (when reached)"`
+	TimeoutMs     int64             `json:"timeout_ms,omitempty" jsonschema:"How long the wait lasted (when not reached)"`
+	CurrentStatus string            `json:"current_status,omitempty" jsonschema:"Status of the awaited session right now (when not reached)"`
+	Statuses      map[string]string `json:"statuses,omitempty" jsonschema:"Status of every awaited session right now (when not reached)"`
+	Hint          string            `json:"hint,omitempty" jsonschema:"What to do next (when not reached)"`
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -448,10 +458,33 @@ func waitResult(_ noIn, raw any) waitOut {
 	out := waitOut{Data: m["data"]}
 	out.Event, _ = m["event"].(string)
 	out.TS, _ = m["ts"].(string)
+	if reached, ok := m["reached"].(bool); ok && !reached {
+		out.Data = nil
+		if t, ok := m["timeout_ms"].(float64); ok {
+			out.TimeoutMs = int64(t)
+		}
+		out.CurrentStatus, _ = m["current_status"].(string)
+		if st, ok := m["statuses"].(map[string]any); ok {
+			out.Statuses = map[string]string{}
+			for id, v := range st {
+				out.Statuses[id], _ = v.(string)
+			}
+		}
+		out.Hint = "Not reached yet, and nothing failed: call the same tool again to keep waiting"
+		if out.CurrentStatus != "" {
+			out.Hint += fmt.Sprintf(" (the session is %s; read get_session_logs to see what it is doing)", out.CurrentStatus)
+		}
+		out.Hint += "."
+		return out
+	}
+	out.Reached = true
 	return out
 }
 
 func waitSummary(out waitOut) string {
+	if !out.Reached {
+		return fmt.Sprintf("Not reached within %d ms. %s", out.TimeoutMs, out.Hint)
+	}
 	return fmt.Sprintf("Event %s received.", out.Event)
 }
 
@@ -880,7 +913,7 @@ func buildCoreTools() []Tool {
 				UseWhen: "dispatch_mixed_task runs in another call, or has returned and you want its final event.",
 				NotFor:  "session status (use wait_for_status).",
 				Returns: "the worker:done event with its payload; past events count, so a late call still succeeds.",
-				Effects: "none, read only; a timeout is reported as an error.",
+				Effects: "none, read only; a timeout is reported as reached=false, not an error.",
 				Example: `{"task_id":"lumen/parse-header/step-flash","status":"done"}`,
 			},
 			Input: tuneAll(tuneTimeout(60000), func(props map[string]*jsonschema.Schema) {
@@ -1094,7 +1127,7 @@ func buildCoreTools() []Tool {
 				What:    "Block until a session reports the given status, or the timeout passes.",
 				UseWhen: "after start_session, send_message or approve_permission, instead of polling get_sessions.",
 				NotFor:  "events other than status changes (use wait_for_event).",
-				Returns: "the matching session:status event; a timeout is reported as an error.",
+				Returns: "the matching session:status event; on timeout reached=false with the current status and a hint, not an error.",
 				Effects: "none, read only.",
 				Example: `{"session_id":"lumen/P1","status":"idle","timeout_ms":30000}`,
 			},
@@ -1118,17 +1151,47 @@ func buildCoreTools() []Tool {
 				What:    "Block until an event whose payload contains the given fields is emitted, or the timeout passes.",
 				UseWhen: "you wait for something other than a status, such as session:log or session:permission.",
 				NotFor:  "session status changes (use wait_for_status).",
-				Returns: "the matching event; recent past events count, so a short gap does not lose it; a timeout is an error.",
+				Returns: "the matching event; recent past events count, so a short gap does not lose it; on timeout reached=false with a hint, not an error.",
 				Effects: "none, read only.",
 				Example: `{"event":"session:permission","match":{"id":"lumen/P1"}}`,
 			},
-			Input: tuneTimeout(5000),
+			Input: tuneAll(tuneTimeout(5000), func(props map[string]*jsonschema.Schema) {
+				for _, e := range EventNames {
+					props["event"].Enum = append(props["event"].Enum, e)
+				}
+			}),
 			Level: LevelRead, Annotations: ro,
 			Translate: func(in waitEventIn) (string, any, error) {
 				return "/wait", waitCallBody(in.Event, in.Match, orDefault(in.TimeoutMs, 5000)), nil
 			},
 			Result:  func(_ waitEventIn, raw any) waitOut { return waitResult(noIn{}, raw) },
 			Summary: func(_ waitEventIn, out waitOut) string { return waitSummary(out) },
+		}),
+		define(spec[waitAnyIn, waitOut]{
+			Name: "wait_for_any", Title: "Wait for any session to need a human",
+			Doc: Doc{
+				What:    "Block until the first of several sessions needs a human (question, permission, plan, error, finished task or turn), or the timeout passes.",
+				UseWhen: "you operate several sessions and want one loop without polling: wait, handle what came, wait again.",
+				NotFor:  "one specific status or event (use wait_for_status or wait_for_event).",
+				Returns: "the first attention event with its session id in data.id; something already pending counts at once; on timeout reached=false with every session's status, not an error.",
+				Effects: "none, read only.",
+				Example: `{"session_ids":["lumen/P1","lumen/P2"],"timeout_ms":60000}`,
+			},
+			Input: tuneTimeout(60000),
+			Level: LevelRead, Annotations: ro,
+			Translate: func(in waitAnyIn) (string, any, error) {
+				if len(in.SessionIDs) == 0 {
+					return "", nil, fmt.Errorf(`session_ids is required: the sessions to watch, e.g. ["lumen/P1","lumen/P2"]; list them with get_sessions`)
+				}
+				for _, id := range in.SessionIDs {
+					if p, n, ok := strings.Cut(id, "/"); !ok || p == "" || n == "" {
+						return "", nil, fmt.Errorf(`session id %q must look like "project/session", e.g. "lumen/P1"; list sessions with get_sessions`, id)
+					}
+				}
+				return "/wait", map[string]any{"attention": in.SessionIDs, "timeout_ms": orDefault(in.TimeoutMs, 60000)}, nil
+			},
+			Result:  func(_ waitAnyIn, raw any) waitOut { return waitResult(noIn{}, raw) },
+			Summary: func(_ waitAnyIn, out waitOut) string { return waitSummary(out) },
 		}),
 	}
 }
