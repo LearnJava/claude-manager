@@ -56,7 +56,32 @@ func (s *Server) handleRPC(w http.ResponseWriter, r *http.Request) {
 	if params == nil {
 		params = json.RawMessage(`{}`)
 	}
+	var fields map[string]any
+	_ = json.Unmarshal(params, &fields)
+	level, err := requestLevel(r)
+	if err != nil {
+		writeRPCError(w, req.ID, -32002, err.Error())
+		return
+	}
+	decision, _ := fields["decision"].(string)
+	audit := auditEntry{
+		client: cleanClient(r.Header.Get(HeaderClient)), level: level,
+		method: req.Method, params: redact(fields),
+	}
+	if need := RPCLevel(req.Method, decision); !level.Allows(need) {
+		audit.deny("level", need)
+		writeRPCError(w, req.ID, -32001, fmt.Sprintf("%s %s", req.Method, LevelHint(need)))
+		return
+	}
+	caller := strings.TrimSpace(r.Header.Get(HeaderCaller))
+	if selfTarget(req.Method, caller, fields) && r.Header.Get(HeaderAllowSelf) != "1" {
+		audit.deny("self", "")
+		writeRPCError(w, req.ID, -32003, fmt.Sprintf("%s would act on the calling session %s itself, which would cut off "+
+			"this agent: ask the human, or start cm-mcp with CM_MCP_ALLOW_SELF=1 to allow it", req.Method, caller))
+		return
+	}
 	result, err := h(params)
+	audit.done(err)
 	if err != nil {
 		writeRPCError(w, req.ID, -32000, err.Error())
 		return

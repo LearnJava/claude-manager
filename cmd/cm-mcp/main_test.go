@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"claude-manager/internal/control"
 )
 
 // stubCP captures the last HTTP request made to it and returns a canned response.
@@ -44,6 +46,7 @@ func newTestMCPServer(t *testing.T, stub *stubCP) *mcpServer {
 	return &mcpServer{
 		baseURL: ts.URL,
 		token:   "test-token",
+		level:   control.LevelAdmin,
 		client:  ts.Client(),
 	}
 }

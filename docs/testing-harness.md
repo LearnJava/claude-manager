@@ -27,8 +27,10 @@ go build -o build/fakeclaude.exe       ./cmd/fakeclaude
 go build -o build/playwright-server.exe ./cmd/playwright-server
 
 # Register cm-mcp as an MCP server in Claude Code (project-local)
-claude mcp add cm -- D:/GoProjects/claude-manager/build/cm-mcp.exe
+claude mcp add cm -e CM_MCP_LEVEL=admin -- D:/GoProjects/claude-manager/build/cm-mcp.exe
 ```
+
+`cm-mcp` runs at access level `operate` by default (no `approve_permission`, no `set_global_settings`); the GUI test scenarios need `admin`, hence `CM_MCP_LEVEL=admin` above. See "Уровни доступа" and "Безопасность" in [docs/mcp.md](./mcp.md).
 
 The registration is stored in `.claude.json` (project scope) and persists across sessions.
 

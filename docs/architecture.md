@@ -321,7 +321,8 @@ claude-manager/
 │   ├── testkit/                     # Scenario loaders + fakeclaude<->parser conformance,
 │   │                                #   fakeworker handler (MP-07)
 │   └── control/                     # Headless control-plane: Emitter, RPC (incl. mixed), WS,
-│                                    #   wait/wait-for-worker, MCP tools, e2e runner
+│                                    #   wait/wait-for-worker, MCP tools, e2e runner,
+│                                    #   access.go (levels, self-protection, audit log)
 ├── testdata/                        # scenarios/ (fakeclaude), worker-scenarios/ (fakeworker),
 │                                    #   e2e/ (runner, incl. mixed-*.json), configs/,
 │                                    #   transcripts/ (LN-01: trimmed real JSONL fixtures)
