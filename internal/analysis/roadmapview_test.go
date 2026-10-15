@@ -1007,3 +1007,32 @@ func TestReadRoadmapRowDetail_HeadingSection(t *testing.T) {
 		t.Errorf("first section wrong: %q", first)
 	}
 }
+
+// Ids built from a Jira key plus a step number ("ARB1026-02") must stay
+// distinct tasks, not collapse to their common "ARB1026" prefix.
+func TestReadRoadmap_HeadingIDsWithStepNumber(t *testing.T) {
+	dir := writeFiles(t, map[string]string{
+		"ARB-TASKS.md": "# Tasks\n\n## ARB1026-01: router\n\nbody\n\n## ARB1026-02: adapter\n\nbody\n\n## ARB849-01: client\n\nbody\n",
+		"STATUS-P1.md": "ARB-TASKS.md:7\nARB-TASKS.md:11\n",
+	})
+	view, err := ReadRoadmap(dir, "STATUS-P1.md")
+	if err != nil {
+		t.Fatalf("ReadRoadmap: %v", err)
+	}
+	if view.Total != 3 {
+		t.Fatalf("total: %d", view.Total)
+	}
+	byID := map[string]*RoadmapNode{}
+	for _, n := range flattenNodes(view.Nodes) {
+		byID[n.ID] = n
+	}
+	if n := byID["ARB1026-01"]; n == nil || n.Current || n.InQueue {
+		t.Errorf("ARB1026-01: %+v", n)
+	}
+	if n := byID["ARB1026-02"]; n == nil || !n.Current || n.Name != "adapter" {
+		t.Errorf("ARB1026-02: %+v", n)
+	}
+	if n := byID["ARB849-01"]; n == nil || n.Current || !n.InQueue {
+		t.Errorf("ARB849-01: %+v", n)
+	}
+}
