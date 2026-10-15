@@ -65,7 +65,7 @@ func call(t *testing.T, srv *mcpServer, stub *stubCP, tool, argsJSON string) {
 func TestDispatch_StartSession(t *testing.T) {
 	stub := &stubCP{}
 	srv := newTestMCPServer(t, stub)
-	call(t, srv, stub, "start_session", `{"project":"myproj","session":"P1"}`)
+	call(t, srv, stub, "start_session", `{"session_id":"myproj/P1"}`)
 
 	if stub.lastPath != "/rpc" {
 		t.Fatalf("endpoint: want /rpc, got %s", stub.lastPath)
@@ -82,7 +82,7 @@ func TestDispatch_StartSession(t *testing.T) {
 func TestDispatch_StopSession_Soft(t *testing.T) {
 	stub := &stubCP{}
 	srv := newTestMCPServer(t, stub)
-	call(t, srv, stub, "stop_session", `{"project":"myproj","session":"P1","after_task":true}`)
+	call(t, srv, stub, "stop_session", `{"session_id":"myproj/P1","after_task":true}`)
 
 	if stub.lastBody["method"] != "StopSession" {
 		t.Fatalf("method: want StopSession, got %v", stub.lastBody["method"])
@@ -99,7 +99,7 @@ func TestDispatch_StopSession_Soft(t *testing.T) {
 func TestDispatch_StopSession_Hard(t *testing.T) {
 	stub := &stubCP{}
 	srv := newTestMCPServer(t, stub)
-	call(t, srv, stub, "stop_session", `{"project":"myproj","session":"P1"}`)
+	call(t, srv, stub, "stop_session", `{"session_id":"myproj/P1"}`)
 
 	params := stub.lastBody["params"].(map[string]any)
 	if params["soft"] != false {
@@ -110,7 +110,7 @@ func TestDispatch_StopSession_Hard(t *testing.T) {
 func TestDispatch_RestartSession_Fresh(t *testing.T) {
 	stub := &stubCP{}
 	srv := newTestMCPServer(t, stub)
-	call(t, srv, stub, "restart_session", `{"project":"myproj","session":"P1"}`)
+	call(t, srv, stub, "restart_session", `{"session_id":"myproj/P1"}`)
 
 	if stub.lastBody["method"] != "RestartSession" {
 		t.Fatalf("method: want RestartSession, got %v", stub.lastBody["method"])
@@ -124,7 +124,7 @@ func TestDispatch_RestartSession_Fresh(t *testing.T) {
 func TestDispatch_RestartSession_Resume(t *testing.T) {
 	stub := &stubCP{}
 	srv := newTestMCPServer(t, stub)
-	call(t, srv, stub, "restart_session", `{"project":"myproj","session":"P1","resume":true}`)
+	call(t, srv, stub, "restart_session", `{"session_id":"myproj/P1","resume":true}`)
 
 	if stub.lastBody["method"] != "ResumeSession" {
 		t.Fatalf("method: want ResumeSession, got %v", stub.lastBody["method"])
@@ -134,7 +134,7 @@ func TestDispatch_RestartSession_Resume(t *testing.T) {
 func TestDispatch_SendMessage(t *testing.T) {
 	stub := &stubCP{}
 	srv := newTestMCPServer(t, stub)
-	call(t, srv, stub, "send_message", `{"project":"myproj","session":"P1","text":"hello world"}`)
+	call(t, srv, stub, "send_message", `{"session_id":"myproj/P1","text":"hello world"}`)
 
 	if stub.lastBody["method"] != "SendMessage" {
 		t.Fatalf("method: want SendMessage, got %v", stub.lastBody["method"])
@@ -190,16 +190,6 @@ func TestDispatch_DenyPermission(t *testing.T) {
 	}
 }
 
-func TestDispatch_SetGlobalSettings(t *testing.T) {
-	stub := &stubCP{}
-	srv := newTestMCPServer(t, stub)
-	call(t, srv, stub, "set_global_settings", `{"config":{"auto_model_routing":true}}`)
-
-	if stub.lastBody["method"] != "UpdateConfig" {
-		t.Fatalf("method: want UpdateConfig, got %v", stub.lastBody["method"])
-	}
-}
-
 func TestDispatch_RunPreflight(t *testing.T) {
 	stub := &stubCP{}
 	srv := newTestMCPServer(t, stub)
@@ -249,7 +239,7 @@ func TestDispatch_GetSessions(t *testing.T) {
 func TestDispatch_GetSessionLogs(t *testing.T) {
 	stub := &stubCP{}
 	srv := newTestMCPServer(t, stub)
-	call(t, srv, stub, "get_session_logs", `{"project":"myproj","session":"P1","tail":50}`)
+	call(t, srv, stub, "get_session_logs", `{"session_id":"myproj/P1","limit":50}`)
 
 	if stub.lastBody["method"] != "GetSessionLog" {
 		t.Fatalf("method: want GetSessionLog, got %v", stub.lastBody["method"])
@@ -267,7 +257,7 @@ func TestDispatch_GetSessionLogs(t *testing.T) {
 func TestDispatch_GetSessionLogs_DefaultTail(t *testing.T) {
 	stub := &stubCP{}
 	srv := newTestMCPServer(t, stub)
-	call(t, srv, stub, "get_session_logs", `{"project":"myproj","session":"P1"}`)
+	call(t, srv, stub, "get_session_logs", `{"session_id":"myproj/P1"}`)
 
 	params := stub.lastBody["params"].(map[string]any)
 	if params["limit"] != float64(101) {
@@ -285,34 +275,6 @@ func TestDispatch_GetPendingPermissions(t *testing.T) {
 	}
 }
 
-func TestDispatch_GetMetrics_WithProject(t *testing.T) {
-	stub := &stubCP{}
-	srv := newTestMCPServer(t, stub)
-	call(t, srv, stub, "get_metrics", `{"project":"myproj","period":14}`)
-
-	if stub.lastBody["method"] != "GetProjectCost" {
-		t.Fatalf("method: want GetProjectCost, got %v", stub.lastBody["method"])
-	}
-	params := stub.lastBody["params"].(map[string]any)
-	if params["project"] != "myproj" {
-		t.Fatalf("project: want myproj, got %v", params["project"])
-	}
-	if params["days"] != float64(14) {
-		t.Fatalf("days: want 14, got %v", params["days"])
-	}
-}
-
-func TestDispatch_GetMetrics_NoProject(t *testing.T) {
-	stub := &stubCP{}
-	srv := newTestMCPServer(t, stub)
-	call(t, srv, stub, "get_metrics", `{}`)
-
-	// Falls back to GetRateLimitStatus when no project is given.
-	if stub.lastBody["method"] != "GetRateLimitStatus" {
-		t.Fatalf("method: want GetRateLimitStatus, got %v", stub.lastBody["method"])
-	}
-}
-
 // ── Blocking primitives ───────────────────────────────────────────────────────
 
 func TestDispatch_WaitForStatus(t *testing.T) {
@@ -320,7 +282,7 @@ func TestDispatch_WaitForStatus(t *testing.T) {
 		response: `{"event":"session:status","data":{"id":"myproj/P1","status":"working"},"ts":"2025-01-01T00:00:00Z"}`,
 	}
 	srv := newTestMCPServer(t, stub)
-	call(t, srv, stub, "wait_for_status", `{"project":"myproj","session":"P1","status":"working","timeout_ms":1000}`)
+	call(t, srv, stub, "wait_for_status", `{"session_id":"myproj/P1","status":"working","timeout_ms":1000}`)
 
 	if stub.lastPath != "/wait" {
 		t.Fatalf("endpoint: want /wait, got %s", stub.lastPath)
@@ -345,7 +307,7 @@ func TestDispatch_WaitForStatus_DefaultTimeout(t *testing.T) {
 		response: `{"event":"session:status","data":{},"ts":"2025-01-01T00:00:00Z"}`,
 	}
 	srv := newTestMCPServer(t, stub)
-	call(t, srv, stub, "wait_for_status", `{"project":"myproj","session":"P1","status":"idle"}`)
+	call(t, srv, stub, "wait_for_status", `{"session_id":"myproj/P1","status":"idle"}`)
 
 	if stub.lastBody["timeout_ms"] != float64(5000) {
 		t.Fatalf("timeout_ms: want default 5000, got %v", stub.lastBody["timeout_ms"])
@@ -390,7 +352,7 @@ func TestDispatch_WaitTimeoutIsAResult(t *testing.T) {
 		response:   `{"error":"timeout","reached":false,"timeout_ms":5000,"current_status":"working"}`,
 	}
 	srv := newTestMCPServer(t, stub)
-	res, err := srv.callTool("wait_for_status", json.RawMessage(`{"project":"p","session":"s","status":"idle"}`))
+	res, err := srv.callTool("wait_for_status", json.RawMessage(`{"session_id":"p/s","status":"idle"}`))
 	if err != nil {
 		t.Fatalf("a timeout is a result, not an error: %v", err)
 	}

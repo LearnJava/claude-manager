@@ -281,7 +281,7 @@ func logsTools() []Tool {
 			Doc: Doc{
 				What:    "Get the cost and token volume of one day across all projects, or of one project over a period.",
 				UseWhen: "you check spending against a budget, or compare days or projects.",
-				NotFor:  "one session (use get_session_metrics) or the rate-limit status (use get_metrics without a project).",
+				NotFor:  "one session (use get_session_metrics) or the rate-limit status (use get_rate_limit).",
 				Returns: "cost_usd and the input, output, cache and total token counts.",
 				Effects: "none, read only.",
 				Example: `{"scope":"project","project":"lumen","period":7}`,
