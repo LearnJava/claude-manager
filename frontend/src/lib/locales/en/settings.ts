@@ -197,7 +197,7 @@ export default {
     'settings.sessions.maxBudget': 'Max budget USD (0 = unlimited)',
     'settings.sessions.maxTasks': 'Max tasks (0 = unlimited)',
     'settings.sessions.autoRestart': 'Auto-restart after task',
-    'settings.sessions.stopWhenNoTasks': 'Stop when no tasks',
+    'settings.sessions.runWithoutTasks': 'Keep running when the queue is empty',
     'settings.sessions.useWorktree': 'Use git worktree',
     'settings.sessions.useWorktreeTitle': 'Permanent folder .claude/worktrees/<slot>; created once, an unfinished task continues in it',
     'settings.sessions.noProtocol': 'This project has no work-folder protocol. Without it the session works in the slot, but nobody manages task branches.',

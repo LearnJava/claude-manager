@@ -46,7 +46,7 @@ const f = (target: FieldTarget, prop: string, label: string, kind: FeatureField[
 const FIELDS: Record<string, FeatureField[]> = {
     taskSource: [f('session', 'TaskSource', 'task_source', 'text')],
     autoRestart: [f('session', 'AutoRestart', 'auto_restart', 'bool'), f('session', 'MaxTasks', 'max_tasks', 'number')],
-    stopWhenNoTasks: [f('session', 'StopWhenNoTasks', 'stop_when_no_tasks', 'bool')],
+    runWithoutTasks: [f('session', 'RunWithoutTasks', 'run_without_tasks', 'bool')],
     useWorktree: [f('session', 'UseWorktree', 'use_worktree', 'bool'), f('session', 'WorktreeName', 'worktree_name', 'text')],
     preflight: [f('session', 'Preflight', 'preflight', 'select', { options: ['auto', 'always', 'never'] }),
                 f('settings', 'PreflightAnalysis', 'preflight_analysis', 'bool')],
@@ -150,8 +150,8 @@ export function describeSessionFeatures(cfg: any, project: string, sessionName: 
         enabled: !!s.AutoRestart,
         value: s.AutoRestart && num(s.MaxTasks) > 0 ? `max_tasks = ${num(s.MaxTasks)}` : undefined,
         warning: s.AutoRestart && taskSource === '' ? 'autoRestartNoQueue' : undefined });
-    add({ key: 'stopWhenNoTasks', tomlKey: 'stop_when_no_tasks', scope: 'session', group: 'tasks',
-        enabled: !!s.StopWhenNoTasks });
+    add({ key: 'runWithoutTasks', tomlKey: 'run_without_tasks', scope: 'session', group: 'tasks',
+        enabled: !!s.RunWithoutTasks });
     add({ key: 'useWorktree', tomlKey: 'use_worktree', scope: 'session', group: 'tasks',
         enabled: !!s.UseWorktree, value: s.UseWorktree ? str(s.WorktreeName) || undefined : undefined });
     // Mirrors PreflightMode in internal/session/preflight_gate.go.

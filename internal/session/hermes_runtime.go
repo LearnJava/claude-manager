@@ -131,7 +131,7 @@ type hermesTurn struct {
 }
 
 func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) error {
-	autonomous := (s.Config.AutoRestart || s.Config.StopWhenNoTasks) && !forceInteractive
+	autonomous := s.Config.AutoRestart && !forceInteractive
 	s.emitManagerLog("Готовлю промпт…")
 	s.prepareWorkDir(ctx)
 

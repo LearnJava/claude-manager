@@ -552,7 +552,6 @@ func upsertP1Session(cfg *config.AppConfig, project string) {
 		for si := range sessions {
 			if sessions[si].Name == "P1" {
 				sessions[si].TaskSource = "STATUS-P1.md"
-				sessions[si].StopWhenNoTasks = true
 				sessions[si].AutoRestart = true
 				sessions[si].UseWorktree = true
 				cfg.Projects[pi].Sessions = sessions
@@ -569,7 +568,6 @@ func upsertP1Session(cfg *config.AppConfig, project string) {
 			Effort:               "high",
 			PermissionMode:       permissionMode,
 			TaskSource:           "STATUS-P1.md",
-			StopWhenNoTasks:      true,
 			AutoRestart:          true,
 			ContextPrimer:        true,
 			ContextHandoff:       true,

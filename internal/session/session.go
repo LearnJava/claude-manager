@@ -571,7 +571,7 @@ func (s *Session) TasksDone() int {
 // session has no such boundary (it's one long-lived CLI process), which is
 // why SetModel's caller (SessionManager.SetSessionModel) soft-restarts it.
 func (s *Session) Autonomous() bool {
-	return s.Config.AutoRestart || s.Config.StopWhenNoTasks
+	return s.Config.AutoRestart
 }
 
 // ActiveModel returns the model actually used for the next (or current)
@@ -1059,7 +1059,7 @@ func (s *Session) Run(ctx context.Context) {
 		// Task source check: stop the loop when the configured task file no longer
 		// has pending tasks (mirrors orchestrator.py has_tasks()). The resolved
 		// description is shown in the UI whenever task_source is set, even if
-		// stop_when_no_tasks is off — display and auto-stop are separate concerns.
+		// run_without_tasks is on — display and auto-stop are separate concerns.
 		if s.Config.TaskSource != "" {
 			taskPath := s.Config.TaskSource
 			if !filepath.IsAbs(taskPath) {
@@ -1071,7 +1071,7 @@ func (s *Session) Run(ctx context.Context) {
 			// Left unresolved this reads as "file not found", which
 			// hasTasks treats identically to a genuinely empty queue.
 			taskPath = fsutil.ResolveCaseInsensitive(s.ProjectPath, taskPath)
-			if s.Config.StopWhenNoTasks && !hasTasks(taskPath) {
+			if !s.Config.RunWithoutTasks && !hasTasks(taskPath) {
 				// No queued work: rather than silently refusing to start (which looks
 				// like a no-op from the UI), launch a plain interactive session so the
 				// user can hand it an ad-hoc task outside the plan. It intentionally
@@ -1532,7 +1532,7 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	// event arrives — otherwise the process idles forever and the Run loop never
 	// iterates to re-check the task source. Interactive sessions (no auto-restart
 	// and no task loop) keep stdin open so the user can continue the conversation.
-	autonomous := (s.Config.AutoRestart || s.Config.StopWhenNoTasks) && !forceInteractive
+	autonomous := s.Config.AutoRestart && !forceInteractive
 
 	// A fresh process gets a fresh handoff tag (buildCLIArgs mints it).
 	s.mu.Lock()

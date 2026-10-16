@@ -35,8 +35,8 @@ func TestSession_Autonomous(t *testing.T) {
 	}{
 		{"plain interactive", config.SessionConfig{}, false},
 		{"auto_restart", config.SessionConfig{AutoRestart: true}, true},
-		{"stop_when_no_tasks", config.SessionConfig{StopWhenNoTasks: true}, true},
-		{"both", config.SessionConfig{AutoRestart: true, StopWhenNoTasks: true}, true},
+		{"auto_restart + run_without_tasks", config.SessionConfig{AutoRestart: true, RunWithoutTasks: true}, true},
+		{"run_without_tasks alone", config.SessionConfig{RunWithoutTasks: true}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
