@@ -33,3 +33,14 @@ var _ control.SkillsApp = controlApp{}
 func (c controlApp) SkillAutopilotOf(project string) (any, error) {
 	return c.App.GetSkillAutopilot(project)
 }
+
+// The session RPCs (MCP-23) call these App methods instead of the bare
+// manager, so the GUI's extra logic (StartProject's cache-affinity order,
+// remembered model/runtime) reaches MCP too.
+var _ control.SessionApp = (*App)(nil)
+
+// The interaction RPCs go through the App as well.
+var _ control.InteractionApp = (*App)(nil)
+
+// The project RPCs get the App wrapped as controlApp.
+var _ control.ProjectsApp = controlApp{}

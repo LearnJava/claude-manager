@@ -513,6 +513,16 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 `go test ./cmd/cm-mcp -run TestToolsListGolden -update`. Корректность каждого
 `structuredContent` проверяет `internal/control/mcptools_test.go`.
 
+**Правило «один код» (MCP-23).** RPC вызывает `App.X` (через узкий интерфейс
+области — `SessionApp`, `InteractionApp`, `LogsApp`, `PlanningApp`,
+`ProjectsApp`, `SkillsApp`; соответствие закреплено `var _ control.XxxApp =
+(*App)(nil)` в `app_control.go`), если у метода `App` есть своя логика сверх
+вызова менеджера (пример — `StartProject`: порядок запуска по cache-affinity).
+Если `App.X` — чистая обёртка над `Manager.Y`, RPC может звать менеджер
+напрямую. Новая логика добавляется в `App`, а не в RPC; тогда RPC переводится
+на `App.X`. Без приложения (playwright-server, тесты) обработчик откатывается
+на менеджер.
+
 **Тест паритета** — `app_parity_test.go` (корень, пакет `main`): через
 `reflect` перебирает экспортированные методы `*App`; каждый обязан быть в
 `Covers` инструмента, в `parityExcluded` (с причиной) или в `parityPending`
