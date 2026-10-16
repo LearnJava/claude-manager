@@ -165,6 +165,11 @@ Hermes…) может сделать через MCP — без чтения на
 | MCP-16 | ✓ DONE (2026-10-15) | cmd/cm-mcp-eval/, testdata/mcp-eval/, docs/mcp.md («Оценка реальным агентом») |
 | MCP-17 | ✓ DONE (2026-10-15) | docs/mcp.md, docs/design-decisions.md, CLAUDE.md |
 | MCP-18 | ✓ DONE (2026-10-15) | internal/control/mcptools_defs.go, docs/mcp.md |
+| MCP-19 | ○ TODO | internal/control/access.go, server.go, internal/session/env.go, frontend/tests/helpers/ |
+| MCP-20 | ○ TODO | internal/control/emit.go, wait.go, mcptools_defs.go |
+| MCP-21 | ○ TODO | cmd/cm-mcp/ (stdin.go, main.go, server.go), run-claude-manager.bat/.sh |
+| MCP-22 | ○ TODO | internal/control/mcptools_defs.go, rpc_interaction.go |
+| MCP-23 | ○ TODO | internal/control/rpc_*.go, server.go, app_control.go |
 
 ---
 
@@ -651,3 +656,305 @@ send_message, get_session_logs, wait_for_status), `tail` (вместо `limit`),
 «Старые → новые аргументы»), `cm://guide`.
 
 **Готово когда:** `grep -i deprecated` по реестру пуст; гейт зелёный.
+
+---
+
+## Поправки по итогам аудита 2026-10-16
+
+Аудит готового блока: паритет полный (87 методов `App`, 7 исключений с
+причинами), живой прогон `cm-mcp` по stdio прошёл (63 инструмента, 3
+ресурса, 5 промптов). Найденные дефекты разложены на MCP-19…MCP-23.
+По смыслу задачи независимы, но выполняются по порядку: они задевают
+общие файлы (`mcptools_defs.go`, `docs/mcp.md`, golden `tools/list`).
+
+---
+
+## MCP-19: Уровни доступа без обхода и честная граница
+
+**Зависит от:** —
+**Files:** `internal/control/access.go`, `internal/control/server.go`,
+`internal/control/e2e_runner.go`, `internal/session/env.go`,
+`cmd/cm-mcp/main.go`, `frontend/tests/helpers/control.ts`,
+`frontend/tests/helpers/bridge.ts`, `frontend/tests/global-setup.ts`,
+`docs/mcp.md` («Уровни доступа», «Безопасность»), тесты
+`internal/control/access_test.go`, `cmd/cm-mcp/access_test.go`.
+
+**Проблема.**
+1. `requestLevel` (`access.go:129`) считает запрос без заголовка
+   `X-CM-Level` запросом уровня `admin`. Токен лежит в
+   `~/.claude-manager/control.json`, и его читает любая сессия с Bash.
+   Поэтому `curl /rpc` с токеном без заголовка получает `StopAll`,
+   `ReplaceConfig` и одобрение permissions. Комментарий в `access.go:14`
+   («cannot be bypassed by calling /rpc directly») не соответствует
+   поведению.
+2. Сессия-вызывающий определяется по заголовку `X-CM-Caller-Session`,
+   который клиент пишет сам. Защита «не останавливай себя» обходится,
+   если заголовок не отправить.
+3. `selfTarget` (`access.go:144`) проверяет только Stop/Restart/Clear/
+   StopAll/StopProject.
+
+**Что сделать.**
+1. Запрос без `X-CM-Level` → уровень `operate`, а не `admin`.
+   Тестовая обвязка (`e2e_runner.go`, Playwright-хелперы
+   `frontend/tests/helpers/*.ts`, `global-setup.ts`) явно отправляет
+   `X-CM-Level: admin`. Найти всех прямых клиентов: `grep -rn "X-CM-Token"`
+   без каталога `.claude/worktrees/`.
+2. Токен сессии. При запуске каждой CLI-сессии менеджер выдаёт ей
+   отдельный токен и кладёт его в окружение процесса
+   (`CM_CONTROL_TOKEN`, рядом с `CM_SESSION_ID` в
+   `internal/session/env.go`). Control-plane хранит отображение
+   «токен → id сессии» и удаляет запись, когда сессия останавливается.
+   Запрос с токеном сессии:
+   - вызывающий берётся из этого отображения, заголовок
+     `X-CM-Caller-Session` игнорируется;
+   - уровень — как сейчас определяет `cm-mcp`. Отдельное ограничение
+     уровня для сессий не вводить без решения пользователя.
+   `cm-mcp` берёт `CM_CONTROL_TOKEN` из окружения раньше `control.json` —
+   проверить и покрыть тестом.
+3. Добавить в `selfTarget`: `RemoveSession`, `UpdateSession`,
+   `SetSessionRuntime`, `ResumeSession`, `InterruptSession` (по id сессии)
+   и `ClearProjectLogs` (по проекту). Точные имена RPC-методов и
+   параметров взять из `rpcLevels`.
+4. Исправить комментарий в `access.go` и разделы «Уровни доступа» и
+   «Безопасность» в `docs/mcp.md`. Написать прямо: уровень — защита от
+   ошибок агента, который работает только через MCP-инструменты. От агента
+   с shell под тем же пользователем Windows он не защищает, потому что тот
+   может прочитать `control.json`. Токен сессии закрывает подмену
+   вызывающего и обход защиты от самоостановки.
+
+**Готово когда:**
+- Тест: запрос без `X-CM-Level` к `StopAll` получает отказ по уровню.
+- Тест: запрос с токеном сессии A и заголовком
+  `X-CM-Caller-Session: B` считается вызовом от A, `StopSession(A)`
+  отклоняется защитой от самоостановки.
+- Тест: каждый метод из п.3 по своей сессии отклоняется без
+  `X-CM-Allow-Self`.
+- Playwright-обвязка и e2e проходят. Гейт зелёный, `npm --prefix frontend
+  test` зелёный.
+
+---
+
+## MCP-20: Ожидание без старых событий и все события GUI
+
+**Зависит от:** —
+**Files:** `internal/control/emit.go`, `internal/control/wait.go`,
+`internal/control/mcptools_defs.go`, `internal/control/rpc_sessions.go`,
+`internal/control/rpc_interaction.go`, `cmd/cm-mcp/server.go`,
+`docs/mcp.md` («Ожидание и события»), тесты `internal/control/wait_test.go`.
+
+**Проблема.**
+1. `wait_for_status` и `wait_for_event` сначала ищут подходящее событие в
+   кольцевом буфере (`wait.go:131-138`). Типичный сценарий
+   `send_message` → `wait_for_status status=idle` сразу возвращает `idle`
+   из времени до сообщения. `wait_for_any` уже игнорирует буфер
+   (`TestWaitAny_IgnoresStaleRing`).
+2. В `EventNames` (`emit.go:177`) нет пяти событий, которые слушает GUI:
+   `alert:budget`, `alert:loop`, `skills:changed`, `skill:progress`,
+   `experience:regression`. Enum схемы `wait_for_event` их отклоняет,
+   поэтому агент не может среагировать на алерт по бюджету или
+   зацикливанию.
+3. `Subscribe` теряет события, когда заполнен буфер подписчика на 64
+   слота. Всплеск `session:log` может вытеснить событие, которого ждёт
+   waiter.
+
+**Что сделать.**
+1. Добавить в `EnvelopedEvent` поле `Seq uint64` — монотонный номер,
+   который `ControlEmitter` присваивает при эмиссии.
+2. Добавить в `waitRequest` поле `since_seq`. Из кольцевого буфера
+   брать только события с `Seq > since_seq`. Если `since_seq` не задан:
+   - `wait_for_status`: сначала текущий статус сессии через менеджер
+     (`GetSession`). Совпал — вернуть сразу с `reached: true` и
+     текущим `seq`. Иначе ждать новое событие, буфер не смотреть;
+   - `wait_for_event`: прежнее поведение, но в описании инструмента
+     написать, что без `since_seq` может вернуться прошлое событие.
+3. `seq` в ответах. Ответ ожидания содержит `seq`. Инструменты действий,
+   после которых обычно ждут (`send_message`, `start_session`,
+   `restart_session`, `stop_session`, `interrupt_session`,
+   `approve_permission`, `deny_permission`, `answer_question`), возвращают
+   текущий `seq` эмиттера. В их `Returns` написать, что его передают в
+   `since_seq`. Добавить параметр `since_seq` в схемы `wait_for_status` и
+   `wait_for_event`.
+4. Добавить пять событий в `EventNames` (константы — в пакетах, которые их
+   эмитят). Тест: собрать имена из `EventsOn('…')` в `frontend/src`
+   (регулярным выражением по файлам) и сравнить с `EventNames`. Каждое
+   имя из фронтенда либо есть в списке, либо стоит в явном списке
+   исключений с причиной (например, `app:ready`).
+5. Подписка waiter'а фильтрует события по имени до того, как положить их
+   в канал: в канал попадают только события, которые waiter может
+   принять. Так `session:log` не заполняет буфер чужого ожидания.
+6. `go run ./cmd/cm-mcp -gen-docs`, обновить golden `tools/list`.
+
+**Готово когда:**
+- Тест: после `idle` в буфере `send_message` → `wait_for_status idle` с
+  `since_seq` из ответа `send_message` не возвращается раньше нового
+  `idle`.
+- Тест: `wait_for_status` без `since_seq` для уже простаивающей сессии
+  возвращается сразу по текущему статусу.
+- Тест: `wait_for_event event=alert:budget` принимается и срабатывает на
+  эмиссию.
+- Тест сверки с фронтендом проходит.
+- Тест: 200 событий `session:log` подряд не мешают waiter'у
+  `session:status` получить своё. Гейт зелёный.
+
+---
+
+## MCP-21: Устойчивый stdio и понятные ошибки
+
+**Зависит от:** —
+**Files:** `cmd/cm-mcp/server.go`, `cmd/cm-mcp/main.go`,
+`cmd/cm-mcp/prompts.go`, `cmd/cm-mcp/resources.go`, новый
+`cmd/cm-mcp/stdin.go`, `run-claude-manager.bat`, `run-claude-manager.sh`,
+`docs/mcp.md` («Протокол», «Ошибки и траблшутинг», «Быстрый старт»),
+тесты `cmd/cm-mcp/protocol_test.go`, `conformance_test.go`.
+
+**Проблема.** Проверено живым прогоном `cm-mcp.exe` по stdio:
+1. Одна плохая строка завершает процесс с кодом 1 без ответа. Плохая
+   строка — это невалидный JSON (`{not json`), не-объект (`42`),
+   сообщение без `"jsonrpc":"2.0"` или batch `[...]` после `initialize` с
+   версией 2025-06-18+. Спецификация требует ответить ошибкой -32700 или
+   -32600 и продолжить работу. Причина в SDK: `mcp/transport.go:524-549`,
+   `:687`, `:705`.
+2. Ответ control-plane 401 (`unauthorized`, обычный текст) показывается
+   агенту как `decode rpc response: invalid character 'u'…`
+   (`main.go:199-231`). HTTP-статус не проверяется.
+3. Коды ошибок `0`: в `prompts.go:125` при пропущенном обязательном
+   аргументе промпта (нужен -32602), в `resources.go:80-83` при
+   недоступном control-plane (нужен -32603 с подсказкой «запустите
+   Claude Manager»).
+4. У обычных инструментов нет таймаута HTTP (`http.Client{}` в
+   `main.go:118`). Если control-plane завис, `get_*` висит до отмены
+   клиентом.
+5. На закрытие stdin сразу после запроса ответ не пишется: `cm-mcp`
+   выходит, не дождавшись обработчиков.
+6. Лаунчеры не пересобирают `build/cm-mcp.exe`. После обновления
+   приложения клиенты запускают старый `cm-mcp` с устаревшим списком
+   инструментов.
+
+**Что сделать.**
+1. `stdin.go`: свой построчный читатель между `os.Stdin` и
+   `mcp.IOTransport` (`server.go:425`). Он сам отвечает на плохие строки:
+   невалидный JSON → `{"jsonrpc":"2.0","id":null,"error":{"code":-32700,…}}`;
+   не-объект, нет `jsonrpc:"2.0"`, `id: null` у запроса → -32600. Batch →
+   -32600, если согласованная версия его не допускает. Можно проще:
+   отвечать -32600 на любой batch, если клиенты 2025-03-26 от этого не
+   ломаются; решение записать в `docs/mcp.md`. Ответы пишутся в stdout
+   под общим мьютексом с транспортом, чтобы строки не перемешивались.
+   Корректные объекты передаются дальше без изменений.
+2. `main.go`: проверять `resp.StatusCode` до декодирования. 401/403 →
+   «токен control-plane отклонён: приложение перезапущено и
+   `control.json` перезаписан; перезапустите MCP-клиент или проверьте
+   `CM_CONTROL_TOKEN`». Другие не-2xx → статус и первые 200 байт тела.
+3. Коды ошибок из п.3 проблемы — через `jsonrpc.Error` с
+   `CodeInvalidParams` / `CodeInternalError`.
+4. Таймаут 60 с через контекст для инструментов, которые не long-running
+   и не `wait_*`. Константа рядом с `LongToolTimeout`.
+5. На EOF stdin дождаться выполняющихся обработчиков (не дольше 5 с) и
+   только потом выйти.
+6. Если SDK позволяет без форка: не отвечать на запрос, отменённый через
+   `notifications/cancelled` (сейчас приходит `isError` «context
+   canceled»). Если нельзя — описать в `docs/mcp.md` как известное
+   отклонение.
+7. `run-claude-manager.bat` / `.sh`: после сборки приложения собрать
+   `go build -o build/cm-mcp.exe ./cmd/cm-mcp`. Ошибка сборки `cm-mcp` не
+   блокирует запуск приложения, а печатается.
+
+**Готово когда:**
+- Тест: в один процесс подряд `initialize`, `{not json`, `42`,
+  `{"id":1,"method":"ping"}` (без jsonrpc), batch, `ping`. На каждую плохую
+  строку приходит ошибка с правильным кодом, последний `ping` получает
+  ответ, процесс жив.
+- Тест: control-plane-заглушка отвечает 401 → в `isError`-результате
+  слово «token», а не «invalid character».
+- Тест: `prompts/get` без обязательного аргумента → -32602.
+- Тест: `initialize` и сразу закрытый stdin → ответ на `initialize`
+  напечатан.
+- Лаунчер собирает `build/cm-mcp.exe`. Гейт зелёный.
+
+---
+
+## MCP-22: Все решения по permissions и честные аннотации
+
+**Зависит от:** —
+**Files:** `internal/control/mcptools_defs.go`,
+`internal/control/rpc_interaction.go`, `internal/control/access.go`
+(`rpcLevels`), `internal/control/mcplint_test.go`, `docs/mcp.md`
+(«Вопросы и permissions»), golden `tools/list`, тесты
+`rpc_interaction_test.go`, `mcptools_test.go`.
+
+**Проблема.**
+1. В баннере GUI (`PermissionBanner.svelte`) есть решения `deny_always` и
+   `allow_similar` (`internal/permission/handler.go:170,179`). В MCP их
+   нет: `permissionScopes` (`mcptools_defs.go:243`) знает только once,
+   session и always, а `deny_permission` всегда шлёт простой `deny`.
+2. Аннотации непоследовательны. `stop_session` и `interrupt_session` не
+   помечены `destructiveHint`, хотя `stop_project` с тем же смыслом
+   помечен. У `approve_permission` и `deny_permission` все подсказки
+   `false`, хотя одобрение разрешает сессии запустить произвольный
+   инструмент.
+
+**Что сделать.**
+1. `approve_permission`: добавить `scope=similar` → `allow_similar`.
+2. `deny_permission`: добавить параметр `scope` (`once` по умолчанию →
+   `deny`, `always` → `deny_always`).
+3. Уровни доступа. `always`-решения записываются в конфиг. Проверить,
+   какой уровень сейчас требует `approve … always` и как это проверяется
+   (уровень на инструмент или проверка аргумента в обработчике), и сделать
+   так же для `deny … always`. `similar` живёт до конца сессии, поэтому
+   требует тот же уровень, что `session`.
+4. Аннотации: `stop_session` и `interrupt_session` → `destructiveHint:
+   true`. `approve_permission` → `destructiveHint: true, openWorldHint:
+   true`. Read-only инструменты → `idempotentHint: true`, если это одна
+   правка в общем конструкторе. Дополнить `mcplint_test.go` правилом:
+   инструмент, который останавливает или прерывает сессию, помечен
+   destructive.
+5. `go run ./cmd/cm-mcp -gen-docs`, обновить golden `tools/list`.
+
+**Готово когда:**
+- Тест: `deny_permission scope=always` доходит до обработчика как
+  `deny_always` и требует того же уровня, что `approve … always`.
+- Тест: `approve_permission scope=similar` доходит как `allow_similar`.
+- `tools/list` показывает новые аннотации. `TestDocsInSync` и гейт
+  зелёные.
+
+---
+
+## MCP-23: RPC вызывает `App`, а не менеджер в обход
+
+**Зависит от:** —
+**Files:** `internal/control/server.go` (интерфейсы для `*App`),
+`internal/control/rpc_sessions.go`, `rpc_interaction.go`,
+`rpc_projects.go`, `rpc_logs.go`, `rpc_planning.go`, `rpc_skills.go`,
+`app_control.go`, тесты `internal/control/*_test.go`, `docs/mcp.md`
+(«Реестр инструментов и тест паритета»).
+
+**Проблема.** Тест паритета сверяет только имена: у инструмента в
+`Covers` указан метод `App`. Многие RPC-обработчики при этом вызывают
+`SessionManager` напрямую (`server.go:26-63`, обработчики в `rpc_*.go`),
+мимо `App`. Логика, добавленная позже в обёртку `App.X`, в MCP тихо не
+попадёт. Так уже было со `StartProject`: `App` добавляет порядок запуска
+по cache-affinity, а `rpc_sessions.go:131` повторяет его только при
+наличии app. Это нарушает инвариант блока «GUI и MCP — один код».
+
+**Что сделать.**
+1. Аудит: таблица «RPC-метод → что вызывает (`App.X` или `Manager.Y`) →
+   есть ли у `App.X` логика сверх вызова менеджера». Положить её в
+   описание коммита, не в репозиторий.
+2. Для каждого RPC, где `App.X` делает больше, чем `Manager.Y`, вызывать
+   `App.X` через узкий интерфейс области (`SessionApp`, `ProjectsApp`,
+   `InteractionApp`… по образцу существующих в `server.go`). Добавить
+   проверки `var _ control.XxxApp = (*App)(nil)` в `app_control.go`.
+   Тесты `internal/control` получают фейковую реализацию интерфейса.
+3. Где `App.X` — чистая обёртка над `Manager.Y`, допустимо оставить
+   прямой вызов. Записать правило в `docs/mcp.md`: «RPC вызывает `App`,
+   если у метода `App` есть своя логика; новая логика добавляется в
+   `App`, а не в RPC».
+4. Если правок больше ~400 строк, сделать в этой задаче область «Сессии»
+   (в ней найдена расходимость), а остальные области дописать в конец
+   этого файла задачами MCP-24… и поставить их указатели в `STATUS-P1.md`
+   сразу после указателя этой задачи.
+
+**Готово когда:**
+- Каждый RPC с логикой в `App.X` вызывает `App.X`. `StartProject` через
+  RPC запускает сессии в том же порядке, что и кнопка GUI (тест с фейком,
+  который записывает вызовы).
+- Проверки `var _` компилируются. Гейт зелёный.

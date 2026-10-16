@@ -17,9 +17,9 @@ Desktop app (Windows) to launch, monitor, and control parallel Claude Code CLI s
 | [LEARN-TASKS.md](./LEARN-TASKS.md) | Experience layer task breakdown (LN-01..18); queue in [LEARN-STATUS.md](./LEARN-STATUS.md) |
 | [VIEW-TASKS.md](./VIEW-TASKS.md) | Hermes-style session feed in `LogStream` (UI-01..06); queue in [STATUS-P1.md](./STATUS-P1.md) |
 | [RUNTIME-TASKS.md](./RUNTIME-TASKS.md) | Common runtime event format + `Runtime` interface (RT-01..08); queue in [STATUS-P1.md](./STATUS-P1.md). Its RT-01 creates `docs/runtimes.md` — how Claude/Hermes streams map to `ParsedEvent` |
-| [MCP-TASKS.md](./MCP-TASKS.md) | `cm-mcp` as a public MCP server with full GUI parity for third-party agents (MCP-01..17); queue in [STATUS-P1.md](./STATUS-P1.md). Its MCP-01 creates `docs/mcp.md` — the agent-facing guide |
+| [MCP-TASKS.md](./MCP-TASKS.md) | `cm-mcp` as a public MCP server with full GUI parity for third-party agents (MCP-01..18 done; audit fixes MCP-19..23); queue in [STATUS-P1.md](./STATUS-P1.md). Its MCP-01 creates `docs/mcp.md` — the agent-facing guide |
 | [WT-TASKS.md](./WT-TASKS.md) | Session work folder: a persistent pool slot instead of a bare `claude --worktree` (WT-01..03); queue in [STATUS-P1.md](./STATUS-P1.md) |
-| [QUEUE-TASKS.md](./QUEUE-TASKS.md) | Queue panel sees every queued task: tasks read from `## <ID>:` headings when a task file has no status table, and a refresh when the queue/task files change on disk (QV-01..02); queue in [STATUS-P1.md](./STATUS-P1.md) |
+| [QUEUE-TASKS.md](./QUEUE-TASKS.md) | Queue panel sees every queued task: tasks read from `## <ID>:` headings when a task file has no status table, and a refresh when the queue/task files change on disk (QV-01..03); queue in [STATUS-P1.md](./STATUS-P1.md) |
 | [CTX-TASKS.md](./CTX-TASKS.md) | Context fill of a session = the last model call, not the sum over calls: the card's context bar and the `context_handoff` threshold (CTX-01); queue in [STATUS-P1.md](./STATUS-P1.md) |
 | [GUI-TESTS.md](./GUI-TESTS.md) | ~100 Playwright test-case descriptions across all Svelte components (✓ exists / ○ missing) |
 | [config.example.toml](./config.example.toml) | Annotated config reference |
@@ -59,7 +59,7 @@ prompt, which is why the prompt is one line.
 
 | Session | Queue (`task_source`) | Task specs | Branch prefix | Pool slot |
 |---|---|---|---|---|
-| `Developer 1` | `STATUS-P1.md` | `VIEW-TASKS.md` (UI-01..13, done), `RUNTIME-TASKS.md` (RT-01..08, done), `WT-TASKS.md` (WT-01..03), `QUEUE-TASKS.md` (QV-01..02), `CTX-TASKS.md` (CTX-01), `MCP-TASKS.md` (MCP-01..17, done) | `p1-` | `p1-work` |
+| `Developer 1` | `STATUS-P1.md` | `VIEW-TASKS.md` (UI-01..13, done), `RUNTIME-TASKS.md` (RT-01..08, done), `WT-TASKS.md` (WT-01..03), `QUEUE-TASKS.md` (QV-01..03), `CTX-TASKS.md` (CTX-01), `MCP-TASKS.md` (MCP-01..18 done, MCP-19..23) | `p1-` | `p1-work` |
 
 Read the task file's own rules before starting — each breakdown carries
 invariants that are not repeated here (`LEARN-TASKS.md` §Инварианты: everything

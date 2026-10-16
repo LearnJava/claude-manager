@@ -144,9 +144,81 @@
 
 ---
 
+## QV-03: остановка при пустой очереди включена у всех по умолчанию
+
+**Зависит от:** —
+**Files:** `internal/config/types.go`, `internal/config/config.go`
+(загрузка и слияние слоёв конфига), `internal/session/session.go`
+(`Autonomous`, проверка в `Run` ~1073, ~1534),
+`internal/session/hermes_runtime.go:134`, `app.go` (`upsertP1Session`),
+`frontend/src/components/Settings.svelte`,
+`frontend/src/lib/sessionFeatures.ts`, локали
+`frontend/src/lib/locales/{ru,en}/{settings,sessionFeatures,featureHelp}.ts`,
+`config.example.toml`, `PLAN.md` (§ про `stop_when_no_tasks`, строки
+~221 и ~355), `docs/design-decisions.md` (~123, ~454, ~469), тесты в
+`internal/config/` и `internal/session/`.
+
+**Проблема (2026-10-16, ARB).** У ARB → Developer 1 включён
+`auto_restart`, а `stop_when_no_tasks = false`. Программист закрыл последнюю
+задачу и удалил её указатель, `STATUS-P1.md` опустел, но менеджер всё равно
+запустил новую сессию с промптом «работай по очереди». Она читает пустую
+очередь, заканчивается, и автоперезапуск повторяет это по кругу: токены
+тратятся без работы. Остановка при пустой очереди нужна практически
+всегда, но сейчас её надо включать руками для каждой сессии. Значение по
+умолчанию поменять недостаточно: окно настроек пишет
+`stop_when_no_tasks = false` в конфиг каждой сессии явно, и у
+существующих сессий ничего не изменится.
+
+**Что сделать.**
+1. Инвертировать настройку, чтобы нулевое значение означало «останавливаться»
+   (соглашение проекта: ноль = выключено). Новое поле
+   `SessionConfig.RunWithoutTasks bool` с ключом `run_without_tasks`. При
+   `true` сессия крутит запуски при пустой очереди, как раньше при
+   `stop_when_no_tasks = false`. Оставить его для очередей, формат которых
+   `hasTasks` не распознаёт.
+2. Проверка пустой очереди в `Run` (`session.go` ~1073): срабатывает при
+   `TaskSource != "" && !RunWithoutTasks`. Поведение при срабатывании не
+   меняется: обычная интерактивная сессия без автоперезапуска.
+3. Автономность (`Autonomous()`, `session.go` ~1534,
+   `hermes_runtime.go:134`) больше не зависит от этой настройки, только от
+   `AutoRestart`.
+4. Миграция старого ключа. `StopWhenNoTasks` остаётся в структуре только для
+   чтения старых конфигов, с `toml:"stop_when_no_tasks,omitempty"`. После
+   загрузки каждого слоя (`config.toml`, `config.local.toml`, глобальный):
+   - `stop_when_no_tasks = true` и `auto_restart = false` →
+     `AutoRestart = true`, потому что раньше эта пара делала сессию
+     автономной;
+   - `stop_when_no_tasks = false` **не** переносится в `run_without_tasks`:
+     старое `false` записывал Settings, а не пользователь, и цель задачи —
+     включить остановку у всех;
+   - после миграции `StopWhenNoTasks = false`, чтобы при следующем
+     сохранении ключ исчез из файла.
+5. UI. В `Settings.svelte` вместо галочки «Останавливаться при отсутствии
+   задач» сделать галочку «Крутить запуски при пустой очереди», выключенную
+   по умолчанию, с подсказкой из `featureHelp`. Обновить `sessionFeatures.ts`
+   и локали ru/en (`featureHelp.stopWhenNoTasks.*` переименовать в
+   `runWithoutTasks.*` и переписать: по умолчанию сессия останавливается).
+   Из `upsertP1Session` (`app.go` ~555, ~572) убрать `StopWhenNoTasks`.
+6. Документация: `config.example.toml` (`run_without_tasks = false` с
+   комментарием вместо `stop_when_no_tasks`), `PLAN.md`,
+   `docs/design-decisions.md`.
+
+**Готово когда:**
+- Тест сессии на fakeclaude: `task_source` с пустым файлом,
+  `auto_restart = true`, без других ключей → одна интерактивная сессия,
+  повторного запуска нет.
+- Тест: то же с `run_without_tasks = true` → прежнее поведение (запуск с
+  промптом очереди).
+- Тест загрузки конфига: `stop_when_no_tasks = true, auto_restart = false`
+  → `AutoRestart = true`; `stop_when_no_tasks = false` → `RunWithoutTasks
+  = false`; после сохранения ключа `stop_when_no_tasks` в файле нет.
+- `grep -rn StopWhenNoTasks` вне `internal/config` и тестов миграции пуст.
+- Гейт зелёный, `npm --prefix frontend test` зелёный.
+
 ## Status
 
 | Задача | Статус | Ключевые файлы |
 |---|---|---|
 | QV-01 | ✓ DONE | internal/analysis/roadmapview.go, roadmapview_test.go |
 | QV-02 | ✓ DONE | internal/session/queuewatch.go, frontend/src/stores/queues.ts, sessions.ts |
+| QV-03 | ○ TODO | internal/config/, internal/session/session.go, Settings.svelte |
