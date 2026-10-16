@@ -221,4 +221,4 @@
 |---|---|---|
 | QV-01 | ✓ DONE | internal/analysis/roadmapview.go, roadmapview_test.go |
 | QV-02 | ✓ DONE | internal/session/queuewatch.go, frontend/src/stores/queues.ts, sessions.ts |
-| QV-03 | ○ TODO | internal/config/, internal/session/session.go, Settings.svelte |
+| QV-03 | ✓ DONE | internal/config/, internal/session/session.go, Settings.svelte |

@@ -596,3 +596,37 @@ func TestSaveLoadRoundTripWorkers(t *testing.T) {
 		t.Errorf("project mixed settings round-trip mismatch: %+v", got.Projects[0])
 	}
 }
+
+// QV-03: the retired stop_when_no_tasks key is migrated on load and never
+// written back.
+func TestLoad_MigratesStopWhenNoTasks(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	body := "[[project]]\nname = \"p\"\npath = '" + dir + "'\n\n" +
+		"[[project.session]]\nname = \"A\"\nstop_when_no_tasks = true\n\n" +
+		"[[project.session]]\nname = \"B\"\nauto_restart = true\nstop_when_no_tasks = false\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b := cfg.Projects[0].Sessions[0], cfg.Projects[0].Sessions[1]
+	if !a.AutoRestart {
+		t.Error("stop_when_no_tasks=true without auto_restart must become auto_restart=true")
+	}
+	if b.RunWithoutTasks || !b.AutoRestart {
+		t.Errorf("stop_when_no_tasks=false must not become run_without_tasks: %+v", b)
+	}
+	if a.StopWhenNoTasks || b.StopWhenNoTasks {
+		t.Error("StopWhenNoTasks must be cleared after load")
+	}
+	if err := Save(cfg, path); err != nil {
+		t.Fatal(err)
+	}
+	out, _ := os.ReadFile(path)
+	if strings.Contains(string(out), "stop_when_no_tasks") {
+		t.Errorf("saved config still has stop_when_no_tasks:\n%s", out)
+	}
+}

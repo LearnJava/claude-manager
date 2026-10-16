@@ -107,7 +107,7 @@ func (a *evalApp) ApproveRoadmap(planID int64, overwrite bool) (*analysis.TaskPl
 		if !found {
 			sessions = append(sessions, config.SessionConfig{
 				Name: "P1", Model: "sonnet", TaskSource: "STATUS-P1.md",
-				StopWhenNoTasks: true, AutoRestart: true, Prompt: analysis.DefaultP1SessionPrompt,
+				AutoRestart: true, Prompt: analysis.DefaultP1SessionPrompt,
 			})
 		}
 		cfg.Projects[pi].Sessions = sessions

@@ -232,7 +232,12 @@ type SessionConfig struct {
 	Prompt          string `toml:"prompt"`
 	AutoRestart     bool   `toml:"auto_restart"`
 	MaxTasks        int    `toml:"max_tasks"`
-	StopWhenNoTasks bool   `toml:"stop_when_no_tasks"`
+	// RunWithoutTasks keeps launching runs when task_source has no pending
+	// tasks. Off (zero) = stop and open a plain interactive session.
+	RunWithoutTasks bool `toml:"run_without_tasks"`
+	// StopWhenNoTasks is the retired key, read only to migrate old configs
+	// (see applySessionDefaults); it is cleared after load so it never saves.
+	StopWhenNoTasks bool   `toml:"stop_when_no_tasks,omitempty"`
 	TaskSource      string `toml:"task_source"`
 
 	// Model and performance

@@ -52,7 +52,7 @@
         Prompt: string;
         AutoRestart: boolean;
         MaxTasks: number;
-        StopWhenNoTasks: boolean;
+        RunWithoutTasks: boolean;
         TaskSource: string;
         Model: string;
         FallbackModel: string;
@@ -164,7 +164,7 @@
             Prompt: '',
             AutoRestart: false,
             MaxTasks: 0,
-            StopWhenNoTasks: false,
+            RunWithoutTasks: false,
             TaskSource: '',
             Model: 'sonnet',
             FallbackModel: '',
@@ -1710,8 +1710,8 @@
                                                     {$t('settings.sessions.autoRestart')}
                                                 </label>
                                                 <label class="flex items-center gap-2 text-sm text-text">
-                                                    <input type="checkbox" bind:checked={sess.StopWhenNoTasks} />
-                                                    {$t('settings.sessions.stopWhenNoTasks')}
+                                                    <input type="checkbox" bind:checked={sess.RunWithoutTasks} />
+                                                    {$t('settings.sessions.runWithoutTasks')}
                                                 </label>
                                                 <label class="flex items-center gap-2 text-sm text-text">
                                                     <input type="checkbox" bind:checked={sess.UseWorktree} />

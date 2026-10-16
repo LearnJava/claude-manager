@@ -154,7 +154,8 @@ path = 'D:\RustProjects\lumen-browser'
   """
   auto_restart = true
   max_tasks = 0                        # 0 = no limit
-  stop_when_no_tasks = true
+  run_without_tasks = false            # default: an empty task_source stops the loop
+                                       # (plain interactive session); true keeps launching
   task_source = "STATUS-P1.md"         # pointer lines `<source>:NN` (canonical)
                                        #   or legacy In progress/Next sections
 
