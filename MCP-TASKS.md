@@ -166,7 +166,7 @@ Hermes…) может сделать через MCP — без чтения на
 | MCP-17 | ✓ DONE (2026-10-15) | docs/mcp.md, docs/design-decisions.md, CLAUDE.md |
 | MCP-18 | ✓ DONE (2026-10-15) | internal/control/mcptools_defs.go, docs/mcp.md |
 | MCP-19 | ✓ DONE (2026-10-16) | internal/control/access.go, server.go, internal/session/env.go, frontend/tests/helpers/ |
-| MCP-20 | ○ TODO | internal/control/emit.go, wait.go, mcptools_defs.go |
+| MCP-20 | ✓ DONE (2026-10-16) | internal/control/emit.go, wait.go, mcptools_defs.go |
 | MCP-21 | ○ TODO | cmd/cm-mcp/ (stdin.go, main.go, server.go), run-claude-manager.bat/.sh |
 | MCP-22 | ○ TODO | internal/control/mcptools_defs.go, rpc_interaction.go |
 | MCP-23 | ○ TODO | internal/control/rpc_*.go, server.go, app_control.go |

@@ -80,15 +80,34 @@ func (s *Server) handleRPC(w http.ResponseWriter, r *http.Request) {
 			"this agent: ask the human, or start cm-mcp with CM_MCP_ALLOW_SELF=1 to allow it", req.Method, caller))
 		return
 	}
+	seq := s.emitter.Seq() // before the action: every event it causes is numbered above this
 	result, err := h(params)
 	audit.done(err)
 	if err != nil {
 		writeRPCError(w, req.ID, -32000, err.Error())
 		return
 	}
+	if seqMethods[req.Method] {
+		switch m := result.(type) {
+		case nil:
+			result = map[string]any{"seq": seq}
+		case map[string]any:
+			m["seq"] = seq
+		}
+	}
 	resp := rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: result}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// seqMethods are the actions a caller usually waits on afterwards: their
+// result carries the emitter's seq from before the action, to pass as
+// since_seq to wait_for_status / wait_for_event.
+var seqMethods = map[string]bool{
+	"StartSession": true, "StartSessionWithModel": true, "StopSession": true,
+	"InterruptSession": true, "RestartSession": true, "ResumeSession": true,
+	"SendMessage": true, "SendMessageWithImages": true,
+	"RespondPermission": true, "AnswerQuestion": true,
 }
 
 func writeRPCError(w http.ResponseWriter, id any, code int, msg string) {

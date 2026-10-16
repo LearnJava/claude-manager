@@ -220,6 +220,7 @@ type waitStatusIn struct {
 	sessionRef
 	Status    string `json:"status" jsonschema:"Target status to wait for"`
 	TimeoutMs int64  `json:"timeout_ms,omitempty" jsonschema:"How long to wait, in milliseconds (default 5000, at most 600000)"`
+	SinceSeq  *int64  `json:"since_seq,omitempty" jsonschema:"The seq an action returned (send_message, start_session, ...): only events after it count, so an older event is not taken for the answer"`
 }
 
 type waitAnyIn struct {
@@ -231,6 +232,7 @@ type waitEventIn struct {
 	Event     string         `json:"event" jsonschema:"Event name, e.g. session:status, session:log, session:permission"`
 	Match     map[string]any `json:"match,omitempty" jsonschema:"Fields the event payload must contain, all of them, e.g. {\"id\": \"lumen/P1\"}"`
 	TimeoutMs int64          `json:"timeout_ms,omitempty" jsonschema:"How long to wait, in milliseconds (default 5000, at most 600000)"`
+	SinceSeq  *int64  `json:"since_seq,omitempty" jsonschema:"The seq an action returned (send_message, start_session, ...): only events after it count, so an older event is not taken for the answer"`
 }
 
 // sessionStatuses are the values of a session's status as the app reports it.
@@ -282,6 +284,7 @@ func tuneAll(fns ...refine) refine {
 type sessionAck struct {
 	OK        bool   `json:"ok" jsonschema:"True when the action was accepted"`
 	SessionID string `json:"session_id" jsonschema:"Session ID in project/session form"`
+	Seq       *int64 `json:"seq,omitempty" jsonschema:"Event counter from before the action; pass it as since_seq to wait_for_status or wait_for_event so only events the action caused count"`
 }
 
 type permissionAck struct {
@@ -289,6 +292,7 @@ type permissionAck struct {
 	SessionID string `json:"session_id" jsonschema:"Session ID in project/session form"`
 	RequestID string `json:"request_id" jsonschema:"The permission request that was answered"`
 	Decision  string `json:"decision" jsonschema:"The decision sent: once, session, always or deny"`
+	Seq       *int64 `json:"seq,omitempty" jsonschema:"Event counter from before the action; pass it as since_seq to wait_for_status or wait_for_event so only events the action caused count"`
 }
 
 type projectAck struct {
@@ -363,6 +367,18 @@ type waitOut struct {
 	CurrentStatus string            `json:"current_status,omitempty" jsonschema:"Status of the awaited session right now (when not reached)"`
 	Statuses      map[string]string `json:"statuses,omitempty" jsonschema:"Status of every awaited session right now (when not reached)"`
 	Hint          string            `json:"hint,omitempty" jsonschema:"What to do next (when not reached)"`
+	Seq           *int64            `json:"seq,omitempty" jsonschema:"Event counter at the matching event (when reached); pass it as since_seq to the next wait to skip what you already saw"`
+}
+
+// seqOf reads the "seq" an action's rpc result carries (see seqMethods).
+func seqOf(raw any) *int64 {
+	m, _ := raw.(map[string]any)
+	f, ok := m["seq"].(float64)
+	if !ok {
+		return nil
+	}
+	v := int64(f)
+	return &v
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -414,9 +430,9 @@ func projectTool(name, title, method string, level AccessLevel, ann ToolAnnotati
 // sessionTool declares a lifecycle tool taking a session reference and
 // answering with sessionAck; verb is the past-tense word for the summary.
 func sessionTool[In any](s spec[In, sessionAck], ref func(In) sessionRef, verb string) Tool {
-	s.Result = func(in In, _ any) sessionAck {
+	s.Result = func(in In, raw any) sessionAck {
 		id, _ := ref(in).id()
-		return sessionAck{OK: true, SessionID: id}
+		return sessionAck{OK: true, SessionID: id, Seq: seqOf(raw)}
 	}
 	s.Summary = func(_ In, out sessionAck) string { return fmt.Sprintf("Session %s %s.", out.SessionID, verb) }
 	return define(s)
@@ -427,6 +443,7 @@ func waitResult(_ noIn, raw any) waitOut {
 	out := waitOut{Data: m["data"]}
 	out.Event, _ = m["event"].(string)
 	out.TS, _ = m["ts"].(string)
+	out.Seq = seqOf(raw)
 	if reached, ok := m["reached"].(bool); ok && !reached {
 		out.Data = nil
 		if t, ok := m["timeout_ms"].(float64); ok {
@@ -476,7 +493,7 @@ func buildCoreTools() []Tool {
 				What:    "Start a configured session, optionally with a model, effort or runtime override.",
 				UseWhen: "a session is idle, stopped or errored and should begin work.",
 				NotFor:  "a session that is already running (use send_message or set_session_model) or continuing an old conversation (use restart_session with resume=true).",
-				Returns: "ok and the session_id.",
+				Returns: "ok and the session_id. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count.",
 				Effects: "launches the CLI process, which may spend tokens; model and effort are remembered as the session's defaults and runtime is saved to its config.",
 				Example: `{"session_id":"lumen/P1","model":"opus","effort":"high"}`,
 			},
@@ -503,7 +520,7 @@ func buildCoreTools() []Tool {
 				What:    "Stop a running session.",
 				UseWhen: "a session must end, now or after it finishes its current task.",
 				NotFor:  "aborting only the current step while keeping the session alive (use interrupt_session).",
-				Returns: "ok and the session_id; the stop is requested, confirm it with wait_for_status status=idle.",
+				Returns: "ok and the session_id; the stop is requested, confirm it with wait_for_status status=idle. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count.",
 				Effects: "terminates the CLI process (at once, or after the task when after_task=true); work in the current turn is lost.",
 				Example: `{"session_id":"lumen/P1","after_task":true}`,
 			},
@@ -522,7 +539,7 @@ func buildCoreTools() []Tool {
 				What:    "Interrupt the session's current turn (a running tool call or generation) without stopping the session.",
 				UseWhen: "the session is going down a wrong path and you want to redirect it with send_message.",
 				NotFor:  "ending the session (use stop_session) or answering a permission request (use approve_permission or deny_permission).",
-				Returns: "ok and the session_id; the session then waits for the next message.",
+				Returns: "ok and the session_id; the session then waits for the next message. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count.",
 				Effects: "cancels the work in flight; partial results of that turn are discarded.",
 				Example: `{"session_id":"lumen/P1"}`,
 			},
@@ -541,7 +558,7 @@ func buildCoreTools() []Tool {
 				What:    "Restart a session, fresh or resuming its saved conversation.",
 				UseWhen: "a session is stuck, errored, or needs a clean process; use resume=true to keep the conversation.",
 				NotFor:  "a session that was never started (use start_session).",
-				Returns: "ok and the session_id.",
+				Returns: "ok and the session_id. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count.",
 				Effects: "stops the current CLI process and launches a new one, which may spend tokens.",
 				Example: `{"session_id":"lumen/P1","resume":true}`,
 			},
@@ -564,7 +581,7 @@ func buildCoreTools() []Tool {
 				What:    "Send a user message, optionally with images, to a running session.",
 				UseWhen: "you want to give a session new instructions or answer its question.",
 				NotFor:  "a session that is not running (use start_session first) or permission requests (use approve_permission).",
-				Returns: "ok and the session_id; read the reply with get_session_logs or wait_for_status.",
+				Returns: "ok and the session_id; read the reply with get_session_logs or wait_for_status. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count.",
 				Effects: "the session processes the message as its next turn, which spends tokens.",
 				Example: `{"session_id":"lumen/P1","text":"Continue with the next task"}`,
 			},
@@ -700,7 +717,7 @@ func buildCoreTools() []Tool {
 				What:    "Approve a pending permission request on the human's behalf.",
 				UseWhen: "get_pending_permissions lists a request you are authorised to allow.",
 				NotFor:  "refusing a request (use deny_permission).",
-				Returns: "ok, the ids and the decision sent.",
+				Returns: "ok, the ids and the decision sent. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count.",
 				Effects: "the session runs the tool it asked for; scope session or always also adds a standing allow rule.",
 				Example: `{"session_id":"lumen/P1","request_id":"req-1","scope":"once"}`,
 			},
@@ -718,8 +735,8 @@ func buildCoreTools() []Tool {
 					"id": in.SessionID, "request_id": in.RequestID, "decision": decision,
 				}), nil
 			},
-			Result: func(in permissionIn, _ any) permissionAck {
-				return permissionAck{OK: true, SessionID: in.SessionID, RequestID: in.RequestID, Decision: scopeOrOnce(in.Scope)}
+			Result: func(in permissionIn, raw any) permissionAck {
+				return permissionAck{OK: true, SessionID: in.SessionID, RequestID: in.RequestID, Decision: scopeOrOnce(in.Scope), Seq: seqOf(raw)}
 			},
 			Summary: func(_ permissionIn, out permissionAck) string {
 				return fmt.Sprintf("Permission %s approved (%s) for %s.", out.RequestID, out.Decision, out.SessionID)
@@ -731,7 +748,7 @@ func buildCoreTools() []Tool {
 				What:    "Deny a pending permission request.",
 				UseWhen: "get_pending_permissions lists a request that must not run.",
 				NotFor:  "approving a request (use approve_permission).",
-				Returns: "ok, the ids and decision deny.",
+				Returns: "ok, the ids and decision deny. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count.",
 				Effects: "the session is told the tool was refused and continues without it.",
 				Example: `{"session_id":"lumen/P1","request_id":"req-1"}`,
 			},
@@ -741,8 +758,8 @@ func buildCoreTools() []Tool {
 					"id": in.SessionID, "request_id": in.RequestID, "decision": "deny",
 				}), nil
 			},
-			Result: func(in denyIn, _ any) permissionAck {
-				return permissionAck{OK: true, SessionID: in.SessionID, RequestID: in.RequestID, Decision: "deny"}
+			Result: func(in denyIn, raw any) permissionAck {
+				return permissionAck{OK: true, SessionID: in.SessionID, RequestID: in.RequestID, Decision: "deny", Seq: seqOf(raw)}
 			},
 			Summary: func(_ denyIn, out permissionAck) string {
 				return fmt.Sprintf("Permission %s denied for %s.", out.RequestID, out.SessionID)
@@ -1048,9 +1065,9 @@ func buildCoreTools() []Tool {
 			Name: "wait_for_status", Title: "Wait for session status",
 			Doc: Doc{
 				What:    "Block until a session reports the given status, or the timeout passes.",
-				UseWhen: "after start_session, send_message or approve_permission, instead of polling get_sessions.",
+				UseWhen: "after start_session, send_message or approve_permission, instead of polling get_sessions. Pass the seq that action returned as since_seq, or an earlier idle may be taken for the answer.",
 				NotFor:  "events other than status changes (use wait_for_event).",
-				Returns: "the matching session:status event; on timeout reached=false with the current status and a hint, not an error.",
+				Returns: "the matching session:status event and its seq. Without since_seq a session that already has the status returns at once; with it only a later event counts. On timeout reached=false with the current status and a hint, not an error.",
 				Effects: "none, read only.",
 				Example: `{"session_id":"lumen/P1","status":"idle","timeout_ms":30000}`,
 			},
@@ -1063,7 +1080,9 @@ func buildCoreTools() []Tool {
 				if err != nil {
 					return "", nil, err
 				}
-				return "/wait", waitCallBody("session:status", map[string]any{"id": id, "status": in.Status}, orDefault(in.TimeoutMs, 5000)), nil
+				body := withSince(waitCallBody("session:status", map[string]any{"id": id, "status": in.Status}, orDefault(in.TimeoutMs, 5000)), in.SinceSeq)
+				body["status_now"] = true
+				return "/wait", body, nil
 			},
 			Result:  func(_ waitStatusIn, raw any) waitOut { return waitResult(noIn{}, raw) },
 			Summary: func(_ waitStatusIn, out waitOut) string { return waitSummary(out) },
@@ -1074,7 +1093,7 @@ func buildCoreTools() []Tool {
 				What:    "Block until an event whose payload contains the given fields is emitted, or the timeout passes.",
 				UseWhen: "you wait for something other than a status, such as session:log or session:permission.",
 				NotFor:  "session status changes (use wait_for_status).",
-				Returns: "the matching event; recent past events count, so a short gap does not lose it; on timeout reached=false with a hint, not an error.",
+				Returns: "the matching event and its seq. Without since_seq a recent past event counts, so an old one may come back; pass the seq of your action as since_seq to get only newer ones. On timeout reached=false with a hint, not an error.",
 				Effects: "none, read only.",
 				Example: `{"event":"session:permission","match":{"id":"lumen/P1"}}`,
 			},
@@ -1085,7 +1104,7 @@ func buildCoreTools() []Tool {
 			}),
 			Level: LevelRead, Annotations: ro,
 			Translate: func(in waitEventIn) (string, any, error) {
-				return "/wait", waitCallBody(in.Event, in.Match, orDefault(in.TimeoutMs, 5000)), nil
+				return "/wait", withSince(waitCallBody(in.Event, in.Match, orDefault(in.TimeoutMs, 5000)), in.SinceSeq), nil
 			},
 			Result:  func(_ waitEventIn, raw any) waitOut { return waitResult(noIn{}, raw) },
 			Summary: func(_ waitEventIn, out waitOut) string { return waitSummary(out) },
