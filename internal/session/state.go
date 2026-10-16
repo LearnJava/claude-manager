@@ -19,6 +19,10 @@ type PersistedState struct {
 	// something was — "session_id + started_at" alone is not enough for the
 	// user to decide between continuing and starting over.
 	Task string `json:"task,omitempty"`
+	// WorkDir is the folder the run's CLI worked in (project root or pool
+	// slot). A recovery after use_worktree changed compares it with the new
+	// folder and tells the resumed conversation to move (workDirSwitchNote).
+	WorkDir string `json:"work_dir,omitempty"`
 }
 
 // StateStore reads and writes PersistedState files to a directory.
@@ -84,6 +88,17 @@ func (s *StateStore) UpdateSessionID(project, name, sessionID string) {
 		return
 	}
 	st.SessionID = sessionID
+	_ = s.Save(project, name, st)
+}
+
+// UpdateWorkDir patches the work_dir field in an existing state file.
+// No-op if the file does not exist or already has the same folder.
+func (s *StateStore) UpdateWorkDir(project, name, dir string) {
+	st, _ := s.Load(project, name)
+	if st == nil || st.WorkDir == dir {
+		return
+	}
+	st.WorkDir = dir
 	_ = s.Save(project, name, st)
 }
 

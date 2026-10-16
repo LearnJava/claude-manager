@@ -3,6 +3,8 @@ package session
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"claude-manager/internal/gitutil"
@@ -48,9 +50,104 @@ func (s *Session) prepareWorkDir(ctx context.Context) (dir, slot string) {
 		}
 	}
 	s.mu.Lock()
-	s.workDir = dir
+	prev := s.workDir
+	if prev == "" {
+		prev = s.prevWorkDir
+	}
 	s.mu.Unlock()
+	note := s.workDirSwitchNote(ctx, prev, dir)
+	s.mu.Lock()
+	s.workDir = dir
+	s.pendingWorkDirNote = note
+	s.mu.Unlock()
+	if s.crashRecovery && s.stateStore != nil {
+		s.stateStore.UpdateWorkDir(s.ProjectName, s.Config.Name, dir)
+	}
 	return dir, slot
+}
+
+// workDirSwitchNote makes a use_worktree change actually move the work, not
+// just the folder the CLI starts in. A resumed conversation remembers the old
+// folder and would cd back into it, and a slot left on the task branch keeps
+// that branch from being checked out in the project root. So: with
+// use_worktree off, this session's slots are released (their branch freed,
+// see worktree.Release), and the returned note — put in front of the next
+// prompt — names the folder to work in and what is left to move. "" when
+// nothing changed.
+func (s *Session) workDirSwitchNote(ctx context.Context, prev, dir string) string {
+	var notes []string
+	if prev != "" && !samePath(prev, dir) {
+		notes = append(notes, fmt.Sprintf("Earlier in this conversation you worked in %s; that folder is no longer yours — do not cd into it.", prev))
+	}
+	if !s.Config.UseWorktree && s.ProjectPath != "" {
+		for _, path := range s.ownSlotPaths(prev) {
+			branch, dirty, err := worktree.Release(ctx, path)
+			rel := relSlot(s.ProjectPath, path)
+			switch {
+			case err != nil:
+				logger.L.Warn("session.slot_release_failed", "id", s.ID, "slot", path, "error", err)
+				s.emitManagerLog(fmt.Sprintf("Не удалось освободить ветку %s в %s: %v", branch, rel, err))
+				notes = append(notes, fmt.Sprintf("Branch %s is still checked out in %s; release it there with `git -C %s switch --detach` before checking it out in %s.", branch, path, path, dir))
+			case dirty:
+				s.emitManagerLog(fmt.Sprintf("Worktree выключен, но в %s ветка %s с незакоммиченными правками — сессии сказано перенести их", rel, branch))
+				notes = append(notes, fmt.Sprintf("%s still holds branch %s with uncommitted changes: commit them there, release the branch with `git -C %s switch --detach`, then check %s out in %s and continue there.", path, branch, path, branch, dir))
+			case branch != "":
+				s.emitManagerLog(fmt.Sprintf("Worktree выключен: ветка %s освобождена из %s, работа продолжается в корне проекта", branch, rel))
+				notes = append(notes, fmt.Sprintf("Branch %s was released from %s (now detached). If it is your task branch, check it out in %s and continue there.", branch, path, dir))
+			}
+		}
+	}
+	if len(notes) == 0 {
+		return ""
+	}
+	setting := "off"
+	if s.Config.UseWorktree {
+		setting = "on"
+	}
+	return fmt.Sprintf("Work folder for this run: %s (the manager's use_worktree setting is %s). Read, build, test and commit only there. ", dir, setting) +
+		strings.Join(notes, " ")
+}
+
+// ownSlotPaths lists the pool slots this session may have left work in: its
+// slot by the current naming, the name-based slot (an earlier task_source may
+// have named it), and the previous run's folder when that was a slot.
+func (s *Session) ownSlotPaths(prev string) []string {
+	byName := s.Config
+	byName.TaskSource = ""
+	cands := []string{
+		worktree.SlotPath(s.ProjectPath, worktree.SlotName(s.Config)),
+		worktree.SlotPath(s.ProjectPath, worktree.SlotName(byName)),
+	}
+	if prev != "" && isUnder(prev, filepath.Join(s.ProjectPath, ".claude", "worktrees")) {
+		cands = append(cands, prev)
+	}
+	var out []string
+	for _, c := range cands {
+		dup := false
+		for _, o := range out {
+			dup = dup || samePath(o, c)
+		}
+		if !dup {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func samePath(a, b string) bool {
+	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+}
+
+func isUnder(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != "." && !strings.HasPrefix(rel, "..")
+}
+
+func relSlot(project, path string) string {
+	if rel, err := filepath.Rel(project, path); err == nil {
+		return filepath.ToSlash(rel)
+	}
+	return path
 }
 
 func (s *Session) ensureSlot(ctx context.Context, slot string) (string, bool, error) {

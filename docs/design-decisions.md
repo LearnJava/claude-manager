@@ -2889,7 +2889,8 @@ process with `cmd.Dir` = the session's persistent pool slot
   seven sessions, seven throwaway worktrees). The slot keeps the branch, the
   uncommitted work and `node_modules` between runs.
 - **Invariants:** the manager only guarantees the folder exists and is sound; it
-  never switches/commits/resets the slot's branch. `s.ProjectPath` stays the
+  never commits/resets the slot's branch and switches it only in one case — the
+  release below. `s.ProjectPath` stays the
   project root for everything the manager itself does (task queue, logs, hooks,
   primer). A slot failure never fails the session: it logs
   `Рабочая папка не готова…` (+ `session.slot_failed`) and runs in the project root.
@@ -2902,6 +2903,20 @@ process with `cmd.Dir` = the session's persistent pool slot
   same slot. After switching `use_worktree` on, the old transcript (root cwd) is
   not found: Claude's `No conversation found with session ID` stderr is classified
   `KindSessionNotFound`, and the run loop drops the id and starts fresh.
+- **Switching `use_worktree` moves the work, not only the cwd**
+  (`workDirSwitchNote`, `worktree.Release`). Changing the cwd alone was not
+  enough (ARB, 2026-10-15): a resumed conversation remembered the slot and `cd`'d
+  back into it, and the slot kept the task branch so the root could not check it
+  out. Now each run records its folder (`PersistedState.WorkDir`, plus
+  `s.workDir` in memory); with `use_worktree` off the session's own slots
+  (`SlotName` of the current config, the name-based slot, the previous folder)
+  are released — a slot on a branch with no tracked changes is switched to a
+  detached HEAD at the same commit, a dirty one is left alone. When the folder
+  changed or a slot held a branch, the next prompt (recovery or regular, never an
+  empty interactive one) starts with `Work folder for this run: …` naming the
+  folder, the old one not to `cd` into, and the released branch or the
+  uncommitted changes still to move. With nothing changed the prompt is
+  byte-identical.
 
 ### Checkbox ↔ protocol, `CLAUDE.md`
 
