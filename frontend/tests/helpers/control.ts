@@ -36,6 +36,7 @@ export class ControlClient {
       headers: {
         'Content-Type': 'application/json',
         'X-CM-Token': this.token,
+        'X-CM-Level': 'admin',
       },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
     });
@@ -65,6 +66,7 @@ export class ControlClient {
       headers: {
         'Content-Type': 'application/json',
         'X-CM-Token': this.token,
+        'X-CM-Level': 'admin',
       },
       body: JSON.stringify({ event, match, timeout_ms: timeoutMs }),
     });

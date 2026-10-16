@@ -70,6 +70,17 @@ func TestCallToolRefusesAboveLevel(t *testing.T) {
 	}
 }
 
+func TestSessionTokenFromEnvWinsOverEndpointFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CM_CONTROL_ADDR", "http://127.0.0.1:1")
+	t.Setenv("CM_CONTROL_TOKEN", "cms-session")
+	if _, token := resolveEndpoint(); token != "cms-session" {
+		t.Errorf("token = %q, want the session token from the environment", token)
+	}
+}
+
 func TestRequestCarriesLevelAndSelfHeaders(t *testing.T) {
 	var got http.Header
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

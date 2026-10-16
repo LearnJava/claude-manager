@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"claude-manager/internal/logger"
+	"claude-manager/internal/sesstoken"
 )
 
 func TestParseLevel(t *testing.T) {
@@ -104,7 +105,8 @@ func TestRPCLevelEnforced(t *testing.T) {
 		{"operate", "RespondPermission", `{"id":"a/b","request_id":"r","decision":"deny"}`, true},
 		{"admin", "RespondPermission", `{"id":"a/b","request_id":"r","decision":"allow"}`, true},
 		{"admin", "StopAll", `{}`, true},
-		{"", "StopAll", `{}`, true}, // no header: direct token holder, trusted as before levels
+		{"", "StopAll", `{}`, false}, // no header: operate, not admin (MCP-19)
+		{"", "SendMessage", `{"id":"a/b","message":"x"}`, true},
 	}
 	for _, c := range cases {
 		hdr := lvl(c.level)
@@ -141,12 +143,18 @@ func TestSelfProtection(t *testing.T) {
 		{"ClearSessionState", `{"project":"lumen","session":"P1"}`},
 		{"StopProject", `{"project":"lumen"}`},
 		{"StopAll", `{}`},
+		{"InterruptSession", `{"id":"lumen/P1"}`},
+		{"ResumeSession", `{"id":"lumen/P1"}`},
+		{"SetSessionRuntime", `{"id":"lumen/P1","runtime":"claude"}`},
+		{"RemoveSession", `{"project":"lumen","session":"P1"}`},
+		{"UpdateSession", `{"project":"lumen","session":"P1","fields":{}}`},
+		{"ClearProjectLogs", `{"project":"lumen"}`},
 	}
 	for _, c := range refused {
 		if r := rpcAt(t, ts, token, h(), c.method, c.params); !strings.Contains(errMsg(r), "calling session") {
 			t.Errorf("%s on self must be refused, got %v", c.method, r)
 		}
-		if r := rpcAt(t, ts, token, h(HeaderAllowSelf, "1"), c.method, c.params); r["error"] != nil {
+		if r := rpcAt(t, ts, token, h(HeaderAllowSelf, "1"), c.method, c.params); strings.Contains(errMsg(r), "calling session") {
 			t.Errorf("%s on self with the flag must pass, got %s", c.method, errMsg(r))
 		}
 	}
@@ -159,6 +167,30 @@ func TestSelfProtection(t *testing.T) {
 		if r := rpcAt(t, ts, token, h(), c.method, c.params); r["error"] != nil {
 			t.Errorf("%s on another session refused: %s", c.method, errMsg(r))
 		}
+	}
+}
+
+func TestSessionTokenIdentifiesCaller(t *testing.T) {
+	srv, _ := newTestServer(t, &mockManager{})
+	ts := httptest.NewServer(srv.srv.Handler)
+	defer ts.Close()
+	tokA := sesstoken.Issue("lumen/A")
+	defer sesstoken.Revoke(tokA)
+	// The header claims B; the token says A, so StopSession(A) is a self-stop.
+	hdr := map[string]string{HeaderLevel: "admin", HeaderCaller: "lumen/B"}
+	if r := rpcAt(t, ts, tokA, hdr, "StopSession", `{"id":"lumen/A"}`); !strings.Contains(errMsg(r), "calling session lumen/A") {
+		t.Errorf("session token must define the caller, got %v", r)
+	}
+	if r := rpcAt(t, ts, tokA, hdr, "StopSession", `{"id":"lumen/B"}`); r["error"] != nil {
+		t.Errorf("stopping another session must pass: %s", errMsg(r))
+	}
+	// No header at all: still the token's session.
+	if r := rpcAt(t, ts, tokA, map[string]string{HeaderLevel: "admin"}, "StopAll", `{}`); !strings.Contains(errMsg(r), "calling session") {
+		t.Errorf("StopAll with a session token must be a self-target, got %v", r)
+	}
+	sesstoken.Revoke(tokA)
+	if r := rpcAt(t, ts, tokA, hdr, "GetAllSessions", `{}`); r["result"] != nil {
+		t.Errorf("a revoked token must be refused, got %v", r)
 	}
 }
 

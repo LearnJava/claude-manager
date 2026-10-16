@@ -174,8 +174,8 @@
 включён самим агентом (инструмента повышения уровня нет); уровень берётся из
 окружения процесса `cm-mcp`, которое задаёт человек в конфиге клиента.
 Control-plane проверяет уровень и на своей стороне (запрос `cm-mcp`
-несёт его в заголовке `X-CM-Level`), чтобы урезанный `cm-mcp` нельзя было
-обойти прямым вызовом `/rpc`. Тестовая обвязка GUI (`docs/testing-harness.md`) запускает `cm-mcp` с
+несёт его в заголовке `X-CM-Level`; без заголовка — `operate`). Это защита от
+ошибок, а не от агента с shell — см. «Безопасность». Тестовая обвязка GUI (`docs/testing-harness.md`) запускает `cm-mcp` с
 `CM_MCP_LEVEL=admin` — так остаются рабочими существующие сценарии
 (`approve_permission` в Playwright-тестах).
 
@@ -190,17 +190,26 @@ Control-plane проверяет уровень и на своей сторон�
   `rpcLevels` (`internal/control/access.go`; метод без записи требует `admin`;
   `RespondPermission` с `deny` — `operate`, с любым другим решением — `admin`).
   Ошибки control-plane: `-32001` (уровень), `-32003` (самоповреждение).
-- **Граница.** `cm-mcp` всегда шлёт `X-CM-Level`; запрос **без** заголовка — прямой
-  вызов держателя токена (тестовая обвязка, e2e-раннер) и считается `admin`, как
-  до введения уровней. Токен остаётся полномочием: тот, кто его прочитал из
-  `~/.claude-manager/control.json` (файл 0600), может заявить любой уровень.
-  Уровни защищают от ошибок и обрезают права *агента через cm-mcp*, а не от
-  процесса с доступом к файлу токена.
+- **Граница.** Уровень — защита от ошибок агента, который работает только через
+  MCP-инструменты. От агента с shell под тем же пользователем Windows он **не**
+  защищает: тот читает `~/.claude-manager/control.json` и сам шлёт
+  `X-CM-Level: admin`. `cm-mcp` всегда шлёт `X-CM-Level`; запрос **без** заголовка
+  считается `operate` (раньше — `admin`), а тестовая обвязка и e2e-раннер шлют
+  `X-CM-Level: admin` явно.
+- **Токен сессии.** Менеджер выдаёт каждой CLI-сессии свой токен и кладёт его в
+  окружение как `CM_CONTROL_TOKEN` (рядом с `CM_SESSION_ID`); `cm-mcp` берёт его
+  из окружения раньше `control.json`. Control-plane сопоставляет токен с id сессии
+  и удаляет запись, когда процесс сессии завершился. Для запроса с токеном сессии
+  вызывающий — эта сессия, заголовок `X-CM-Caller-Session` игнорируется. Так
+  нельзя ни подменить вызывающего, ни обойти защиту от самоостановки, не отправив
+  заголовок. Уровень токен не ограничивает.
 - **Самоповреждение.** Менеджер кладёт в окружение каждой сессии
-  `CM_SESSION_ID=project/session`; `cm-mcp` пересылает его (`X-CM-Caller-Session`).
-  `StopSession`/`RestartSession`/`ClearSessionState` своей сессии, `StopProject`
-  своего проекта и `StopAll` отклоняются, пока человек не задал
-  `CM_MCP_ALLOW_SELF=1` (или `--allow-self`).
+  `CM_SESSION_ID=project/session`. Отклоняются, пока человек не задал
+  `CM_MCP_ALLOW_SELF=1` (или `--allow-self`): `StopSession`, `RestartSession`,
+  `InterruptSession`, `ResumeSession`, `SetSessionRuntime` (по `id` своей
+  сессии), `RemoveSession`, `UpdateSession`, `ClearSessionState` (по
+  project+session своей сессии), `StopProject`, `ClearProjectLogs` (по проекту
+  своей сессии) и `StopAll`.
 - **Журнал.** Каждый вызов не-`read` метода (в т.ч. отказ) — запись
   `control.audit` в `app.log` менеджера: `client` (MCP `clientInfo`), `level`,
   `method`, `params`, `result` (`ok` / `error` / `denied:level` / `denied:self`).

@@ -384,7 +384,7 @@ async function startServer(
 async function assertConnectable(port: string, token: string): Promise<void> {
   const res = await fetch(`http://127.0.0.1:${port}/rpc`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CM-Token': token },
+    headers: { 'Content-Type': 'application/json', 'X-CM-Token': token, 'X-CM-Level': 'admin' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'GetAllSessions', params: {} }),
   });
   if (!res.ok) {

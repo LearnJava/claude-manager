@@ -29,7 +29,24 @@ const (
 	// the child process. cm-mcp forwards it to the control-plane so a session
 	// cannot stop, restart or clear itself through MCP by accident (MCP-05).
 	EnvSessionID = "CM_SESSION_ID"
+
+	// EnvControlToken is the session's own control-plane token (MCP-19). The
+	// control-plane maps it back to the session id, so the caller identity of
+	// a cm-mcp started inside the session cannot be forged with a header.
+	EnvControlToken = "CM_CONTROL_TOKEN"
 )
+
+// withEnv returns env with name=value set, replacing any inherited value.
+func withEnv(env []string, name, value string) []string {
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if n, _, ok := strings.Cut(kv, "="); ok && strings.EqualFold(n, name) {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return append(out, name+"="+value)
+}
 
 // withSessionID returns env with CM_SESSION_ID set to id, replacing any
 // inherited value (a nested manager would otherwise leak the outer id).

@@ -13,6 +13,7 @@ func planRPC(t *testing.T, ts *httptest.Server, token, body string) rpcResponse 
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/rpc", strings.NewReader(body))
 	req.Header.Set("X-CM-Token", token)
+	req.Header.Set(HeaderLevel, string(LevelAdmin))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

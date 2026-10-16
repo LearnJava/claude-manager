@@ -32,7 +32,7 @@ export async function installBridge(page: Page, port: string, token: string): Pr
       function rpc<T>(method: string, params: Record<string, unknown>): Promise<T> {
         return fetch(`${base}/rpc`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CM-Token': t },
+          headers: { 'Content-Type': 'application/json', 'X-CM-Token': t, 'X-CM-Level': 'admin' },
           body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
         })
           .then((r) => r.json())

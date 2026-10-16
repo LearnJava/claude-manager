@@ -9,10 +9,17 @@ import (
 	"claude-manager/internal/logger"
 )
 
-// Access control (MCP-05, docs/mcp.md "Уровни доступа"). cm-mcp enforces the
-// level by hiding tools; the control-plane enforces it again per RPC method so
-// that a cut-down cm-mcp cannot be bypassed by calling /rpc directly with the
-// same token.
+// Access control (MCP-05, MCP-19, docs/mcp.md "Уровни доступа"). cm-mcp
+// enforces the level by hiding tools; the control-plane enforces it again per
+// RPC method, and a request that names no level is treated as operate, so a
+// plain call to /rpc cannot reach admin methods by omission.
+//
+// The level is a guard against mistakes of an agent that works through the MCP
+// tools. It is NOT a security boundary against an agent with a shell under the
+// same Windows user: that agent can read ~/.claude-manager/control.json and send
+// X-CM-Level: admin itself. What the per-session token (CM_CONTROL_TOKEN) does
+// close is the caller identity: the self-stop guard keys off the session the
+// token was issued to, not off a header the client writes.
 
 // Headers cm-mcp sends with every control-plane request.
 const (
@@ -123,19 +130,30 @@ func RPCLevel(method, decision string) AccessLevel {
 }
 
 // requestLevel reads the caller's level from the headers. A request without
-// the header is a direct caller holding the token (the GUI test harness, the
-// e2e runner): it is trusted as admin, as it was before levels existed — the
-// token is the capability. cm-mcp always sends the header.
+// the header is DefaultLevel (operate): the test harness and the e2e runner
+// send X-CM-Level: admin explicitly. cm-mcp always sends the header.
 func requestLevel(r *http.Request) (AccessLevel, error) {
 	h := r.Header.Get(HeaderLevel)
 	if h == "" {
-		return LevelAdmin, nil
+		return DefaultLevel, nil
 	}
 	l := AccessLevel(strings.ToLower(strings.TrimSpace(h)))
 	if LevelRank(l) < 0 {
 		return "", fmt.Errorf("access level %q is not valid: use read, operate or admin", h)
 	}
 	return l, nil
+}
+
+type sessionCallerKey struct{}
+
+// requestCaller is the session a request comes from. A request authenticated
+// with a per-session token is that session whatever X-CM-Caller-Session says;
+// otherwise (the shared token) the header is the only information available.
+func requestCaller(r *http.Request) string {
+	if id, ok := r.Context().Value(sessionCallerKey{}).(string); ok {
+		return id
+	}
+	return strings.TrimSpace(r.Header.Get(HeaderCaller))
 }
 
 // selfTarget reports whether an RPC call acts on the calling session itself (or,
@@ -147,13 +165,15 @@ func selfTarget(method, caller string, p map[string]any) bool {
 	}
 	str := func(k string) string { s, _ := p[k].(string); return s }
 	switch method {
-	case "StopSession", "RestartSession":
+	case "StopSession", "RestartSession", "InterruptSession", "ResumeSession", "SetSessionRuntime":
 		return str("id") == caller
+	case "RemoveSession", "UpdateSession":
+		return str("project")+"/"+str("session") == caller
 	case "ClearSessionState":
 		return str("project")+"/"+str("session") == caller
 	case "StopAll":
 		return true
-	case "StopProject":
+	case "StopProject", "ClearProjectLogs":
 		proj, _, _ := strings.Cut(caller, "/")
 		return str("project") == proj
 	}
