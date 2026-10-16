@@ -13,6 +13,8 @@ import (
 // tool, each with the reason. Adding a method here is a decision: say why an
 // agent does not need it.
 var parityExcluded = map[string]string{
+	"UpdateConfig": "заменён `update_global_settings`: тот правит отдельные поля под замком сервера с `dry_run` и `version`, а не подменяет весь конфиг",
+	"GetProjectCost": "заменён `get_cost` (scope `project`): `GetProjectTokens` отдаёт и стоимость, и токены",
 	"GetConfig": "заменён `get_config`: тот читает `GetConfigView` — вид config.toml без секретов и с версией; сырой `GetConfig` остаётся admin-вызовом GUI-харнесса",
 	"PickDirectory": "нативный диалог ОС; заменён аргументом `path` у `add_project`/`import_project_logs`",
 	"ShowMainWindow": "оконное действие ОС: у агента нет окна",

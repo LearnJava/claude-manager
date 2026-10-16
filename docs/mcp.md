@@ -126,23 +126,20 @@
 (формат менеджера, `CLAUDE.md` → Conventions). Проект — `project`. Имена
 проектов и сессий не содержат `/` (проверяет MCP-08 при создании).
 
-| Инструмент сейчас | Старые аргументы | Новые аргументы | Алиас в блоке |
-|---|---|---|---|
-| `start_session`, `stop_session`, `interrupt_session`, `restart_session` | `project`, `session` | `session_id` | да: принимаются оба вида; если пришли оба — ошибка «передайте либо `session_id`, либо `project`+`session`» |
-| `send_message` | `project`, `session`, `text` | `session_id`, `text` | да |
-| `get_session_logs` | `project`, `session`, `tail` | `session_id`, `limit`, `cursor` (`tail` — алиас `limit`) | да |
-| `wait_for_status` | `project`, `session`, `status`, `timeout_ms` | `session_id`, … | да |
-| `approve_permission`, `deny_permission` | `session_id`, `request_id`, `scope` | без изменений | — |
-| `run_preflight`, `get_mixed_rounds`, `dispatch_mixed_task` | `project` | `project` | — (проектные) |
-| `wait_for_event` | `event`, `match` | без изменений (`match` может содержать `session_id`) | — |
-| `get_metrics` | `project`, `period` | `get_cost`: `scope`, `project`, `days` | алиас `get_metrics` (`deprecated` в описании) |
-| `set_global_settings` | `config` | `update_global_settings` | алиас `set_global_settings` |
+| Инструмент | Аргументы адресации |
+|---|---|
+| `start_session`, `stop_session`, `interrupt_session`, `restart_session` | `session_id` |
+| `send_message` | `session_id`, `text` |
+| `get_session_logs` | `session_id`, `limit`, `cursor` |
+| `wait_for_status` | `session_id`, `status`, `timeout_ms` |
+| `approve_permission`, `deny_permission` | `session_id`, `request_id`, `scope` |
+| `run_preflight`, `get_mixed_rounds`, `dispatch_mixed_task` | `project` (проектные) |
+| `wait_for_event` | `event`, `match` (`match` может содержать `session_id`) |
 
-Алиасы живут до MCP-17; удаление — отдельная задача после блока. Ответы
-**всегда** содержат `session_id` (а не пару полей), чтобы агент передавал его
-дальше как есть. Идентификаторы без проекта (`plan_id`, `request_id`,
-`question_id`, `skill_id`, `task_id`) — непрозрачные значения из ответов;
-агент их не конструирует.
+Прежние алиасы удалены в MCP-18: пара `project`+`session` вместо `session_id`,
+`tail` вместо `limit`, `get_metrics` (стоимость — `get_cost`, rate limit —
+`get_rate_limit`), `set_global_settings` (вместо него `update_global_settings`).
+Неизвестный аргумент сервер отвергает по схеме.
 
 ## Уровни доступа
 
@@ -340,7 +337,7 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | Разобрать ожидающее человека | `get_pending` → `approve_permission` / `deny_permission` / `answer_question` |
 | Следить за несколькими | `wait_for_any` по списку сессий → действовать по причине пробуждения |
 | Сменить модель | `stop_session` → `set_session_model` → `start_session` (или `restart_session`) |
-| Расход | `get_cost` (project, day) → `get_metrics` / `get_session_metrics` |
+| Расход | `get_cost` (project, day) / `get_session_metrics`; лимиты аккаунта — `get_rate_limit` |
 | Найти в логе | `search_session_log` (level/tool/text) → `export_log` |
 | Спланировать перед запуском | `session_preflight` → `get_plan` → `approve_plan` → `execute_plan` |
 | Остановить всё | `stop_project` / `stop_all_sessions` (`confirm=true`, admin) |
@@ -370,7 +367,6 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `start_ad_hoc_chat` | operate | идемпотентное, запускает модель | Open an unconfigured Chat session in a project, with no task source and no first prompt. |
 | `approve_permission` | admin | — | Approve a pending permission request on the human's behalf. |
 | `deny_permission` | operate | — | Deny a pending permission request. |
-| `set_global_settings` | admin | идемпотентное | Deprecated, use update_global_settings: sends a partial object as the whole config. |
 | `run_preflight` | operate | запускает модель | Analyse a task in a project and produce an execution plan. |
 | `execute_plan` | operate | запускает модель | Start executing a plan produced by run_preflight. |
 | `register_mixed_brief` | operate | идемпотентное | Register a self-contained brief (English task text, verbatim code excerpts, decisions, target files) for a worker model. |
@@ -382,7 +378,7 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `list_slash_commands` | read | только чтение | List the slash commands and skills a session offers after a leading /. |
 | `get_session_logs` | read | только чтение | Read a session's log of its latest run, oldest entry first, one page at a time. |
 | `get_pending_permissions` | read | только чтение | List permission requests that wait for a decision, across all sessions. |
-| `get_metrics` | read | только чтение | Get a project's cost over a period, or the account rate-limit status when no project is given. |
+| `get_rate_limit` | read | только чтение | Get the account rate-limit status. |
 | `wait_for_status` | read | только чтение | Block until a session reports the given status, or the timeout passes. |
 | `wait_for_event` | read | только чтение | Block until an event whose payload contains the given fields is emitted, or the timeout passes. |
 | `wait_for_any` | read | только чтение | Block until the first of several sessions needs a human (question, permission, plan, error, finished task or turn), or the timeout passes. |
@@ -476,8 +472,7 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
   (ответ → `structuredContent` по `outputSchema` **и** короткая фраза в
   `content`, не дамп JSON). Списки оборачиваются в объект
   (`{"sessions": […]}`): `structuredContent` — всегда объект.
-- Сессии адресуются `session_id`; пара `project`+`session` — алиас (оба
-  сразу — ошибка).
+- Сессии адресуются только `session_id`.
 
 Контракт фиксирует golden `testdata/mcp/tools.golden.json` (реальный
 `tools/list`); намеренное изменение —
@@ -544,8 +539,7 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 cursor="N"`. Страница дополнительно режется до `MaxResponseBytes` (64 КиБ),
 минимум одна запись. `cursor` — позиция от начала списка (для журнала —
 от самой старой записи), его передают как есть из `next_cursor`.
-Журнал читается страницами «старые → новые»; параметр `tail` — устаревший
-синоним `limit`.
+Журнал читается страницами «старые → новые».
 
 `approve_permission.scope` — `once` (по умолчанию) | `session` | `always`;
 приложению уходит `allow` / `allow_session` / `allow_always`.
@@ -593,18 +587,17 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `GetMixedQuality` | `get_mixed_quality` | read |
 | `GetMixedRounds` | `get_mixed_rounds` | read |
 | `GetModelRecommendation` | `get_model_advice` | read |
-| `GetPendingPermissions` | `get_pending_permissions` | read |
 | `GetPendingPermissions` | `get_pending` | read |
+| `GetPendingPermissions` | `get_pending_permissions` | read |
 | `GetPendingQuestions` | `get_pending` | read |
 | `GetPendingQuestions` | `get_pending_questions` | read |
 | `GetPermissionCandidates` | `get_permission_candidates` | read |
 | `GetPlan` | `get_plan` | read |
-| `GetProjectCost` | `get_metrics` | read |
 | `GetProjectLogFiles` | `get_project_log_files` | read |
 | `GetProjectMirror` | `get_project_setup` | read |
 | `GetProjectTokens` | `get_cost` | read |
 | `GetProjects` | `get_projects` | read |
-| `GetRateLimitStatus` | `get_metrics` | read |
+| `GetRateLimitStatus` | `get_rate_limit` | read |
 | `GetRoadmapRowDetail` | `get_roadmap_row_detail` | read |
 | `GetRoadmapTaskDetail` | `get_roadmap_task_detail` | read |
 | `GetSessionLog` | `get_session_logs` | read |
@@ -627,8 +620,8 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `ListSlashCommands` | `list_slash_commands` | read |
 | `MirrorProject` | `mirror_project` | admin |
 | `RegisterMixedBrief` | `register_mixed_brief` | operate |
-| `RespondPermission` | `approve_permission` | admin |
 | `RespondPermission` | `deny_permission` | operate |
+| `RespondPermission` | `approve_permission` | admin |
 | `RestartSession` | `restart_session` | operate |
 | `RestoreSkill` | `restore_skill` | admin |
 | `ResumeSession` | `restart_session` | operate |
@@ -649,7 +642,6 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `StopSession` | `stop_session` | operate |
 | `SyncProjectMirrors` | `sync_project_mirrors` | operate |
 | `UnmirrorProject` | `unmirror_project` | admin |
-| `UpdateConfig` | `set_global_settings` | admin |
 
 <!-- END GENERATED: parity -->
 
@@ -674,7 +666,7 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `get_session` | read | Всё для решения «что дальше»: `session` (статус, модель, effort, runtime, текущая задача, todo, токены), `saved_state`, `pending_permissions`, `pending_question` |
 | `get_sessions` | read | Список, постранично |
 | `list_slash_commands` | read | Slash-команды и скиллы сессии |
-| `get_metrics` | read | Без `project` — состояние rate limit (`GetRateLimitStatus`) |
+| `get_rate_limit` | read | Состояние rate limit аккаунта (`GetRateLimitStatus`) |
 
 **Изображения.** Каждое — `path` (абсолютный путь к png/jpg/gif/webp на машине, где
 запущен Claude Manager) **или** `data_base64` (+ `media_type`). Лимиты: не более
@@ -752,9 +744,7 @@ cursor="N"`. Страница дополнительно режется до `Ma
 the wrong type». Правки идут под одним замком сервера, поэтому два вызова агента не затирают
 друг друга; против GUI защищает `version` у `update_config`.
 
-**`set_global_settings` — устаревший алиас** (`deprecated` в описании): он шлёт частичный
-объект как весь конфиг. Вместо него — `update_global_settings`; алиас удаляется отдельной
-задачей после MCP-17.
+`set_global_settings` (шлёт частичный объект как весь конфиг) удалён в MCP-18; правки — только `update_global_settings`.
 
 **Секреты.** В конфиге их нет: воркер называет переменную окружения ключа (`key_env`), сам
 ключ не хранится. `get_config` всё равно маскирует значения под ключами `api_key`, `secret`,
@@ -780,7 +770,7 @@ the wrong type». Правки идут под одним замком серв�
 | `get_history` | read | Прошлые запуски проекта (или всех), новые первыми: статус, стоимость, токены |
 | `get_session_metrics` | read | Токены, ходы, стоимость, заполнение контекста, длительность одной сессии |
 | `get_cost` | read | `scope=day` (дата `YYYY-MM-DD`, по умолчанию сегодня, все проекты) или `scope=project` (`project`, `period` дней): `cost_usd` и токены |
-| `get_metrics` | read | Стоимость проекта за период, без проекта — статус rate-limit (существующий) |
+| `get_rate_limit` | read | Статус rate-limit аккаунта (бывший `get_metrics` без проекта) |
 | `export_log` | operate | Пишет лог сессии в файл `~/.claude-manager/exports/<сессия>-<время>.<md\|json\|txt>` и возвращает путь, а не содержимое |
 | `import_project_logs` | operate | Читает папку сохранённых логов CLI (по умолчанию `.claude-manager/logs` проекта) в таблицы опыта; повторный импорт папки пропускает уже учтённое |
 | `get_project_log_files` | read | Автосохранённые логи проекта: имя, путь, размер, время |
@@ -925,7 +915,7 @@ read-инструмент (ни токена control-plane, ни секрето�
 | `run_task` | `session_id`*, `task`* | `get_session` → `send_message` → цикл `wait_for_any` с `approve_permission`/`deny_permission`/`answer_question` → `get_session_logs`, `get_cost` |
 | `diagnose_session` | `session_id`* | `get_session` → `get_session_logs`/`search_session_log` → `get_history` → один следующий шаг |
 | `triage_waiting` | — | `get_pending` → решение по каждому → `approve_permission`/`deny_permission`/`answer_question` |
-| `cost_report` | `days`, `project` | `get_cost` (project, day) → `get_metrics` |
+| `cost_report` | `days`, `project` | `get_cost` (project, day) ; `get_rate_limit` |
 
 `*` — обязательный аргумент; пропуск — ошибка.
 

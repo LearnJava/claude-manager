@@ -23,7 +23,7 @@ const serverInstructions = `Claude Manager runs several Claude Code sessions per
 - Lifecycle: start_session -> running -> waiting (idle, ready for send_message) or blocked on a permission -> stopped / crashed / error.
 - Permission requests block a session until approve_permission or deny_permission answers them; get_pending_permissions lists them.
 - Do not poll in a loop. Block with wait_for_status or wait_for_event (they take timeout_ms), then act on the result.
-- Keep output small: get_session_logs takes a tail, get_sessions returns summaries.
+- Keep output small: get_session_logs takes a limit, get_sessions returns summaries.
 - Tool errors come back with isError=true and a hint; a "control-plane unreachable" error means the Claude Manager app is not running - ask the user to start it.
 - Full guide: read the cm://guide resource (also docs/mcp.md in the claude-manager repository). Ready-made scenarios are in prompts/list.`
 

@@ -18,7 +18,7 @@ type pendingIn struct {
 
 // filter resolves the optional session filter: empty when none is given.
 func (p pendingIn) filter() (string, error) {
-	if p.SessionID == "" && p.Project == "" && p.Session == "" {
+	if p.SessionID == "" {
 		return "", nil
 	}
 	return p.id()

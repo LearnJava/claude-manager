@@ -164,6 +164,7 @@ Hermes…) может сделать через MCP — без чтения на
 | MCP-15 | ✓ DONE (2026-10-15) | docs/mcp.md, README.md, CLAUDE.md, docs/testing-harness.md |
 | MCP-16 | ✓ DONE (2026-10-15) | cmd/cm-mcp-eval/, testdata/mcp-eval/, docs/mcp.md («Оценка реальным агентом») |
 | MCP-17 | ✓ DONE (2026-10-15) | docs/mcp.md, docs/design-decisions.md, CLAUDE.md |
+| MCP-18 | ✓ DONE (2026-10-15) | internal/control/mcptools_defs.go, docs/mcp.md |
 
 ---
 

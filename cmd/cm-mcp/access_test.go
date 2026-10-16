@@ -34,7 +34,7 @@ func TestLevelFiltersToolsList(t *testing.T) {
 				t.Errorf("level %q: tool %s (%s) listed=%v want %v", level, def.Name, def.Level, got[def.Name], want)
 			}
 		}
-		if level == "" && got["set_global_settings"] {
+		if level == "" && got["update_global_settings"] {
 			t.Error("the default level must not expose admin tools")
 		}
 	}
@@ -62,8 +62,8 @@ func TestCallToolRefusesAboveLevel(t *testing.T) {
 	stub := &stubCP{}
 	srv := newTestMCPServer(t, stub)
 	srv.level = control.LevelOperate
-	if _, err := srv.callTool("set_global_settings", json.RawMessage(`{}`)); err == nil || !strings.Contains(err.Error(), "admin") {
-		t.Fatalf("operate must refuse set_global_settings, got %v", err)
+	if _, err := srv.callTool("update_global_settings", json.RawMessage(`{}`)); err == nil || !strings.Contains(err.Error(), "admin") {
+		t.Fatalf("operate must refuse update_global_settings, got %v", err)
 	}
 	if stub.lastPath != "" {
 		t.Error("refused call reached the control-plane")

@@ -30,7 +30,7 @@ go build -o build/playwright-server.exe ./cmd/playwright-server
 claude mcp add cm -e CM_MCP_LEVEL=admin -- D:/GoProjects/claude-manager/build/cm-mcp.exe
 ```
 
-`cm-mcp` runs at access level `operate` by default (no `approve_permission`, no `set_global_settings`); the GUI test scenarios need `admin`, hence `CM_MCP_LEVEL=admin` above. See "Уровни доступа" and "Безопасность" in [docs/mcp.md](./mcp.md).
+`cm-mcp` runs at access level `operate` by default (no `approve_permission`, no `update_global_settings`); the GUI test scenarios need `admin`, hence `CM_MCP_LEVEL=admin` above. See "Уровни доступа" and "Безопасность" in [docs/mcp.md](./mcp.md).
 
 The registration is stored in `.claude.json` (project scope) and persists across sessions.
 
@@ -60,7 +60,7 @@ The tool reference (name, access level, annotations, what it does) and the `App`
 4. Claude reads get_session_logs to verify output
 5. Claude calls approve_permission if the session is waiting
 6. Claude calls stop_session → wait_for_status(idle)
-7. Claude asserts final state via get_sessions / get_metrics
+7. Claude asserts final state via get_sessions / get_cost
 ```
 
 #### Evaluating the tools with a real agent
