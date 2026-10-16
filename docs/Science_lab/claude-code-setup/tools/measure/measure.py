@@ -318,6 +318,18 @@ def summary_md(m, sessions):
     return "\n".join(lines) + "\n"
 
 
+def transcript_files(tdir):
+    """Transcripts of the project plus its worktrees: a session started with
+    `claude --worktree` (or in a pool slot under .claude/worktrees) is stored in
+    a sibling folder `<project>--claude-worktrees-<name>`."""
+    files = list(tdir.glob("*.jsonl"))
+    prefix = tdir.name.lower() + "--claude-worktrees-"
+    for d in tdir.parent.iterdir():
+        if d.is_dir() and d.name.lower().startswith(prefix):
+            files += d.glob("*.jsonl")
+    return sorted(files, key=lambda f: f.name)
+
+
 def snapshot(a):
     for d in (a.since, a.until):
         if d and not DATE.match(d):
@@ -326,7 +338,7 @@ def snapshot(a):
     label = a.label or f"{dt.date.today().isoformat()}-{re.sub(r'[^A-Za-z0-9]+', '-', (proj or tdir).name).lower()}"
     out = (win_path(a.out) if a.out else default_out()) / label
     sessions, files = [], []
-    for f in sorted(tdir.glob("*.jsonl")):
+    for f in transcript_files(tdir):
         s = scan(f)
         s["day"] = local_day(s["start"]) if s["start"] else None
         if not s["calls"] or s["day"] is None:
