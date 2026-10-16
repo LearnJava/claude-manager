@@ -218,7 +218,7 @@ mirror = true                             # копия настроек и ло�
   """
   auto_restart = true                     # Перезапуск после завершения задачи
   max_tasks = 0                           # 0 = без лимита
-  stop_when_no_tasks = true               # Остановка если нет задач
+  run_without_tasks = false               # false (по умолчанию): пустая очередь — остановка
   task_source = "STATUS-P1.md"            # Файл-очередь: указатели `<источник>:NN`
                                           #   (канон) или legacy In progress/Next
 
@@ -352,7 +352,7 @@ type SessionConfig struct {
     Prompt              string           `toml:"prompt"`
     AutoRestart         bool             `toml:"auto_restart"`
     MaxTasks            int              `toml:"max_tasks"`
-    StopWhenNoTasks     bool             `toml:"stop_when_no_tasks"`
+    RunWithoutTasks     bool             `toml:"run_without_tasks"`
     TaskSource          string           `toml:"task_source"`
 
     // Модель и производительность

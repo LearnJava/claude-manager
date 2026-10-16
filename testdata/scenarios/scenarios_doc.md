@@ -170,7 +170,7 @@ strictly greater than `max_budget_usd`.
 ---
 
 ### no-tasks-interactive.json
-**State/Feature:** `stop_when_no_tasks` with an empty task source — interactive fallback
+**State/Feature:** default (`run_without_tasks` off) with an empty task source — interactive fallback
 **Match:** `ad-hoc instruction`
 
 Exercises the "no queued work" branch of `Session.Run()`: when `task_source` has

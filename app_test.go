@@ -1143,7 +1143,7 @@ func TestUpsertP1Session_UsesPermanentSlot(t *testing.T) {
 	if !sessions[0].UseWorktree {
 		t.Error("P1 must have use_worktree = true (permanent slot)")
 	}
-	if sessions[0].TaskSource != "STATUS-P1.md" || !sessions[0].AutoRestart || !sessions[0].StopWhenNoTasks {
+	if sessions[0].TaskSource != "STATUS-P1.md" || !sessions[0].AutoRestart {
 		t.Errorf("P1 queue wiring not set: %+v", sessions[0])
 	}
 	if sessions[0].Prompt != analysis.DefaultP1SessionPrompt {

@@ -148,7 +148,6 @@ func TestRun_UnfinishedTaskIsNotCountedAndStreakStops(t *testing.T) {
 			Model:           "sonnet",
 			PermissionMode:  "bypassPermissions",
 			AutoRestart:     true,
-			StopWhenNoTasks: true,
 			TaskSource:      "STATUS-P1.md",
 			Prompt:          "hello",
 		},

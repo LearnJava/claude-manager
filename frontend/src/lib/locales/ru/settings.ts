@@ -197,7 +197,7 @@ export default {
     'settings.sessions.maxBudget': 'Макс. бюджет, USD (0 = без ограничения)',
     'settings.sessions.maxTasks': 'Макс. число задач (0 = без ограничения)',
     'settings.sessions.autoRestart': 'Автоперезапуск после задачи',
-    'settings.sessions.stopWhenNoTasks': 'Останавливаться при отсутствии задач',
+    'settings.sessions.runWithoutTasks': 'Крутить запуски при пустой очереди',
     'settings.sessions.useWorktree': 'Использовать git worktree',
     'settings.sessions.useWorktreeTitle': 'Постоянная папка .claude/worktrees/<slot>; создаётся один раз, незаконченная задача продолжается в ней',
     'settings.sessions.noProtocol': 'В проекте нет протокола рабочих папок. Без него сессия работает в слоте, но ветками задач никто не управляет.',

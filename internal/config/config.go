@@ -454,6 +454,13 @@ func applyOptimizationDefaults(o *OptimizationSettings) {
 // still-unset PermissionMode, so it never overrides a value the user already
 // saved for this session.
 func applySessionDefaults(s *SessionConfig, projectDefaultPermissionMode string) {
+	// Retired stop_when_no_tasks: true used to make a session autonomous on
+	// its own; auto_restart now carries that. A false was written by Settings,
+	// not chosen by the user, so it is not carried into run_without_tasks.
+	if s.StopWhenNoTasks && !s.AutoRestart {
+		s.AutoRestart = true
+	}
+	s.StopWhenNoTasks = false
 	if s.Model == "" {
 		s.Model = "sonnet"
 	}

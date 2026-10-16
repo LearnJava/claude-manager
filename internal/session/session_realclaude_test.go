@@ -46,7 +46,7 @@ func TestRealClaude_RunOnceCompletes(t *testing.T) {
 			Name:            "IT",
 			Model:           "haiku",
 			PermissionMode:  "bypassPermissions",
-			StopWhenNoTasks: true, // autonomous → close stdin on result
+			AutoRestart:     true, // autonomous → close stdin on result
 			Prompt:          "Reply with exactly the word PONG and nothing else. Do not use any tools.",
 		},
 		OnEvent: func(_ string, ev SessionEvent) {

@@ -214,7 +214,7 @@ func TestHermesRuntime_RateLimitResult(t *testing.T) {
 	s := New(Params{
 		ID: "p/R", ProjectName: "p", ProjectPath: t.TempDir(), HermesPath: bin,
 		Config: config.SessionConfig{Name: "R", Runtime: "hermes", Model: "m", Prompt: "FAIL_429",
-			StopWhenNoTasks: false, AutoRestart: false},
+			AutoRestart: false},
 		OnEvent: func(_ string, ev SessionEvent) {
 			if ev.Type == EvtRateLimit {
 				limited = true

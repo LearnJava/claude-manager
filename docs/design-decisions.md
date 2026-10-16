@@ -120,7 +120,7 @@ Initial prompt (and every user turn) is sent via stdin using the Claude CLI
 stream-json envelope: `{"type":"user","message":{"role":"user","content":"..."}}`.
 The `type` **must** be `user` with a nested `{role,content}` message — the CLI
 does not recognise a flat `{"type":"user_message","message":"..."}` and hangs on
-stdin if it receives one. In autonomous mode (`auto_restart`/`stop_when_no_tasks`)
+stdin if it receives one. In autonomous mode (`auto_restart`)
 the manager closes stdin when the turn's `result` event arrives so the CLI exits
 cleanly and the run loop can iterate; real Claude keeps the process alive on open
 stdin otherwise.
@@ -451,7 +451,7 @@ minimum-run-count and cost-threshold checks are what keep an override safe
 despite the coarser grain, not this query.
 
 ### Task Source Check
-When `stop_when_no_tasks = true` and `task_source` is set, `Run()` checks the file before each iteration using `hasTasks()`. Two formats are supported (mirrors `orchestrator.py has_tasks()`):
+Unless `run_without_tasks = true`, when `task_source` is set (default since QV-03; the retired `stop_when_no_tasks` key is migrated on load: `true` without `auto_restart` becomes `auto_restart = true`, `false` is dropped), `Run()` checks the file before each iteration using `hasTasks()`. Two formats are supported (mirrors `orchestrator.py has_tasks()`):
 
 1. **Pointer format (canonical, primary).** The file contains bare pointer lines `<source>:NN` — one open task per line, priority top-down (e.g. `ROADMAP.md:92`, `MIXED-TASKS.md:102`, `crates/x/src/lib.rs:76`). Any bare pointer line (`^\S+:\d+$` after trim; headings `#`, quotes `>`, list markers `-`/`_`/`*` are ignored) → `true`. Completing a task = deleting its line; an empty file stops the loop. No In progress/Next sections, no checkboxes — "in progress" is tracked in the master list the pointers point to.
 2. **Legacy format.** Returns `true` if the file contains `"In progress:"` (a task is started) or both `"Next:"` and `"- ["` (queued tasks).
@@ -466,7 +466,7 @@ nothing happening. Instead it emits a `system`-level log entry naming the empty
 `task_source` file, then launches one CLI turn with `runOnce(ctx, true)`
 (`forceInteractive`), so the user can hand it an ad-hoc task outside the plan.
 `forceInteractive` does two things inside `runOnce`: it forces `autonomous =
-false` regardless of `AutoRestart`/`StopWhenNoTasks` (stdin stays open after
+false` regardless of `AutoRestart` (stdin stays open after
 the turn's `result`, exactly like a manually-started interactive session), and
 `initialPromptText()` sends a dedicated "no pending tasks, wait for
 instructions" message instead of the session's configured task-source prompt
@@ -703,7 +703,7 @@ win, so an operator edit in the Plan Review UI is never overwritten.
 full permissions, not `acceptEdits`, or it silently stalls on the first
 disallowed `Bash` call — `use_worktree = true` (see "Session work folder"
 below: the flag prepares the same slot the protocol occupies),
-`task_source = "STATUS-P1.md"`, `stop_when_no_tasks = true`, `auto_restart =
+`task_source = "STATUS-P1.md"`, `auto_restart =
 true`, and `analysis.DefaultP1SessionPrompt`) into the project — reusing the
 exact `GetConfig`→mutate→`UpdateConfig` round-trip every other project/session
 edit already goes through, no new persistence path. If a `"P1"` session already
