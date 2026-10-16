@@ -104,4 +104,4 @@
 
 | Задача | Статус | Ключевые файлы |
 |---|---|---|
-| CTX-01 | ○ TODO | internal/session/manager.go, session.go |
+| CTX-01 | ✓ DONE (2026-10-16) | internal/session/manager.go, session.go |

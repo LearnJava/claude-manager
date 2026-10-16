@@ -985,3 +985,24 @@ func TestSetSessionModel_StoppedUpdatesConfig(t *testing.T) {
 		t.Errorf("Model = %q, want haiku", st.Model)
 	}
 }
+
+// CTX-01: context fill is the last call's size; the counters stay sums.
+func TestHandleResultContextUtilFromLastCall(t *testing.T) {
+	m := newTestManager(t)
+	ms := addStubSession(m, "lumen", "P1")
+
+	m.handleUsage(ms, &TokenUsage{InputTokens: 30_000})
+	m.handleUsage(ms, &TokenUsage{InputTokens: 32_000})
+	m.handleUsage(ms, &TokenUsage{InputTokens: 35_000})
+	m.handleResult(ms, &SessionResult{
+		ModelUsage: map[string]ModelUsage{"claude-sonnet-4-6": {ContextWindow: 200_000}},
+	})
+
+	metrics, _ := m.GetSessionMetrics("lumen/P1")
+	if metrics.ContextUtil < 0.174 || metrics.ContextUtil > 0.176 {
+		t.Errorf("ContextUtil = %v, want ~0.175 (last call), not the sum", metrics.ContextUtil)
+	}
+	if metrics.InputTokens != 97_000 {
+		t.Errorf("InputTokens = %d, want the 97000 sum", metrics.InputTokens)
+	}
+}

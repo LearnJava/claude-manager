@@ -1532,6 +1532,8 @@ handoff is a ~paragraph distilled recap (done / remaining / decisions /
 files touched) sent as the first user turn of a fresh, non-resumed process
 instead.
 
+Context fill (the card's bar and this threshold) is the usage of the *last* model call of a turn, not the sum over its calls (`result.usage` sums them); the summed counters are spend only (CTX-01).
+
 **Flag:** `SessionConfig.ContextHandoff` (`context_handoff`, default false).
 With it off, `checkContextRestart` never touches `contextMonitor`/
 `pendingHandoff`/`contextRestartHit` at all — byte-identical to before this
