@@ -59,7 +59,7 @@ prompt, which is why the prompt is one line.
 
 | Session | Queue (`task_source`) | Task specs | Branch prefix | Pool slot |
 |---|---|---|---|---|
-| `Developer 1` | `STATUS-P1.md` | `VIEW-TASKS.md` (UI-01..13, done), `RUNTIME-TASKS.md` (RT-01..08, done), `WT-TASKS.md` (WT-01..03), `QUEUE-TASKS.md` (QV-01..03), `CTX-TASKS.md` (CTX-01), `MCP-TASKS.md` (MCP-01..18 done, MCP-19..23) | `p1-` | `p1-work` |
+| `Developer 1` | `STATUS-P1.md` | `VIEW-TASKS.md` (UI-01..13 done, UI-14), `RUNTIME-TASKS.md` (RT-01..08, done), `WT-TASKS.md` (WT-01..03), `QUEUE-TASKS.md` (QV-01..03), `CTX-TASKS.md` (CTX-01), `MCP-TASKS.md` (MCP-01..18 done, MCP-19..23) | `p1-` | `p1-work` |
 
 Read the task file's own rules before starting — each breakdown carries
 invariants that are not repeated here (`LEARN-TASKS.md` §Инварианты: everything

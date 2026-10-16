@@ -80,6 +80,7 @@ Markdown уже рендерится (`lib/markdown.ts`), длинные зап�
 | UI-11 | ✓ DONE (2026-09-25) | components/ToolCallRow.svelte, LogStream.svelte |
 | UI-12 | ✓ DONE (2026-09-25) | components/LiveStatus.svelte, lib/liveStatus.ts, LogStream.svelte |
 | UI-13 | ✓ DONE (2026-09-25) | LogStream.svelte, lib/logGroups.ts, stores/sessions.ts |
+| UI-14 | ○ TODO | internal/session/session.go, hermes_runtime.go, lib/logGroups.ts, LogStream.svelte |
 
 ---
 
@@ -583,3 +584,74 @@ Hermes. Заголовок свёрнутой группы в ленте и ик
 **Готово когда:** Playwright — после завершения хода fakeclaude строка итога
 видна с длительностью и числом ходов; сессия Hermes — с длительностью и
 токенами. Полный гейт зелёный, `GUI-TESTS.md` обновлён.
+
+---
+
+## UI-14: Граница запуска в ленте — старый запуск не сливается с новым
+
+**Зависит от:** —
+**Files:** `internal/config/types.go` (`LogEntry`), `internal/session/session.go`
+(`runOnce` рядом с `emitManagerLog("Готовлю промпт…")`, `emitManagerLog`),
+`internal/session/hermes_runtime.go:135`, `frontend/src/lib/logGroups.ts`
+(+ `frontend/tests/log-groups.spec.ts`), `frontend/src/components/LogStream.svelte`,
+локали ленты (`frontend/src/locales/{ru,en}/…` — там же, где строки `logStream.*`),
+`GUI-TESTS.md`, раздел о ленте в `docs/design-decisions.md`.
+
+**Проблема (случай 2026-10-16, ARB/Chat).** В 08:48 пользователь отправил
+сообщение, модель запустила Bash, в 08:52 сессию остановили кнопкой «Стоп»
+(результата у Bash нет). В 14:44 сессию запустили заново с тем же текстом.
+Лента показала это как один диалог с двумя одинаковыми сообщениями
+пользователя:
+
+1. Записи прошлого запуска остаются в ленте (это правильно — ничего не
+   теряется), но **границы между запусками нет**.
+2. Системные строки нового запуска («Готовлю промпт…», «CLI запущен…»,
+   «Session initialized») **поглощаются открытой группой tools** прошлого
+   запуска: `TOOLS_PASSTHROUGH = {'system'}` в `groupEntries` присоединяет
+   их к незакрытой серии, и они прячутся в свёрнутой карточке.
+3. Вызов прошлого запуска без результата **вечно крутит спиннер**: в
+   `groupEntries` вызов считается завершённым только если после него есть
+   `result` или `processEnded`; когда работает новый процесс, `processEnded =
+   false`, и мёртвый вызов выглядит выполняющимся (то же в живой строке
+   статуса UI-12, если она берёт «последний незакрытый вызов»).
+
+**Что сделать.**
+
+1. Backend: в `config.LogEntry` добавить live-only поле
+   `` RunStart bool `json:"run_start,omitempty"` `` (как `ToolUseID`/`Diff` — в
+   `session_logs` не пишется). Строку «Готовлю промпт…» в начале каждого
+   запуска процесса (`session.go` и `hermes_runtime.go:135`) отправлять с
+   `RunStart: true` — например, отдельным хелпером `emitRunStartLog(msg)`
+   рядом с `emitManagerLog`. Каждый перезапуск (auto_restart, crash recovery,
+   handoff) — тоже начало запуска, это та же точка кода.
+2. Фронтенд, `LogEntry` в TS: поле `run_start?: boolean`.
+3. `groupEntries` (`logGroups.ts`):
+   - запись с `run_start` **всегда закрывает** открытую серию (`flush()`) и
+     становится отдельным блоком нового вида `kind: 'run'`;
+   - вызов (`tool`), после которого в `entries` есть запись `run_start`, а
+     своего результата нет, считается **завершённым без результата** (как
+     при `processEnded`): условие `turnEnded` учитывает индекс последней
+     записи `run_start` наряду с `lastResultIdx`;
+   - то же правило применить там, где UI-12 (`liveStatus.ts`) выбирает
+     «последний незакрытый вызов»: вызов до последнего `run_start` не
+     считается текущим.
+4. `LogStream.svelte`: блок `run` — горизонтальная черта с подписью по
+   центру, например «── Новый запуск · 14:44 ──» (en: «New run»), сам текст
+   записи («Готовлю промпт…») под ней обычной системной строкой. Следующие
+   системные строки старта до первого вызова/текста идут уже после черты, а не
+   внутрь старой группы.
+5. Классический вид (переключатель ленты выключен) не меняется — инвариант
+   блока.
+
+**Готово когда:**
+- unit-spec в `log-groups.spec.ts`: последовательность `user, tool(без
+  результата), system(run_start), system, user, tool` даёт блоки
+  `user, tools, run, …, user, tools`; первый `tools` — не «выполняется»
+  при `processEnded = false`; системные строки после `run_start` не попадают
+  в первый `tools`;
+- Go-тест: запись начала запуска у Claude и Hermes несёт `run_start: true`,
+  прочие записи — нет;
+- `GUI-TESTS.md` дополнен; раздел о ленте в `docs/design-decisions.md`
+  описывает границу запуска;
+- гейт блока зелёный: `go build ./... && go vet ./... && go test ./...` и
+  `npm --prefix frontend test`.
