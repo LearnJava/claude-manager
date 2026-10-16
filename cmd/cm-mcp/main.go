@@ -78,20 +78,13 @@ func (s *mcpServer) checkLevel(name string) error {
 
 type clientKey struct{}
 
-func newMCPServer() (*mcpServer, error) {
-	levelFlag := flag.String("level", "", "access level: read, operate (default) or admin (env CM_MCP_LEVEL)")
-	allowSelf := flag.Bool("allow-self", false, "let the agent stop/restart/clear its own session (env CM_MCP_ALLOW_SELF=1)")
-	flag.Parse()
-	levelStr := *levelFlag
-	if levelStr == "" {
-		levelStr = os.Getenv("CM_MCP_LEVEL")
-	}
-	level, err := control.ParseLevel(levelStr)
-	if err != nil {
-		return nil, err
-	}
-	addr := os.Getenv("CM_CONTROL_ADDR")
-	token := os.Getenv("CM_CONTROL_TOKEN")
+// resolveEndpoint finds the control-plane address and token. The environment
+// wins over ~/.claude-manager/control.json: a session started by the manager
+// carries its own CM_CONTROL_TOKEN (MCP-19), which must not be replaced by the
+// shared token from the file.
+func resolveEndpoint() (addr, token string) {
+	addr = os.Getenv("CM_CONTROL_ADDR")
+	token = os.Getenv("CM_CONTROL_TOKEN")
 	if addr == "" || token == "" {
 		// A missing or unreadable endpoint file is not fatal: fall through to
 		// the defaults and let the first RPC report the real failure.
@@ -107,6 +100,22 @@ func newMCPServer() (*mcpServer, error) {
 	if addr == "" {
 		addr = "http://127.0.0.1:7333"
 	}
+	return addr, token
+}
+
+func newMCPServer() (*mcpServer, error) {
+	levelFlag := flag.String("level", "", "access level: read, operate (default) or admin (env CM_MCP_LEVEL)")
+	allowSelf := flag.Bool("allow-self", false, "let the agent stop/restart/clear its own session (env CM_MCP_ALLOW_SELF=1)")
+	flag.Parse()
+	levelStr := *levelFlag
+	if levelStr == "" {
+		levelStr = os.Getenv("CM_MCP_LEVEL")
+	}
+	level, err := control.ParseLevel(levelStr)
+	if err != nil {
+		return nil, err
+	}
+	addr, token := resolveEndpoint()
 	return &mcpServer{
 		level:         level,
 		callerSession: os.Getenv("CM_SESSION_ID"),

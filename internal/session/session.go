@@ -25,6 +25,7 @@ import (
 	"claude-manager/internal/logger"
 	"claude-manager/internal/optimization"
 	"claude-manager/internal/proc"
+	"claude-manager/internal/sesstoken"
 
 	"github.com/google/uuid"
 )
@@ -1556,6 +1557,9 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	cmd := exec.CommandContext(runCtx, s.claudePath, args...)
 	proc.HideConsole(cmd)
 	cmd.Env = withSessionID(sessionEnv(), s.ID)
+	ctlToken := sesstoken.Issue(s.ID)
+	defer sesstoken.Revoke(ctlToken)
+	cmd.Env = withEnv(cmd.Env, EnvControlToken, ctlToken)
 	if s.pythonUTF8 {
 		cmd.Env = utf8Env(cmd.Env)
 	}

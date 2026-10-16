@@ -37,6 +37,8 @@ claude-manager/
 │   │                                #   <checkout>/projects/<name>/, own git repo, no remote
 │   ├── logger/
 │   │   └── logger.go                # Global slog logger (logger.L); Init() opens app.log
+│   ├── sesstoken/
+│   │   └── sesstoken.go             # Per-session control-plane tokens (CM_CONTROL_TOKEN, MCP-19)
 │   ├── session/
 │   │   ├── manager.go               # SessionManager: Start/Stop/Resume/Override/SendMessage/GetAll
 │   │   │                            #   + ClearSessionState/GetSessionState (crash recovery)
@@ -323,7 +325,7 @@ claude-manager/
 │   │                                #   fakeworker handler (MP-07)
 │   └── control/                     # Headless control-plane: Emitter, RPC (incl. mixed), WS,
 │                                    #   wait/wait-for-worker, MCP tools, e2e runner,
-│                                    #   access.go (levels, self-protection, audit log),
+│                                    #   access.go (levels, self-protection, audit log, session-token caller),
 │                                    #   rpc_projects.go + cfgops.go (point config edits, dry_run diff, version)
 │                                    #   rpc_logs.go + mcptools_logs.go (log search/export, cost, experience tables)
 │                                    #   rpc_planning.go + mcptools_planning.go (roadmap RPCs; preflight, roadmap and mixed tools)

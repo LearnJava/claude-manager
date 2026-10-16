@@ -246,6 +246,7 @@ func (r *E2ERunner) rpc(ctx context.Context, method string, params json.RawMessa
 		return nil, err
 	}
 	httpReq.Header.Set("X-CM-Token", r.token)
+	httpReq.Header.Set(HeaderLevel, string(LevelAdmin))
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := r.client.Do(httpReq)

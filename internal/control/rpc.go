@@ -73,7 +73,7 @@ func (s *Server) handleRPC(w http.ResponseWriter, r *http.Request) {
 		writeRPCError(w, req.ID, -32001, fmt.Sprintf("%s %s", req.Method, LevelHint(need)))
 		return
 	}
-	caller := strings.TrimSpace(r.Header.Get(HeaderCaller))
+	caller := requestCaller(r)
 	if selfTarget(req.Method, caller, fields) && r.Header.Get(HeaderAllowSelf) != "1" {
 		audit.deny("self", "")
 		writeRPCError(w, req.ID, -32003, fmt.Sprintf("%s would act on the calling session %s itself, which would cut off "+

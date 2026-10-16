@@ -16,6 +16,7 @@ import (
 	"claude-manager/internal/config"
 	"claude-manager/internal/logger"
 	"claude-manager/internal/permission"
+	"claude-manager/internal/sesstoken"
 	"claude-manager/internal/session"
 	"claude-manager/internal/store"
 	"claude-manager/internal/worker"
@@ -171,8 +172,13 @@ func (s *Server) tokenAuth(next http.Handler) http.Handler {
 			token = r.URL.Query().Get("token")
 		}
 		if token != s.token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
+			// A per-session token (MCP-19) identifies the calling session.
+			id, ok := sesstoken.Lookup(token)
+			if !ok {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			r = r.WithContext(context.WithValue(r.Context(), sessionCallerKey{}, id))
 		}
 		next.ServeHTTP(w, r)
 	})

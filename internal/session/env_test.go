@@ -81,3 +81,19 @@ func TestWithSessionIDReplacesInherited(t *testing.T) {
 		t.Fatalf("%s = %q (%d times), want lumen/P1 once", EnvSessionID, v, n)
 	}
 }
+
+func TestWithEnvReplacesInherited(t *testing.T) {
+	env := withEnv([]string{"A=1", "cm_control_token=outer"}, EnvControlToken, "cms-x")
+	n := 0
+	for _, kv := range env {
+		if strings.HasPrefix(strings.ToUpper(kv), "CM_CONTROL_TOKEN=") {
+			n++
+			if kv != "CM_CONTROL_TOKEN=cms-x" {
+				t.Errorf("got %q", kv)
+			}
+		}
+	}
+	if n != 1 {
+		t.Errorf("want one CM_CONTROL_TOKEN, got %d", n)
+	}
+}
