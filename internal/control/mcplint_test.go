@@ -262,8 +262,40 @@ func TestPaging_RejectsBadArguments(t *testing.T) {
 	}
 }
 
+// A tool that stops or interrupts a session must say so in its annotations.
+func TestLint_StoppingToolsAreDestructive(t *testing.T) {
+	for _, tool := range MCPTools {
+		stops := strings.HasPrefix(tool.Name, "stop_") || strings.HasPrefix(tool.Name, "interrupt_")
+		if stops && !tool.Annotations.Destructive {
+			t.Errorf("%s stops or interrupts work but is not marked destructive", tool.Name)
+		}
+	}
+}
+
+func TestDenyPermission_ScopeMapsToDecision(t *testing.T) {
+	for scope, want := range map[string]string{"": "deny", "once": "deny", "always": "deny_always"} {
+		args := `{"session_id":"p/s","request_id":"r"` + map[bool]string{true: `,"scope":"` + scope + `"`, false: ""}[scope != ""] + `}`
+		_, body, err := TranslateTool("deny_permission", json.RawMessage(args))
+		if err != nil {
+			t.Fatalf("%q: %v", scope, err)
+		}
+		if got := body.(map[string]any)["params"].(map[string]string)["decision"]; got != want {
+			t.Errorf("scope %q: decision %q, want %q", scope, got, want)
+		}
+	}
+	if _, _, err := TranslateTool("deny_permission", json.RawMessage(`{"session_id":"p/s","request_id":"r","scope":"session"}`)); err == nil {
+		t.Error("deny scope session must be refused")
+	}
+	if RPCLevel("RespondPermission", "deny_always") != RPCLevel("RespondPermission", "allow_always") || RPCLevel("RespondPermission", "deny_always") != LevelAdmin {
+		t.Error("deny_always must need the same level as allow_always (admin)")
+	}
+	if RPCLevel("RespondPermission", "allow_similar") != RPCLevel("RespondPermission", "allow_session") {
+		t.Error("allow_similar must need the same level as allow_session")
+	}
+}
+
 func TestApprovePermission_ScopeMapsToDecision(t *testing.T) {
-	for scope, want := range map[string]string{"": "allow", "once": "allow", "session": "allow_session", "always": "allow_always"} {
+	for scope, want := range map[string]string{"": "allow", "once": "allow", "session": "allow_session", "similar": "allow_similar", "always": "allow_always"} {
 		args := `{"session_id":"p/s","request_id":"r"` + map[bool]string{true: `,"scope":"` + scope + `"`, false: ""}[scope != ""] + `}`
 		_, body, err := TranslateTool("approve_permission", json.RawMessage(args))
 		if err != nil {
@@ -274,7 +306,7 @@ func TestApprovePermission_ScopeMapsToDecision(t *testing.T) {
 		}
 	}
 	if _, _, err := TranslateTool("approve_permission", json.RawMessage(`{"session_id":"p/s","request_id":"r","scope":"forever"}`)); err == nil ||
-		!strings.Contains(err.Error(), "once, session or always") {
+		!strings.Contains(err.Error(), "once, session, similar or always") {
 		t.Errorf("bad scope: %v", err)
 	}
 }

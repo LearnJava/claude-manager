@@ -81,6 +81,9 @@ type spec[In, Out any] struct {
 }
 
 func define[In, Out any](s spec[In, Out]) Tool {
+	if s.Annotations.ReadOnly {
+		s.Annotations.Idempotent = true // a read changes nothing, so repeating it is safe
+	}
 	return Tool{
 		Name: s.Name, Title: s.Title, Description: s.Doc.render(s.Level),
 		Level: s.Level, Annotations: s.Annotations, Covers: s.Covers,

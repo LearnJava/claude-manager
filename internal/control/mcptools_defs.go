@@ -169,12 +169,13 @@ type runtimeIn struct {
 type permissionIn struct {
 	SessionID string `json:"session_id" jsonschema:"Session ID in project/session form, e.g. lumen/P1"`
 	RequestID string `json:"request_id" jsonschema:"Permission request ID, taken from get_pending_permissions"`
-	Scope     string `json:"scope,omitempty" jsonschema:"How long the approval lasts: once, session or always (default once)"`
+	Scope     string `json:"scope,omitempty" jsonschema:"How long the approval lasts: once, session, similar (matching requests, until the session ends) or always (saved to the config); default once"`
 }
 
 type denyIn struct {
 	SessionID string `json:"session_id" jsonschema:"Session ID in project/session form, e.g. lumen/P1"`
 	RequestID string `json:"request_id" jsonschema:"Permission request ID, taken from get_pending_permissions"`
+	Scope     string `json:"scope,omitempty" jsonschema:"How long the refusal lasts: once or always (a standing deny rule saved to the config, admin level); default once"`
 }
 
 type preflightIn struct {
@@ -242,7 +243,10 @@ var sessionStatuses = []any{
 }
 
 // permissionScopes maps the scope argument to the decision the app understands.
-var permissionScopes = map[string]string{"once": "allow", "session": "allow_session", "always": "allow_always"}
+var permissionScopes = map[string]string{"once": "allow", "session": "allow_session", "always": "allow_always", "similar": "allow_similar"}
+
+// denyScopes is the same for deny_permission: always adds a standing deny rule.
+var denyScopes = map[string]string{"once": "deny", "always": "deny_always"}
 
 func scopeOrOnce(s string) string {
 	if s == "" {
@@ -524,7 +528,7 @@ func buildCoreTools() []Tool {
 				Effects: "terminates the CLI process (at once, or after the task when after_task=true); work in the current turn is lost.",
 				Example: `{"session_id":"lumen/P1","after_task":true}`,
 			},
-			Level: LevelOperate, Annotations: ToolAnnotations{Idempotent: true}, Covers: []string{"StopSession"},
+			Level: LevelOperate, Annotations: ToolAnnotations{Destructive: true, Idempotent: true}, Covers: []string{"StopSession"},
 			Translate: func(in stopIn) (string, any, error) {
 				id, err := in.id()
 				if err != nil {
@@ -543,7 +547,7 @@ func buildCoreTools() []Tool {
 				Effects: "cancels the work in flight; partial results of that turn are discarded.",
 				Example: `{"session_id":"lumen/P1"}`,
 			},
-			Level: LevelOperate, Annotations: ToolAnnotations{Idempotent: true}, Covers: []string{"InterruptSession"},
+			Level: LevelOperate, Annotations: ToolAnnotations{Destructive: true, Idempotent: true}, Covers: []string{"InterruptSession"},
 			Translate: func(in sessionIn) (string, any, error) {
 				id, err := in.id()
 				if err != nil {
@@ -718,18 +722,18 @@ func buildCoreTools() []Tool {
 				UseWhen: "get_pending_permissions lists a request you are authorised to allow.",
 				NotFor:  "refusing a request (use deny_permission).",
 				Returns: "ok, the ids and the decision sent. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count.",
-				Effects: "the session runs the tool it asked for; scope session or always also adds a standing allow rule.",
+				Effects: "the session runs the tool it asked for; scope session or similar adds an allow rule until the session ends, always saves it to the config.",
 				Example: `{"session_id":"lumen/P1","request_id":"req-1","scope":"once"}`,
 			},
 			Input: func(props map[string]*jsonschema.Schema) {
 				s := props["scope"]
-				s.Enum, s.Default = []any{"once", "session", "always"}, json.RawMessage(`"once"`)
+				s.Enum, s.Default = []any{"once", "session", "similar", "always"}, json.RawMessage(`"once"`)
 			},
-			Level: LevelAdmin, Annotations: add, Covers: []string{"RespondPermission"},
+			Level: LevelAdmin, Annotations: ToolAnnotations{Destructive: true, OpenWorld: true}, Covers: []string{"RespondPermission"},
 			Translate: func(in permissionIn) (string, any, error) {
 				decision, ok := permissionScopes[scopeOrOnce(in.Scope)]
 				if !ok {
-					return "", nil, fmt.Errorf("scope %q is not valid: use once, session or always (default once)", in.Scope)
+					return "", nil, fmt.Errorf("scope %q is not valid: use once, session, similar or always (default once)", in.Scope)
 				}
 				return "/rpc", rpcCallBody("RespondPermission", map[string]string{
 					"id": in.SessionID, "request_id": in.RequestID, "decision": decision,
@@ -749,17 +753,25 @@ func buildCoreTools() []Tool {
 				UseWhen: "get_pending_permissions lists a request that must not run.",
 				NotFor:  "approving a request (use approve_permission).",
 				Returns: "ok, the ids and decision deny. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count.",
-				Effects: "the session is told the tool was refused and continues without it.",
+				Effects: "the session is told the tool was refused and continues without it; scope always also saves a standing deny rule to the config.",
 				Example: `{"session_id":"lumen/P1","request_id":"req-1"}`,
+			},
+			Input: func(props map[string]*jsonschema.Schema) {
+				s := props["scope"]
+				s.Enum, s.Default = []any{"once", "always"}, json.RawMessage(`"once"`)
 			},
 			Level: LevelOperate, Annotations: add, Covers: []string{"RespondPermission"},
 			Translate: func(in denyIn) (string, any, error) {
+				decision, ok := denyScopes[scopeOrOnce(in.Scope)]
+				if !ok {
+					return "", nil, fmt.Errorf("scope %q is not valid: use once or always (default once)", in.Scope)
+				}
 				return "/rpc", rpcCallBody("RespondPermission", map[string]string{
-					"id": in.SessionID, "request_id": in.RequestID, "decision": "deny",
+					"id": in.SessionID, "request_id": in.RequestID, "decision": decision,
 				}), nil
 			},
 			Result: func(in denyIn, raw any) permissionAck {
-				return permissionAck{OK: true, SessionID: in.SessionID, RequestID: in.RequestID, Decision: "deny", Seq: seqOf(raw)}
+				return permissionAck{OK: true, SessionID: in.SessionID, RequestID: in.RequestID, Decision: scopeOrOnce(in.Scope), Seq: seqOf(raw)}
 			},
 			Summary: func(_ denyIn, out permissionAck) string {
 				return fmt.Sprintf("Permission %s denied for %s.", out.RequestID, out.SessionID)

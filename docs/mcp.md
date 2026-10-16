@@ -380,8 +380,8 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | Инструмент | Уровень | Признаки | Что делает |
 |---|---|---|---|
 | `start_session` | operate | идемпотентное, запускает модель | Start a configured session, optionally with a model, effort or runtime override. |
-| `stop_session` | operate | идемпотентное | Stop a running session. |
-| `interrupt_session` | operate | идемпотентное | Interrupt the session's current turn (a running tool call or generation) without stopping the session. |
+| `stop_session` | operate | разрушительное, идемпотентное | Stop a running session. |
+| `interrupt_session` | operate | разрушительное, идемпотентное | Interrupt the session's current turn (a running tool call or generation) without stopping the session. |
 | `restart_session` | operate | запускает модель | Restart a session, fresh or resuming its saved conversation. |
 | `send_message` | operate | запускает модель | Send a user message, optionally with images, to a running session. |
 | `set_session_model` | operate | идемпотентное | Switch a session's model, live if it is running. |
@@ -391,34 +391,34 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `stop_project` | admin | разрушительное, идемпотентное | Stop every running session of a project. |
 | `stop_all_sessions` | admin | разрушительное, идемпотентное | Stop every running session of every project. |
 | `start_ad_hoc_chat` | operate | идемпотентное, запускает модель | Open an unconfigured Chat session in a project, with no task source and no first prompt. |
-| `approve_permission` | admin | — | Approve a pending permission request on the human's behalf. |
+| `approve_permission` | admin | разрушительное, запускает модель | Approve a pending permission request on the human's behalf. |
 | `deny_permission` | operate | — | Deny a pending permission request. |
 | `run_preflight` | operate | запускает модель | Analyse a task in a project and produce an execution plan. |
 | `execute_plan` | operate | запускает модель | Start executing a plan produced by run_preflight. |
 | `register_mixed_brief` | operate | идемпотентное | Register a self-contained brief (English task text, verbatim code excerpts, decisions, target files) for a worker model. |
 | `dispatch_mixed_task` | operate | запускает модель | Run the brief, patches, checks, feedback loop for a registered brief against a worker model. |
-| `get_mixed_rounds` | read | только чтение | List the saved mixed-programming tasks of a project with rounds, patches, check results and status. |
-| `wait_for_worker_status` | read | только чтение | Block until a mixed-programming task reaches a terminal status, or the timeout passes. |
-| `get_sessions` | read | только чтение | List all sessions with their status and metrics. |
-| `get_session` | read | только чтение | Get one session's full state: status, model, runtime, current task, pending questions and permissions, saved conversation state. |
-| `list_slash_commands` | read | только чтение | List the slash commands and skills a session offers after a leading /. |
-| `get_session_logs` | read | только чтение | Read a session's log of its latest run, oldest entry first, one page at a time. |
-| `get_pending_permissions` | read | только чтение | List permission requests that wait for a decision, across all sessions. |
-| `get_rate_limit` | read | только чтение | Get the account rate-limit status. |
-| `wait_for_status` | read | только чтение | Block until a session reports the given status, or the timeout passes. |
-| `wait_for_event` | read | только чтение | Block until an event whose payload contains the given fields is emitted, or the timeout passes. |
-| `wait_for_any` | read | только чтение | Block until the first of several sessions needs a human (question, permission, plan, error, finished task or turn), or the timeout passes. |
-| `get_pending` | read | только чтение | List every permission request and question that waits for a human, across all sessions or for one. |
-| `get_pending_questions` | read | только чтение | List the questions sessions asked the human (AskUserQuestion, clarify, the manager's own restart choice) that still wait for an answer. |
+| `get_mixed_rounds` | read | только чтение, идемпотентное | List the saved mixed-programming tasks of a project with rounds, patches, check results and status. |
+| `wait_for_worker_status` | read | только чтение, идемпотентное | Block until a mixed-programming task reaches a terminal status, or the timeout passes. |
+| `get_sessions` | read | только чтение, идемпотентное | List all sessions with their status and metrics. |
+| `get_session` | read | только чтение, идемпотентное | Get one session's full state: status, model, runtime, current task, pending questions and permissions, saved conversation state. |
+| `list_slash_commands` | read | только чтение, идемпотентное | List the slash commands and skills a session offers after a leading /. |
+| `get_session_logs` | read | только чтение, идемпотентное | Read a session's log of its latest run, oldest entry first, one page at a time. |
+| `get_pending_permissions` | read | только чтение, идемпотентное | List permission requests that wait for a decision, across all sessions. |
+| `get_rate_limit` | read | только чтение, идемпотентное | Get the account rate-limit status. |
+| `wait_for_status` | read | только чтение, идемпотентное | Block until a session reports the given status, or the timeout passes. |
+| `wait_for_event` | read | только чтение, идемпотентное | Block until an event whose payload contains the given fields is emitted, or the timeout passes. |
+| `wait_for_any` | read | только чтение, идемпотентное | Block until the first of several sessions needs a human (question, permission, plan, error, finished task or turn), or the timeout passes. |
+| `get_pending` | read | только чтение, идемпотентное | List every permission request and question that waits for a human, across all sessions or for one. |
+| `get_pending_questions` | read | только чтение, идемпотентное | List the questions sessions asked the human (AskUserQuestion, clarify, the manager's own restart choice) that still wait for an answer. |
 | `answer_question` | operate | запускает модель | Answer a question a session asked the human. |
 | `add_permission_rule` | admin | идемпотентное | Add a standing allow or deny rule to one session's permission rules. |
-| `get_permission_candidates` | read | только чтение | Suggest auto-allow rules from a project's permission history: requests that keep recurring and were always approved. |
-| `get_plan` | read | только чтение | Get a persisted plan with its subtasks and their progress. |
+| `get_permission_candidates` | read | только чтение, идемпотентное | Suggest auto-allow rules from a project's permission history: requests that keep recurring and were always approved. |
+| `get_plan` | read | только чтение, идемпотентное | Get a persisted plan with its subtasks and their progress. |
 | `approve_plan` | admin | идемпотентное | Persist a plan, optionally edited, as approved on the human's behalf. |
-| `get_projects` | read | только чтение | List the configured projects with their folder, session names and mirror and mixed-programming flags. |
-| `get_config` | read | только чтение | Return the effective application config (global settings, optimization, projects with sessions, workers) in config.toml shape, without secrets, with its version. |
-| `check_environment` | read | только чтение, запускает модель | Find the programs sessions rely on (Claude CLI, Git, Git Bash, Python, build tools) and the install command for each missing one. |
-| `get_project_setup` | read | только чтение | Report whether a project's folder has a CLAUDE.md and the developer-session protocol, and its mirror state. |
+| `get_projects` | read | только чтение, идемпотентное | List the configured projects with their folder, session names and mirror and mixed-programming flags. |
+| `get_config` | read | только чтение, идемпотентное | Return the effective application config (global settings, optimization, projects with sessions, workers) in config.toml shape, without secrets, with its version. |
+| `check_environment` | read | только чтение, идемпотентное, запускает модель | Find the programs sessions rely on (Claude CLI, Git, Git Bash, Python, build tools) and the install command for each missing one. |
+| `get_project_setup` | read | только чтение, идемпотентное | Report whether a project's folder has a CLAUDE.md and the developer-session protocol, and its mirror state. |
 | `add_project` | admin | идемпотентное | Register a project folder under a new name. dry_run:true returns the diff and saves nothing. |
 | `update_project` | admin | идемпотентное | Change fields of a project: default permission mode, mixed programming, gates, journal, skills and mirror flags. dry_run:true returns the diff and saves nothing. |
 | `remove_project` | admin | разрушительное, идемпотентное | Remove a project from the manager's registry. dry_run:true returns the diff and saves nothing. |
@@ -433,38 +433,38 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `mirror_project` | admin | идемпотентное | Turn on "Mirror into Claude Manager" for a project and copy its settings and saved run logs now. |
 | `unmirror_project` | admin | идемпотентное | Stop re-syncing a project's mirror. |
 | `sync_project_mirrors` | operate | идемпотентное | Re-sync every mirrored project now. |
-| `get_history` | read | только чтение | List the past runs of a project's sessions, or of all projects, newest first. |
-| `search_session_log` | read | только чтение | Find log entries of a session's latest run by kind, tool or text, oldest first, one page at a time. |
-| `get_session_metrics` | read | только чтение | Get a session's token counts, turns, cost, context use and duration. |
-| `get_cost` | read | только чтение | Get the cost and token volume of one day across all projects, or of one project over a period. |
+| `get_history` | read | только чтение, идемпотентное | List the past runs of a project's sessions, or of all projects, newest first. |
+| `search_session_log` | read | только чтение, идемпотентное | Find log entries of a session's latest run by kind, tool or text, oldest first, one page at a time. |
+| `get_session_metrics` | read | только чтение, идемпотентное | Get a session's token counts, turns, cost, context use and duration. |
+| `get_cost` | read | только чтение, идемпотентное | Get the cost and token volume of one day across all projects, or of one project over a period. |
 | `export_log` | operate | — | Write a session's latest log to a file in the manager's exports folder and return its path. |
 | `import_project_logs` | operate | идемпотентное | Read a folder of saved CLI logs into the project's experience tables. |
-| `get_project_log_files` | read | только чтение | List the session logs the manager saved automatically in a project's .claude-manager/logs folder, newest first. |
+| `get_project_log_files` | read | только чтение, идемпотентное | List the session logs the manager saved automatically in a project's .claude-manager/logs folder, newest first. |
 | `clear_project_logs` | admin | разрушительное, идемпотентное | Delete every saved log file of a project and its stored log lines. |
 | `clean_old_logs` | admin | разрушительное, идемпотентное | Delete the stored log lines of runs older than a number of days, in every project. |
-| `get_top_actions` | read | только чтение | List the tool calls a project's sessions repeat most, grouped by signature, with error rate and token weight. |
-| `get_action_samples` | read | только чтение | List concrete calls that make up one action signature of a project. |
-| `get_duration_profile` | read | только чтение | Show how long each kind of tool call takes in a project: median, 90th percentile, maximum, total and failure rate. |
-| `get_token_attribution` | read | только чтение | Estimate which tool calls fill a project's context: tokens per signature, per tool and per result length. |
-| `get_model_advice` | read | только чтение | Say whether automatic model routing is on and which model and effort it recommends for a configured session's prompt. |
+| `get_top_actions` | read | только чтение, идемпотентное | List the tool calls a project's sessions repeat most, grouped by signature, with error rate and token weight. |
+| `get_action_samples` | read | только чтение, идемпотентное | List concrete calls that make up one action signature of a project. |
+| `get_duration_profile` | read | только чтение, идемпотентное | Show how long each kind of tool call takes in a project: median, 90th percentile, maximum, total and failure rate. |
+| `get_token_attribution` | read | только чтение, идемпотентное | Estimate which tool calls fill a project's context: tokens per signature, per tool and per result length. |
+| `get_model_advice` | read | только чтение, идемпотентное | Say whether automatic model routing is on and which model and effort it recommends for a configured session's prompt. |
 | `session_preflight` | operate | запускает модель | Run the preflight analysis the settings of a session call for (what the Start button does) and return the plan to review, or nothing when the session should simply start. |
 | `generate_roadmap` | operate | запускает модель | Split a whole project idea into a backlog of phases and tasks and save it as a draft roadmap plan. |
-| `get_latest_draft_roadmap` | read | только чтение | Return the newest roadmap of a project that was generated but not approved yet. |
+| `get_latest_draft_roadmap` | read | только чтение, идемпотентное | Return the newest roadmap of a project that was generated but not approved yet. |
 | `approve_roadmap` | admin | идемпотентное | Approve a draft roadmap: write ROADMAP.md and STATUS-P1.md into the project and create or update its P1 session. |
-| `get_session_roadmap` | read | только чтение | Show the roadmap of a session as its task panel does: every phase and task with done, current or pending status. |
-| `get_roadmap_task_detail` | read | только чтение | Read the task file (tasks/NN-*.md) a roadmap row links to. |
-| `get_roadmap_row_detail` | read | только чтение | Read the long text of one roadmap row: its note column, else the raw row. |
-| `get_mixed_quality` | read | только чтение | Compare the worker models of the mixed-programming tasks of a project: tasks done, rounds to green, clean patch rate and failures per worker. |
+| `get_session_roadmap` | read | только чтение, идемпотентное | Show the roadmap of a session as its task panel does: every phase and task with done, current or pending status. |
+| `get_roadmap_task_detail` | read | только чтение, идемпотентное | Read the task file (tasks/NN-*.md) a roadmap row links to. |
+| `get_roadmap_row_detail` | read | только чтение, идемпотентное | Read the long text of one roadmap row: its note column, else the raw row. |
+| `get_mixed_quality` | read | только чтение, идемпотентное | Compare the worker models of the mixed-programming tasks of a project: tasks done, rounds to green, clean patch rate and failures per worker. |
 | `cancel_mixed_task` | operate | разрушительное, идемпотентное | Cancel a running mixed-programming task. |
-| `get_skill_candidates` | read | только чтение | List the action patterns of a project's past runs that are worth turning into a skill, best first. |
+| `get_skill_candidates` | read | только чтение, идемпотентное | List the action patterns of a project's past runs that are worth turning into a skill, best first. |
 | `distill_skill` | operate | запускает модель | Turn one skill candidate into a skill draft with a model run and save it as a draft; nothing is written into the project yet. |
-| `get_skills` | read | только чтение | List the skills of a project in every status: drafts, trials, approved, rejected and archived. |
+| `get_skills` | read | только чтение, идемпотентное | List the skills of a project in every status: drafts, trials, approved, rejected and archived. |
 | `approve_skill` | admin | идемпотентное | Write a skill draft into the project as .claude/skills/<name>/SKILL.md so the agents load it. |
 | `archive_skill` | operate | идемпотентное | Switch a skill off: an applied skill's folder is moved out of .claude/skills so the agents stop seeing it. |
 | `restore_skill` | admin | идемпотентное | Bring an archived skill back into .claude/skills, or apply a rejected one anyway. |
-| `get_skill_usage` | read | только чтение | Show how often agents actually load each skill of a project. |
-| `get_skill_quality` | read | только чтение | Compare the runs before and after each approved skill of a project: does the skill help. |
-| `get_skill_autopilot` | read | только чтение | Show whether the skill autopilot is on for a project, its daily budget and what it has spent. |
+| `get_skill_usage` | read | только чтение, идемпотентное | Show how often agents actually load each skill of a project. |
+| `get_skill_quality` | read | только чтение, идемпотентное | Compare the runs before and after each approved skill of a project: does the skill help. |
+| `get_skill_autopilot` | read | только чтение, идемпотентное | Show whether the skill autopilot is on for a project, its daily budget and what it has spent. |
 | `set_skill_autopilot` | admin | идемпотентное | Turn the skill autopilot on or off for a project and set its daily budget. |
 | `run_skill_autopilot` | operate | запускает модель | Run one autopilot step for a project now instead of waiting for the next finished run. |
 

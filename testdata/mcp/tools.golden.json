@@ -281,13 +281,13 @@
       "cm/accessLevel": "admin"
     },
     "annotations": {
-      "destructiveHint": false,
+      "destructiveHint": true,
       "idempotentHint": false,
-      "openWorldHint": false,
+      "openWorldHint": true,
       "readOnlyHint": false,
       "title": "Approve permission"
     },
-    "description": "Approve a pending permission request on the human's behalf. Use when: get_pending_permissions lists a request you are authorised to allow. Not for: refusing a request (use deny_permission). Returns: ok, the ids and the decision sent. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count. Side effects: the session runs the tool it asked for; scope session or always also adds a standing allow rule. Access: admin. Example: {\"session_id\":\"lumen/P1\",\"request_id\":\"req-1\",\"scope\":\"once\"}",
+    "description": "Approve a pending permission request on the human's behalf. Use when: get_pending_permissions lists a request you are authorised to allow. Not for: refusing a request (use deny_permission). Returns: ok, the ids and the decision sent. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count. Side effects: the session runs the tool it asked for; scope session or similar adds an allow rule until the session ends, always saves it to the config. Access: admin. Example: {\"session_id\":\"lumen/P1\",\"request_id\":\"req-1\",\"scope\":\"once\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -297,10 +297,11 @@
         },
         "scope": {
           "default": "once",
-          "description": "How long the approval lasts: once, session or always (default once)",
+          "description": "How long the approval lasts: once, session, similar (matching requests, until the session ends) or always (saved to the config); default once",
           "enum": [
             "once",
             "session",
+            "similar",
             "always"
           ],
           "type": "string"
@@ -604,7 +605,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": true,
       "readOnlyHint": true,
       "title": "Check the environment"
@@ -793,12 +794,21 @@
       "readOnlyHint": false,
       "title": "Deny permission"
     },
-    "description": "Deny a pending permission request. Use when: get_pending_permissions lists a request that must not run. Not for: approving a request (use approve_permission). Returns: ok, the ids and decision deny. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count. Side effects: the session is told the tool was refused and continues without it. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"request_id\":\"req-1\"}",
+    "description": "Deny a pending permission request. Use when: get_pending_permissions lists a request that must not run. Not for: approving a request (use approve_permission). Returns: ok, the ids and decision deny. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count. Side effects: the session is told the tool was refused and continues without it; scope always also saves a standing deny rule to the config. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"request_id\":\"req-1\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "request_id": {
           "description": "Permission request ID, taken from get_pending_permissions",
+          "type": "string"
+        },
+        "scope": {
+          "default": "once",
+          "description": "How long the refusal lasts: once or always (a standing deny rule saved to the config, admin level); default once",
+          "enum": [
+            "once",
+            "always"
+          ],
           "type": "string"
         },
         "session_id": {
@@ -1169,7 +1179,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "List calls behind an action"
@@ -1239,7 +1249,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get effective config"
@@ -1289,7 +1299,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get cost and tokens"
@@ -1391,7 +1401,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get action durations"
@@ -1456,7 +1466,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "List past runs"
@@ -1518,7 +1528,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get latest draft roadmap"
@@ -1563,7 +1573,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Compare worker quality"
@@ -1628,7 +1638,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get mixed-programming rounds"
@@ -1693,7 +1703,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get model recommendation"
@@ -1735,7 +1745,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "List everything waiting for a human"
@@ -1791,7 +1801,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "List pending permissions"
@@ -1849,7 +1859,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "List pending questions"
@@ -1911,7 +1921,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Suggest permission rules"
@@ -1971,7 +1981,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get plan"
@@ -2011,7 +2021,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "List saved log files"
@@ -2076,7 +2086,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get project setup"
@@ -2136,7 +2146,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "List projects"
@@ -2194,7 +2204,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get rate-limit status"
@@ -2225,7 +2235,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get roadmap row text"
@@ -2290,7 +2300,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get roadmap task file"
@@ -2349,7 +2359,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get session"
@@ -2403,7 +2413,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get session log"
@@ -2470,7 +2480,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get session metrics"
@@ -2512,7 +2522,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get session roadmap"
@@ -2604,7 +2614,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "List sessions"
@@ -2662,7 +2672,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get skill autopilot"
@@ -2728,7 +2738,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get skill candidates"
@@ -2793,7 +2803,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get skill quality"
@@ -2858,7 +2868,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get skill usage"
@@ -2923,7 +2933,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get skills"
@@ -3003,7 +3013,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Get token cost by tool"
@@ -3050,7 +3060,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "List most frequent actions"
@@ -3289,7 +3299,7 @@
       "cm/accessLevel": "operate"
     },
     "annotations": {
-      "destructiveHint": false,
+      "destructiveHint": true,
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": false,
@@ -3340,7 +3350,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "List slash commands"
@@ -3864,7 +3874,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Search session log"
@@ -4502,7 +4512,7 @@
       "cm/accessLevel": "operate"
     },
     "annotations": {
-      "destructiveHint": false,
+      "destructiveHint": true,
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": false,
@@ -4901,7 +4911,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Wait for any session to need a human"
@@ -4992,7 +5002,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Wait for event"
@@ -5118,7 +5128,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Wait for session status"
@@ -5226,7 +5236,7 @@
     },
     "annotations": {
       "destructiveHint": false,
-      "idempotentHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Wait for worker status"
