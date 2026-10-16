@@ -451,7 +451,7 @@ minimum-run-count and cost-threshold checks are what keep an override safe
 despite the coarser grain, not this query.
 
 ### Task Source Check
-Unless `run_without_tasks = true`, when `task_source` is set (default since QV-03; the retired `stop_when_no_tasks` key is migrated on load: `true` without `auto_restart` becomes `auto_restart = true`, `false` is dropped), `Run()` checks the file before each iteration using `hasTasks()`. Two formats are supported (mirrors `orchestrator.py has_tasks()`):
+Unless `run_without_tasks = true`, when `task_source` is set (default since QV-03; the retired `stop_when_no_tasks` key is migrated on load: `true` without `auto_restart` becomes `auto_restart = true` when the session has a `task_source` — without one it stays interactive —, `false` is dropped), `Run()` checks the file before each iteration using `hasTasks()`. Two formats are supported (mirrors `orchestrator.py has_tasks()`):
 
 1. **Pointer format (canonical, primary).** The file contains bare pointer lines `<source>:NN` — one open task per line, priority top-down (e.g. `ROADMAP.md:92`, `MIXED-TASKS.md:102`, `crates/x/src/lib.rs:76`). Any bare pointer line (`^\S+:\d+$` after trim; headings `#`, quotes `>`, list markers `-`/`_`/`*` are ignored) → `true`. Completing a task = deleting its line; an empty file stops the loop. No In progress/Next sections, no checkboxes — "in progress" is tracked in the master list the pointers point to.
 2. **Legacy format.** Returns `true` if the file contains `"In progress:"` (a task is started) or both `"Next:"` and `"- ["` (queued tasks).

@@ -603,8 +603,9 @@ func TestLoad_MigratesStopWhenNoTasks(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	body := "[[project]]\nname = \"p\"\npath = '" + dir + "'\n\n" +
-		"[[project.session]]\nname = \"A\"\nstop_when_no_tasks = true\n\n" +
-		"[[project.session]]\nname = \"B\"\nauto_restart = true\nstop_when_no_tasks = false\n"
+		"[[project.session]]\nname = \"A\"\nstop_when_no_tasks = true\ntask_source = \"STATUS-P1.md\"\n\n" +
+		"[[project.session]]\nname = \"B\"\nauto_restart = true\nstop_when_no_tasks = false\n\n" +
+		"[[project.session]]\nname = \"Chat\"\nstop_when_no_tasks = true\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -614,7 +615,10 @@ func TestLoad_MigratesStopWhenNoTasks(t *testing.T) {
 	}
 	a, b := cfg.Projects[0].Sessions[0], cfg.Projects[0].Sessions[1]
 	if !a.AutoRestart {
-		t.Error("stop_when_no_tasks=true without auto_restart must become auto_restart=true")
+		t.Error("stop_when_no_tasks=true with a task_source must become auto_restart=true")
+	}
+	if chat := cfg.Projects[0].Sessions[2]; chat.AutoRestart || chat.StopWhenNoTasks {
+		t.Errorf("stop_when_no_tasks=true without task_source must stay interactive: %+v", chat)
 	}
 	if b.RunWithoutTasks || !b.AutoRestart {
 		t.Errorf("stop_when_no_tasks=false must not become run_without_tasks: %+v", b)

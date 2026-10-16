@@ -457,7 +457,10 @@ func applySessionDefaults(s *SessionConfig, projectDefaultPermissionMode string)
 	// Retired stop_when_no_tasks: true used to make a session autonomous on
 	// its own; auto_restart now carries that. A false was written by Settings,
 	// not chosen by the user, so it is not carried into run_without_tasks.
-	if s.StopWhenNoTasks && !s.AutoRestart {
+	// Without a task_source there was no queue to run, so the key only made an
+	// interactive session (Chat) exit after each answer; it must not turn into
+	// auto_restart there.
+	if s.StopWhenNoTasks && !s.AutoRestart && s.TaskSource != "" {
 		s.AutoRestart = true
 	}
 	s.StopWhenNoTasks = false
