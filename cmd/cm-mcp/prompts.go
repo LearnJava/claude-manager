@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -122,7 +123,7 @@ func (s *mcpServer) addPrompts(srv *mcp.Server) {
 				for _, a := range d.args {
 					v := strings.TrimSpace(req.Params.Arguments[a.Name])
 					if a.Required && v == "" {
-						return nil, fmt.Errorf("prompt %s: argument %q is required", d.name, a.Name)
+						return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: fmt.Sprintf("prompt %s: argument %q is required", d.name, a.Name)}
 					}
 					got[a.Name] = v
 				}

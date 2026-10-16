@@ -83,6 +83,11 @@ if errorlevel 1 (
         ) else (
             >"%STAMP%" echo !HEADREV!
         )
+        rem cm-mcp (the MCP server clients launch over stdio) is rebuilt with the app,
+        rem otherwise clients keep running a stale binary with an outdated tool list.
+        rem A failure (e.g. a client holds the exe open) only prints a warning.
+        go build -o build\cm-mcp.exe ./cmd/cm-mcp
+        if errorlevel 1 echo WARNING: cm-mcp build failed, clients keep the previous build\cm-mcp.exe.
         rem wails build rewrites go.mod with LF line endings even with
         rem -nosyncgomod. When its content is unchanged, put the checkout copy
         rem back so git status stays clean; real local edits are left alone.

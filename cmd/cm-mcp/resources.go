@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"claude-manager/docs"
@@ -89,11 +90,15 @@ func (s *mcpServer) readTool(tool string, argsFor func(uri string) (json.RawMess
 func (s *mcpServer) shapedTool(ctx context.Context, ss *mcp.ServerSession, tool string, args json.RawMessage) (any, error) {
 	ctx = withClient(ctx, ss)
 	raw, err := s.callToolCtx(ctx, tool, args)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		var out any
+		if out, _, err = control.ShapeResult(tool, args, raw); err == nil {
+			return out, nil
+		}
 	}
-	out, _, err := control.ShapeResult(tool, args, raw)
-	return out, err
+	// A resource read has no isError result: report a JSON-RPC internal error
+	// (with the hint, e.g. "start Claude Manager") instead of the SDK's code 0.
+	return nil, &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: err.Error()}
 }
 
 func (s *mcpServer) readProjectConfig(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
