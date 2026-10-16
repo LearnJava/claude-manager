@@ -220,7 +220,7 @@
       "readOnlyHint": false,
       "title": "Answer question"
     },
-    "description": "Answer a question a session asked the human. Use when: get_pending_questions lists a question you can answer. Not for: permission requests (use approve_permission or deny_permission). Returns: ok, the session and the question id. Side effects: the answer is sent to the session as the user's reply and it continues; a manager question (restart choice) is acted on instead. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"question_id\":\"q-1\",\"answer\":\"Use the second approach\"}",
+    "description": "Answer a question a session asked the human. Use when: get_pending_questions lists a question you can answer. Not for: permission requests (use approve_permission or deny_permission). Returns: ok, the session and the question id. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count. Side effects: the answer is sent to the session as the user's reply and it continues; a manager question (restart choice) is acted on instead. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"question_id\":\"q-1\",\"answer\":\"Use the second approach\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -255,6 +255,13 @@
           "description": "The question that was answered",
           "type": "string"
         },
+        "seq": {
+          "description": "Event counter from before the action; pass it as since_seq to wait_for_status or wait_for_event so only events the action caused count",
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
         "session_id": {
           "description": "Session ID in project/session form",
           "type": "string"
@@ -280,7 +287,7 @@
       "readOnlyHint": false,
       "title": "Approve permission"
     },
-    "description": "Approve a pending permission request on the human's behalf. Use when: get_pending_permissions lists a request you are authorised to allow. Not for: refusing a request (use deny_permission). Returns: ok, the ids and the decision sent. Side effects: the session runs the tool it asked for; scope session or always also adds a standing allow rule. Access: admin. Example: {\"session_id\":\"lumen/P1\",\"request_id\":\"req-1\",\"scope\":\"once\"}",
+    "description": "Approve a pending permission request on the human's behalf. Use when: get_pending_permissions lists a request you are authorised to allow. Not for: refusing a request (use deny_permission). Returns: ok, the ids and the decision sent. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count. Side effects: the session runs the tool it asked for; scope session or always also adds a standing allow rule. Access: admin. Example: {\"session_id\":\"lumen/P1\",\"request_id\":\"req-1\",\"scope\":\"once\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -324,6 +331,13 @@
         "request_id": {
           "description": "The permission request that was answered",
           "type": "string"
+        },
+        "seq": {
+          "description": "Event counter from before the action; pass it as since_seq to wait_for_status or wait_for_event so only events the action caused count",
+          "type": [
+            "null",
+            "integer"
+          ]
         },
         "session_id": {
           "description": "Session ID in project/session form",
@@ -748,6 +762,13 @@
           "description": "True when the action was accepted",
           "type": "boolean"
         },
+        "seq": {
+          "description": "Event counter from before the action; pass it as since_seq to wait_for_status or wait_for_event so only events the action caused count",
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
         "session_id": {
           "description": "Session ID in project/session form",
           "type": "string"
@@ -772,7 +793,7 @@
       "readOnlyHint": false,
       "title": "Deny permission"
     },
-    "description": "Deny a pending permission request. Use when: get_pending_permissions lists a request that must not run. Not for: approving a request (use approve_permission). Returns: ok, the ids and decision deny. Side effects: the session is told the tool was refused and continues without it. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"request_id\":\"req-1\"}",
+    "description": "Deny a pending permission request. Use when: get_pending_permissions lists a request that must not run. Not for: approving a request (use approve_permission). Returns: ok, the ids and decision deny. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count. Side effects: the session is told the tool was refused and continues without it. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"request_id\":\"req-1\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -806,6 +827,13 @@
         "request_id": {
           "description": "The permission request that was answered",
           "type": "string"
+        },
+        "seq": {
+          "description": "Event counter from before the action; pass it as since_seq to wait_for_status or wait_for_event so only events the action caused count",
+          "type": [
+            "null",
+            "integer"
+          ]
         },
         "session_id": {
           "description": "Session ID in project/session form",
@@ -3267,7 +3295,7 @@
       "readOnlyHint": false,
       "title": "Interrupt session"
     },
-    "description": "Interrupt the session's current turn (a running tool call or generation) without stopping the session. Use when: the session is going down a wrong path and you want to redirect it with send_message. Not for: ending the session (use stop_session) or answering a permission request (use approve_permission or deny_permission). Returns: ok and the session_id; the session then waits for the next message. Side effects: cancels the work in flight; partial results of that turn are discarded. Access: operate. Example: {\"session_id\":\"lumen/P1\"}",
+    "description": "Interrupt the session's current turn (a running tool call or generation) without stopping the session. Use when: the session is going down a wrong path and you want to redirect it with send_message. Not for: ending the session (use stop_session) or answering a permission request (use approve_permission or deny_permission). Returns: ok and the session_id; the session then waits for the next message. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count. Side effects: cancels the work in flight; partial results of that turn are discarded. Access: operate. Example: {\"session_id\":\"lumen/P1\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -3285,6 +3313,13 @@
         "ok": {
           "description": "True when the action was accepted",
           "type": "boolean"
+        },
+        "seq": {
+          "description": "Event counter from before the action; pass it as since_seq to wait_for_status or wait_for_event so only events the action caused count",
+          "type": [
+            "null",
+            "integer"
+          ]
         },
         "session_id": {
           "description": "Session ID in project/session form",
@@ -3596,7 +3631,7 @@
       "readOnlyHint": false,
       "title": "Restart session"
     },
-    "description": "Restart a session, fresh or resuming its saved conversation. Use when: a session is stuck, errored, or needs a clean process; use resume=true to keep the conversation. Not for: a session that was never started (use start_session). Returns: ok and the session_id. Side effects: stops the current CLI process and launches a new one, which may spend tokens. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"resume\":true}",
+    "description": "Restart a session, fresh or resuming its saved conversation. Use when: a session is stuck, errored, or needs a clean process; use resume=true to keep the conversation. Not for: a session that was never started (use start_session). Returns: ok and the session_id. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count. Side effects: stops the current CLI process and launches a new one, which may spend tokens. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"resume\":true}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -3618,6 +3653,13 @@
         "ok": {
           "description": "True when the action was accepted",
           "type": "boolean"
+        },
+        "seq": {
+          "description": "Event counter from before the action; pass it as since_seq to wait_for_status or wait_for_event so only events the action caused count",
+          "type": [
+            "null",
+            "integer"
+          ]
         },
         "session_id": {
           "description": "Session ID in project/session form",
@@ -3913,7 +3955,7 @@
       "readOnlyHint": false,
       "title": "Send message"
     },
-    "description": "Send a user message, optionally with images, to a running session. Use when: you want to give a session new instructions or answer its question. Not for: a session that is not running (use start_session first) or permission requests (use approve_permission). Returns: ok and the session_id; read the reply with get_session_logs or wait_for_status. Side effects: the session processes the message as its next turn, which spends tokens. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"text\":\"Continue with the next task\"}",
+    "description": "Send a user message, optionally with images, to a running session. Use when: you want to give a session new instructions or answer its question. Not for: a session that is not running (use start_session first) or permission requests (use approve_permission). Returns: ok and the session_id; read the reply with get_session_logs or wait_for_status. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count. Side effects: the session processes the message as its next turn, which spends tokens. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"text\":\"Continue with the next task\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -3963,6 +4005,13 @@
         "ok": {
           "description": "True when the action was accepted",
           "type": "boolean"
+        },
+        "seq": {
+          "description": "Event counter from before the action; pass it as since_seq to wait_for_status or wait_for_event so only events the action caused count",
+          "type": [
+            "null",
+            "integer"
+          ]
         },
         "session_id": {
           "description": "Session ID in project/session form",
@@ -4056,6 +4105,13 @@
           "description": "True when the action was accepted",
           "type": "boolean"
         },
+        "seq": {
+          "description": "Event counter from before the action; pass it as since_seq to wait_for_status or wait_for_event so only events the action caused count",
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
         "session_id": {
           "description": "Session ID in project/session form",
           "type": "string"
@@ -4109,6 +4165,13 @@
         "ok": {
           "description": "True when the action was accepted",
           "type": "boolean"
+        },
+        "seq": {
+          "description": "Event counter from before the action; pass it as since_seq to wait_for_status or wait_for_event so only events the action caused count",
+          "type": [
+            "null",
+            "integer"
+          ]
         },
         "session_id": {
           "description": "Session ID in project/session form",
@@ -4292,7 +4355,7 @@
       "readOnlyHint": false,
       "title": "Start session"
     },
-    "description": "Start a configured session, optionally with a model, effort or runtime override. Use when: a session is idle, stopped or errored and should begin work. Not for: a session that is already running (use send_message or set_session_model) or continuing an old conversation (use restart_session with resume=true). Returns: ok and the session_id. Side effects: launches the CLI process, which may spend tokens; model and effort are remembered as the session's defaults and runtime is saved to its config. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"model\":\"opus\",\"effort\":\"high\"}",
+    "description": "Start a configured session, optionally with a model, effort or runtime override. Use when: a session is idle, stopped or errored and should begin work. Not for: a session that is already running (use send_message or set_session_model) or continuing an old conversation (use restart_session with resume=true). Returns: ok and the session_id. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count. Side effects: launches the CLI process, which may spend tokens; model and effort are remembered as the session's defaults and runtime is saved to its config. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"model\":\"opus\",\"effort\":\"high\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -4326,6 +4389,13 @@
         "ok": {
           "description": "True when the action was accepted",
           "type": "boolean"
+        },
+        "seq": {
+          "description": "Event counter from before the action; pass it as since_seq to wait_for_status or wait_for_event so only events the action caused count",
+          "type": [
+            "null",
+            "integer"
+          ]
         },
         "session_id": {
           "description": "Session ID in project/session form",
@@ -4438,7 +4508,7 @@
       "readOnlyHint": false,
       "title": "Stop session"
     },
-    "description": "Stop a running session. Use when: a session must end, now or after it finishes its current task. Not for: aborting only the current step while keeping the session alive (use interrupt_session). Returns: ok and the session_id; the stop is requested, confirm it with wait_for_status status=idle. Side effects: terminates the CLI process (at once, or after the task when after_task=true); work in the current turn is lost. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"after_task\":true}",
+    "description": "Stop a running session. Use when: a session must end, now or after it finishes its current task. Not for: aborting only the current step while keeping the session alive (use interrupt_session). Returns: ok and the session_id; the stop is requested, confirm it with wait_for_status status=idle. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count. Side effects: terminates the CLI process (at once, or after the task when after_task=true); work in the current turn is lost. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"after_task\":true}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -4460,6 +4530,13 @@
         "ok": {
           "description": "True when the action was accepted",
           "type": "boolean"
+        },
+        "seq": {
+          "description": "Event counter from before the action; pass it as since_seq to wait_for_status or wait_for_event so only events the action caused count",
+          "type": [
+            "null",
+            "integer"
+          ]
         },
         "session_id": {
           "description": "Session ID in project/session form",
@@ -4879,6 +4956,13 @@
           "description": "True when the awaited event arrived; false when the wait timed out (not an error)",
           "type": "boolean"
         },
+        "seq": {
+          "description": "Event counter at the matching event (when reached); pass it as since_seq to the next wait to skip what you already saw",
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
         "statuses": {
           "additionalProperties": {
             "type": "string"
@@ -4913,7 +4997,7 @@
       "readOnlyHint": true,
       "title": "Wait for event"
     },
-    "description": "Block until an event whose payload contains the given fields is emitted, or the timeout passes. Use when: you wait for something other than a status, such as session:log or session:permission. Not for: session status changes (use wait_for_status). Returns: the matching event; recent past events count, so a short gap does not lose it; on timeout reached=false with a hint, not an error. Side effects: none, read only. Access: read. Example: {\"event\":\"session:permission\",\"match\":{\"id\":\"lumen/P1\"}}",
+    "description": "Block until an event whose payload contains the given fields is emitted, or the timeout passes. Use when: you wait for something other than a status, such as session:log or session:permission. Not for: session status changes (use wait_for_status). Returns: the matching event and its seq. Without since_seq a recent past event counts, so an old one may come back; pass the seq of your action as since_seq to get only newer ones. On timeout reached=false with a hint, not an error. Side effects: none, read only. Access: read. Example: {\"event\":\"session:permission\",\"match\":{\"id\":\"lumen/P1\"}}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -4937,6 +5021,12 @@
             "session:queue_changed",
             "plan:status",
             "plan:roadmap_progress",
+            "alert:budget",
+            "alert:loop",
+            "skills:changed",
+            "skill:progress",
+            "experience:regression",
+            "experience:import",
             "worker:round",
             "worker:patch",
             "worker:gate",
@@ -4948,6 +5038,13 @@
           "additionalProperties": true,
           "description": "Fields the event payload must contain, all of them, e.g. {\"id\": \"lumen/P1\"}",
           "type": "object"
+        },
+        "since_seq": {
+          "description": "The seq an action returned (send_message, start_session, ...): only events after it count, so an older event is not taken for the answer",
+          "type": [
+            "null",
+            "integer"
+          ]
         },
         "timeout_ms": {
           "default": 5000,
@@ -4985,6 +5082,13 @@
           "description": "True when the awaited event arrived; false when the wait timed out (not an error)",
           "type": "boolean"
         },
+        "seq": {
+          "description": "Event counter at the matching event (when reached); pass it as since_seq to the next wait to skip what you already saw",
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
         "statuses": {
           "additionalProperties": {
             "type": "string"
@@ -5019,13 +5123,20 @@
       "readOnlyHint": true,
       "title": "Wait for session status"
     },
-    "description": "Block until a session reports the given status, or the timeout passes. Use when: after start_session, send_message or approve_permission, instead of polling get_sessions. Not for: events other than status changes (use wait_for_event). Returns: the matching session:status event; on timeout reached=false with the current status and a hint, not an error. Side effects: none, read only. Access: read. Example: {\"session_id\":\"lumen/P1\",\"status\":\"idle\",\"timeout_ms\":30000}",
+    "description": "Block until a session reports the given status, or the timeout passes. Use when: after start_session, send_message or approve_permission, instead of polling get_sessions. Pass the seq that action returned as since_seq, or an earlier idle may be taken for the answer. Not for: events other than status changes (use wait_for_event). Returns: the matching session:status event and its seq. Without since_seq a session that already has the status returns at once; with it only a later event counts. On timeout reached=false with the current status and a hint, not an error. Side effects: none, read only. Access: read. Example: {\"session_id\":\"lumen/P1\",\"status\":\"idle\",\"timeout_ms\":30000}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "session_id": {
           "description": "Session ID in project/session form, e.g. lumen/P1; list them with get_sessions",
           "type": "string"
+        },
+        "since_seq": {
+          "description": "The seq an action returned (send_message, start_session, ...): only events after it count, so an older event is not taken for the answer",
+          "type": [
+            "null",
+            "integer"
+          ]
         },
         "status": {
           "description": "Target status to wait for",
@@ -5078,6 +5189,13 @@
         "reached": {
           "description": "True when the awaited event arrived; false when the wait timed out (not an error)",
           "type": "boolean"
+        },
+        "seq": {
+          "description": "Event counter at the matching event (when reached); pass it as since_seq to the next wait to skip what you already saw",
+          "type": [
+            "null",
+            "integer"
+          ]
         },
         "statuses": {
           "additionalProperties": {
@@ -5164,6 +5282,13 @@
         "reached": {
           "description": "True when the awaited event arrived; false when the wait timed out (not an error)",
           "type": "boolean"
+        },
+        "seq": {
+          "description": "Event counter at the matching event (when reached); pass it as since_seq to the next wait to skip what you already saw",
+          "type": [
+            "null",
+            "integer"
+          ]
         },
         "statuses": {
           "additionalProperties": {

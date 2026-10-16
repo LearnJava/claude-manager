@@ -818,6 +818,17 @@ GUI-приложению; в `playwright-server` они отвечают оши�
 Цикл агента-оператора без опроса: `wait_for_any` → разобрать пришедшее (`data.id` — сессия) → ответить
 (`answer_question`, `approve_permission`, `send_message`) → снова `wait_for_any`.
 
+- **Старые события и `since_seq` (MCP-20).** Каждое событие получает монотонный `seq` от `ControlEmitter`.
+  Действия `send_message`, `start_session`, `restart_session`, `stop_session`, `interrupt_session`,
+  `approve_permission`, `deny_permission`, `answer_question` возвращают `seq` — счётчик **до** действия; его
+  передают как `since_seq` в `wait_for_status` / `wait_for_event`, и из кольца берутся только события с большим
+  `seq`. Без `since_seq` `wait_for_status` сначала смотрит текущий статус сессии (совпал — `reached: true`
+  сразу, `seq` — текущий), иначе ждёт новое событие, не заглядывая в кольцо; `wait_for_event` ведёт себя как
+  раньше и может вернуть прошлое событие. Ответ ожидания содержит `seq`. Waiter подписывается с фильтром по
+  имени события, поэтому всплеск `session:log` не вытесняет ожидаемое событие из буфера подписки.
+  `EventNames` включает все события GUI (`alert:budget`, `alert:loop`, `skills:changed`, `skill:progress`,
+  `experience:regression`, `experience:import`); тест `TestEventNames_CoverFrontendEvents` сверяет их с
+  `EventsOn('…')` в `frontend/src`.
 - **Таймаут.** По умолчанию 5 с (`wait_for_worker_status`, `wait_for_any` — 60 с), максимум 10 минут
   (`MaxWaitTimeout`, `maximum` в схеме; больший `timeout_ms` обрезается, не отвергается).
 - **Истечение — результат, не ошибка.** `{reached: false, timeout_ms, current_status, statuses, hint}`:

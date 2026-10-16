@@ -24,6 +24,7 @@ type EnvelopedEvent struct {
 	Event string          `json:"event"`
 	Data  json.RawMessage `json:"data"`
 	TS    time.Time       `json:"ts"`
+	Seq   uint64          `json:"seq,omitempty"` // monotonic emission number, assigned by ControlEmitter
 }
 
 // ── WailsEmitter ─────────────────────────────────────────────────────────────
@@ -92,6 +93,8 @@ type ControlEmitter struct {
 	ringSize   int
 	globalRing []EnvelopedEvent
 	perEvent   map[string][]EnvelopedEvent
+	seq        uint64
+	filters    map[chan EnvelopedEvent]func(EnvelopedEvent) bool
 }
 
 func NewControlEmitter(ringSize int) *ControlEmitter {
@@ -102,7 +105,17 @@ func NewControlEmitter(ringSize int) *ControlEmitter {
 		subs:     make(map[chan EnvelopedEvent]struct{}),
 		ringSize: ringSize,
 		perEvent: make(map[string][]EnvelopedEvent),
+		filters:  make(map[chan EnvelopedEvent]func(EnvelopedEvent) bool),
 	}
+}
+
+// Seq is the number of the last emitted event (0 before the first). An action
+// reads it before it acts and passes it as since_seq to a wait, which then
+// sees only the events the action caused.
+func (c *ControlEmitter) Seq() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.seq
 }
 
 func (c *ControlEmitter) Emit(event string, data any) {
@@ -110,15 +123,25 @@ func (c *ControlEmitter) Emit(event string, data any) {
 	env := EnvelopedEvent{Event: event, Data: raw, TS: time.Now()}
 
 	c.mu.Lock()
+	c.seq++
+	env.Seq = c.seq
 	c.globalRing = appendRing(c.globalRing, env, c.ringSize)
 	c.perEvent[event] = appendRing(c.perEvent[event], env, c.ringSize)
-	chans := make([]chan EnvelopedEvent, 0, len(c.subs))
+	type target struct {
+		ch     chan EnvelopedEvent
+		accept func(EnvelopedEvent) bool
+	}
+	chans := make([]target, 0, len(c.subs))
 	for ch := range c.subs {
-		chans = append(chans, ch)
+		chans = append(chans, target{ch, c.filters[ch]})
 	}
 	c.mu.Unlock()
 
-	for _, ch := range chans {
+	for _, t := range chans {
+		if t.accept != nil && !t.accept(env) {
+			continue
+		}
+		ch := t.ch
 		select {
 		case ch <- env:
 		default: // slow subscriber: drop rather than block
@@ -129,13 +152,24 @@ func (c *ControlEmitter) Emit(event string, data any) {
 // Subscribe returns a buffered channel of future events and a cancel func
 // that unsubscribes and closes the channel.
 func (c *ControlEmitter) Subscribe() (chan EnvelopedEvent, func()) {
+	return c.SubscribeFiltered(nil)
+}
+
+// SubscribeFiltered is Subscribe for a waiter that can accept only some
+// events: the rest never enter its channel, so a burst of session:log cannot
+// push the awaited event out of the 64-slot buffer. A nil accept takes all.
+func (c *ControlEmitter) SubscribeFiltered(accept func(EnvelopedEvent) bool) (chan EnvelopedEvent, func()) {
 	ch := make(chan EnvelopedEvent, 64)
 	c.mu.Lock()
 	c.subs[ch] = struct{}{}
+	if accept != nil {
+		c.filters[ch] = accept
+	}
 	c.mu.Unlock()
 	return ch, func() {
 		c.mu.Lock()
 		delete(c.subs, ch)
+		delete(c.filters, ch)
 		c.mu.Unlock()
 		close(ch)
 	}
@@ -181,6 +215,8 @@ var EventNames = []string{
 	session.EventNameTaskSource, session.EventNameInit, session.EventNameResult,
 	session.EventNameError, session.EventNameStopReq, session.EventNameQueueChanged,
 	session.EventNamePlanStatus, session.EventNameRoadmapProgress,
+	session.EventNameBudgetAlert, session.EventNameLoopAlert, session.EventNameSkillsChanged,
+	session.EventNameSkillProgress, session.EventNameRegression, session.EventNameImportProgress,
 	worker.EventRound, worker.EventPatch, worker.EventGate, worker.EventDone,
 }
 

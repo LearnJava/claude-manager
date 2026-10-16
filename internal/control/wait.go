@@ -64,6 +64,11 @@ type waitRequest struct {
 	Match     map[string]json.RawMessage `json:"match"`      // field equality constraints
 	Attention []string                   `json:"attention"`  // wait_for_any: session ids; the first "needs a human" event wins
 	TimeoutMs int64                      `json:"timeout_ms"` // 0 → DefaultWaitTimeout; capped at MaxWaitTimeout
+	// SinceSeq limits the ring buffer to events numbered above it (an action's
+	// returned seq). Unset: wait_for_status reads the current status instead of
+	// the buffer (StatusNow), and wait_for_event may return a past event.
+	SinceSeq  *uint64 `json:"since_seq,omitempty"`
+	StatusNow bool    `json:"status_now,omitempty"` // wait_for_status: the current status satisfies the wait
 }
 
 // waitResponse is the body of the /wait reply on success.
@@ -72,6 +77,7 @@ type waitResponse struct {
 	Event   string          `json:"event"`
 	Data    json.RawMessage `json:"data"`
 	TS      time.Time       `json:"ts"`
+	Seq     uint64          `json:"seq"` // the event's number, or the emitter's current one for a state read
 }
 
 // waitTimeoutResponse is the 408 body: the wait ran out, nothing is wrong.
@@ -120,7 +126,7 @@ func (s *Server) handleWait(w http.ResponseWriter, r *http.Request) {
 		// Only the future counts: a replayed question may long be answered.
 		// What is pending right now is read from the manager instead.
 		if env, ok := s.attentionNow(req.Attention); ok {
-			writeWaitResponse(w, env)
+			s.writeWaitResponse(w, env)
 			return
 		}
 		matches = func(env EnvelopedEvent) bool { return attentionMatch(env, req.Attention) }
@@ -128,19 +134,38 @@ func (s *Server) handleWait(w http.ResponseWriter, r *http.Request) {
 		matches = func(env EnvelopedEvent) bool {
 			return env.Event == req.Event && matchEnvelope(env, req.Match)
 		}
-		// Check the ring buffer for events that already satisfy the match.
-		past := s.emitter.Recent(req.Event, 0)
-		for i := len(past) - 1; i >= 0; i-- {
-			if matches(past[i]) {
-				writeWaitResponse(w, past[i])
+	}
+
+	// Subscribe before reading any state so nothing slips between the read and
+	// the wait. Only events the waiter can accept enter its channel.
+	ch, unsub := s.emitter.SubscribeFiltered(matches)
+	defer unsub()
+
+	if len(req.Attention) == 0 {
+		if req.SinceSeq != nil {
+			// Only events caused after the caller's action.
+			past := s.emitter.Recent(req.Event, 0)
+			for i := len(past) - 1; i >= 0 && past[i].Seq > *req.SinceSeq; i-- {
+				if matches(past[i]) {
+					s.writeWaitResponse(w, past[i])
+					return
+				}
+			}
+		} else if req.StatusNow {
+			if env, ok := s.statusNow(req.Match); ok {
+				s.writeWaitResponse(w, env)
 				return
+			}
+		} else {
+			past := s.emitter.Recent(req.Event, 0)
+			for i := len(past) - 1; i >= 0; i-- {
+				if matches(past[i]) {
+					s.writeWaitResponse(w, past[i])
+					return
+				}
 			}
 		}
 	}
-
-	// Subscribe and wait for a future matching event.
-	ch, unsub := s.emitter.Subscribe()
-	defer unsub()
 
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
@@ -157,7 +182,7 @@ func (s *Server) handleWait(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if matches(env) {
-				writeWaitResponse(w, env)
+				s.writeWaitResponse(w, env)
 				return
 			}
 		}
@@ -245,13 +270,34 @@ func attentionMatch(env EnvelopedEvent, ids []string) bool {
 	return false
 }
 
-func writeWaitResponse(w http.ResponseWriter, env EnvelopedEvent) {
+// statusNow answers a wait_for_status whose target the session already has:
+// a synthesised session:status event for the current state.
+func (s *Server) statusNow(match map[string]json.RawMessage) (EnvelopedEvent, bool) {
+	var id, status string
+	if json.Unmarshal(match["id"], &id) != nil || json.Unmarshal(match["status"], &status) != nil || id == "" {
+		return EnvelopedEvent{}, false
+	}
+	st, ok := s.manager.GetSession(id)
+	if !ok || st.Status != status {
+		return EnvelopedEvent{}, false
+	}
+	raw, _ := json.Marshal(session.StatusEvent{ID: id, Status: status})
+	return EnvelopedEvent{Event: session.EventNameStatus, Data: raw, TS: time.Now()}, true
+}
+
+// writeWaitResponse answers 200. An event synthesised from state carries no
+// Seq; it gets the emitter's current one, so the caller can chain a wait.
+func (s *Server) writeWaitResponse(w http.ResponseWriter, env EnvelopedEvent) {
+	if env.Seq == 0 {
+		env.Seq = s.emitter.Seq()
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(waitResponse{
 		Reached: true,
 		Event:   env.Event,
 		Data:    env.Data,
 		TS:      env.TS,
+		Seq:     env.Seq,
 	})
 }
 

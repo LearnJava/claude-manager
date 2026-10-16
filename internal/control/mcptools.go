@@ -188,6 +188,14 @@ func waitCallBody(event string, match any, timeoutMs int64) map[string]any {
 	}
 }
 
+// withSince adds since_seq to a /wait body when the caller gave one.
+func withSince(body map[string]any, since *int64) map[string]any {
+	if since != nil && *since >= 0 {
+		body["since_seq"] = *since
+	}
+	return body
+}
+
 // longRunning are the tools that block for a long time: the wait_* family
 // and the ones that run a model. cm-mcp sends notifications/progress for them
 // and bounds the model-running ones by LongToolTimeout.

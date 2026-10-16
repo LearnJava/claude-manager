@@ -66,6 +66,7 @@ type answerAck struct {
 	OK         bool   `json:"ok" jsonschema:"True when the answer was delivered"`
 	SessionID  string `json:"session_id" jsonschema:"Session ID in project/session form"`
 	QuestionID string `json:"question_id" jsonschema:"The question that was answered"`
+	Seq        *int64 `json:"seq,omitempty" jsonschema:"Event counter from before the action; pass it as since_seq to wait_for_status or wait_for_event so only events the action caused count"`
 }
 
 type ruleAck struct {
@@ -150,7 +151,7 @@ func interactionTools() []Tool {
 				What:    "Answer a question a session asked the human.",
 				UseWhen: "get_pending_questions lists a question you can answer.",
 				NotFor:  "permission requests (use approve_permission or deny_permission).",
-				Returns: "ok, the session and the question id.",
+				Returns: "ok, the session and the question id. Also seq: pass it as since_seq to wait_for_status or wait_for_event so only events this action caused count.",
 				Effects: "the answer is sent to the session as the user's reply and it continues; a manager question (restart choice) is acted on instead.",
 				Example: `{"session_id":"lumen/P1","question_id":"q-1","answer":"Use the second approach"}`,
 			},
@@ -164,9 +165,9 @@ func interactionTools() []Tool {
 					"id": id, "question_id": in.QuestionID, "answer": in.Answer,
 				}), nil
 			},
-			Result: func(in answerIn, _ any) answerAck {
+			Result: func(in answerIn, raw any) answerAck {
 				id, _ := in.id()
-				return answerAck{OK: true, SessionID: id, QuestionID: in.QuestionID}
+				return answerAck{OK: true, SessionID: id, QuestionID: in.QuestionID, Seq: seqOf(raw)}
 			},
 			Summary: func(_ answerIn, out answerAck) string {
 				return fmt.Sprintf("Question %s answered for %s.", out.QuestionID, out.SessionID)
