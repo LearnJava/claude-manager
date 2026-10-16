@@ -10,7 +10,7 @@ import type { DiffLine, LogEntry } from '../stores/sessions';
 import { READ_TOOLS } from './formatters';
 import { toolDisplay } from './toolDisplay';
 
-export type LogBlockKind = 'user' | 'prose' | 'thinking' | 'other' | 'tools' | 'edit';
+export type LogBlockKind = 'user' | 'prose' | 'thinking' | 'other' | 'tools' | 'edit' | 'run';
 
 // Everything a collapsed 'tools' block header needs, computed once so the
 // component doesn't re-scan entries on every render.
@@ -198,12 +198,17 @@ export function groupEntries(entries: LogEntry[], processEnded = false): LogBloc
     // Index of the last turn-level `result` entry: a call before it that never
     // got its own result is closed, not running.
     let lastResultIdx = -1;
+    // A new process launch (`run_start`) also closes every earlier call: its
+    // process is dead, whatever the current one is doing.
+    let lastRunStartIdx = -1;
     const indexOf = new Map<LogEntry, number>();
     entries.forEach((e, i) => {
         indexOf.set(e, i);
         if ((e.level ?? '').toLowerCase() === 'result') lastResultIdx = i;
+        if (e.run_start) lastRunStartIdx = i;
     });
-    const turnEnded = (call: LogEntry) => processEnded || (indexOf.get(call) ?? 0) < lastResultIdx;
+    const turnEnded = (call: LogEntry) =>
+        processEnded || (indexOf.get(call) ?? 0) < Math.max(lastResultIdx, lastRunStartIdx);
     let cur: LogEntry[] | null = null;
     // Which kind the currently-open run will flush as. Only meaningful while
     // `cur` is non-null.
@@ -224,6 +229,14 @@ export function groupEntries(entries: LogEntry[], processEnded = false): LogBloc
     entries.forEach((e, i) => {
         const level = (e.level ?? '').toLowerCase();
         const key = entryKey(e, i);
+
+        if (e.run_start) {
+            // Always closes the open series and stands as its own boundary
+            // block; the entry's text follows as a plain system line.
+            flush();
+            blocks.push({ kind: 'run', seq: key, entries: [e] });
+            return;
+        }
 
         const isCall = level === 'tool';
         // A file-editing call (Edit/MultiEdit/Write, patch/write_file) gets

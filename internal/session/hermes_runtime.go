@@ -132,7 +132,7 @@ type hermesTurn struct {
 
 func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) error {
 	autonomous := s.Config.AutoRestart && !forceInteractive
-	s.emitManagerLog("Готовлю промпт…")
+	s.emitRunStartLog("Готовлю промпт…")
 	s.prepareWorkDir(ctx)
 
 	runCtx, cancel := context.WithCancel(ctx)

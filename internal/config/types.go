@@ -393,6 +393,10 @@ type LogEntry struct {
 	// tool_use_id; the Hermes parser takes tool_call_id from the wire and
 	// only synthesizes one when the event has none. Not persisted to session_logs — live-stream only.
 	ToolUseID string `json:"tool_use_id,omitempty"`
+	// RunStart marks the first manager line of a CLI process launch (fresh
+	// start, auto_restart, crash recovery, handoff) — VIEW-TASKS.md UI-14. The
+	// feed draws a run boundary at it. Live-stream only, like ToolUseID.
+	RunStart bool `json:"run_start,omitempty"`
 	// Diff carries the added/removed lines for a file-editing tool_use (Claude
 	// Edit/MultiEdit/Write, Hermes patch/write_file) — VIEW-TASKS.md UI-04. Nil
 	// for every other tool call. Not persisted to session_logs, same reasoning

@@ -21,6 +21,7 @@ export default {
     'logStream.thought': 'Думал',
     'logStream.editMoreLines': 'ещё {n} строк',
     'logStream.turnDone': 'Готово',
+    'logStream.newRun': 'Новый запуск',
     'logStream.turnIn': 'за {d}',
     'logStream.turnCount': '{n} ходов',
     'logStream.turnTokens': '{n} токенов',
