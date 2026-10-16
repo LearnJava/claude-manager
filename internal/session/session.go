@@ -428,6 +428,11 @@ type Session struct {
 	handoffCalls   int
 	handoffLastCtx int
 
+	// lastCallUsage is the usage of the latest assistant message of the
+	// current turn (nil before the first), protected by mu: the context fill
+	// checkContextRestart measures, since result.usage sums every call.
+	lastCallUsage *TokenUsage
+
 	// Rate-limit fallback model tracking.
 	// activeModel is the model actually passed to --model on the next launch;
 	// it switches to FallbackModel on the first rate-limit hit when
@@ -1867,6 +1872,9 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 		if ev.Usage != nil {
 			usage := *ev.Usage
 			s.emit(SessionEvent{Type: EvtUsage, Usage: &usage})
+			s.mu.Lock()
+			s.lastCallUsage = &usage
+			s.mu.Unlock()
 			s.checkHandoffBudget(usage, autonomous)
 		}
 
@@ -2020,10 +2028,20 @@ func (s *Session) checkContextRestart(res *SessionResult, autonomous bool) {
 		return
 	}
 	s.contextMonitor.SetContextWindow(window)
+	// The turn's context fill is its last model call; result.usage is the sum
+	// over all calls. Fall back to it when no per-call usage was seen.
+	s.mu.Lock()
+	last := s.lastCallUsage
+	s.lastCallUsage = nil
+	s.mu.Unlock()
+	src := res.Usage
+	if last != nil {
+		src = *last
+	}
 	usage := optimization.TokenUsageAdapter{
-		InputTokens:              res.Usage.InputTokens,
-		CacheCreationInputTokens: res.Usage.CacheCreationInputTokens,
-		CacheReadInputTokens:     res.Usage.CacheReadInputTokens,
+		InputTokens:              src.InputTokens,
+		CacheCreationInputTokens: src.CacheCreationInputTokens,
+		CacheReadInputTokens:     src.CacheReadInputTokens,
 	}
 	if s.contextRearm.Load() {
 		if s.contextMonitor.RearmBelow(usage) {

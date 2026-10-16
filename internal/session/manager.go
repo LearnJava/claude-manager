@@ -316,6 +316,7 @@ type managedSession struct {
 	totalCostUSD      float64
 	contextWindow     int
 	contextUtil       float64
+	lastContextTokens int // input+cache of the last usage event: the context fill, unlike the summed counters
 	durationMs        int64
 
 	rateLimit      *RateLimitInfo
@@ -1784,6 +1785,7 @@ func (m *SessionManager) beginRun(ms *managedSession) {
 	ms.numTurns = 0
 	ms.totalCostUSD = 0
 	ms.contextUtil = 0
+	ms.lastContextTokens = 0
 	ms.durationMs = 0
 	ms.pendingLogs = ms.pendingLogs[:0]
 	project, name := ms.project, ms.name
@@ -1846,6 +1848,7 @@ func (m *SessionManager) handleUsage(ms *managedSession, usage *TokenUsage) {
 	ms.cacheCreateTokens += int64(usage.CacheCreationInputTokens)
 	ms.numTurns++
 	total := int(usage.InputTokens) + int(usage.CacheReadInputTokens) + int(usage.CacheCreationInputTokens)
+	ms.lastContextTokens = total
 	if ms.contextWindow > 0 {
 		ms.contextUtil = float64(total) / float64(ms.contextWindow)
 	}
@@ -1882,11 +1885,22 @@ func (m *SessionManager) handleResult(ms *managedSession, res *SessionResult) {
 			break
 		}
 	}
+	// Context fill is the size of the last model call, not the sum over the
+	// turn's calls (those sums are spend, kept in the counters).
 	if ms.contextWindow > 0 {
-		used := ms.inputTokens + ms.cacheReadTokens + ms.cacheCreateTokens
-		ms.contextUtil = float64(used) / float64(ms.contextWindow)
+		ms.contextUtil = float64(ms.lastContextTokens) / float64(ms.contextWindow)
+	}
+	payload := ContextEvent{
+		ID:            ms.session.ID,
+		InputTokens:   int(ms.inputTokens),
+		OutputTokens:  int(ms.outputTokens),
+		CacheRead:     int(ms.cacheReadTokens),
+		CacheCreation: int(ms.cacheCreateTokens),
+		ContextWindow: ms.contextWindow,
+		Utilization:   ms.contextUtil,
 	}
 	ms.mu.Unlock()
+	m.emit(EventNameContext, payload)
 }
 
 // finishRun finalizes the in-flight run record with the given status / error

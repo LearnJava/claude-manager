@@ -361,3 +361,38 @@ func TestCheckContextRestart_AskAnswers(t *testing.T) {
 		}
 	}
 }
+
+// CTX-01: result.usage sums every call of the turn; the restart check must
+// use the last call's usage.
+func TestCheckContextRestart_UsesLastCallNotResultSum(t *testing.T) {
+	newS := func() *Session {
+		return New(Params{
+			ID:           "proj/s",
+			ProjectName:  "proj",
+			Config:       config.SessionConfig{Name: "s", ContextHandoff: true},
+			Optimization: &config.OptimizationSettings{ContextRestartThreshold: 0.5, ContextWarnThreshold: 0.4, ContextRestartMode: "fresh"},
+			HandoffFn: func(_, _, _, _, _ string, _ []string) (string, error) {
+				return "recap", nil
+			},
+		})
+	}
+
+	// Three calls of 40K (20%); the result sums to 120K (60% > 0.5).
+	s := newS()
+	for i := 0; i < 3; i++ {
+		s.handleLine(assistantUsageLine(40_000), false)
+	}
+	s.handleLine(resultLineWithUsage("claude-sonnet-4-6", 120_000, 200_000), false)
+	if s.contextRestartHit.Load() {
+		t.Error("restart fired from the summed usage; the last call is only 20%")
+	}
+
+	// Last call above the threshold: fires.
+	s = newS()
+	s.handleLine(assistantUsageLine(40_000), false)
+	s.handleLine(assistantUsageLine(110_000), false)
+	s.handleLine(resultLineWithUsage("claude-sonnet-4-6", 150_000, 200_000), false)
+	if !s.contextRestartHit.Load() {
+		t.Error("restart should fire when the last call is above the threshold")
+	}
+}
