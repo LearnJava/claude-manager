@@ -134,6 +134,8 @@ export interface LogEntry {
     // config.LogEntry.ToolUseID in the backend. Absent on entries with no
     // pairing (text, system, result, user).
     tool_use_id?: string;
+    // First manager line of a process launch — see config.LogEntry.RunStart.
+    run_start?: boolean;
     // Added/removed line summary for a file-edit tool_use — see
     // config.LogEntry.Diff. Absent for every other tool call.
     diff?: FileDiff;

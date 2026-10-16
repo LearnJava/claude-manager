@@ -21,6 +21,7 @@ export default {
     'logStream.thought': 'Thought',
     'logStream.editMoreLines': '{n} more lines',
     'logStream.turnDone': 'Done',
+    'logStream.newRun': 'New run',
     'logStream.turnIn': 'in {d}',
     'logStream.turnCount': '{n} turns',
     'logStream.turnTokens': '{n} tokens',

@@ -264,3 +264,27 @@ test.describe('groupEntries — turn result echoing the last text', () => {
         expect(blocks.map((b) => b.kind)).toEqual(['prose', 'prose']);
     });
 });
+
+test.describe('groupEntries — run boundary (UI-14)', () => {
+    const runStart = () => entry({ level: 'system', source: 'manager', message: 'Готовлю промпт…', run_start: true });
+
+    test('run_start closes the open tools series and is its own run block', () => {
+        const blocks = groupEntries([
+            entry({ level: 'tool', tool_name: 'Bash', tool_use_id: 'a' }),
+            runStart(),
+            entry({ level: 'system', message: 'CLI запущен' }),
+        ]);
+        expect(blocks.map((b) => b.kind)).toEqual(['tools', 'run', 'other']);
+    });
+
+    test('a call without result before a run_start is closed, not running', () => {
+        const blocks = groupEntries([entry({ level: 'tool', tool_name: 'Bash', tool_use_id: 'a' }), runStart()]);
+        expect(blocks[0].summary?.toolCalls[0].state).toBe("ok");
+    });
+
+    test('a call after the last run_start still runs', () => {
+        const blocks = groupEntries([runStart(), entry({ level: 'tool', tool_name: 'Bash', tool_use_id: 'a' })]);
+        expect(blocks[1].kind).toBe('tools');
+        expect(blocks[1].summary?.toolCalls[0].state).toBe("running");
+    });
+});

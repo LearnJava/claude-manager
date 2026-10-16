@@ -1547,7 +1547,7 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	s.handoffTag, s.handoffNotes, s.handoffCalls, s.handoffLastCtx = "", 0, 0, 0
 	s.mu.Unlock()
 
-	s.emitManagerLog("Готовлю промпт…")
+	s.emitRunStartLog("Готовлю промпт…")
 	workDir, slot := s.prepareWorkDir(ctx)
 	args := s.runtime.Args(s, autonomous, "", "")
 
@@ -2198,6 +2198,18 @@ func (s *Session) restartWithHandoff(util float64) {
 	if endInput != nil {
 		endInput()
 	}
+}
+
+// emitRunStartLog is emitManagerLog for the first line of a process launch: the
+// entry carries RunStart so the feed can draw a run boundary (UI-14).
+func (s *Session) emitRunStartLog(msg string) {
+	s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+		Time:     time.Now(),
+		Level:    "system",
+		Source:   "manager",
+		Message:  msg,
+		RunStart: true,
+	}})
 }
 
 // emitManagerLog shows a system line from the manager in the session log.

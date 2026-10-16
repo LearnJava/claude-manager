@@ -423,6 +423,15 @@
                             {#if turn.costUsd}· {formatCost(turn.costUsd)}{/if}
                         </div>
                     {/if}
+                {:else if block.kind === 'run'}
+                    <div class="flex items-center gap-2 py-2 text-xs text-text-muted" data-testid="run-boundary">
+                        <div class="flex-1 border-t border-border"></div>
+                        <span>{$t('logStream.newRun')} · {formatTime(block.entries[0].time)}</span>
+                        <div class="flex-1 border-t border-border"></div>
+                    </div>
+                    <div title={formatTime(block.entries[0].time)}>
+                        <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />
+                    </div>
                 {:else}
                     <div title={formatTime(block.entries[0].time)}>
                         <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />

@@ -125,6 +125,7 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | LS-25 | Autoscroll pins to bottom as feed blocks arrive | Push 30 `text` entries | Last entry visible, no "Jump to latest" button | ✓ |
 | LS-26 | Expanded group shows one row per tool call | Push 3 calls (ok, error, running), expand group | Rows with emoji, `0.3s`/`1m05s`, ✓/✖ + error text, spinner on running; group header spinner while collapsed | ✓ |
 | LS-27 | Click on call row reveals call + result; search on output opens group and row | Click row / Ctrl+F a term only in output | Output text visible | ✓ |
+| LS-29a | Run boundary (UI-14) | Push a Bash `tool` entry without result, then a `system` entry with `run_start: true`, then a system line | Horizontal rule `New run · HH:MM` between the old group and the new lines; the old call does not spin; covered by `log-groups.spec.ts` | ✓ |
 | LS-30 | Entry copy button on hover | Push a markdown `text` entry, hover it, click the ⧉ button | Hidden until hover; clipboard gets the markdown source; title → `Copied`, then reverts and hides | ✓ |
 | LS-31 | Collapsed row copies the full message | Classic view, push a multi-line `tool_result`, hover, click ⧉ | Clipboard gets all lines, not the `…` summary | ✓ |
 | LS-32 | Code block header copies only the code | Push an entry with a ```` ```go ```` fence | One `.code-head` showing `go`; `Copy` puts just the fence body on the clipboard, shows `Copied` | ✓ |

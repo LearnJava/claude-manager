@@ -84,6 +84,7 @@ export function liveStatusLine(
 interface EntryLike extends ToolDisplayInput {
     level?: string;
     tool_use_id?: string;
+    run_start?: boolean;
 }
 
 // Last tool call that has no result yet and is not closed by a turn `result`.
@@ -93,7 +94,7 @@ export function lastOpenCall<T extends EntryLike>(entries: T[]): T | null {
     for (let i = entries.length - 1; i >= 0; i--) {
         const e = entries[i];
         const level = (e.level ?? '').toLowerCase();
-        if (level === 'result') return null;
+        if (level === 'result' || e.run_start) return null;
         if (level === 'tool_result' || level === 'error') {
             if (e.tool_use_id) answered.add(e.tool_use_id);
             else anonAnswers++;

@@ -1227,6 +1227,12 @@ would need a schema change for a cosmetic feature.
   duration + tokens. A non-`success` subtype or `stop_reason: error` renders a
   red `✖ Failed: <subtype|text>`. Tokens = input + output + cache read + cache
   creation, same total the rate limit meters.
+- **Run boundary (UI-14).** The first manager line of every CLI launch
+  ("Готовлю промпт…", `emitRunStartLog`) carries live-only
+  `LogEntry.run_start`. `groupEntries` flushes the open series on it and emits a
+  `run` block (rule + "New run · time"); a call before the last `run_start`
+  without a result counts as ended (like `processEnded`), and `lastOpenCall`
+  stops at it, so a dead call never spins. Classic view is unchanged.
 
 Covered by `live-status.spec.ts`, `tool-call-row.spec.ts`,
 `tool-display.spec.ts`, `turn-summary.spec.ts` (GUI-TESTS.md LS-26..29).
