@@ -49,6 +49,9 @@ func envCard(p envProbe, projectPath string) string {
 			"(`\"D:\\dir\\\"` never closes), and unquoted backslashes are dropped.\n")
 		b.WriteString("- Put scratch files in `.tmp/` inside the project, not `/tmp`: Windows programs " +
 			"(Python, cargo, go) do not see Git Bash's `/tmp`.\n")
+		b.WriteString("- Create or rewrite a file with the Write tool and change it with Edit, not with a heredoc, " +
+			"`echo` or a `python -c \"...\"` string: code holds quotes, `$` and backticks, and Git Bash quoting " +
+			"breaks on them.\n")
 	case "darwin":
 		b.WriteString("- macOS with BSD tools: `sed -i ''` (bare `sed -i` fails), no `grep -P` " +
 			"(use `grep -E` or `perl -ne`), no `date -d` (use `date -j -f`).\n")

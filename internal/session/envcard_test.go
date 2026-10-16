@@ -32,6 +32,7 @@ func TestEnvCard_Windows(t *testing.T) {
 	for _, want := range []string{
 		"The Bash tool runs Git Bash",
 		"`.tmp/` inside the project",
+		"with the Write tool and change it with Edit",
 		"Not installed in this shell: `rev`.", // bc lives in Git's usr/bin
 		"Python: `python` (`python3` is not available).",
 		"Project root: `D:/RustProjects/lumen`.",

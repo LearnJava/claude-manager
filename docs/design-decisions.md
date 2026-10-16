@@ -174,7 +174,10 @@ by default for every project:
   `internal/session/envcard.go`) to the system prompt: OS and shell rules,
   missing tools, the Python command that works (on Windows the PATH `python`
   is often the Store stub, so standard install dirs are searched), the
-  project root, the Read-a-large-file rule. Its text depends only on the
+  project root, the Read-a-large-file rule. On Windows it also sends file
+  writes to Write/Edit rather than a heredoc or `python -c` string: source
+  code's quotes, `$` and backticks break Git Bash quoting (an ARB developer
+  session lost a turn to exactly that). Its text depends only on the
   machine and project, so it is byte-stable across runs and keeps the prompt
   cache. Both flags off leave the CLI arguments byte-identical.
   Among several off-PATH installs the newest wins by numeric version
