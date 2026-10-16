@@ -40,6 +40,9 @@ if git -C "$SCRIPT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
         else
             echo "WARNING: build failed." >&2
         fi
+        # cm-mcp is rebuilt with the app so MCP clients do not run a stale tool list;
+        # a failure only warns.
+        (cd "$SCRIPT_DIR" && go build -o build/cm-mcp ./cmd/cm-mcp) || echo "WARNING: cm-mcp build failed." >&2
     fi
 elif [ ! -x "$EXE" ]; then
     echo "claude-manager not found, building..."

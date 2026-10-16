@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"claude-manager/internal/control"
@@ -122,8 +123,10 @@ func newMCPServer() (*mcpServer, error) {
 		allowSelf:     *allowSelf || os.Getenv("CM_MCP_ALLOW_SELF") == "1",
 		baseURL:       addr,
 		token:         token,
-		// No timeout: wait_for_* calls can block for extended durations; the
-		// control-plane /wait endpoint enforces its own timeout_ms.
+		// No client-wide timeout: wait_for_* calls can block for extended
+		// durations (the /wait endpoint enforces its own timeout_ms) and
+		// model-running tools have LongToolTimeout. Every other call gets
+		// DefaultToolTimeout through its context in callToolCtx.
 		client: &http.Client{},
 	}, nil
 }
@@ -158,13 +161,24 @@ func (s *mcpServer) callTool(name string, args json.RawMessage) (any, error) {
 
 // callToolCtx is callTool bound to ctx: cancelling the MCP request aborts the
 // in-flight control-plane call (notably a long wait_for_*).
-func (s *mcpServer) callToolCtx(ctx context.Context, name string, args json.RawMessage) (any, error) {
+func (s *mcpServer) callToolCtx(ctx context.Context, name string, args json.RawMessage) (result any, err error) {
 	if err := s.checkLevel(name); err != nil {
 		return nil, err
 	}
 	endpoint, body, err := control.TranslateTool(name, args)
 	if err != nil {
 		return nil, err
+	}
+	if !control.IsLongRunning(name) {
+		var cancel context.CancelFunc
+		parent := ctx
+		ctx, cancel = context.WithTimeout(ctx, control.DefaultToolTimeout)
+		defer cancel()
+		defer func() {
+			if err != nil && ctx.Err() == context.DeadlineExceeded && parent.Err() == nil {
+				result, err = nil, fmt.Errorf("control-plane did not answer %s within %s: the app may be hung or overloaded; retry, or check that Claude Manager is responsive", name, control.DefaultToolTimeout)
+			}
+		}()
 	}
 
 	bodyBytes, err := json.Marshal(body)
@@ -199,6 +213,14 @@ func (s *mcpServer) callToolCtx(ctx context.Context, name string, args json.RawM
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("control-plane token rejected (HTTP %d): the app was restarted and control.json rewritten, "+
+			"so restart the MCP client or check CM_CONTROL_TOKEN", resp.StatusCode)
+	}
+	if resp.StatusCode/100 != 2 && !(endpoint != "/rpc" && resp.StatusCode == http.StatusRequestTimeout) {
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
+		return nil, fmt.Errorf("control-plane answered HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(snippet)))
+	}
 	if endpoint == "/rpc" {
 		return s.decodeRPCResponse(resp)
 	}

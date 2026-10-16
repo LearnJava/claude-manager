@@ -190,6 +190,12 @@ func (s *mcpServer) levelMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 }
 
 // serve runs the MCP server over in/out until the client closes in or ctx ends.
+// A bad input line is answered with a JSON-RPC error and the session goes on;
+// after EOF the answers to requests already read are written first (stdioGate).
 func (s *mcpServer) serve(ctx context.Context, in io.ReadCloser, out io.WriteCloser) error {
-	return s.newSDKServer().Run(ctx, &mcp.IOTransport{Reader: in, Writer: out})
+	gate := newStdioGate(out)
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	go gate.pump(in, pw)
+	return s.newSDKServer().Run(ctx, &mcp.IOTransport{Reader: pr, Writer: gate})
 }

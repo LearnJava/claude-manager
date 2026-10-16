@@ -213,3 +213,7 @@ func IsWaitTool(name string) bool { return strings.HasPrefix(name, "wait_for_") 
 
 // LongToolTimeout is the upper bound for a model-running tool call.
 const LongToolTimeout = 15 * time.Minute
+
+// DefaultToolTimeout bounds every other tool call (and resource read) to the
+// control-plane, so a hung app does not hang the agent until the client cancels.
+const DefaultToolTimeout = 60 * time.Second
