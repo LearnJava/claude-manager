@@ -1,0 +1,259 @@
+{
+ "label": "2026-10-15-after-lumen",
+ "project": "C:\\kostja\\Rust_Projects\\Lumen_browser",
+ "transcripts": "C:\\Users\\konstantin\\.claude\\projects\\C--kostja-Rust-Projects-Lumen-browser",
+ "window": {
+  "since": "2026-10-14",
+  "until": null,
+  "first": "2026-10-14",
+  "last": "2026-10-15"
+ },
+ "generated": "2026-10-15T17:12:43",
+ "sessions": 76,
+ "sessions_manager": 76,
+ "api_calls": 3498,
+ "usd_total": 107.18,
+ "kit_total_usd": 107.18,
+ "usd_per_session_median": 1.31,
+ "usd_per_session_mean": 1.41,
+ "usd_per_call": 0.0306,
+ "avg_ctx_per_call": 85919,
+ "calls_per_session": {
+  "median": 52,
+  "p90": 91,
+  "max": 114
+ },
+ "long_sessions": 3,
+ "long_sessions_pct": 3.9,
+ "long_spend_pct": 9.8,
+ "pct_by_component": {
+  "cache_read": 56.2,
+  "cache_write": 25.5,
+  "output": 18.3,
+  "input": 0.0
+ },
+ "watch": {
+  "Bash: git pull": {
+   "usd": 2.06,
+   "pct_of_total": 1.9,
+   "results": 36,
+   "avg_tokens": 3161
+  },
+  "Bash: grep": {
+   "usd": 10.88,
+   "pct_of_total": 10.2,
+   "results": 639,
+   "avg_tokens": 1346
+  },
+  "Bash: sed": {
+   "usd": 15.73,
+   "pct_of_total": 14.7,
+   "results": 640,
+   "avg_tokens": 1823
+  },
+  "Bash: cat": {
+   "usd": 4.23,
+   "pct_of_total": 3.9,
+   "results": 188,
+   "avg_tokens": 1794
+  },
+  "Read: *.md": null,
+  "Read: *.rs": {
+   "usd": 0.63,
+   "pct_of_total": 0.6,
+   "results": 23,
+   "avg_tokens": 1947
+  },
+  "Read: *.go": null,
+  "Bash: python": {
+   "usd": 2.35,
+   "pct_of_total": 2.2,
+   "results": 203,
+   "avg_tokens": 1091
+  }
+ },
+ "top_categories": {
+  "Bash: sed": {
+   "usd": 15.73,
+   "pct_of_total": 14.7,
+   "results": 640,
+   "avg_tokens": 1823
+  },
+  "Bash: grep": {
+   "usd": 10.88,
+   "pct_of_total": 10.2,
+   "results": 639,
+   "avg_tokens": 1346
+  },
+  "Bash: other": {
+   "usd": 6.44,
+   "pct_of_total": 6.0,
+   "results": 695,
+   "avg_tokens": 774
+  },
+  "Bash: cat": {
+   "usd": 4.23,
+   "pct_of_total": 3.9,
+   "results": 188,
+   "avg_tokens": 1794
+  },
+  "Write": {
+   "usd": 3.35,
+   "pct_of_total": 3.1,
+   "results": 139,
+   "avg_tokens": 2394
+  },
+  "Bash: python": {
+   "usd": 2.35,
+   "pct_of_total": 2.2,
+   "results": 203,
+   "avg_tokens": 1091
+  },
+  "Bash: git pull": {
+   "usd": 2.06,
+   "pct_of_total": 1.9,
+   "results": 36,
+   "avg_tokens": 3161
+  },
+  "Edit": {
+   "usd": 1.65,
+   "pct_of_total": 1.5,
+   "results": 246,
+   "avg_tokens": 577
+  },
+  "Bash: git log": {
+   "usd": 0.92,
+   "pct_of_total": 0.9,
+   "results": 56,
+   "avg_tokens": 982
+  },
+  "Bash: wc": {
+   "usd": 0.89,
+   "pct_of_total": 0.8,
+   "results": 49,
+   "avg_tokens": 1226
+  }
+ },
+ "by_length": [
+  {
+   "calls": "1-20",
+   "sessions": 27,
+   "usd_total": 5.4,
+   "pct_of_spend": 5.1,
+   "usd_per_session": 0.2,
+   "usd_per_call": 0.1549,
+   "avg_context_tokens_per_call": 31593
+  },
+  {
+   "calls": "21-50",
+   "sessions": 10,
+   "usd_total": 12.5,
+   "pct_of_spend": 11.7,
+   "usd_per_session": 1.25,
+   "usd_per_call": 0.0282,
+   "avg_context_tokens_per_call": 64331
+  },
+  {
+   "calls": "51-100",
+   "sessions": 36,
+   "usd_total": 78.8,
+   "pct_of_spend": 73.5,
+   "usd_per_session": 2.19,
+   "usd_per_call": 0.0293,
+   "avg_context_tokens_per_call": 87643
+  },
+  {
+   "calls": "101-150",
+   "sessions": 3,
+   "usd_total": 10.5,
+   "pct_of_spend": 9.8,
+   "usd_per_session": 3.5,
+   "usd_per_call": 0.032,
+   "avg_context_tokens_per_call": 106731
+  }
+ ],
+ "garbled": {
+  "прочие команды": {
+   "runs": 2801,
+   "garbled": 0,
+   "pct": 0.0
+  },
+  "python": {
+   "runs": 416,
+   "garbled": 2,
+   "pct": 0.5
+  },
+  "tasklist/taskkill/netstat": {
+   "runs": 22,
+   "garbled": 0,
+   "pct": 0.0
+  },
+  "powershell из Bash": {
+   "runs": 1,
+   "garbled": 0,
+   "pct": 0.0
+  },
+  "все команды": {
+   "runs": 3240,
+   "garbled": 2,
+   "pct": 0.1
+  }
+ },
+ "roles": {
+  "S1": {
+   "sessions": 24,
+   "calls": 1716,
+   "usd": 50.36,
+   "long_spend_pct": 15.1,
+   "avg_ctx_per_call": 87364
+  },
+  "S6": {
+   "sessions": 23,
+   "calls": 1651,
+   "usd": 46.32,
+   "long_spend_pct": 6.2,
+   "avg_ctx_per_call": 86668
+  },
+  "Chat": {
+   "sessions": 3,
+   "calls": 104,
+   "usd": 5.43,
+   "long_spend_pct": 0.0,
+   "avg_ctx_per_call": 64485
+  },
+  "(без имени)": {
+   "sessions": 26,
+   "calls": 27,
+   "usd": 5.07,
+   "long_spend_pct": 0.0,
+   "avg_ctx_per_call": 30897
+  }
+ },
+ "manager": {
+  "project": "Lumen browser",
+  "runs": 52,
+  "tasks_done": 136,
+  "statuses": {
+   "stopped": 2,
+   "error": 7,
+   "slice": 19,
+   "completed": 22,
+   "unfinished": 2
+  },
+  "by_session": {
+   "Chat": {
+    "runs": 2,
+    "tasks_done": 0
+   },
+   "S1": {
+    "runs": 26,
+    "tasks_done": 41
+   },
+   "S6": {
+    "runs": 24,
+    "tasks_done": 95
+   }
+  }
+ },
+ "usd_per_task": 0.79
+}

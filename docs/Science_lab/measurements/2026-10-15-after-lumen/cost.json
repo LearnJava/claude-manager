@@ -1,0 +1,186 @@
+{
+ "transcripts": 76,
+ "sessions_with_calls": 76,
+ "api_calls": 3498,
+ "calls_per_session": {
+  "median": 52,
+  "p90": 91,
+  "max": 114
+ },
+ "total_usd": 107.18,
+ "usd_by_component": {
+  "cache_read": 60.22,
+  "cache_write": 27.32,
+  "output": 19.64,
+  "input": 0.01
+ },
+ "pct_by_component": {
+  "cache_read": 56.2,
+  "cache_write": 25.5,
+  "output": 18.3,
+  "input": 0.0
+ },
+ "tokens_by_component_M": {
+  "input": 0.0,
+  "cache_write": 6.1,
+  "cache_read": 294.4,
+  "output": 1.9
+ },
+ "usd_by_model": {
+  "claude-sonnet-5-5": 97.39,
+  "claude-opus-5-5": 9.8
+ },
+ "tool_result_lifetime_usd_by_category": {
+  "Bash: sed": {
+   "usd": 15.73,
+   "pct_of_total": 14.7,
+   "results": 640,
+   "avg_tokens": 1823
+  },
+  "Bash: grep": {
+   "usd": 10.88,
+   "pct_of_total": 10.2,
+   "results": 639,
+   "avg_tokens": 1346
+  },
+  "Bash: other": {
+   "usd": 6.44,
+   "pct_of_total": 6.0,
+   "results": 695,
+   "avg_tokens": 774
+  },
+  "Bash: cat": {
+   "usd": 4.23,
+   "pct_of_total": 3.9,
+   "results": 188,
+   "avg_tokens": 1794
+  },
+  "Write": {
+   "usd": 3.35,
+   "pct_of_total": 3.1,
+   "results": 139,
+   "avg_tokens": 2394
+  },
+  "Bash: python": {
+   "usd": 2.35,
+   "pct_of_total": 2.2,
+   "results": 203,
+   "avg_tokens": 1091
+  },
+  "Bash: git pull": {
+   "usd": 2.06,
+   "pct_of_total": 1.9,
+   "results": 36,
+   "avg_tokens": 3161
+  },
+  "Edit": {
+   "usd": 1.65,
+   "pct_of_total": 1.5,
+   "results": 246,
+   "avg_tokens": 577
+  },
+  "Bash: git log": {
+   "usd": 0.92,
+   "pct_of_total": 0.9,
+   "results": 56,
+   "avg_tokens": 982
+  },
+  "Bash: wc": {
+   "usd": 0.89,
+   "pct_of_total": 0.8,
+   "results": 49,
+   "avg_tokens": 1226
+  },
+  "Bash: git fetch": {
+   "usd": 0.83,
+   "pct_of_total": 0.8,
+   "results": 71,
+   "avg_tokens": 819
+  },
+  "Bash: git show": {
+   "usd": 0.78,
+   "pct_of_total": 0.7,
+   "results": 42,
+   "avg_tokens": 1743
+  },
+  "Bash: git status": {
+   "usd": 0.76,
+   "pct_of_total": 0.7,
+   "results": 68,
+   "avg_tokens": 776
+  },
+  "Bash: ls": {
+   "usd": 0.7,
+   "pct_of_total": 0.7,
+   "results": 51,
+   "avg_tokens": 1058
+  },
+  "Read: *.rs": {
+   "usd": 0.63,
+   "pct_of_total": 0.6,
+   "results": 23,
+   "avg_tokens": 1947
+  },
+  "Bash: git branch": {
+   "usd": 0.58,
+   "pct_of_total": 0.5,
+   "results": 48,
+   "avg_tokens": 797
+  },
+  "Bash: git worktree": {
+   "usd": 0.46,
+   "pct_of_total": 0.4,
+   "results": 27,
+   "avg_tokens": 1134
+  },
+  "Bash: head": {
+   "usd": 0.39,
+   "pct_of_total": 0.4,
+   "results": 26,
+   "avg_tokens": 1110
+  },
+  "Bash: cargo test": {
+   "usd": 0.37,
+   "pct_of_total": 0.3,
+   "results": 65,
+   "avg_tokens": 624
+  },
+  "Bash: git diff": {
+   "usd": 0.36,
+   "pct_of_total": 0.3,
+   "results": 43,
+   "avg_tokens": 932
+  },
+  "Bash: git checkout": {
+   "usd": 0.27,
+   "pct_of_total": 0.3,
+   "results": 27,
+   "avg_tokens": 882
+  },
+  "Grep": {
+   "usd": 0.25,
+   "pct_of_total": 0.2,
+   "results": 25,
+   "avg_tokens": 731
+  },
+  "Bash: git merge-base": {
+   "usd": 0.23,
+   "pct_of_total": 0.2,
+   "results": 15,
+   "avg_tokens": 944
+  },
+  "Read: ROADMAP.md": {
+   "usd": 0.23,
+   "pct_of_total": 0.2,
+   "results": 2,
+   "avg_tokens": 5704
+  },
+  "Bash: git add": {
+   "usd": 0.21,
+   "pct_of_total": 0.2,
+   "results": 39,
+   "avg_tokens": 958
+  }
+ },
+ "most_expensive_single_results": []
+}
