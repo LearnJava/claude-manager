@@ -152,6 +152,9 @@ path = 'D:\RustProjects\lumen-browser'
   marked in progress in the master list, otherwise take the topmost pointer.
   When the task is done, call /lumen-task-finish and remove its pointer line.
   """
+  # An empty prompt with a task_source and a queued task sends a built-in
+  # "take the next task from <task_source>: <task>" message instead; an empty
+  # prompt with nothing queued waits for the user's first message.
   auto_restart = true
   max_tasks = 0                        # 0 = no limit
   run_without_tasks = false            # default: an empty task_source stops the loop
