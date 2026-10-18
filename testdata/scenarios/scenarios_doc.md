@@ -325,3 +325,15 @@ Like `error-exit`, but the last assistant message and the `error` result name
 the cause (`migration 0042 failed ... users_email_key`), so an agent that
 inspects the log can be checked against it. Exit code 1. Used by the
 `cm-mcp-eval` task "find the failed session and name the cause".
+
+---
+
+### linger-after-marker.json
+**State/Feature:** a CLI that does not exit after a turn ended on the done marker (`continue_session`), holding on for a background command (EXIT-TASKS.md EX-01)
+**Match:** `linger-after-marker`
+
+Emits `init` and a `result` carrying the `continue_session` marker, then idles
+20 s before one more assistant message. Drives
+`TestRun_LingeringCLIAfterDoneMarkerIsForceKilled`: after `turnExitNotice` +
+`turnExitGrace` the manager terminates the process, the run counts as a
+normal finish and the late output never arrives.

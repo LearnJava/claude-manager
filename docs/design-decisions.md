@@ -1967,6 +1967,8 @@ as a finished slice). The Hermes text tells the agent to `wait` for or `kill`
 its background processes before ending the turn, and to persist unfinished
 work to a file rather than leave it running.
 
+**Forced exit after the done marker (EX-01).** A turn that ended on the `continue_session` marker means the task is closed, so waiting for a background command the CLI still holds (observed: ~30 min on Lumen browser/S6, blocking the next queued task) is pointless. `runOnce` arms a second timer, `turnExitGrace` (60 s, after `turnExitNotice`) — when it fires the manager logs `session.exit_force`, cancels the run context (kills `claude.exe`, the job object reaps its children) and treats the run as a normal finish. A plain `result` without the marker is never force-killed: the CLI may legitimately continue on its own.
+
 ### Mixed Programming (MIXED-TASKS.md, MP-01..08)
 
 Claude prepares self-contained briefs; external free models write the code as
