@@ -1795,6 +1795,16 @@ func (s *Session) initialPromptBody(forceInteractive bool) string {
 		)
 	}
 	prompt := strings.TrimSpace(s.Config.Prompt)
+	// A queue-driven session with no configured prompt still has a task to do:
+	// sending nothing would leave the CLI blocked on stdin while the card shows
+	// "working". Only an empty prompt with no queued task stays interactive.
+	if prompt == "" && s.Config.TaskSource != "" && taskDesc != "" {
+		prompt = fmt.Sprintf(
+			"Take the next task from %s: %s\n"+
+				"Follow the working protocol in the project's CLAUDE.md and the task file, and finish this one task.",
+			s.Config.TaskSource, taskDesc,
+		)
+	}
 	// Context primer (LEARN-TASKS.md LN-05): only in the plain-prompt branch —
 	// crash recovery and the no-tasks fallback above have their own semantics
 	// and are never prefixed. With the flag off (default) or no PrimerFn wired,

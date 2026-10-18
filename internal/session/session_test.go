@@ -807,6 +807,27 @@ func TestInitialPromptText_Normal(t *testing.T) {
 	}
 }
 
+func TestInitialPromptText_EmptyPromptWithQueuedTask(t *testing.T) {
+	s := New(Params{Config: config.SessionConfig{TaskSource: "STATUS-P4.md"}})
+	s.mu.Lock()
+	s.taskSourceDesc = "CSS-SPECS.md:781 | -webkit-* aliases"
+	s.mu.Unlock()
+
+	got := s.initialPromptText(false)
+	for _, want := range []string{"STATUS-P4.md", "-webkit-* aliases"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("prompt %q does not mention %q", got, want)
+		}
+	}
+}
+
+func TestInitialPromptText_EmptyPromptWithoutTaskStaysInteractive(t *testing.T) {
+	s := New(Params{Config: config.SessionConfig{TaskSource: "STATUS-P4.md"}})
+	if got := s.initialPromptText(false); got != "" {
+		t.Errorf("got %q, want no prompt for an interactive session", got)
+	}
+}
+
 func TestInitialPromptText_ForceInteractive(t *testing.T) {
 	s := New(Params{
 		Config: config.SessionConfig{Prompt: "normal prompt", TaskSource: "STATUS-P1.md"},
