@@ -1398,6 +1398,13 @@ var taskPointerCapture = regexp.MustCompile(`^(\S+):(\d+)$`)
 // exitNotice in runOnce). A var for tests.
 var turnExitNotice = 30 * time.Second
 
+// turnExitGrace is how long, after turnExitNotice, a CLI whose turn ended on
+// the done marker may keep running before the manager kills it. The marker
+// means the task is closed, so a background command the CLI still waits for
+// is not worth waiting for (it can hold the session for 30+ minutes and block
+// the next queued task). Plain results are never force-killed. A var for tests.
+var turnExitGrace = 60 * time.Second
+
 // maxTaskDescLen caps the resolved description length, matching
 // orchestrator.py resolve_pointer_desc()'s 200-char truncation.
 const maxTaskDescLen = 200
@@ -1655,7 +1662,8 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	// started (run_in_background) and then starts a new turn on its own with
 	// the completion notice — the session is busy, not hung, and must not be
 	// killed. Re-armed on every result: such a follow-up turn ends with one.
-	var exitNotice *time.Timer
+	var exitNotice, exitForce *time.Timer
+	var forcedExit atomic.Bool
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
@@ -1674,6 +1682,21 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 				if exitNotice != nil {
 					exitNotice.Stop()
 				}
+				if exitForce != nil {
+					exitForce.Stop()
+					exitForce = nil
+				}
+				if s.continueMarkerHit.Load() {
+					exitForce = time.AfterFunc(turnExitNotice+turnExitGrace, func() {
+						forcedExit.Store(true)
+						logger.L.Warn("session.exit_force", "id", s.ID, "after", turnExitNotice+turnExitGrace)
+						s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+							Time: time.Now(), Level: "system", Source: "manager",
+							Message: fmt.Sprintf("The CLI did not exit %s after the done marker — terminating it (background command, if any, is abandoned)", turnExitNotice+turnExitGrace),
+						}})
+						cancel() // kills claude.exe; the job object reaps bash and cm-mcp
+					})
+				}
 				exitNotice = time.AfterFunc(turnExitNotice, func() {
 					logger.L.Info("session.exit_wait", "id", s.ID, "after", turnExitNotice)
 					s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
@@ -1687,6 +1710,9 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	scanErr := scanner.Err()
 	if exitNotice != nil {
 		exitNotice.Stop()
+	}
+	if exitForce != nil {
+		exitForce.Stop()
 	}
 
 	closeInput()
@@ -1715,6 +1741,11 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 
 	if err := s.classifySentinelError(); err != nil {
 		return err
+	}
+	if waitErr != nil && forcedExit.Load() {
+		// We ended it ourselves after the done marker: a normal finish.
+		logger.L.Info("session.process_exit", "id", s.ID, "forced", true)
+		waitErr = nil
 	}
 	if waitErr != nil {
 		logger.L.Error("session.process_exit", "id", s.ID, "error", waitErr)
