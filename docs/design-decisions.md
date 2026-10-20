@@ -850,7 +850,7 @@ Mirrors `orchestrator.py` session state files (`.session-PN.json`).
 2. When the `system/init` event arrives, `StateStore.UpdateSessionID()` patches the file with `session_id` (loads → patches → saves, so `task` survives).
 3. On successful task completion, `StateStore.Clear()` deletes the file.
 4. On app restart, `Run()` loads the state file. If `session_id` is present, it sets `resumeSessionID` and `buildCLIArgs()` uses `--resume <id>` instead of `--session-id <uuid>`.
-5. The recovery prompt is `CrashRecoveryPrompt` from config, or a built-in default that mirrors `orchestrator.py`'s: run `git status`, read the session's `task_source` file, reconcile that with the resumed conversation history to work out what is already done, then continue — and it names the interrupted task when one is known. The model's own last message is not treated as evidence of committed work.
+5. The recovery prompt is `CrashRecoveryPrompt` from config, or a built-in default that mirrors `orchestrator.py`'s: run `git status`, read the session's `task_source` file, reconcile that with the resumed conversation history to work out what is already done, then continue — and it names the interrupted task when one is known. The model's own last message is not treated as evidence of committed work. Only an unattended (`auto_restart`) session gets it: an interactive session resumes silently and waits for the user's message, unless `crash_recovery_prompt` is set.
 6. `ClearSessionState(project, name)` / the UI button is the equivalent of `--new`: deletes the state file so the next start is fresh.
 
 **"Was the previous session finished?" is decided exactly as in `orchestrator.py`:** a

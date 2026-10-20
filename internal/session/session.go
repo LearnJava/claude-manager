@@ -1793,6 +1793,12 @@ func (s *Session) initialPromptBody(forceInteractive bool) string {
 		if p := strings.TrimSpace(s.Config.CrashRecoveryPrompt); p != "" {
 			return p
 		}
+		// An interactive session has a person at the keyboard: resuming just
+		// reopens the old conversation and waits for their message instead of
+		// starting a turn of its own. Only unattended task loops auto-continue.
+		if !s.Autonomous() {
+			return ""
+		}
 		// Mirrors orchestrator.py's recovery prompt: the session is resumed with
 		// its full conversation history, so the reliable way to work out what is
 		// already done is git state + the task file, not the model's assumption

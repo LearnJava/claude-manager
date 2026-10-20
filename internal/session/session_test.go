@@ -856,7 +856,7 @@ func TestInitialPromptText_RecoveryTakesPriorityOverForceInteractive(t *testing.
 
 func TestInitialPromptText_Recovery_DefaultPrompt(t *testing.T) {
 	s := New(Params{
-		Config: config.SessionConfig{Prompt: "normal prompt"},
+		Config: config.SessionConfig{Prompt: "normal prompt", AutoRestart: true},
 	})
 	s.mu.Lock()
 	s.resumeSessionID = "abc-123"
@@ -873,7 +873,7 @@ func TestInitialPromptText_Recovery_DefaultPrompt(t *testing.T) {
 
 func TestInitialPromptText_Recovery_DefaultMentionsTaskSourceAndTask(t *testing.T) {
 	s := New(Params{
-		Config: config.SessionConfig{TaskSource: "STATUS-P1.md"},
+		Config: config.SessionConfig{TaskSource: "STATUS-P1.md", AutoRestart: true},
 	})
 	s.mu.Lock()
 	s.resumeSessionID = "abc-123"
@@ -889,7 +889,7 @@ func TestInitialPromptText_Recovery_DefaultMentionsTaskSourceAndTask(t *testing.
 }
 
 func TestInitialPromptText_Recovery_DefaultWithoutTaskSource(t *testing.T) {
-	s := New(Params{Config: config.SessionConfig{Prompt: "normal"}})
+	s := New(Params{Config: config.SessionConfig{Prompt: "normal", AutoRestart: true}})
 	s.mu.Lock()
 	s.resumeSessionID = "abc-123"
 	s.mu.Unlock()
@@ -1175,5 +1175,16 @@ func TestInitialPromptText_ContextPrimer_EmptyPromptSendsNothing(t *testing.T) {
 	})
 	if got := s.initialPromptText(false); got != "" {
 		t.Errorf("got %q, want empty", got)
+	}
+}
+
+func TestInitialPromptText_Recovery_InteractiveSendsNothing(t *testing.T) {
+	s := New(Params{Config: config.SessionConfig{Prompt: "normal"}})
+	s.mu.Lock()
+	s.resumeSessionID = "abc-123"
+	s.mu.Unlock()
+
+	if got := s.initialPromptText(false); got != "" {
+		t.Errorf("interactive resume should wait for the user, got prompt %q", got)
 	}
 }
