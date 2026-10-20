@@ -789,6 +789,13 @@ func (a *App) RestartSession(id string) error {
 	return a.manager.RestartSession(id)
 }
 
+// RestartSessionMode restarts a session either continuing its saved
+// conversation (fresh=false) or opening a new one (fresh=true). Used by the
+// GUI's restart dialog.
+func (a *App) RestartSessionMode(id string, fresh bool) error {
+	return a.manager.RestartSessionMode(id, fresh)
+}
+
 func (a *App) ResumeSession(id string) error {
 	return a.manager.ResumeSession(id)
 }

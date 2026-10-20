@@ -865,7 +865,52 @@ func (m *SessionManager) InterruptSession(id string) error {
 	logger.L.Info("manager.interrupt_session", "id", id)
 	// A queued permission prompt belongs to the aborted tool call.
 	m.queue.RemoveBySession(id)
+	go m.escalateInterrupt(ms)
 	return nil
+}
+
+// interruptGrace is how long the CLI gets to end an interrupted turn before
+// the manager kills the process itself.
+const interruptGrace = 1 * time.Second
+
+// escalateInterrupt covers a CLI that ignores the interrupt control request
+// (a long-running subagent or shell tool): when the aborted turn's result has
+// not arrived after interruptGrace, the process is killed and the same
+// conversation is resumed, which has the effect of Ctrl+C in the terminal CLI.
+func (m *SessionManager) escalateInterrupt(ms *managedSession) {
+	sess := ms.session
+	deadline := time.Now().Add(interruptGrace)
+	for time.Now().Before(deadline) {
+		if !sess.interruptPending.Load() {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !sess.interruptPending.Load() || m.get(ms.project+"/"+ms.name) != ms {
+		return
+	}
+	st := sess.Status()
+	if st != config.StatusWorking && st != config.StatusWaitingPermission {
+		return
+	}
+	logger.L.Warn("manager.interrupt_escalate", "id", ms.project+"/"+ms.name)
+	sess.emitManagerLog("The CLI did not react to the interrupt — killing the process and resuming the conversation")
+	resumeID := sess.CLISessionID
+	if err := m.StopSession(ms.project+"/"+ms.name, false); err != nil {
+		return
+	}
+	for i := 0; i < 150; i++ {
+		if sess.Status() == config.StatusIdle {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if resumeID == "" {
+		return
+	}
+	if err := m.startSessionResuming(ms.project, ms.name, resumeID, sess.Config.Model); err != nil {
+		logger.L.Warn("manager.interrupt_escalate_failed", "err", err)
+	}
 }
 
 // StopAll stops every running session (soft=false).
@@ -883,6 +928,13 @@ func (m *SessionManager) StopAll() {
 
 // RestartSession stops the session (hard) and starts a fresh one.
 func (m *SessionManager) RestartSession(id string) error {
+	return m.RestartSessionMode(id, false)
+}
+
+// RestartSessionMode is RestartSession with an explicit choice: fresh=true
+// drops the saved crash-recovery state after the stop so the new process opens
+// a new conversation; fresh=false leaves it so the old conversation resumes.
+func (m *SessionManager) RestartSessionMode(id string, fresh bool) error {
 	ms := m.get(id)
 	if ms == nil {
 		return fmt.Errorf("session %q not found", id)
@@ -897,6 +949,9 @@ func (m *SessionManager) RestartSession(id string) error {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+	if fresh {
+		m.ClearSessionState(project, name)
 	}
 	return m.StartSession(project, name)
 }

@@ -19,7 +19,8 @@ var parityExcluded = map[string]string{
 	"PickDirectory": "нативный диалог ОС; заменён аргументом `path` у `add_project`/`import_project_logs`",
 	"ShowMainWindow": "оконное действие ОС: у агента нет окна",
 	"MinimizeToTray": "оконное действие ОС: у агента нет окна",
-	"Notify": "тост ОС для человека; агент отвечает через результат инструмента",
+	"RestartSessionMode": "вариант `RestartSession` для диалога GUI «продолжить/новая»; агент выбирает то же через `restart_session` (`resume`)",
+	"Notify":"тост ОС для человека; агент отвечает через результат инструмента",
 }
 
 // parityPending lists *App methods whose MCP tool is scheduled in a later

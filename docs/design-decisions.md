@@ -341,6 +341,7 @@ CLI's first stream event, queuing a user message (`sendInitialPrompt`,
 at the end of the live status line under the running action (feed layout,
 `LiveStatus.svelte`) and `■ Interrupt` in the control bar (`SessionView.svelte`),
 both gated by `lib/interrupt.ts:canInterrupt`.
+If the aborted turn's result does not arrive within 1 s (the CLI ignores the control request, e.g. during a long subagent), `escalateInterrupt` kills the process and resumes the same conversation (`--resume`), as Ctrl+C would.
 
 ### Permission Handling
 When `permission_mode != "bypassPermissions"`, Claude CLI sends permission requests via stdout and blocks waiting for response on stdin. The manager MUST:

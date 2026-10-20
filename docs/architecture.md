@@ -394,6 +394,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `StopSession(id, soft)` | Stop (soft=true finishes current task first) |
 | `InterruptSession(id)` | Abort the current action (turn) but keep the session alive, waiting for the next message |
 | `RestartSession(id)` | Hard stop + restart |
+| `RestartSessionMode(id, fresh)` | Hard stop + restart; `fresh` clears saved state (new conversation), else resumes it. Behind the Restart dialog |
 | `ResumeSession(id)` | Resume from saved CLI session ID |
 | `StartProject(project)` | Start all sessions in a project — in cache-affinity order when `experience_tracking` + a store are on (see "Cache-Affinity Launch Order" LN-14), else plain config order |
 | `StopProject(project)` | Stop all sessions in a project |

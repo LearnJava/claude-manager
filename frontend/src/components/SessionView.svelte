@@ -21,6 +21,7 @@
         StopSession,
         InterruptSession,
         RestartSession,
+        RestartSessionMode,
         ExportLog,
         InitGitRepo,
     } from '../../wailsjs/go/main/App';
@@ -62,8 +63,15 @@
         call('Stop after task', () => StopSession(session.id, true));
     }
 
+    let restartDialog = false;
+
     function onRestart() {
-        call('Restart', () => RestartSession(session.id));
+        restartDialog = true;
+    }
+
+    function doRestart(fresh: boolean) {
+        restartDialog = false;
+        call('Restart', () => RestartSessionMode(session.id, fresh));
     }
 
     async function onCopyLog() {
@@ -318,4 +326,27 @@
     </div>
 
     <SessionInput {session} />
+
+    {#if restartDialog}
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+             data-testid="restart-dialog">
+            <div class="bg-bg-panel border border-bg-border rounded p-4 w-80 space-y-3">
+                <div class="text-sm font-medium text-text">{$t('sessionView.restart.dialogTitle')}</div>
+                <div class="flex flex-col gap-2">
+                    <button type="button" class="px-2.5 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg-panel"
+                            data-testid="restart-continue" on:click={() => doRestart(false)}>
+                        {$t('sessionView.restart.continue')}
+                    </button>
+                    <button type="button" class="px-2.5 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg-panel"
+                            data-testid="restart-fresh" on:click={() => doRestart(true)}>
+                        {$t('sessionView.restart.fresh')}
+                    </button>
+                    <button type="button" class="px-2.5 py-1 text-xs rounded text-text-muted hover:bg-bg-panel"
+                            on:click={() => (restartDialog = false)}>
+                        {$t('sessionView.restart.cancel')}
+                    </button>
+                </div>
+            </div>
+        </div>
+    {/if}
 </div>
