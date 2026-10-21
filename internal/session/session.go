@@ -2248,8 +2248,13 @@ func (s *Session) restartWithHandoff(util float64) {
 }
 
 // emitRunStartLog is emitManagerLog for the first line of a process launch: the
-// entry carries RunStart so the feed can draw a run boundary (UI-14).
+// entry carries RunStart so the feed can draw a run boundary (UI-14). The
+// launch's model is appended, so a run after a model switch is told apart
+// from the earlier ones still in the feed.
 func (s *Session) emitRunStartLog(msg string) {
+	if model := s.ActiveModel(); model != "" {
+		msg += " · модель " + model
+	}
 	s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
 		Time:     time.Now(),
 		Level:    "system",

@@ -5,6 +5,7 @@
     import { logMarkdown, logLayout } from '../stores/logView';
     import { t } from '../lib/i18n';
     import { groupEntries, entryKey, turnSummaryData } from '../lib/logGroups';
+    import RunBoundary from './RunBoundary.svelte';
     import { formatTime, formatCallDuration, formatTokens, formatCost } from '../lib/formatters';
     import LogEntryRow from './LogEntryRow.svelte';
     import ToolCallRow from './ToolCallRow.svelte';
@@ -70,6 +71,10 @@
     function onLayoutToggle(e: Event) {
         logLayout.set((e.currentTarget as HTMLInputElement).checked ? 'feed' : 'classic');
     }
+
+    // Entries loaded from the saved log of the previous run (stores/sessions.ts
+    // loadPreviousRunLog) are dimmed, so they do not pass for the live run.
+    const isHistory = (e: LogEntry | undefined) => e?.source === 'history';
 
     $: allEntries = ($sessionLogs[sessionId] ?? []) as LogEntry[];
     $: filter = ($logSearchText ?? '').toLowerCase();
@@ -248,10 +253,16 @@
             </div>
         {:else if $logLayout === 'classic'}
             {#each entries as e, i (entryKey(e, i))}
-                <LogEntryRow entry={e} entryKey={entryKey(e, i)} />
+                <div class:opacity-60={isHistory(e)}>
+                    {#if e.run_start}
+                        <RunBoundary entry={e} />
+                    {/if}
+                    <LogEntryRow entry={e} entryKey={entryKey(e, i)} />
+                </div>
             {/each}
         {:else}
             {#each blocks as block (block.seq)}
+                <div class:opacity-60={isHistory(block.entries[0])}>
                 {#if block.kind === 'tools'}
                     {@const isOpen = groupOpen.get(block.seq) ?? matchingSeqs.has(block.seq)}
                     <div class="py-px">
@@ -424,11 +435,7 @@
                         </div>
                     {/if}
                 {:else if block.kind === 'run'}
-                    <div class="flex items-center gap-2 py-2 text-xs text-text-muted" data-testid="run-boundary">
-                        <div class="flex-1 border-t border-border"></div>
-                        <span>{$t('logStream.newRun')} · {formatTime(block.entries[0].time)}</span>
-                        <div class="flex-1 border-t border-border"></div>
-                    </div>
+                    <RunBoundary entry={block.entries[0]} />
                     <div title={formatTime(block.entries[0].time)}>
                         <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />
                     </div>
@@ -437,6 +444,7 @@
                         <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />
                     </div>
                 {/if}
+                </div>
             {/each}
         {/if}
         {#if $logLayout === 'feed'}
