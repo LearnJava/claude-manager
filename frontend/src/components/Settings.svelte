@@ -296,7 +296,10 @@
             SessionStartDelay: 3,
             ...(raw?.Settings ?? {}),
         };
+        // Spread first: fields this form does not edit (Mirror, Journal,
+        // AutoSkills, ...) must round-trip, or every save resets them.
         const projects: ProjectConfig[] = (raw?.Projects ?? []).map((p: any) => ({
+            ...p,
             Name: p?.Name ?? '',
             Path: p?.Path ?? '',
             DefaultPermissionMode: p?.DefaultPermissionMode ?? '',
@@ -648,6 +651,10 @@
         const p = cfg.Projects[idx];
         mirrorBusy = idx;
         error = '';
+        // The first sync of a project with many saved logs takes minutes;
+        // show "on, waiting for the first sync" instead of "off" meanwhile.
+        projectMirror[idx] = { enabled: true, dir: projectMirror[idx]?.dir ?? '', lastSync: '', files: 0, error: '' };
+        projectMirror = projectMirror;
         try {
             projectMirror[idx] = (await MirrorProject(p.Name)) as MirrorStatus;
             projectMirror = projectMirror;

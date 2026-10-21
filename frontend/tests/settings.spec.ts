@@ -93,4 +93,36 @@ test.describe('Settings modal', () => {
     await closeBtn.click();
     await expect(modal).not.toBeVisible({ timeout: 3_000 });
   });
+
+  test('Save keeps project flags the form does not edit (Mirror, Journal)', async ({ page, ctrl }) => {
+    type Cfg = { Projects?: Array<{ Name: string; Mirror?: boolean; Journal?: boolean }> };
+    const before = await ctrl.rpc<Cfg>('GetConfig', {});
+    const proj = before.Projects?.find((p) => p.Name === 'test');
+    expect(proj).toBeDefined();
+    proj!.Mirror = true;
+    proj!.Journal = true;
+    await ctrl.rpc('UpdateConfig', { config: before });
+
+    try {
+      await page.goto('/');
+      await page.getByRole('button', { name: 'Settings' }).click();
+      const modal = page.getByRole('dialog');
+      await expect(modal).toBeVisible({ timeout: 3_000 });
+      await modal.getByRole('button', { name: 'Save' }).click();
+      await expect(modal.getByText('Saved.')).toBeVisible({ timeout: 5_000 });
+
+      const after = await ctrl.rpc<Cfg>('GetConfig', {});
+      const saved = after.Projects?.find((p) => p.Name === 'test');
+      expect(saved?.Mirror).toBe(true);
+      expect(saved?.Journal).toBe(true);
+    } finally {
+      const cfg = await ctrl.rpc<Cfg>('GetConfig', {});
+      const p = cfg.Projects?.find((x) => x.Name === 'test');
+      if (p) {
+        p.Mirror = false;
+        p.Journal = false;
+        await ctrl.rpc('UpdateConfig', { config: cfg });
+      }
+    }
+  });
 });
