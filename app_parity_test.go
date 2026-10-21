@@ -21,6 +21,7 @@ var parityExcluded = map[string]string{
 	"MinimizeToTray": "оконное действие ОС: у агента нет окна",
 	"RestartSessionMode": "вариант `RestartSession` для диалога GUI «продолжить/новая»; агент выбирает то же через `restart_session` (`resume`)",
 	"Notify":"тост ОС для человека; агент отвечает через результат инструмента",
+	"GetPreviousRunLog": "подгрузка прошлого запуска в ленту GUI после перезапуска приложения; агент читает сохранённые логи через `get_session_logs` и `get_history`",
 }
 
 // parityPending lists *App methods whose MCP tool is scheduled in a later

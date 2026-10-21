@@ -1444,6 +1444,56 @@ func (m *SessionManager) GetSessionLog(id string, offset, limit int) ([]*store.L
 	return m.store.GetLogs(runs[0].ID, offset, limit)
 }
 
+// PreviousRunLog is the saved log of a session's last finished run, in the
+// live-feed entry shape, so the GUI can show it above a fresh feed after an
+// app restart ("where did I stop").
+type PreviousRunLog struct {
+	RunID      int64             `json:"run_id"`
+	StartedAt  time.Time         `json:"started_at"`
+	FinishedAt *time.Time        `json:"finished_at,omitempty"`
+	Status     string            `json:"status"`
+	Total      int               `json:"total"` // entries the run has; len(Entries) may be fewer
+	Entries    []config.LogEntry `json:"entries"`
+}
+
+// GetPreviousRunLog returns the last limit entries of the newest run of the
+// session that has a saved log, skipping the run in progress. Nil when the
+// session has no saved run.
+func (m *SessionManager) GetPreviousRunLog(id string, limit int) (*PreviousRunLog, error) {
+	ms := m.get(id)
+	if ms == nil {
+		return nil, fmt.Errorf("session %q not found", id)
+	}
+	if m.store == nil {
+		return nil, nil
+	}
+	ms.mu.Lock()
+	project, name, curRun := ms.project, ms.name, ms.runID
+	ms.mu.Unlock()
+	run, err := m.store.LatestRunWithLogs(project, name, curRun)
+	if err != nil || run == nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 300
+	}
+	logs, total, err := m.store.GetLogsTail(run.ID, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := &PreviousRunLog{
+		RunID: run.ID, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt,
+		Status: run.Status, Total: total, Entries: make([]config.LogEntry, 0, len(logs)),
+	}
+	for _, l := range logs {
+		out.Entries = append(out.Entries, config.LogEntry{
+			Time: l.Timestamp, Level: l.Level, Source: "history",
+			Message: l.Message, ToolName: l.ToolName, ToolInput: l.ToolInput,
+		})
+	}
+	return out, nil
+}
+
 // GetHistory returns past runs for a project (or all projects if empty).
 func (m *SessionManager) GetHistory(project string, limit int) ([]*store.SessionRun, error) {
 	if m.store == nil {

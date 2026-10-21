@@ -290,6 +290,17 @@ func (s *Server) buildRegistry() map[string]handler {
 		return m.GetSessionLog(args.ID, args.Offset, args.Limit)
 	}
 
+	reg["GetPreviousRunLog"] = func(p json.RawMessage) (any, error) {
+		var args struct {
+			ID    string `json:"id"`
+			Limit int    `json:"limit"`
+		}
+		if err := json.Unmarshal(p, &args); err != nil {
+			return nil, err
+		}
+		return m.GetPreviousRunLog(args.ID, args.Limit)
+	}
+
 	reg["GetHistory"] = func(p json.RawMessage) (any, error) {
 		var args struct {
 			Project string `json:"project"`

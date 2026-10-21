@@ -35,4 +35,6 @@ export default {
     'logStream.interrupt.label': 'Стоп',
     'logStream.interrupt.title':
         'Остановить это действие; сессия остаётся открытой и ждёт вашего следующего сообщения',
+    'logStream.previousRun': 'Предыдущий запуск · {start} · {status} — сохранённый лог',
+    'logStream.previousRunOmitted': '(только последние записи, ещё {count} раньше не показаны)',
 } as Record<string, string>;

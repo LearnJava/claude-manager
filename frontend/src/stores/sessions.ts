@@ -2,6 +2,7 @@ import { writable, derived, get } from 'svelte/store';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import {
     GetAllSessions,
+    GetPreviousRunLog,
     GetRateLimitStatus,
     GetDailyCost,
     GetDailyTokens,
@@ -365,6 +366,63 @@ function appendLog(id: string, entry: LogEntry) {
     });
 }
 
+// ---- Previous run on top of the feed ----
+// The feed buffer lives only in this window, so after an app restart it is
+// empty. The first time a session shows up, the saved log of its last
+// finished run (the run in progress is skipped server-side) is put above
+// whatever is already in the buffer, headed by a run boundary.
+
+interface PreviousRunLog {
+    run_id: number;
+    started_at: string;
+    finished_at?: string;
+    status: string;
+    total: number;
+    entries: LogEntry[];
+}
+
+const PREV_RUN_LIMIT = 300;
+const prevRunRequested = new Set<string>();
+
+function formatRunTime(iso: string): string {
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
+async function loadPreviousRunLog(id: string): Promise<void> {
+    if (prevRunRequested.has(id)) return;
+    prevRunRequested.add(id);
+    let prev: PreviousRunLog | null = null;
+    try {
+        prev = (await GetPreviousRunLog(id, PREV_RUN_LIMIT)) as PreviousRunLog | null;
+    } catch (e) {
+        console.warn('GetPreviousRunLog failed:', e);
+        return;
+    }
+    if (!prev || !prev.entries || prev.entries.length === 0) return;
+    const tr = get(t);
+    const omitted = prev.total - prev.entries.length;
+    const header: LogEntry = {
+        time: prev.started_at,
+        level: 'system',
+        source: 'history',
+        message: tr('logStream.previousRun', {
+            start: formatRunTime(prev.started_at),
+            status: prev.status,
+        }) + (omitted > 0 ? ' ' + tr('logStream.previousRunOmitted', { count: omitted }) : ''),
+        run_start: true,
+        seq: ++logSeq,
+    };
+    const history = [header, ...prev.entries.map((e) => ({ ...e, seq: ++logSeq }))];
+    sessionLogs.update((map) => {
+        const cur = map[id] ?? [];
+        const room = Math.max(0, LOG_BUFFER_LIMIT - cur.length);
+        if (room === 0) return map;
+        const head = history.length > room ? history.slice(history.length - room) : history;
+        return { ...map, [id]: [...head, ...cur] };
+    });
+}
+
 export function clearSessionLog(id: string) {
     sessionLogs.update((m) => ({ ...m, [id]: [] }));
 }
@@ -384,6 +442,12 @@ export async function initSessions(): Promise<void> {
     // the older snapshot then stuck — e.g. a session started right at load
     // showed idle while it was working.
     subscribeEvents();
+
+    // Every session, the first time it appears (snapshot, app:ready refresh or
+    // a first event), gets its previous run's log on top of its feed.
+    sessions.subscribe((map) => {
+        for (const id of Object.keys(map)) void loadPreviousRunLog(id);
+    });
 
     try {
         const list = (await GetAllSessions()) as SessionState[];
