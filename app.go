@@ -1078,6 +1078,12 @@ func (a *App) GetSessionLog(id string, offset, limit int) ([]*store.LogEntry, er
 	return a.manager.GetSessionLog(id, offset, limit)
 }
 
+// GetPreviousRunLog returns the saved log tail of the session's last finished
+// run; the GUI shows it above the feed of a session after an app restart.
+func (a *App) GetPreviousRunLog(id string, limit int) (*session.PreviousRunLog, error) {
+	return a.manager.GetPreviousRunLog(id, limit)
+}
+
 func (a *App) GetHistory(project string, limit int) ([]*store.SessionRun, error) {
 	return a.manager.GetHistory(project, limit)
 }

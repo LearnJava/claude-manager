@@ -76,7 +76,7 @@ func LevelHint(need AccessLevel) string {
 var rpcLevels = map[string]AccessLevel{
 	// read
 	"GetPendingPermissions": LevelRead, "GetAllSessions": LevelRead, "GetSession": LevelRead,
-	"GetSessionLog": LevelRead, "GetHistory": LevelRead, "GetSessionMetrics": LevelRead,
+	"GetSessionLog": LevelRead, "GetPreviousRunLog": LevelRead, "GetHistory": LevelRead, "GetSessionMetrics": LevelRead,
 	"GetDailyCost": LevelRead, "GetProjectCost": LevelRead, "GetRateLimitStatus": LevelRead,
 	"GetSessionState": LevelRead, "GetPlan": LevelRead, "GetMixedRounds": LevelRead,
 	"GetMixedQuality": LevelRead, "ListSlashCommands": LevelRead, "GetSessionOverview": LevelRead,

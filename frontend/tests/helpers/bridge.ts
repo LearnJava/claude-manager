@@ -123,6 +123,7 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         GetPendingPermissions: () => rpc('GetPendingPermissions', {}),
         GetSessionLog: (id: string, offset: number, limit: number) =>
           rpc('GetSessionLog', { id, offset, limit }),
+        GetPreviousRunLog: (id: string, limit: number) => rpc('GetPreviousRunLog', { id, limit }),
         GetHistory: (project: string, limit: number) => rpc('GetHistory', { project, limit }),
         GetSessionMetrics: (id: string) => rpc('GetSessionMetrics', { id }),
         GetProjectCost: (project: string, days: number) =>

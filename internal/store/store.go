@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -495,6 +496,39 @@ func (s *Store) GetLogs(runID int64, offset, limit int) ([]*LogEntry, error) {
 		logs = append(logs, &l)
 	}
 	return logs, rows.Err()
+}
+
+// LatestRunWithLogs returns the newest run of project/session that has saved
+// log entries, skipping excludeRunID (the run in progress, whose entries are
+// not written until it ends). Returns nil, nil when there is none.
+func (s *Store) LatestRunWithLogs(project, session string, excludeRunID int64) (*SessionRun, error) {
+	q := "SELECT " + selectRunCols + ` FROM session_runs r
+    WHERE project=? AND session=? AND id<>?
+      AND EXISTS (SELECT 1 FROM session_logs l WHERE l.run_id=r.id)
+    ORDER BY started_at DESC, id DESC LIMIT 1`
+	r, err := scanRun(s.db.QueryRow(q, project, session, excludeRunID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return r, err
+}
+
+// GetLogsTail returns the last limit log entries of a run in chronological
+// order, and the total number of entries the run has.
+func (s *Store) GetLogsTail(runID int64, limit int) ([]*LogEntry, int, error) {
+	var total int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM session_logs WHERE run_id=?`, runID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	offset := total - limit
+	if limit <= 0 || offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = total
+	}
+	logs, err := s.GetLogs(runID, offset, limit)
+	return logs, total, err
 }
 
 // DeleteOldLogs removes log entries whose run started more than retentionDays days ago.

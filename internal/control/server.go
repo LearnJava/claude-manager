@@ -45,6 +45,7 @@ type ManagerAPI interface {
 	GetAllSessions() []session.SessionState
 	GetSession(id string) (session.SessionState, bool)
 	GetSessionLog(id string, offset, limit int) ([]*store.LogEntry, error)
+	GetPreviousRunLog(id string, limit int) (*session.PreviousRunLog, error)
 	GetHistory(project string, limit int) ([]*store.SessionRun, error)
 	GetSessionMetrics(id string) (session.SessionMetrics, error)
 	GetDailyCost(date string) (float64, error)

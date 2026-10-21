@@ -65,6 +65,9 @@ func (m *mockManager) GetSession(id string) (session.SessionState, bool) {
 func (m *mockManager) GetSessionLog(id string, offset, limit int) ([]*store.LogEntry, error) {
 	return nil, nil
 }
+func (m *mockManager) GetPreviousRunLog(id string, limit int) (*session.PreviousRunLog, error) {
+	return nil, nil
+}
 func (m *mockManager) GetHistory(project string, limit int) ([]*store.SessionRun, error) {
 	return nil, nil
 }

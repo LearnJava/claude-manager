@@ -408,6 +408,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetPendingQuestions()` | All sessions currently blocked on a genuine-decision ask-user question |
 | `GetAllSessions()` | Snapshot of all session states |
 | `GetSessionLog(id, offset, limit)` | Paginated log entries |
+| `GetPreviousRunLog(id, limit)` | Saved log tail of the session's last finished run (the run in progress skipped), as live-feed entries — the feed shows it on top after an app restart |
 | `GetSessionMetrics(id)` | Token/cost metrics for one session |
 | `GetHistory(project, limit)` | Past session runs from SQLite |
 | `GetDailyCost(date)` | Cost aggregate for a date |

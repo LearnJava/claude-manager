@@ -307,6 +307,48 @@ func TestInsertGetLogs(t *testing.T) {
 	}
 }
 
+func TestLatestRunWithLogsAndTail(t *testing.T) {
+	s := newTestStore(t)
+	base := time.Date(2026, 10, 1, 10, 0, 0, 0, time.UTC)
+	mkRun := func(started time.Time, session string, nLogs int) *SessionRun {
+		r := &SessionRun{Project: "p", Session: session, StartedAt: started, Status: "completed"}
+		if err := s.InsertRun(r); err != nil {
+			t.Fatalf("InsertRun: %v", err)
+		}
+		var logs []LogEntry
+		for i := 0; i < nLogs; i++ {
+			logs = append(logs, LogEntry{Timestamp: started, Level: "text", Message: string(rune('a' + i))})
+		}
+		if err := s.InsertLogs(r.ID, logs); err != nil {
+			t.Fatalf("InsertLogs: %v", err)
+		}
+		return r
+	}
+	old := mkRun(base, "Chat", 5)
+	empty := mkRun(base.Add(time.Hour), "Chat", 0) // a run that logged nothing
+	cur := mkRun(base.Add(2*time.Hour), "Chat", 2) // stands in for the run in progress
+	mkRun(base.Add(3*time.Hour), "Other", 1)       // another session
+
+	got, err := s.LatestRunWithLogs("p", "Chat", cur.ID)
+	if err != nil || got == nil || got.ID != old.ID {
+		t.Fatalf("LatestRunWithLogs = %+v, %v; want run %d (empty run %d skipped)", got, err, old.ID, empty.ID)
+	}
+	if got, _ := s.LatestRunWithLogs("p", "Chat", 0); got == nil || got.ID != cur.ID {
+		t.Errorf("without exclusion want newest run %d, got %+v", cur.ID, got)
+	}
+	if got, err := s.LatestRunWithLogs("p", "None", 0); got != nil || err != nil {
+		t.Errorf("unknown session: got %+v, %v; want nil, nil", got, err)
+	}
+
+	tail, total, err := s.GetLogsTail(old.ID, 2)
+	if err != nil || total != 5 || len(tail) != 2 || tail[0].Message != "d" || tail[1].Message != "e" {
+		t.Fatalf("GetLogsTail(2) = %d entries, total %d, err %v; want d,e of 5", len(tail), total, err)
+	}
+	if all, total, _ := s.GetLogsTail(old.ID, 50); len(all) != 5 || total != 5 || all[0].Message != "a" {
+		t.Errorf("GetLogsTail(50) = %d entries, total %d", len(all), total)
+	}
+}
+
 func TestInsertLogsEmpty(t *testing.T) {
 	s := newTestStore(t)
 	// InsertLogs with empty slice must be a no-op (no error).
