@@ -60,4 +60,8 @@
 2026-10-21,Chat,sdk-cli,82,4.0,79349,0,"Сделай так, чтобы при запуске сессии Chat в ней отображался лог от предыдущей се",4d72a5f2-b0ba-404b-a576-aa78064dd04b.jsonl
 2026-10-23,Chat,sdk-cli,15,0.76,47143,0,как правильно написать команду /effort в Claude Manager ? Выведи всевозможные ко,b1a398d6-4a81-4844-8b28-8fbf759339cf.jsonl
 2026-10-23,Chat,sdk-cli,3,0.26,36756,0,"Сессия завершена, но в очереди не поменялась задача на готовую и виси там первой",67231416-139b-4dde-93bc-1cee64ef9c4e.jsonl
-2026-10-23,Chat,sdk-cli,6,0.35,39040,1,"Что ты помнишь про то, как мы примерно неделю назад меняли программу и хотели эк",f9a48eaa-f2e6-430e-8444-0610acadf9c9.jsonl
+2026-10-23,Chat,sdk-cli,67,4.64,95205,2,"Что ты помнишь про то, как мы примерно неделю назад меняли программу и хотели эк",f9a48eaa-f2e6-430e-8444-0610acadf9c9.jsonl
+2026-10-23,Developer 1,sdk-cli,13,0.3,42798,0,--- Project state (auto-generated) --- Current task: ## COST-01: автономная сесс,776e03bc-9b3e-4c10-a710-9655bf57b8dd.jsonl
+2026-10-23,Developer 1,sdk-cli,18,0.34,43506,0,--- Project state (auto-generated) --- Current task: ## COST-02: отдельная модел,b6de8672-48a2-4c3f-b008-11ad2a9e8d07.jsonl
+2026-10-23,Developer 1,sdk-cli,24,0.52,51320,0,--- Project state (auto-generated) --- Current task: ## COST-03: бюджет контекст,1422af66-6369-4898-aba7-0fed96a83892.jsonl
+2026-10-23,Developer 1,sdk-cli,16,0.51,55636,1,--- Project state (auto-generated) --- Current task: ## COST-04: `measure.py` — ,a5d9d2f4-116e-421a-9597-3abbb903ea92.jsonl

@@ -109,6 +109,12 @@ def call_cost(u, pr):
     return usd, cr + cw + it
 
 
+SLEEP = re.compile(r"sleep\s+(\d+(?:\.\d+)?)([smh]?)(?![\w.])")
+CD_PREFIX = re.compile(r"^(cd\s+\S+\s*(&&|;)\s*)+")
+UNIT = {"s": 1, "m": 60, "h": 3600}
+REBUILD_MIN, REBUILD_SHARE = 20000, 0.5  # a cache rebuild: a big write that is most of the call's context
+
+
 def command_kind(tool, cmd):
     if tool == "PowerShell":
         return "PowerShell (инструмент)"
@@ -132,8 +138,10 @@ def result_text(content):
 
 def scan(f):
     s = {"file": f.name, "start": None, "title": None, "entry": None, "prompt": "", "calls": 0, "usd": 0.0,
-         "ctx": 0, "runs": collections.Counter(), "garbled": collections.Counter()}
-    seen, tools = set(), {}
+         "ctx": 0, "runs": collections.Counter(), "garbled": collections.Counter(),
+         "sub": f.parent.name == "subagents", "polls": 0, "poll_secs": 0.0, "poll_usd": 0.0,
+         "rebuilds": 0, "rebuild_usd": 0.0, "w5": 0, "w1h": 0}
+    seen, tools, polls, after_poll = set(), {}, set(), False
     with f.open(encoding="utf-8", errors="replace") as fh:
         for line in fh:
             try:
@@ -150,12 +158,30 @@ def scan(f):
                 for b in content if isinstance(content, list) else []:
                     if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") in ("Bash", "PowerShell"):
                         tools[b.get("id")] = (b["name"], (b.get("input") or {}).get("command", ""))
+                        poll = SLEEP.match(CD_PREFIX.sub("", (b.get("input") or {}).get("command", "").strip()))
+                        if b["name"] == "Bash" and poll:
+                            s["polls"] += 1
+                            s["poll_secs"] += float(poll.group(1)) * UNIT[poll.group(2) or "s"]
+                            polls.add(b.get("id"))
                 mid = msg.get("id") or d.get("requestId")
                 u, pr = msg.get("usage"), price(msg.get("model"))
                 if not u or not pr or mid in seen:
                     continue
                 seen.add(mid)
                 usd, ctx = call_cost(u, pr)
+                cc = u.get("cache_creation") or {}
+                cw = u.get("cache_creation_input_tokens", 0) or 0
+                w1h, w5 = cc.get("ephemeral_1h_input_tokens"), cc.get("ephemeral_5m_input_tokens")
+                if w1h is None and w5 is None:
+                    w1h, w5 = cw, 0
+                s["w5"] += w5 or 0
+                s["w1h"] += w1h or 0
+                if s["calls"] and cw > REBUILD_MIN and cw > REBUILD_SHARE * ctx:
+                    s["rebuilds"] += 1
+                    s["rebuild_usd"] += ((w5 or 0) * W5 + (w1h or 0) * W1H) * pr[0] / 1e6
+                if after_poll:
+                    s["poll_usd"] += usd
+                    after_poll = False
                 s["calls"] += 1
                 s["usd"] += usd
                 s["ctx"] += ctx
@@ -169,6 +195,7 @@ def scan(f):
                     if b.get("type") == "text" and not s["prompt"]:
                         s["prompt"] = b.get("text", "") or ""
                     elif b.get("type") == "tool_result" and b.get("tool_use_id") in tools:
+                        after_poll = after_poll or b["tool_use_id"] in polls
                         kind = command_kind(*tools.pop(b["tool_use_id"]))
                         s["runs"][kind] += 1
                         if MOJIBAKE.search(result_text(b.get("content"))):
@@ -210,10 +237,15 @@ def manager_tasks(proj, since, until):
             "statuses": dict(collections.Counter(r[3] for r in rows)), "by_session": dict(by_session)}
 
 
-def build_metrics(a, label, tdir, proj, sessions, cost, by_len):
+def build_metrics(a, label, tdir, proj, sessions, subs, cost, by_len):
+    """`sessions` are top-level transcripts; `subs` subagent ones: they count in cost, calls and components,
+    not in session counts or per-session figures."""
     calls = sorted(s["calls"] for s in sessions)
-    n, total_calls = len(sessions), sum(calls)
-    usd = sum(s["usd"] for s in sessions)
+    n, total_calls = len(sessions), sum(calls) + sum(s["calls"] for s in subs)
+    usd_top = sum(s["usd"] for s in sessions)
+    usd_sub = sum(s["usd"] for s in subs)
+    usd = usd_top + usd_sub
+    allx = sessions + subs
     long = [s for s in sessions if s["calls"] > LONG]
     cats = cost.get("tool_result_lifetime_usd_by_category", {})
     runs, bad = collections.Counter(), collections.Counter()
@@ -246,11 +278,17 @@ def build_metrics(a, label, tdir, proj, sessions, cost, by_len):
         "sessions": n, "sessions_manager": sum(1 for s in sessions if (s["entry"] or "").startswith("sdk")),
         "api_calls": total_calls, "usd_total": round(usd, 2), "kit_total_usd": cost.get("total_usd"),
         "usd_per_session_median": round(statistics.median(s["usd"] for s in sessions), 2),
-        "usd_per_session_mean": round(usd / n, 2), "usd_per_call": round(usd / total_calls, 4),
-        "avg_ctx_per_call": int(sum(s["ctx"] for s in sessions) / total_calls),
+        "usd_per_session_mean": round(usd_top / n, 2), "usd_per_call": round(usd / total_calls, 4),
+        "avg_ctx_per_call": int(sum(s["ctx"] for s in allx) / total_calls),
         "calls_per_session": {"median": calls[n // 2], "p90": calls[min(n - 1, int(n * 0.9))], "max": calls[-1]},
         "long_sessions": len(long), "long_sessions_pct": pct(len(long), n),
-        "long_spend_pct": pct(sum(s["usd"] for s in long), usd),
+        "long_spend_pct": pct(sum(s["usd"] for s in long), usd_top),
+        "subagents": {"transcripts": len(subs), "calls": sum(s["calls"] for s in subs), "usd": round(usd_sub, 2)},
+        "usd_subagents_pct": pct(usd_sub, usd),
+        "sleep_polls": {"count": sum(s["polls"] for s in allx), "hours": round(sum(s["poll_secs"] for s in allx) / 3600, 1),
+                        "usd": round(sum(s["poll_usd"] for s in allx), 2)},
+        "cache_rebuilds": {"count": sum(s["rebuilds"] for s in allx), "usd": round(sum(s["rebuild_usd"] for s in allx), 2)},
+        "cache_write_M": {"5m": round(sum(s["w5"] for s in allx) / 1e6, 1), "1h": round(sum(s["w1h"] for s in allx) / 1e6, 1)},
         "pct_by_component": cost.get("pct_by_component", {}),
         "watch": {c: cats.get(c) for c in WATCH},
         "top_categories": dict(list(cats.items())[:10]),
@@ -274,7 +312,14 @@ def summary_md(m, sessions):
         "| Метрика | Значение |", "|---|---|",
         f"| Сессий (из них запущено менеджером) / вызовов модели | {m['sessions']} ({m['sessions_manager']})"
         f" / {num(m['api_calls'])} |",
-        f"| Затраты, эквивалент цен API | ${num(m['usd_total'], 2)} |",
+        f"| Затраты, эквивалент цен API (с субагентами) | ${num(m['usd_total'], 2)} |",
+        f"| Субагенты: транскриптов / вызовов / $ / доля затрат | {num(m['subagents']['transcripts'])} / "
+        f"{num(m['subagents']['calls'])} / ${num(m['subagents']['usd'], 2)} / {num(m['usd_subagents_pct'], 1)}% |",
+        f"| Опросы `sleep N`: число / часов ожидания / $ вызовов после них | {num(m['sleep_polls']['count'])} / "
+        f"{num(m['sleep_polls']['hours'], 1)} / ${num(m['sleep_polls']['usd'], 2)} |",
+        f"| Перестройки кэша (запись >20k токенов и >50% контекста): число / $ записи | "
+        f"{num(m['cache_rebuilds']['count'])} / ${num(m['cache_rebuilds']['usd'], 2)} |",
+        f"| Запись в кэш, млн токенов: 5m / 1h | {num(m['cache_write_M']['5m'], 1)} / {num(m['cache_write_M']['1h'], 1)} |",
         f"| $ на сессию: медиана / среднее | ${num(m['usd_per_session_median'], 2)} / ${num(m['usd_per_session_mean'], 2)} |",
         f"| $ на вызов модели | ${m['usd_per_call']:.4f} |",
         "| Доли затрат: чтение кэша / запись в кэш / ответы | " + " / ".join(
@@ -322,11 +367,13 @@ def transcript_files(tdir):
     """Transcripts of the project plus its worktrees: a session started with
     `claude --worktree` (or in a pool slot under .claude/worktrees) is stored in
     a sibling folder `<project>--claude-worktrees-<name>`."""
-    files = list(tdir.glob("*.jsonl"))
+    dirs = [tdir]
     prefix = tdir.name.lower() + "--claude-worktrees-"
-    for d in tdir.parent.iterdir():
-        if d.is_dir() and d.name.lower().startswith(prefix):
-            files += d.glob("*.jsonl")
+    dirs += [d for d in tdir.parent.iterdir() if d.is_dir() and d.name.lower().startswith(prefix)]
+    files = []
+    for d in dirs:
+        files += d.glob("*.jsonl")
+        files += d.glob("*/subagents/*.jsonl")  # subagent transcripts: <session-id>/subagents/agent-*.jsonl
     return sorted(files, key=lambda f: f.name)
 
 
@@ -337,7 +384,7 @@ def snapshot(a):
     tdir, proj = transcripts_dir(a.project)
     label = a.label or f"{dt.date.today().isoformat()}-{re.sub(r'[^A-Za-z0-9]+', '-', (proj or tdir).name).lower()}"
     out = (win_path(a.out) if a.out else default_out()) / label
-    sessions, files = [], []
+    sessions, subs, files = [], [], []
     for f in transcript_files(tdir):
         s = scan(f)
         s["day"] = local_day(s["start"]) if s["start"] else None
@@ -345,23 +392,24 @@ def snapshot(a):
             continue
         if (a.since and s["day"] < a.since) or (a.until and s["day"] >= a.until):
             continue
-        sessions.append(s)
+        (subs if s["sub"] else sessions).append(s)
         files.append(f)
     if not sessions:
         sys.exit("в окне нет сессий с вызовами модели")
     out.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="measure-", ignore_cleanup_errors=True) as tmp:
         for f in files:
+            name = f"{f.parent.parent.name}__sub__{f.name}" if f.parent.name == "subagents" else f.name
             try:
-                os.link(f, Path(tmp) / f.name)
+                os.link(f, Path(tmp) / name)
             except OSError:
-                shutil.copy2(f, Path(tmp) / f.name)
+                shutil.copy2(f, Path(tmp) / name)
         for script, name in (("cost_attribution.py", "cost.json"), ("session_length_cost.py", "by_length.json")):
             subprocess.run([sys.executable, "-I", str(HERE / script), tmp, str(out / name)],
                            check=True, stdout=subprocess.DEVNULL)
     cost = json.loads((out / "cost.json").read_text(encoding="utf-8"))
     by_len = json.loads((out / "by_length.json").read_text(encoding="utf-8"))
-    m = build_metrics(a, label, tdir, proj, sessions, cost, by_len)
+    m = build_metrics(a, label, tdir, proj, sessions, subs, cost, by_len)
     (out / "metrics.json").write_text(json.dumps(m, ensure_ascii=False, indent=1), encoding="utf-8")
     (out / "summary.md").write_text(summary_md(m, sessions), encoding="utf-8")
     with (out / "sessions.csv").open("w", newline="", encoding="utf-8-sig") as fh:
@@ -388,6 +436,15 @@ ROWS = [  # label, metric getter, delta kind ("rel" = relative %, "pp" = percent
     (f"Сессии >{LONG} вызовов, % сессий", lambda m: m["long_sessions_pct"], "pp", "передача задачи: ↓"),
     (f"Затраты в сессиях >{LONG} вызовов, %", lambda m: m["long_spend_pct"], "pp", "передача задачи: ↓"),
     ("Доля чтения кэша, %", lambda m: m["pct_by_component"].get("cache_read"), "pp", "короче сессии: ↓"),
+    ("$ субагентов, %", lambda m: m.get("usd_subagents_pct"), "pp", "субагенты на sonnet вместо opus: ↓ $ на вызов"),
+    ("Опросы sleep, число", lambda m: (m.get("sleep_polls") or {}).get("count"), "rel",
+     "COST-01 и правило kit «Wait for a long command in one blocking call»: ↓"),
+    ("Опросы sleep, $ вызовов после них", lambda m: (m.get("sleep_polls") or {}).get("usd"), "rel", "то же: ↓"),
+    ("Перестройки кэша, число", lambda m: (m.get("cache_rebuilds") or {}).get("count"), "rel",
+     "то же + субагенты на sonnet в Lumen: ↓"),
+    ("Перестройки кэша, $ записи", lambda m: (m.get("cache_rebuilds") or {}).get("usd"), "rel", "то же: ↓"),
+    ("Запись в кэш 5m, млн токенов", lambda m: (m.get("cache_write_M") or {}).get("5m"), "rel", ""),
+    ("Запись в кэш 1h, млн токенов", lambda m: (m.get("cache_write_M") or {}).get("1h"), "rel", ""),
     ("git pull, ср. токенов на результат", lambda m: (m["watch"].get("Bash: git pull") or {}).get("avg_tokens"),
      "rel", "`git pull -q`: ↓ до <100"),
     ("grep, ср. токенов", lambda m: (m["watch"].get("Bash: grep") or {}).get("avg_tokens"), "rel",

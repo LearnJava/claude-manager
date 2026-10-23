@@ -12,7 +12,36 @@ from cost_attribution import price, W1H, W5, READ  # noqa: E402
 root, out = Path(sys.argv[1]), Path(sys.argv[2])
 BUCKETS = [(1, 20), (21, 50), (51, 100), (101, 150), (151, 250), (251, 10**6)]
 agg = {b: collections.Counter() for b in BUCKETS}
+# Subagent transcripts (`<session>__sub__<agent>.jsonl`) add their cost to the parent session but not
+# to its call count: a session's length is the number of its own calls.
+sub_cost = collections.Counter()
+for f in root.glob("*__sub__*.jsonl"):
+    seen = set()
+    for line in f.open(encoding="utf-8", errors="replace"):
+        if '"assistant"' not in line or '"usage"' not in line:
+            continue
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        msg = d.get("message") or {}
+        if msg.get("id") in seen:
+            continue
+        seen.add(msg.get("id"))
+        pr, u = price(msg.get("model")), msg.get("usage") or {}
+        if not pr or not u:
+            continue
+        cc = u.get("cache_creation") or {}
+        w1h, w5 = cc.get("ephemeral_1h_input_tokens"), cc.get("ephemeral_5m_input_tokens")
+        cw = u.get("cache_creation_input_tokens", 0) or 0
+        if w1h is None and w5 is None:
+            w1h, w5 = cw, 0
+        sub_cost[f.name.split("__sub__")[0]] += ((u.get("input_tokens", 0) or 0) * pr[0]
+            + ((w5 or 0) * W5 + (w1h or 0) * W1H) * pr[0] + (u.get("cache_read_input_tokens", 0) or 0) * READ * pr[0]
+            + (u.get("output_tokens", 0) or 0) * pr[1]) / 1e6
 for f in root.glob("*.jsonl"):
+    if "__sub__" in f.name:
+        continue
     seen, cost, calls, ctx = set(), 0.0, 0, 0
     with f.open(encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -43,6 +72,7 @@ for f in root.glob("*.jsonl"):
             ctx += cr + cw + (u.get("input_tokens", 0) or 0)
     if not calls:
         continue
+    cost += sub_cost[f.stem]
     for b in BUCKETS:
         if b[0] <= calls <= b[1]:
             a = agg[b]

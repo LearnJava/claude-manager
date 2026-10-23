@@ -1,186 +1,372 @@
 {
- "transcripts": 204,
- "sessions_with_calls": 204,
- "api_calls": 11174,
+ "transcripts": 217,
+ "sessions_with_calls": 206,
+ "api_calls": 11313,
  "calls_per_session": {
   "median": 56,
   "p90": 92,
   "max": 264
  },
- "total_usd": 408.09,
+ "total_usd": 508.47,
  "usd_by_component": {
-  "cache_read": 235.47,
-  "cache_write": 99.14,
-  "output": 73.43,
-  "input": 0.05
+  "cache_read": 269.78,
+  "cache_write": 162.66,
+  "output": 75.96,
+  "input": 0.06
  },
  "pct_by_component": {
-  "cache_read": 57.7,
-  "cache_write": 24.3,
-  "output": 18.0,
+  "cache_read": 53.1,
+  "cache_write": 32.0,
+  "output": 14.9,
   "input": 0.0
  },
  "tokens_by_component_M": {
   "input": 0.0,
-  "cache_write": 21.5,
-  "cache_read": 1024.6,
-  "output": 6.4
+  "cache_write": 34.2,
+  "cache_read": 1117.1,
+  "output": 6.5
  },
  "usd_by_model": {
-  "claude-sonnet-5-5": 309.34,
-  "claude-opus-5-5": 85.14,
+  "claude-sonnet-5-5": 313.72,
+  "claude-opus-5-5": 181.14,
   "claude-fable-5": 13.6
  },
  "tool_result_lifetime_usd_by_category": {
+  "Bash: составная": {
+   "usd": 376.73,
+   "pct_of_total": 74.1,
+   "results": 9713,
+   "avg_tokens": 2584
+  },
   "Bash: sed": {
-   "usd": 53.69,
-   "pct_of_total": 13.2,
-   "results": 2079,
-   "avg_tokens": 1966
+   "usd": 15.32,
+   "pct_of_total": 3.0,
+   "results": 535,
+   "avg_tokens": 2111
   },
   "Bash: grep": {
-   "usd": 41.1,
-   "pct_of_total": 10.1,
-   "results": 2210,
-   "avg_tokens": 1381
-  },
-  "Bash: other": {
-   "usd": 39.78,
-   "pct_of_total": 9.7,
-   "results": 2197,
-   "avg_tokens": 1170
-  },
-  "Bash: cat": {
-   "usd": 20.33,
-   "pct_of_total": 5.0,
-   "results": 833,
-   "avg_tokens": 1925
+   "usd": 11.17,
+   "pct_of_total": 2.2,
+   "results": 665,
+   "avg_tokens": 1111
   },
   "Write": {
-   "usd": 9.29,
-   "pct_of_total": 2.3,
-   "results": 326,
-   "avg_tokens": 2487
-  },
-  "Bash: python": {
-   "usd": 8.66,
-   "pct_of_total": 2.1,
-   "results": 547,
-   "avg_tokens": 1254
-  },
-  "Bash: git pull": {
-   "usd": 7.94,
-   "pct_of_total": 1.9,
-   "results": 148,
-   "avg_tokens": 3150
+   "usd": 9.95,
+   "pct_of_total": 2.0,
+   "results": 336,
+   "avg_tokens": 2490
   },
   "Edit": {
-   "usd": 7.35,
-   "pct_of_total": 1.8,
-   "results": 565,
-   "avg_tokens": 598
-  },
-  "Bash: git status": {
-   "usd": 7.09,
-   "pct_of_total": 1.7,
-   "results": 290,
-   "avg_tokens": 1680
-  },
-  "Bash: ls": {
-   "usd": 5.06,
-   "pct_of_total": 1.2,
-   "results": 314,
-   "avg_tokens": 1088
-  },
-  "Read: *.py": {
-   "usd": 3.94,
-   "pct_of_total": 1.0,
-   "results": 18,
-   "avg_tokens": 3175
+   "usd": 7.62,
+   "pct_of_total": 1.5,
+   "results": 581,
+   "avg_tokens": 595
   },
   "Read: *.rs": {
-   "usd": 3.25,
+   "usd": 4.31,
    "pct_of_total": 0.8,
-   "results": 60,
-   "avg_tokens": 3473
+   "results": 84,
+   "avg_tokens": 3518
   },
-  "Bash: git show": {
-   "usd": 2.99,
-   "pct_of_total": 0.7,
-   "results": 143,
-   "avg_tokens": 1723
+  "Read: *.py": {
+   "usd": 4.0,
+   "pct_of_total": 0.8,
+   "results": 20,
+   "avg_tokens": 2920
   },
-  "Bash: wc": {
-   "usd": 2.9,
-   "pct_of_total": 0.7,
-   "results": 137,
-   "avg_tokens": 1298
-  },
-  "Bash: git log": {
+  "Bash: other": {
    "usd": 2.83,
-   "pct_of_total": 0.7,
-   "results": 141,
-   "avg_tokens": 1199
-  },
-  "Bash: git fetch": {
-   "usd": 2.48,
    "pct_of_total": 0.6,
-   "results": 153,
-   "avg_tokens": 1067
+   "results": 251,
+   "avg_tokens": 635
   },
-  "Bash: git diff": {
-   "usd": 2.18,
-   "pct_of_total": 0.5,
-   "results": 128,
-   "avg_tokens": 1100
-  },
-  "Bash: git checkout": {
-   "usd": 1.89,
-   "pct_of_total": 0.5,
-   "results": 117,
-   "avg_tokens": 992
-  },
-  "Bash: git branch": {
-   "usd": 1.84,
-   "pct_of_total": 0.5,
-   "results": 107,
-   "avg_tokens": 1043
-  },
-  "Bash: head": {
-   "usd": 1.72,
+  "Grep": {
+   "usd": 2.03,
    "pct_of_total": 0.4,
-   "results": 81,
-   "avg_tokens": 1362
+   "results": 84,
+   "avg_tokens": 1408
+  },
+  "Read: *.md": {
+   "usd": 1.96,
+   "pct_of_total": 0.4,
+   "results": 24,
+   "avg_tokens": 2972
   },
   "Agent": {
    "usd": 1.54,
-   "pct_of_total": 0.4,
+   "pct_of_total": 0.3,
    "results": 11,
    "avg_tokens": 3118
   },
-  "Bash: tail": {
-   "usd": 1.25,
+  "Bash: cat": {
+   "usd": 1.49,
    "pct_of_total": 0.3,
-   "results": 95,
-   "avg_tokens": 959
+   "results": 46,
+   "avg_tokens": 2242
   },
-  "Bash: git worktree": {
-   "usd": 1.06,
+  "Bash: python": {
+   "usd": 1.35,
    "pct_of_total": 0.3,
-   "results": 58,
-   "avg_tokens": 1055
-  },
-  "Bash: git add": {
-   "usd": 1.05,
-   "pct_of_total": 0.3,
-   "results": 132,
-   "avg_tokens": 1014
+   "results": 63,
+   "avg_tokens": 1045
   },
   "Read: *.png": {
-   "usd": 1.0,
+   "usd": 1.09,
    "pct_of_total": 0.2,
-   "results": 74,
-   "avg_tokens": 1010
+   "results": 80,
+   "avg_tokens": 1032
+  },
+  "Skill": {
+   "usd": 0.9,
+   "pct_of_total": 0.2,
+   "results": 18,
+   "avg_tokens": 3605
+  },
+  "MCP: cm": {
+   "usd": 0.67,
+   "pct_of_total": 0.1,
+   "results": 24,
+   "avg_tokens": 1638
+  },
+  "Bash: git show": {
+   "usd": 0.51,
+   "pct_of_total": 0.1,
+   "results": 16,
+   "avg_tokens": 2735
+  },
+  "Read: *.patch": {
+   "usd": 0.49,
+   "pct_of_total": 0.1,
+   "results": 2,
+   "avg_tokens": 6983
+  },
+  "Bash: git diff": {
+   "usd": 0.43,
+   "pct_of_total": 0.1,
+   "results": 27,
+   "avg_tokens": 1193
+  },
+  "TaskStop": {
+   "usd": 0.39,
+   "pct_of_total": 0.1,
+   "results": 25,
+   "avg_tokens": 1048
+  },
+  "Read: ROADMAP.md": {
+   "usd": 0.36,
+   "pct_of_total": 0.1,
+   "results": 4,
+   "avg_tokens": 3846
+  },
+  "Read: *.js": {
+   "usd": 0.27,
+   "pct_of_total": 0.1,
+   "results": 5,
+   "avg_tokens": 4944
+  },
+  "Bash: tail": {
+   "usd": 0.2,
+   "pct_of_total": 0.0,
+   "results": 31,
+   "avg_tokens": 590
+  },
+  "Bash: git grep": {
+   "usd": 0.16,
+   "pct_of_total": 0.0,
+   "results": 8,
+   "avg_tokens": 1418
+  },
+  "Read: CLAUDE.md": {
+   "usd": 0.16,
+   "pct_of_total": 0.0,
+   "results": 1,
+   "avg_tokens": 2218
+  },
+  "Bash: git log": {
+   "usd": 0.13,
+   "pct_of_total": 0.0,
+   "results": 13,
+   "avg_tokens": 677
+  },
+  "Bash: awk": {
+   "usd": 0.13,
+   "pct_of_total": 0.0,
+   "results": 7,
+   "avg_tokens": 1351
+  },
+  "Bash: head": {
+   "usd": 0.1,
+   "pct_of_total": 0.0,
+   "results": 6,
+   "avg_tokens": 1523
+  },
+  "Bash: ls": {
+   "usd": 0.09,
+   "pct_of_total": 0.0,
+   "results": 21,
+   "avg_tokens": 338
+  },
+  "SendMessage": {
+   "usd": 0.08,
+   "pct_of_total": 0.0,
+   "results": 4,
+   "avg_tokens": 450
+  },
+  "Read: CAPABILITIES.md": {
+   "usd": 0.06,
+   "pct_of_total": 0.0,
+   "results": 2,
+   "avg_tokens": 3555
+  },
+  "bash": {
+   "usd": 0.05,
+   "pct_of_total": 0.0,
+   "results": 6,
+   "avg_tokens": 607
+  },
+  "Read: *.sh": {
+   "usd": 0.05,
+   "pct_of_total": 0.0,
+   "results": 1,
+   "avg_tokens": 1964
+  },
+  "Read: *.output": {
+   "usd": 0.04,
+   "pct_of_total": 0.0,
+   "results": 3,
+   "avg_tokens": 437
+  },
+  "Bash: git branch": {
+   "usd": 0.04,
+   "pct_of_total": 0.0,
+   "results": 11,
+   "avg_tokens": 241
+  },
+  "Bash: git push": {
+   "usd": 0.04,
+   "pct_of_total": 0.0,
+   "results": 5,
+   "avg_tokens": 538
+  },
+  "Read: BUGS.md": {
+   "usd": 0.04,
+   "pct_of_total": 0.0,
+   "results": 3,
+   "avg_tokens": 492
+  },
+  "Read: STATUS-P1.md": {
+   "usd": 0.03,
+   "pct_of_total": 0.0,
+   "results": 2,
+   "avg_tokens": 842
+  },
+  "Bash: git worktree": {
+   "usd": 0.03,
+   "pct_of_total": 0.0,
+   "results": 2,
+   "avg_tokens": 1115
+  },
+  "StructuredOutput": {
+   "usd": 0.03,
+   "pct_of_total": 0.0,
+   "results": 1,
+   "avg_tokens": 3345
+  },
+  "Glob": {
+   "usd": 0.03,
+   "pct_of_total": 0.0,
+   "results": 4,
+   "avg_tokens": 175
+  },
+  "Bash: git status": {
+   "usd": 0.02,
+   "pct_of_total": 0.0,
+   "results": 10,
+   "avg_tokens": 341
+  },
+  "Bash: cargo test": {
+   "usd": 0.02,
+   "pct_of_total": 0.0,
+   "results": 7,
+   "avg_tokens": 407
+  },
+  "Bash: git -C": {
+   "usd": 0.02,
+   "pct_of_total": 0.0,
+   "results": 3,
+   "avg_tokens": 418
+  },
+  "unknown": {
+   "usd": 0.01,
+   "pct_of_total": 0.0,
+   "results": 7,
+   "avg_tokens": 322
+  },
+  "Bash: git merge": {
+   "usd": 0.01,
+   "pct_of_total": 0.0,
+   "results": 2,
+   "avg_tokens": 335
+  },
+  "EnterWorktree": {
+   "usd": 0.01,
+   "pct_of_total": 0.0,
+   "results": 2,
+   "avg_tokens": 364
+  },
+  "Bash: git rev-parse": {
+   "usd": 0.01,
+   "pct_of_total": 0.0,
+   "results": 3,
+   "avg_tokens": 176
+  },
+  "Bash: git fetch": {
+   "usd": 0.01,
+   "pct_of_total": 0.0,
+   "results": 1,
+   "avg_tokens": 422
+  },
+  "Read: STATUS-P6.md": {
+   "usd": 0.01,
+   "pct_of_total": 0.0,
+   "results": 2,
+   "avg_tokens": 436
+  },
+  "Read: STATUS-P5.md": {
+   "usd": 0.01,
+   "pct_of_total": 0.0,
+   "results": 1,
+   "avg_tokens": 418
+  },
+  "Bash: git stash": {
+   "usd": 0.01,
+   "pct_of_total": 0.0,
+   "results": 3,
+   "avg_tokens": 161
+  },
+  "Bash: git for-each-ref": {
+   "usd": 0.0,
+   "pct_of_total": 0.0,
+   "results": 1,
+   "avg_tokens": 531
+  },
+  "Bash: git switch": {
+   "usd": 0.0,
+   "pct_of_total": 0.0,
+   "results": 2,
+   "avg_tokens": 85
+  },
+  "ReportFindings": {
+   "usd": 0.0,
+   "pct_of_total": 0.0,
+   "results": 1,
+   "avg_tokens": 492
+  },
+  "ToolSearch": {
+   "usd": 0.0,
+   "pct_of_total": 0.0,
+   "results": 2,
+   "avg_tokens": 0
   }
  },
  "most_expensive_single_results": [
@@ -188,65 +374,201 @@
    "usd": 10.96,
    "tokens": 311410,
    "reread_by_calls": 68,
-   "category": "Bash: other",
+   "category": "Bash: составная",
    "what": "sleep 580; echo ok",
    "file": "7f161dc2-4068-4078-8177-e0837aae05f4.jsonl"
   },
   {
-   "usd": 0.87,
-   "tokens": 117882,
-   "reread_by_calls": 17,
-   "category": "Bash: other",
-   "what": "cd C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/p6-work && (cargo clippy -p lumen-chrome -p lumen-shell --all",
-   "file": "749fd1d1-268b-40e7-97d5-7db0aae791a9.jsonl"
+   "usd": 4.18,
+   "tokens": 159689,
+   "reread_by_calls": 53,
+   "category": "Bash: составная",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-split-engine && C:/Users/konstantin/AppData/Local/Python",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a04796d936bf4326f.jsonl"
   },
   {
-   "usd": 0.85,
-   "tokens": 7752,
-   "reread_by_calls": 254,
-   "category": "Read: *.py",
-   "what": "C:/kostja/Rust_Projects/Lumen_browser/scripts/quality_report.py",
-   "file": "7f161dc2-4068-4078-8177-e0837aae05f4.jsonl"
+   "usd": 3.86,
+   "tokens": 66360,
+   "reread_by_calls": 133,
+   "category": "Bash: составная",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-split-engine && export PATH=\"/c/Users/konstantin/.cargo/",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a04796d936bf4326f.jsonl"
   },
   {
-   "usd": 0.61,
-   "tokens": 126226,
-   "reread_by_calls": 4,
-   "category": "Bash: other",
-   "what": "cd C:/kostja/Rust_Projects/Lumen_browser && sleep 570; cat .tmp/ab2.log",
-   "file": "55573e77-b612-4a36-8d9a-9370d76c8066.jsonl"
+   "usd": 3.78,
+   "tokens": 176668,
+   "reread_by_calls": 41,
+   "category": "Bash: составная",
+   "what": "sleep 590; tail -c 400 C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-split-engine/.tmp/tl.log",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a04796d936bf4326f.jsonl"
   },
   {
-   "usd": 0.61,
-   "tokens": 34366,
-   "reread_by_calls": 69,
-   "category": "Bash: git pull",
-   "what": "cd C:/kostja/Rust_Projects/Lumen_browser && git pull origin main -q 2>&1 | tail -n 3; head -c 1500 STATUS-P1.md; git sta",
-   "file": "cef03ad0-9c11-4574-97ed-c53547106c3d.jsonl"
+   "usd": 3.76,
+   "tokens": 103742,
+   "reread_by_calls": 78,
+   "category": "Bash: составная",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-split-shell && cargo clippy -p lumen-shell --all-targets",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-af15e807731569e91.jsonl"
   },
   {
-   "usd": 0.57,
-   "tokens": 5202,
-   "reread_by_calls": 254,
-   "category": "Read: *.py",
-   "what": "C:/kostja/Rust_Projects/Lumen_browser/scripts/quality_report.py",
-   "file": "7f161dc2-4068-4078-8177-e0837aae05f4.jsonl"
+   "usd": 3.72,
+   "tokens": 177012,
+   "reread_by_calls": 40,
+   "category": "Bash: составная",
+   "what": "sleep 590; tail -c 300 C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-split-engine/.tmp/tl.log",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a04796d936bf4326f.jsonl"
   },
   {
-   "usd": 0.54,
-   "tokens": 15114,
-   "reread_by_calls": 70,
-   "category": "Read: *.py",
-   "what": "C:/kostja/Rust_Projects/Lumen_browser/scripts/geom_diff.py",
-   "file": "86d752c2-0469-4740-8b11-d3345ef6f02b.jsonl"
+   "usd": 3.66,
+   "tokens": 177606,
+   "reread_by_calls": 39,
+   "category": "Bash: составная",
+   "what": "sleep 590; tail -c 600 C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-split-engine/.tmp/tl.log | grep -E \"",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a04796d936bf4326f.jsonl"
   },
   {
-   "usd": 0.53,
-   "tokens": 5027,
-   "reread_by_calls": 246,
-   "category": "Read: *.py",
-   "what": "C:/kostja/Rust_Projects/Lumen_browser/scripts/test_quality_report.py",
-   "file": "7f161dc2-4068-4078-8177-e0837aae05f4.jsonl"
+   "usd": 3.55,
+   "tokens": 74340,
+   "reread_by_calls": 107,
+   "category": "Bash: составная",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-split-shell/crates/shell/src && sed -i 's/crate::relayou",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-af15e807731569e91.jsonl"
+  },
+  {
+   "usd": 3.5,
+   "tokens": 180504,
+   "reread_by_calls": 36,
+   "category": "Bash: составная",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-split-engine && git checkout 423d54347 -- crates/engine/",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a04796d936bf4326f.jsonl"
+  },
+  {
+   "usd": 3.45,
+   "tokens": 181362,
+   "reread_by_calls": 35,
+   "category": "Bash: составная",
+   "what": "sleep 420; grep -E \"test result|overflowed|STATUS|Finished\" C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a04796d936bf4326f.jsonl"
+  },
+  {
+   "usd": 3.25,
+   "tokens": 182490,
+   "reread_by_calls": 32,
+   "category": "Bash: составная",
+   "what": "sleep 595; grep -E \"test result|overflowed|STATUS|EXIT|Finished\" C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a04796d936bf4326f.jsonl"
+  },
+  {
+   "usd": 3.0,
+   "tokens": 185418,
+   "reread_by_calls": 28,
+   "category": "Bash: составная",
+   "what": "sleep 598; cat \"C:\\Users\\KONSTA~1\\AppData\\Local\\Temp\\claude\\C--kostja-Rust-Projects-Lumen-browser\\7f161dc2-4068-4078-817",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a04796d936bf4326f.jsonl"
+  },
+  {
+   "usd": 2.81,
+   "tokens": 187351,
+   "reread_by_calls": 25,
+   "category": "Bash: составная",
+   "what": "sleep 500; cat \"C:\\Users\\KONSTA~1\\AppData\\Local\\Temp\\claude\\C--kostja-Rust-Projects-Lumen-browser\\7f161dc2-4068-4078-817",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a04796d936bf4326f.jsonl"
+  },
+  {
+   "usd": 2.71,
+   "tokens": 196602,
+   "reread_by_calls": 22,
+   "category": "Bash: составная",
+   "what": "sleep 540; grep -E \"test result|EXIT|FAILED|panicked|Running|error\" C:/kostja/Rust_Projects/Lumen_browser/.claude/worktr",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a04796d936bf4326f.jsonl"
+  },
+  {
+   "usd": 2.71,
+   "tokens": 108265,
+   "reread_by_calls": 50,
+   "category": "Bash: составная",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-fix-grid-depth && \"C:/Users/konstantin/AppData/Local/Pyt",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a2e6809f31d3cf057.jsonl"
+  },
+  {
+   "usd": 2.69,
+   "tokens": 96797,
+   "reread_by_calls": 57,
+   "category": "Bash: составная",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-fix-grid-depth/crates/engine/layout/src/box_tree && sed ",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a2e6809f31d3cf057.jsonl"
+  },
+  {
+   "usd": 2.66,
+   "tokens": 93115,
+   "reread_by_calls": 59,
+   "category": "Bash: составная",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-fix-grid-depth/crates/engine/layout/src/box_tree && \"C:/",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a2e6809f31d3cf057.jsonl"
+  },
+  {
+   "usd": 2.65,
+   "tokens": 91549,
+   "reread_by_calls": 60,
+   "category": "Bash: составная",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-fix-grid-depth/crates/engine/layout/src/box_tree && \"C:/",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a2e6809f31d3cf057.jsonl"
+  },
+  {
+   "usd": 2.64,
+   "tokens": 196942,
+   "reread_by_calls": 21,
+   "category": "Bash: составная",
+   "what": "sleep 540; grep -E \"test result|EXIT|FAILED|panicked|Running|^error\" C:/kostja/Rust_Projects/Lumen_browser/.claude/workt",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a04796d936bf4326f.jsonl"
+  },
+  {
+   "usd": 2.57,
+   "tokens": 197682,
+   "reread_by_calls": 20,
+   "category": "Bash: составная",
+   "what": "sleep 540; grep -E \"test result|EXIT|FAILED|panicked|Running|^error\" C:/kostja/Rust_Projects/Lumen_browser/.claude/workt",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a04796d936bf4326f.jsonl"
+  },
+  {
+   "usd": 2.51,
+   "tokens": 119416,
+   "reread_by_calls": 40,
+   "category": "Bash: составная",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-fix-grid-depth && cargo test -q -p lumen-layout --lib > ",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a2e6809f31d3cf057.jsonl"
+  },
+  {
+   "usd": 2.43,
+   "tokens": 198884,
+   "reread_by_calls": 18,
+   "category": "Bash: составная",
+   "what": "sleep 540; grep -E \"^(error|warning)|EXIT|Finished|error\\[\" C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a04796d936bf4326f.jsonl"
+  },
+  {
+   "usd": 2.39,
+   "tokens": 91274,
+   "reread_by_calls": 53,
+   "category": "Bash: составная",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser; git log --format='%h %s%n%b' 7ef6d821c^2 -6 --first-parent | head -50; git dif",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a6b41206a877019c5.jsonl"
+  },
+  {
+   "usd": 2.31,
+   "tokens": 126796,
+   "reread_by_calls": 33,
+   "category": "Bash: составная",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-fix-grid-depth && cp crates/engine/layout/src/box_tree/t",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a2e6809f31d3cf057.jsonl"
+  },
+  {
+   "usd": 2.2,
+   "tokens": 106883,
+   "reread_by_calls": 39,
+   "category": "Bash: составная",
+   "what": "sleep 590; cat C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/chat-js-fixes/.tmp/bisect_progress.log",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4__sub__agent-a6b41206a877019c5.jsonl"
   }
  ]
 }
