@@ -7,6 +7,7 @@ export default {
     'experiencePanel.tabs.timing': 'Время выполнения',
     'experiencePanel.tabs.cost': 'Стоимость по инструментам',
     'experiencePanel.tabs.skills': 'Навыки',
+    'experiencePanel.tabs.failures': 'Ошибки',
     'experiencePanel.refresh': 'Обновить',
 
     'experiencePanel.filters.project': 'Проект',
@@ -103,4 +104,24 @@ export default {
         'Оцен. токены = символы/4, приближение по порядку величины — точного токенайзера без обращения к API нет.',
     'experiencePanel.footer.skills':
         'Кликните по навыку, чтобы увидеть его markdown. Работающие навыки лежат в <project>/.claude/skills/, выключенные — в .claude-manager/archived-skills/.',
+
+    'experiencePanel.footer.failures':
+        'Правило попадает в CLAUDE.md проекта только после «Принять в CLAUDE.md»; эффект — доля из последних 20 прогонов до решения против всех прогонов после.',
+    'experiencePanel.failures.pending': 'Повторяющихся ошибок без правила: {n}',
+    'experiencePanel.failures.suggest': 'Предложить правила',
+    'experiencePanel.failures.drafting': 'Формулируем правила…',
+    'experiencePanel.failures.cost': 'Стоимость вызова: {cost}',
+    'experiencePanel.failures.error': 'Ошибка: {error}',
+    'experiencePanel.failures.loading': 'Загрузка…',
+    'experiencePanel.failures.empty': 'Правил пока нет. Они появляются из ошибок, которые повторяются в нескольких прогонах (нужен experience_tracking).',
+    'experiencePanel.failures.drafts': 'Черновики ({n})',
+    'experiencePanel.failures.accepted': 'Принятые ({n})',
+    'experiencePanel.failures.dismissed': 'Отклонённые ({n})',
+    'experiencePanel.failures.inRuns': 'в {n} прогонах',
+    'experiencePanel.failures.failed': 'упало',
+    'experiencePanel.failures.fixed': 'сработало',
+    'experiencePanel.failures.accept': 'Принять в CLAUDE.md',
+    'experiencePanel.failures.dismiss': 'Отклонить',
+    'experiencePanel.failures.effect': 'до: {hb} из {rb} прогонов → после: {ha} из {ra}',
+    'experiencePanel.failures.decided': 'Принято {date}',
 } as Record<string, string>;

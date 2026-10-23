@@ -200,6 +200,11 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         // Tests that need a populated Skills tab override GetSkills per-test
         // (see skills.spec.ts), same pattern as the Permissions/Timing tabs.
         GetSkills: () => Promise.resolve([]),
+        // Failure rules (LEARN-TASKS.md LN-39): same store, same empty stub.
+        GetFailureRules: () => Promise.resolve({ Rules: [], Pending: 0 }),
+        DraftFailureRules: () => Promise.resolve([]),
+        AcceptFailureRule: () => Promise.resolve(undefined),
+        DismissFailureRule: () => Promise.resolve(undefined),
         ApproveSkill: () => Promise.resolve(''),
         ArchiveSkill: () => Promise.resolve(undefined),
         // GetSkillQuality (LEARN-TASKS.md LN-11) reads from the same store as

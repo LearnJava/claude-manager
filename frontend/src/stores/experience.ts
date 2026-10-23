@@ -5,7 +5,11 @@
 // hand-rolling it.
 
 import {
+    AcceptFailureRule,
     AddPermissionRule,
+    DismissFailureRule,
+    DraftFailureRules,
+    GetFailureRules,
     ApproveSkill,
     ArchiveSkill,
     DistillSkill,
@@ -483,4 +487,59 @@ export interface ImportStats {
 // this is in flight.
 export async function importProjectLogs(project: string, dir: string): Promise<ImportStats> {
     return (await ImportProjectLogs(project, dir)) as ImportStats;
+}
+
+// Failure rules (LEARN-TASKS.md LN-37/38/39): recurring errors turned into
+// CLAUDE.md rules. FailureRuleView embeds store.FailureRule, so Wails flattens
+// its fields next to Examples/Effect (PascalCase, no JSON tags).
+export interface FailureExample {
+    failed_arg: string;
+    err_text: string;
+    fixed_arg: string;
+}
+
+export interface FailureEffect {
+    RunsBefore: number;
+    HitsBefore: number;
+    RunsAfter: number;
+    HitsAfter: number;
+}
+
+export interface FailureRule {
+    ID: number;
+    Project: string;
+    ErrorKey: string;
+    RuleText: string;
+    Status: 'draft' | 'accepted' | 'dismissed';
+    DistinctRuns: number;
+    CostUSD: number;
+    CreatedAt: string;
+    DecidedAt: string | null;
+    Examples: FailureExample[] | null;
+    Effect: FailureEffect;
+}
+
+export interface FailureRulesState {
+    Rules: FailureRule[] | null;
+    Pending: number;
+}
+
+export async function fetchFailureRules(project: string): Promise<FailureRulesState> {
+    const raw = await GetFailureRules(project);
+    return raw as unknown as FailureRulesState;
+}
+
+// draftFailureRules drafts rules for up to `limit` recurring errors (a model
+// call per error) and returns the new rows.
+export async function draftFailureRules(project: string, limit: number): Promise<FailureRule[]> {
+    const raw = await DraftFailureRules(project, limit);
+    return (raw ?? []) as unknown as FailureRule[];
+}
+
+export function acceptFailureRule(id: number, ruleText: string): Promise<void> {
+    return AcceptFailureRule(id, ruleText);
+}
+
+export function dismissFailureRule(id: number): Promise<void> {
+    return DismissFailureRule(id);
 }

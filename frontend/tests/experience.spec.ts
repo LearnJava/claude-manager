@@ -301,4 +301,56 @@ test.describe('Experience panel', () => {
     await modal.getByRole('button', { name: 'Close' }).click();
     await expect(modal).not.toBeVisible({ timeout: 3_000 });
   });
+  test('Failures tab: drafts render, Accept sends the edited text, Suggest blocks while running', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Experience' }).click();
+    const modal = page.getByRole('dialog');
+    await expect(modal).toBeVisible({ timeout: 3_000 });
+
+    await page.evaluate(() => {
+      const w = window as any;
+      const App = w.go.main.App;
+      w.__accept = [] as unknown[];
+      w.__releaseDraft = () => {};
+      let drafts = [
+        {
+          ID: 7,
+          Project: 'test',
+          ErrorKey: 'Bash: No such file',
+          RuleText: 'Check the path first',
+          Status: 'draft',
+          DistinctRuns: 4,
+          CostUSD: 0,
+          CreatedAt: new Date().toISOString(),
+          DecidedAt: null,
+          Examples: [{ failed_arg: 'cat a.txt', err_text: 'No such file', fixed_arg: 'cat ./a.txt' }],
+          Effect: { RunsBefore: 0, HitsBefore: 0, RunsAfter: 0, HitsAfter: 0 },
+        },
+      ];
+      App.GetFailureRules = () => Promise.resolve({ Rules: drafts, Pending: 2 });
+      App.AcceptFailureRule = (...args: unknown[]) => {
+        w.__accept.push(args);
+        drafts = [];
+        return Promise.resolve(undefined);
+      };
+      App.DraftFailureRules = () => new Promise((res) => (w.__releaseDraft = () => res([])));
+    });
+
+    await modal.getByRole('button', { name: 'Failures' }).click();
+    await expect(modal.getByText('Recurring errors without a rule: 2')).toBeVisible({ timeout: 5_000 });
+    await expect(modal.getByText('Bash: No such file')).toBeVisible();
+    await expect(modal.getByText('in 4 runs')).toBeVisible();
+
+    // Suggest rules disables the button for the duration of the call.
+    await modal.getByRole('button', { name: 'Suggest rules' }).click();
+    await expect(modal.getByRole('button', { name: 'Drafting rules…' })).toBeDisabled();
+    await page.evaluate(() => (window as any).__releaseDraft());
+    await expect(modal.getByRole('button', { name: 'Suggest rules' })).toBeEnabled({ timeout: 3_000 });
+
+    await modal.locator('textarea').fill('Always use ./ paths');
+    await modal.getByRole('button', { name: 'Accept into CLAUDE.md' }).click();
+    await expect.poll(() => page.evaluate(() => (window as any).__accept)).toEqual([[7, 'Always use ./ paths']]);
+  });
 });
