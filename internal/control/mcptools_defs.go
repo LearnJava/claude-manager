@@ -221,7 +221,7 @@ type waitStatusIn struct {
 	sessionRef
 	Status    string `json:"status" jsonschema:"Target status to wait for"`
 	TimeoutMs int64  `json:"timeout_ms,omitempty" jsonschema:"How long to wait, in milliseconds (default 5000, at most 600000)"`
-	SinceSeq  *int64  `json:"since_seq,omitempty" jsonschema:"The seq an action returned (send_message, start_session, ...): only events after it count, so an older event is not taken for the answer"`
+	SinceSeq  *int64 `json:"since_seq,omitempty" jsonschema:"The seq an action returned (send_message, start_session, ...): only events after it count, so an older event is not taken for the answer"`
 }
 
 type waitAnyIn struct {
@@ -233,7 +233,7 @@ type waitEventIn struct {
 	Event     string         `json:"event" jsonschema:"Event name, e.g. session:status, session:log, session:permission"`
 	Match     map[string]any `json:"match,omitempty" jsonschema:"Fields the event payload must contain, all of them, e.g. {\"id\": \"lumen/P1\"}"`
 	TimeoutMs int64          `json:"timeout_ms,omitempty" jsonschema:"How long to wait, in milliseconds (default 5000, at most 600000)"`
-	SinceSeq  *int64  `json:"since_seq,omitempty" jsonschema:"The seq an action returned (send_message, start_session, ...): only events after it count, so an older event is not taken for the answer"`
+	SinceSeq  *int64         `json:"since_seq,omitempty" jsonschema:"The seq an action returned (send_message, start_session, ...): only events after it count, so an older event is not taken for the answer"`
 }
 
 // sessionStatuses are the values of a session's status as the app reports it.
@@ -481,7 +481,7 @@ func waitSummary(out waitOut) string {
 // ── Tools ─────────────────────────────────────────────────────────────────────
 
 func buildMCPTools() []Tool {
-	return append(append(append(append(append(buildCoreTools(), interactionTools()...), projectsTools()...), logsTools()...), planningTools()...), skillsTools()...)
+	return append(append(append(append(append(append(buildCoreTools(), interactionTools()...), projectsTools()...), logsTools()...), planningTools()...), skillsTools()...), failuresTools()...)
 }
 
 func buildCoreTools() []Tool {
