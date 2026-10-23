@@ -221,6 +221,9 @@ type Params struct {
 	// ManagerCard is the Claude Manager card (managerCard) appended to the
 	// system prompt; empty when GlobalSettings.ManagerCard is off.
 	ManagerCard string
+	// LearnedRules is the "Learned from failures" block (LN-40) appended to
+	// the system prompt of a Claude session; empty = nothing appended.
+	LearnedRules string
 
 	// ResumeSessionID pre-seeds resumeSessionID for one immediate --resume on
 	// the first launch (see SessionManager.SetSessionModel: an interactive
@@ -425,6 +428,7 @@ type Session struct {
 	commandGuard bool   // see Params.CommandGuard
 	envCard      bool   // see Params.EnvCard
 	managerCard  string // see Params.ManagerCard
+	learnedRules string // see Params.LearnedRules
 
 	// Context-budget handoff (Config.HandoffContextTokens, see
 	// checkHandoffBudget), per run, protected by mu: the tag that marks the
@@ -556,6 +560,7 @@ func New(p Params) *Session {
 		commandGuard:      p.CommandGuard,
 		envCard:           p.EnvCard,
 		managerCard:       p.ManagerCard,
+		learnedRules:      p.LearnedRules,
 		excludeDynamic:    p.ExcludeDynamic,
 		maxTurns:          p.MaxTurns,
 		activeModel:       p.Config.Model,
@@ -2671,7 +2676,7 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 		card += s.managerCard
 	}
 	interactiveAsk := !autonomous && s.Config.AskUserMarker
-	if s.Config.SystemPromptAppend != "" || autonomous || interactiveAsk || card != "" {
+	if s.Config.SystemPromptAppend != "" || autonomous || interactiveAsk || card != "" || s.learnedRules != "" {
 		combined := strings.TrimSpace(s.Config.SystemPromptAppend)
 		if (autonomous || interactiveAsk) && combined != "" {
 			combined += "\n\n"
@@ -2689,6 +2694,12 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 				combined += "\n\n"
 			}
 			combined += card
+		}
+		if s.learnedRules != "" {
+			if combined != "" {
+				combined += "\n\n"
+			}
+			combined += s.learnedRules
 		}
 		args = append(args, "--append-system-prompt", combined)
 	}

@@ -113,7 +113,7 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-37 | ✓ DONE | internal/store (failure_rules), internal/experience/failurerules.go |
 | LN-38 | ✓ DONE | internal/analysis/failurerule.go, app.go, internal/control/mcptools_failures.go |
 | LN-39 | ✓ DONE | frontend ExperiencePanel.svelte (вкладка «Ошибки»), stores/experience.ts |
-| LN-40 | ○ TODO | internal/experience/skillpilot.go (шаг правил), internal/store (failure_rules.origin/reason), internal/session/session.go, manager.go (LearnedRules) |
+| LN-40 | ✓ DONE | internal/experience/skillpilot.go (шаг правил), internal/store (failure_rules.origin/reason), internal/session/session.go, manager.go (LearnedRules) |
 | LN-41 | ○ TODO | app.go (RevertFailureRule/RestoreFailureRule), internal/control/mcptools_failures.go, ExperiencePanel.svelte, SkillReview.svelte |
 
 > LN-17 и LN-18 дописаны после разведки корпуса. LN-17 по приоритету идёт **третьим**, сразу за LN-02 (без него нечего анализировать);

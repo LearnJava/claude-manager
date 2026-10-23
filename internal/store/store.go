@@ -1697,6 +1697,15 @@ const (
 	FailureRuleDraft     = "draft"
 	FailureRuleAccepted  = "accepted"
 	FailureRuleDismissed = "dismissed"
+	// Autopilot statuses (LN-40): trial is applied and being measured, kept
+	// passed the measurement, reverted was taken off. trial and kept go into
+	// the system prompt of the project's Claude sessions.
+	FailureRuleTrial    = "trial"
+	FailureRuleKept     = "kept"
+	FailureRuleReverted = "reverted"
+
+	FailureRuleOriginManual = "manual"
+	FailureRuleOriginAuto   = "auto"
 )
 
 // FailureRule is one recurring error on its way to a one-line rule in the
@@ -1714,25 +1723,30 @@ type FailureRule struct {
 	CostUSD      float64
 	CreatedAt    time.Time
 	DecidedAt    *time.Time
+	// Origin is "manual" or "auto" (the skill autopilot, LN-40); Reason is
+	// the JSON of experience.FailureRuleReason for a decided autopilot rule.
+	Origin string
+	Reason string
 }
 
 const selectFailureRuleCols = `id, project, error_key, examples_json, rule_text, status,
-	distinct_runs, cost_usd, created_at, decided_at`
+	distinct_runs, cost_usd, created_at, decided_at, origin, reason`
 
 func scanFailureRule(sc interface{ Scan(...any) error }) (*FailureRule, error) {
 	var r FailureRule
-	var examples, text sql.NullString
+	var examples, text, reason sql.NullString
 	var runs sql.NullInt64
 	var cost sql.NullFloat64
 	var decided sql.NullTime
 	if err := sc.Scan(&r.ID, &r.Project, &r.ErrorKey, &examples, &text, &r.Status,
-		&runs, &cost, &r.CreatedAt, &decided); err != nil {
+		&runs, &cost, &r.CreatedAt, &decided, &r.Origin, &reason); err != nil {
 		return nil, err
 	}
 	r.ExamplesJSON = examples.String
 	r.RuleText = text.String
 	r.DistinctRuns = int(runs.Int64)
 	r.CostUSD = cost.Float64
+	r.Reason = reason.String
 	if decided.Valid {
 		t := decided.Time
 		r.DecidedAt = &t
@@ -1749,14 +1763,18 @@ func (s *Store) InsertFailureRule(r *FailureRule) error {
 	if r.CreatedAt.IsZero() {
 		r.CreatedAt = time.Now().UTC()
 	}
+	if r.Origin == "" {
+		r.Origin = FailureRuleOriginManual
+	}
 	var decided any
 	if r.DecidedAt != nil {
 		decided = *r.DecidedAt
 	}
 	res, err := s.db.Exec(`INSERT INTO failure_rules (project, error_key, examples_json, rule_text,
-	    status, distinct_runs, cost_usd, created_at, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	    status, distinct_runs, cost_usd, created_at, decided_at, origin, reason)
+	    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.Project, r.ErrorKey, r.ExamplesJSON, r.RuleText, r.Status, r.DistinctRuns, r.CostUSD,
-		r.CreatedAt, decided)
+		r.CreatedAt, decided, r.Origin, r.Reason)
 	if err != nil {
 		return err
 	}
@@ -1801,4 +1819,30 @@ func (s *Store) UpdateFailureRule(id int64, status, ruleText string, decidedAt *
 	_, err := s.db.Exec(`UPDATE failure_rules SET status=?, rule_text=?, decided_at=? WHERE id=?`,
 		status, ruleText, decided, id)
 	return err
+}
+
+// SetFailureRuleReason stores the JSON decision reason of a rule.
+func (s *Store) SetFailureRuleReason(id int64, reason string) error {
+	_, err := s.db.Exec(`UPDATE failure_rules SET reason=? WHERE id=?`, reason, id)
+	return err
+}
+
+// InjectedFailureRules returns the project's rules that go into the system
+// prompt of its Claude sessions (trial and kept), oldest decision first.
+func (s *Store) InjectedFailureRules(project string) ([]FailureRule, error) {
+	rows, err := s.db.Query(`SELECT `+selectFailureRuleCols+` FROM failure_rules
+	    WHERE project=? AND status IN ('trial','kept') ORDER BY decided_at, id`, project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []FailureRule
+	for rows.Next() {
+		r, err := scanFailureRule(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *r)
+	}
+	return out, rows.Err()
 }

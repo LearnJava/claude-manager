@@ -209,6 +209,8 @@ CREATE TABLE IF NOT EXISTS failure_rules (
     cost_usd      REAL DEFAULT 0,
     created_at    DATETIME NOT NULL,
     decided_at    DATETIME,
+    origin        TEXT NOT NULL DEFAULT 'manual',
+    reason        TEXT,
     UNIQUE(project, error_key)
 )`
 
@@ -289,6 +291,9 @@ func migrate(db *sql.DB) error {
 		`ALTER TABLE skills ADD COLUMN reason TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE skills ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0`,
 		`ALTER TABLE skills ADD COLUMN updated_at DATETIME`,
+		// failure_rules gained the autopilot's origin and decision reason (LN-40).
+		`ALTER TABLE failure_rules ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual'`,
+		`ALTER TABLE failure_rules ADD COLUMN reason TEXT`,
 	} {
 		if _, err := db.Exec(col); err != nil {
 			if !strings.Contains(err.Error(), "duplicate column") {

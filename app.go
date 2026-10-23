@@ -223,6 +223,7 @@ func (a *App) startup(ctx context.Context) {
 			Review: func(ctx context.Context, projectPath string, in analysis.SkillReviewInput) (*analysis.SkillReview, error) {
 				return analysis.ReviewSkill(ctx, projectPath, in, a.analysisConfig(analysis.DefaultSkillReviewModel))
 			},
+			DraftRule: a.draftFailureRuleModel,
 		})
 		a.manager.SetSkillAutopilot(func(project, projectPath string, gates []string, budget float64) (bool, error) {
 			rep, err := a.skillPilot.Tick(context.Background(), experience.SkillPilotParams{
@@ -230,7 +231,8 @@ func (a *App) startup(ctx context.Context) {
 			})
 			if rep.Changed() || err != nil {
 				logger.L.Info("experience.skill_autopilot", "project", project,
-					"applied", rep.Applied, "kept", rep.Kept, "archived", rep.Archived, "rejected", rep.Rejected, "error", err)
+					"applied", rep.Applied, "kept", rep.Kept, "archived", rep.Archived, "rejected", rep.Rejected,
+					"rules_applied", rep.RulesApplied, "rules_kept", rep.RulesKept, "rules_reverted", rep.RulesReverted, "error", err)
 			}
 			return rep.Changed(), err
 		})
