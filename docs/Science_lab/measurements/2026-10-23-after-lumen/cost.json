@@ -1,0 +1,252 @@
+{
+ "transcripts": 204,
+ "sessions_with_calls": 204,
+ "api_calls": 11174,
+ "calls_per_session": {
+  "median": 56,
+  "p90": 92,
+  "max": 264
+ },
+ "total_usd": 408.09,
+ "usd_by_component": {
+  "cache_read": 235.47,
+  "cache_write": 99.14,
+  "output": 73.43,
+  "input": 0.05
+ },
+ "pct_by_component": {
+  "cache_read": 57.7,
+  "cache_write": 24.3,
+  "output": 18.0,
+  "input": 0.0
+ },
+ "tokens_by_component_M": {
+  "input": 0.0,
+  "cache_write": 21.5,
+  "cache_read": 1024.6,
+  "output": 6.4
+ },
+ "usd_by_model": {
+  "claude-sonnet-5-5": 309.34,
+  "claude-opus-5-5": 85.14,
+  "claude-fable-5": 13.6
+ },
+ "tool_result_lifetime_usd_by_category": {
+  "Bash: sed": {
+   "usd": 53.69,
+   "pct_of_total": 13.2,
+   "results": 2079,
+   "avg_tokens": 1966
+  },
+  "Bash: grep": {
+   "usd": 41.1,
+   "pct_of_total": 10.1,
+   "results": 2210,
+   "avg_tokens": 1381
+  },
+  "Bash: other": {
+   "usd": 39.78,
+   "pct_of_total": 9.7,
+   "results": 2197,
+   "avg_tokens": 1170
+  },
+  "Bash: cat": {
+   "usd": 20.33,
+   "pct_of_total": 5.0,
+   "results": 833,
+   "avg_tokens": 1925
+  },
+  "Write": {
+   "usd": 9.29,
+   "pct_of_total": 2.3,
+   "results": 326,
+   "avg_tokens": 2487
+  },
+  "Bash: python": {
+   "usd": 8.66,
+   "pct_of_total": 2.1,
+   "results": 547,
+   "avg_tokens": 1254
+  },
+  "Bash: git pull": {
+   "usd": 7.94,
+   "pct_of_total": 1.9,
+   "results": 148,
+   "avg_tokens": 3150
+  },
+  "Edit": {
+   "usd": 7.35,
+   "pct_of_total": 1.8,
+   "results": 565,
+   "avg_tokens": 598
+  },
+  "Bash: git status": {
+   "usd": 7.09,
+   "pct_of_total": 1.7,
+   "results": 290,
+   "avg_tokens": 1680
+  },
+  "Bash: ls": {
+   "usd": 5.06,
+   "pct_of_total": 1.2,
+   "results": 314,
+   "avg_tokens": 1088
+  },
+  "Read: *.py": {
+   "usd": 3.94,
+   "pct_of_total": 1.0,
+   "results": 18,
+   "avg_tokens": 3175
+  },
+  "Read: *.rs": {
+   "usd": 3.25,
+   "pct_of_total": 0.8,
+   "results": 60,
+   "avg_tokens": 3473
+  },
+  "Bash: git show": {
+   "usd": 2.99,
+   "pct_of_total": 0.7,
+   "results": 143,
+   "avg_tokens": 1723
+  },
+  "Bash: wc": {
+   "usd": 2.9,
+   "pct_of_total": 0.7,
+   "results": 137,
+   "avg_tokens": 1298
+  },
+  "Bash: git log": {
+   "usd": 2.83,
+   "pct_of_total": 0.7,
+   "results": 141,
+   "avg_tokens": 1199
+  },
+  "Bash: git fetch": {
+   "usd": 2.48,
+   "pct_of_total": 0.6,
+   "results": 153,
+   "avg_tokens": 1067
+  },
+  "Bash: git diff": {
+   "usd": 2.18,
+   "pct_of_total": 0.5,
+   "results": 128,
+   "avg_tokens": 1100
+  },
+  "Bash: git checkout": {
+   "usd": 1.89,
+   "pct_of_total": 0.5,
+   "results": 117,
+   "avg_tokens": 992
+  },
+  "Bash: git branch": {
+   "usd": 1.84,
+   "pct_of_total": 0.5,
+   "results": 107,
+   "avg_tokens": 1043
+  },
+  "Bash: head": {
+   "usd": 1.72,
+   "pct_of_total": 0.4,
+   "results": 81,
+   "avg_tokens": 1362
+  },
+  "Agent": {
+   "usd": 1.54,
+   "pct_of_total": 0.4,
+   "results": 11,
+   "avg_tokens": 3118
+  },
+  "Bash: tail": {
+   "usd": 1.25,
+   "pct_of_total": 0.3,
+   "results": 95,
+   "avg_tokens": 959
+  },
+  "Bash: git worktree": {
+   "usd": 1.06,
+   "pct_of_total": 0.3,
+   "results": 58,
+   "avg_tokens": 1055
+  },
+  "Bash: git add": {
+   "usd": 1.05,
+   "pct_of_total": 0.3,
+   "results": 132,
+   "avg_tokens": 1014
+  },
+  "Read: *.png": {
+   "usd": 1.0,
+   "pct_of_total": 0.2,
+   "results": 74,
+   "avg_tokens": 1010
+  }
+ },
+ "most_expensive_single_results": [
+  {
+   "usd": 10.96,
+   "tokens": 311410,
+   "reread_by_calls": 68,
+   "category": "Bash: other",
+   "what": "sleep 580; echo ok",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4.jsonl"
+  },
+  {
+   "usd": 0.87,
+   "tokens": 117882,
+   "reread_by_calls": 17,
+   "category": "Bash: other",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser/.claude/worktrees/p6-work && (cargo clippy -p lumen-chrome -p lumen-shell --all",
+   "file": "749fd1d1-268b-40e7-97d5-7db0aae791a9.jsonl"
+  },
+  {
+   "usd": 0.85,
+   "tokens": 7752,
+   "reread_by_calls": 254,
+   "category": "Read: *.py",
+   "what": "C:/kostja/Rust_Projects/Lumen_browser/scripts/quality_report.py",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4.jsonl"
+  },
+  {
+   "usd": 0.61,
+   "tokens": 126226,
+   "reread_by_calls": 4,
+   "category": "Bash: other",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser && sleep 570; cat .tmp/ab2.log",
+   "file": "55573e77-b612-4a36-8d9a-9370d76c8066.jsonl"
+  },
+  {
+   "usd": 0.61,
+   "tokens": 34366,
+   "reread_by_calls": 69,
+   "category": "Bash: git pull",
+   "what": "cd C:/kostja/Rust_Projects/Lumen_browser && git pull origin main -q 2>&1 | tail -n 3; head -c 1500 STATUS-P1.md; git sta",
+   "file": "cef03ad0-9c11-4574-97ed-c53547106c3d.jsonl"
+  },
+  {
+   "usd": 0.57,
+   "tokens": 5202,
+   "reread_by_calls": 254,
+   "category": "Read: *.py",
+   "what": "C:/kostja/Rust_Projects/Lumen_browser/scripts/quality_report.py",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4.jsonl"
+  },
+  {
+   "usd": 0.54,
+   "tokens": 15114,
+   "reread_by_calls": 70,
+   "category": "Read: *.py",
+   "what": "C:/kostja/Rust_Projects/Lumen_browser/scripts/geom_diff.py",
+   "file": "86d752c2-0469-4740-8b11-d3345ef6f02b.jsonl"
+  },
+  {
+   "usd": 0.53,
+   "tokens": 5027,
+   "reread_by_calls": 246,
+   "category": "Read: *.py",
+   "what": "C:/kostja/Rust_Projects/Lumen_browser/scripts/test_quality_report.py",
+   "file": "7f161dc2-4068-4078-8177-e0837aae05f4.jsonl"
+  }
+ ]
+}

@@ -31,6 +31,8 @@ Sessions over 100 calls were 21% of sessions but 55% of spend. Therefore:
 - **Keep tool output small.** Cap every command: `| head -n 50`, `| tail -n 30`, `grep -c`, `grep -m 20`,
   `git pull -q`, `git log --oneline -n 20`, `git diff --stat`. Send long build/test output to a log file and
   print only the summary, e.g. `cargo test > .tmp/t.log 2>&1; grep -E "test result|FAILED|error\[" .tmp/t.log | head -n 40`.
+  Cap line width too: 16 lines of a markdown table measured 6,600 tokens — add `| cut -c1-300` to `grep`/`sed`/`cat`
+  over `.md` files and logs.
 - **Do not read large files whole.** For files over ~400 lines: `grep -n` first, then Read with `offset`/`limit`.
 - **Do not re-read** a file or re-run a command whose output is already in the conversation.
 - **Batch independent commands** into one Bash call (`;` / `&&`) instead of one call each.
@@ -39,7 +41,13 @@ Sessions over 100 calls were 21% of sessions but 55% of spend. Therefore:
 - **Keep sessions short**: when a task is done, finish instead of continuing into an unrelated task. For long
   tasks, write a handoff note (done / next / branch) where the project keeps task state and end the session
   rather than running past ~100 tool calls.
-- **No long sleeps followed by dumping a whole log**: poll with `grep`/`tail` on the log.
+- **Wait for a long command in one blocking call, never by polling.** Every `sleep 60; tail log` call re-reads
+  the whole conversation (Lumen, 14-23.10.2026: 540 such polls, ~12% of spend), and a subagent's prompt cache
+  expires after 5 idle minutes and is rebuilt. Run the command in the foreground with a long `timeout`
+  (up to 600000 ms), or block on its log in one call:
+  `timeout 590 bash -c 'until grep -qE "Finished|error" .tmp/b.log; do sleep 10; done'; tail -n 20 .tmp/b.log`.
+  In an interactive session `run_in_background` plus the completion notice costs nothing while waiting.
+  Do not give a subagent work that has to wait for a build or a test run.
 
 ## Multi-step data work: write one script
 

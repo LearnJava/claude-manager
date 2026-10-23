@@ -82,6 +82,9 @@ M=docs/Science_lab/claude-code-setup/tools/measure/measure.py
 | 2026-10-13 | `handoff_context_tokens = 150000` — включено у автономных сессий: Lumen S1–S6, claude-manager «Developer 1» (интерактивные Chat его не используют — так задумано) | claude-manager `8d68b90`; `<проект>/.claude-manager/config.toml` | затраты в сессиях >100 вызовов ↓, контекст на вызов ↓, p90 вызовов ≤ ~100 |
 | 2026-10-13 | Вкладка «Стоимость по инструментам»: цена с перечитыванием и разбивка по длине сессии (LN-29) | claude-manager `af310cb` | не метрика, а инструмент: те же показатели прямо в приложении |
 | 2026-10-15 | `measure.py snapshot` читает и транскрипты worktree (`<проект>--claude-worktrees-*`): с 13.10 сессии работают в worktree, и без этого срез «после» терял ~95% работы. На «до» не влияет (до 13.10 таких папок нет, пересчёт даёт те же 57 сессий и $168.70) | `claude-code-setup/tools/measure/measure.py` | не метрика — исправление замера |
+| 2026-10-23 | Срез «после» за 14–23.10 снят (`measurements/2026-10-23-after-*`). Разбор транскриптов: срез не считает субагентов (Lumen $408 вместо $504), «git pull» раздут составными командами, 540 опросов `sleep` (~12% затрат Lumen), 99 перестроек 5-минутного кэша у субагентов на opus. Исправления — `COST-TASKS.md` (COST-01..04) | `measurements/2026-10-23-after-*` | — |
+| 2026-10-23 | Kit: правило «Wait for a long command in one blocking call, never by polling» вместо «poll with grep/tail» и `\| cut -c1-300` для `.md` и логов | `~/.claude/CLAUDE.md`, `claude-code-setup/templates/CLAUDE.section.md` | опросы sleep ↓, перестройки кэша ↓, grep / sed / cat — ср. токенов ↓ |
+| 2026-10-23 | Lumen: `CLAUDE_CODE_SUBAGENT_MODEL = sonnet` в `.claude/settings.json` | Lumen `73a173e58` | $ субагентов ↓, $ на вызов ↓ |
 
 Новое изменение — новая строка с датой, с которой оно действует.
 
