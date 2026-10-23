@@ -255,6 +255,9 @@ path = 'D:\RustProjects\lumen-browser'
   # 23% of sessions and 56% of spend (docs/Science_lab/MEASURE.md). In Lumen
   # 150000 is reached by a third of sessions, at about their 78th call;
   # 120000 by more than half, at about the 56th. 0 = off (prompt unchanged).
+  # In an interactive run (Chat, a queue session started with an empty queue)
+  # nothing is sent to the agent: at the end of a turn over the budget the
+  # user gets a question to compact, restart with a recap or continue.
   handoff_context_tokens = 0
 
   # Runtime (HERMES-TASKS.md): "claude" (default) or "hermes". A hermes
