@@ -1,38 +1,38 @@
 [
  {
   "calls": "1-20",
-  "sessions": 22,
-  "usd_total": 6.4,
-  "pct_of_spend": 6.5,
-  "usd_per_session": 0.29,
-  "usd_per_call": 0.0388,
-  "avg_context_tokens_per_call": 42967
+  "sessions": 24,
+  "usd_total": 7.2,
+  "pct_of_spend": 6.7,
+  "usd_per_session": 0.3,
+  "usd_per_call": 0.0349,
+  "avg_context_tokens_per_call": 44107
  },
  {
   "calls": "21-50",
-  "sessions": 32,
-  "usd_total": 47.0,
-  "pct_of_spend": 48.1,
-  "usd_per_session": 1.47,
-  "usd_per_call": 0.0405,
-  "avg_context_tokens_per_call": 63444
+  "sessions": 33,
+  "usd_total": 49.6,
+  "pct_of_spend": 46.6,
+  "usd_per_session": 1.5,
+  "usd_per_call": 0.0419,
+  "avg_context_tokens_per_call": 63198
  },
  {
   "calls": "51-100",
-  "sessions": 6,
-  "usd_total": 19.7,
-  "pct_of_spend": 20.1,
-  "usd_per_session": 3.28,
-  "usd_per_call": 0.0485,
-  "avg_context_tokens_per_call": 76629
+  "sessions": 7,
+  "usd_total": 24.7,
+  "pct_of_spend": 23.3,
+  "usd_per_session": 3.53,
+  "usd_per_call": 0.0524,
+  "avg_context_tokens_per_call": 79266
  },
  {
   "calls": "101-150",
   "sessions": 2,
-  "usd_total": 24.6,
-  "pct_of_spend": 25.2,
-  "usd_per_session": 12.29,
-  "usd_per_call": 0.0907,
+  "usd_total": 24.8,
+  "pct_of_spend": 23.4,
+  "usd_per_session": 12.41,
+  "usd_per_call": 0.0916,
   "avg_context_tokens_per_call": 152472
  }
 ]

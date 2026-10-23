@@ -31,10 +31,18 @@ def price(model):
     return PRICES.get(m)
 
 
+def is_compound(cmd):
+    """More than one command: `;`, `&&`, `||` or a newline outside quotes (a pipe `|` is not a separator)."""
+    bare = re.sub(r'"(?:\\.|[^"\\])*"' + r"|'[^']*'", '""', cmd)
+    return bool(re.search(r";|&&|\|\||\n", bare.strip()))
+
+
 def category(name, inp):
     if name == "Bash":
         cmd = (inp or {}).get("command", "").strip()
         cmd = re.sub(r"^(cd\s+\S+\s*(&&|;)\s*)+", "", cmd)
+        if is_compound(cmd):
+            return "Bash: составная"
         cmd = re.sub(r"^(export\s+\S+\s*(&&|;)\s*)+", "", cmd)
         first = cmd.split()[0].rsplit("/", 1)[-1].lower() if cmd.split() else "?"
         if first in ("cargo",):
@@ -77,7 +85,7 @@ def result_chars(content):
 def main():
     root = Path(sys.argv[1])
     out_path = Path(sys.argv[2])
-    files = sorted(root.glob("*.jsonl"))
+    files = sorted(root.glob("*.jsonl"))  # top-level and `<session>__sub__<agent>.jsonl` subagents
     comp = collections.Counter()           # USD by component
     comp_tok = collections.Counter()
     by_model = collections.Counter()
@@ -166,7 +174,8 @@ def main():
             s_cost += life
             if life > 0.5:
                 top_items.append((round(life, 2), int(tok), remaining, cat, desc, f.name))
-        sessions.append((n, f.name))
+        if "__sub__" not in f.name:
+            sessions.append((n, f.name))
     total = sum(comp.values())
     top_items.sort(reverse=True)
     sess_calls = sorted(n for n, _ in sessions)
@@ -184,7 +193,7 @@ def main():
         "tool_result_lifetime_usd_by_category": {
             k: {"usd": round(v, 2), "pct_of_total": round(100 * v / total, 1), "results": cat_n[k],
                 "avg_tokens": int(cat_tok[k] / max(cat_n[k], 1))}
-            for k, v in cat_cost.most_common(25)},
+            for k, v in cat_cost.most_common()},
         "most_expensive_single_results": [
             {"usd": a, "tokens": b, "reread_by_calls": c, "category": d, "what": e, "file": f}
             for a, b, c, d, e, f in top_items[:25]],

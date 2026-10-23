@@ -4,189 +4,203 @@
  "transcripts": "C:\\Users\\konstantin\\.claude\\projects\\C--kostja-GoProjects-claude-manager",
  "window": {
   "since": "2026-10-14",
-  "until": null,
+  "until": "2026-10-24",
   "first": "2026-10-14",
   "last": "2026-10-23"
  },
- "generated": "2026-10-23T13:25:58",
- "sessions": 62,
- "sessions_manager": 62,
- "api_calls": 1999,
- "usd_total": 97.59,
- "kit_total_usd": 97.59,
- "usd_per_session_median": 0.99,
+ "generated": "2026-10-23T14:51:02",
+ "sessions": 66,
+ "sessions_manager": 66,
+ "api_calls": 2211,
+ "usd_total": 106.26,
+ "kit_total_usd": 106.26,
+ "usd_per_session_median": 0.98,
  "usd_per_session_mean": 1.57,
- "usd_per_call": 0.0488,
- "avg_ctx_per_call": 76505,
+ "usd_per_call": 0.0481,
+ "avg_ctx_per_call": 75287,
  "calls_per_session": {
-  "median": 31,
-  "p90": 59,
+  "median": 30,
+  "p90": 61,
   "max": 137
  },
  "long_sessions": 2,
- "long_sessions_pct": 3.2,
- "long_spend_pct": 25.2,
+ "long_sessions_pct": 3.0,
+ "long_spend_pct": 23.7,
+ "subagents": {
+  "transcripts": 4,
+  "calls": 80,
+  "usd": 2.72
+ },
+ "usd_subagents_pct": 2.6,
+ "sleep_polls": {
+  "count": 15,
+  "hours": 0.4,
+  "usd": 0.61
+ },
+ "cache_rebuilds": {
+  "count": 4,
+  "usd": 2.41
+ },
+ "cache_write_M": {
+  "5m": 0.2,
+  "1h": 4.7
+ },
  "pct_by_component": {
   "cache_read": 52.0,
-  "cache_write": 28.6,
-  "output": 19.4,
+  "cache_write": 28.8,
+  "output": 19.2,
   "input": 0.0
  },
  "watch": {
-  "Bash: git pull": {
-   "usd": 0.23,
-   "pct_of_total": 0.2,
-   "results": 22,
-   "avg_tokens": 1291
-  },
+  "Bash: git pull": null,
   "Bash: grep": {
-   "usd": 7.44,
-   "pct_of_total": 7.6,
-   "results": 394,
-   "avg_tokens": 1104
+   "usd": 1.76,
+   "pct_of_total": 1.7,
+   "results": 112,
+   "avg_tokens": 923
   },
   "Bash: sed": {
-   "usd": 9.91,
-   "pct_of_total": 10.2,
-   "results": 392,
-   "avg_tokens": 1503
+   "usd": 1.93,
+   "pct_of_total": 1.8,
+   "results": 82,
+   "avg_tokens": 1303
   },
   "Bash: cat": {
-   "usd": 4.5,
-   "pct_of_total": 4.6,
-   "results": 139,
-   "avg_tokens": 2121
+   "usd": 0.26,
+   "pct_of_total": 0.2,
+   "results": 12,
+   "avg_tokens": 1850
   },
   "Read: *.md": {
-   "usd": 0.42,
-   "pct_of_total": 0.4,
-   "results": 15,
-   "avg_tokens": 2422
+   "usd": 0.51,
+   "pct_of_total": 0.5,
+   "results": 20,
+   "avg_tokens": 2402
   },
   "Read: *.rs": null,
   "Read: *.go": {
-   "usd": 0.74,
+   "usd": 0.87,
    "pct_of_total": 0.8,
-   "results": 35,
-   "avg_tokens": 1324
+   "results": 47,
+   "avg_tokens": 1248
   },
   "Bash: python": {
-   "usd": 0.87,
-   "pct_of_total": 0.9,
-   "results": 52,
-   "avg_tokens": 1685
+   "usd": 0.01,
+   "pct_of_total": 0.0,
+   "results": 1,
+   "avg_tokens": 516
   }
  },
  "top_categories": {
-  "Bash: sed": {
-   "usd": 9.91,
-   "pct_of_total": 10.2,
-   "results": 392,
-   "avg_tokens": 1503
-  },
-  "Bash: other": {
-   "usd": 9.72,
-   "pct_of_total": 10.0,
-   "results": 360,
-   "avg_tokens": 1261
-  },
-  "Bash: grep": {
-   "usd": 7.44,
-   "pct_of_total": 7.6,
-   "results": 394,
-   "avg_tokens": 1104
-  },
-  "Bash: cat": {
-   "usd": 4.5,
-   "pct_of_total": 4.6,
-   "results": 139,
-   "avg_tokens": 2121
+  "Bash: составная": {
+   "usd": 36.43,
+   "pct_of_total": 34.3,
+   "results": 1590,
+   "avg_tokens": 1369
   },
   "Write": {
-   "usd": 2.45,
-   "pct_of_total": 2.5,
-   "results": 44,
-   "avg_tokens": 2735
+   "usd": 2.79,
+   "pct_of_total": 2.6,
+   "results": 52,
+   "avg_tokens": 2712
   },
-  "Bash: ls": {
-   "usd": 1.95,
-   "pct_of_total": 2.0,
-   "results": 81,
-   "avg_tokens": 1189
+  "Bash: sed": {
+   "usd": 1.93,
+   "pct_of_total": 1.8,
+   "results": 82,
+   "avg_tokens": 1303
+  },
+  "Bash: grep": {
+   "usd": 1.76,
+   "pct_of_total": 1.7,
+   "results": 112,
+   "avg_tokens": 923
   },
   "Edit": {
-   "usd": 1.02,
+   "usd": 1.1,
    "pct_of_total": 1.0,
-   "results": 96,
-   "avg_tokens": 511
+   "results": 105,
+   "avg_tokens": 516
   },
   "Grep": {
-   "usd": 0.96,
+   "usd": 1.07,
    "pct_of_total": 1.0,
-   "results": 50,
-   "avg_tokens": 1003
-  },
-  "Bash: python": {
-   "usd": 0.87,
-   "pct_of_total": 0.9,
-   "results": 52,
-   "avg_tokens": 1685
+   "results": 68,
+   "avg_tokens": 911
   },
   "Read: *.go": {
-   "usd": 0.74,
+   "usd": 0.87,
    "pct_of_total": 0.8,
-   "results": 35,
-   "avg_tokens": 1324
+   "results": 47,
+   "avg_tokens": 1248
+  },
+  "Bash: other": {
+   "usd": 0.86,
+   "pct_of_total": 0.8,
+   "results": 29,
+   "avg_tokens": 1169
+  },
+  "Read: *.md": {
+   "usd": 0.51,
+   "pct_of_total": 0.5,
+   "results": 20,
+   "avg_tokens": 2402
+  },
+  "Bash: awk": {
+   "usd": 0.28,
+   "pct_of_total": 0.3,
+   "results": 1,
+   "avg_tokens": 4567
   }
  },
  "by_length": [
   {
    "calls": "1-20",
-   "sessions": 22,
-   "usd_total": 6.4,
-   "pct_of_spend": 6.5,
-   "usd_per_session": 0.29,
-   "usd_per_call": 0.0388,
-   "avg_context_tokens_per_call": 42967
+   "sessions": 24,
+   "usd_total": 7.2,
+   "pct_of_spend": 6.7,
+   "usd_per_session": 0.3,
+   "usd_per_call": 0.0349,
+   "avg_context_tokens_per_call": 44107
   },
   {
    "calls": "21-50",
-   "sessions": 32,
-   "usd_total": 47.0,
-   "pct_of_spend": 48.1,
-   "usd_per_session": 1.47,
-   "usd_per_call": 0.0405,
-   "avg_context_tokens_per_call": 63444
+   "sessions": 33,
+   "usd_total": 49.6,
+   "pct_of_spend": 46.6,
+   "usd_per_session": 1.5,
+   "usd_per_call": 0.0419,
+   "avg_context_tokens_per_call": 63198
   },
   {
    "calls": "51-100",
-   "sessions": 6,
-   "usd_total": 19.7,
-   "pct_of_spend": 20.1,
-   "usd_per_session": 3.28,
-   "usd_per_call": 0.0485,
-   "avg_context_tokens_per_call": 76629
+   "sessions": 7,
+   "usd_total": 24.7,
+   "pct_of_spend": 23.3,
+   "usd_per_session": 3.53,
+   "usd_per_call": 0.0524,
+   "avg_context_tokens_per_call": 79266
   },
   {
    "calls": "101-150",
    "sessions": 2,
-   "usd_total": 24.6,
-   "pct_of_spend": 25.2,
-   "usd_per_session": 12.29,
-   "usd_per_call": 0.0907,
+   "usd_total": 24.8,
+   "pct_of_spend": 23.4,
+   "usd_per_session": 12.41,
+   "usd_per_call": 0.0916,
    "avg_context_tokens_per_call": 152472
   }
  ],
  "garbled": {
   "прочие команды": {
-   "runs": 1440,
-   "garbled": 2,
-   "pct": 0.1
+   "runs": 1531,
+   "garbled": 4,
+   "pct": 0.3
   },
   "python": {
-   "runs": 215,
+   "runs": 232,
    "garbled": 9,
-   "pct": 4.2
+   "pct": 3.9
   },
   "powershell из Bash": {
    "runs": 11,
@@ -199,25 +213,25 @@
    "pct": 0.0
   },
   "все команды": {
-   "runs": 1674,
-   "garbled": 11,
+   "runs": 1782,
+   "garbled": 13,
    "pct": 0.7
   }
  },
  "roles": {
   "Chat": {
    "sessions": 36,
-   "calls": 1410,
-   "usd": 80.79,
-   "long_spend_pct": 30.4,
-   "avg_ctx_per_call": 81024
+   "calls": 1471,
+   "usd": 85.08,
+   "long_spend_pct": 28.9,
+   "avg_ctx_per_call": 81841
   },
   "Developer 1": {
-   "sessions": 21,
-   "calls": 581,
-   "usd": 15.96,
+   "sessions": 25,
+   "calls": 652,
+   "usd": 17.62,
    "long_spend_pct": 0.0,
-   "avg_ctx_per_call": 66126
+   "avg_ctx_per_call": 64234
   },
   "(без имени)": {
    "sessions": 5,
@@ -229,12 +243,12 @@
  },
  "manager": {
   "project": "Claude session manager hermes",
-  "runs": 56,
-  "tasks_done": 47,
+  "runs": 60,
+  "tasks_done": 53,
   "statuses": {
-   "stopped": 31,
+   "stopped": 32,
    "running": 5,
-   "completed": 17,
+   "completed": 20,
    "error": 2,
    "slice": 1
   },
@@ -244,10 +258,10 @@
     "tasks_done": 1
    },
    "Developer 1": {
-    "runs": 18,
-    "tasks_done": 46
+    "runs": 22,
+    "tasks_done": 52
    }
   }
  },
- "usd_per_task": 2.08
+ "usd_per_task": 1.95
 }
