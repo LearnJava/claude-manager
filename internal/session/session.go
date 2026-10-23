@@ -436,6 +436,12 @@ type Session struct {
 	handoffCalls   int
 	handoffLastCtx int
 
+	// Interactive context-budget question (checkInteractiveBudget), per
+	// process, protected by mu: whether the user was asked, and the context
+	// size that asks again.
+	budgetAsked bool
+	budgetNext  int
+
 	// lastCallUsage is the usage of the latest assistant message of the
 	// current turn (nil before the first), protected by mu: the context fill
 	// checkContextRestart measures, since result.usage sums every call.
@@ -1552,6 +1558,7 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	// A fresh process gets a fresh handoff tag (buildCLIArgs mints it).
 	s.mu.Lock()
 	s.handoffTag, s.handoffNotes, s.handoffCalls, s.handoffLastCtx = "", 0, 0, 0
+	s.budgetAsked, s.budgetNext = false, 0
 	s.mu.Unlock()
 
 	s.emitRunStartLog("Готовлю промпт…")
@@ -2033,7 +2040,12 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 				s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
 				return true
 			}
-			s.checkContextRestart(ev.Result, autonomous)
+			s.mu.Lock()
+			lastCall := s.lastCallUsage
+			s.mu.Unlock()
+			if !s.checkContextRestart(ev.Result, autonomous) {
+				s.checkInteractiveBudget(lastCall, autonomous)
+			}
 			s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
 		}
 		return true
@@ -2088,9 +2100,9 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 // "resume" and "ask" need a live process waiting for the next human turn, so
 // an autonomous run (whose process ends with the turn anyway) and a
 // per-turn-process runtime (Hermes) always take the "fresh" path.
-func (s *Session) checkContextRestart(res *SessionResult, autonomous bool) {
+func (s *Session) checkContextRestart(res *SessionResult, autonomous bool) (asked bool) {
 	if !s.Config.ContextHandoff || res == nil || s.contextMonitor == nil {
-		return
+		return false
 	}
 	var window int
 	for _, mu := range res.ModelUsage {
@@ -2100,7 +2112,7 @@ func (s *Session) checkContextRestart(res *SessionResult, autonomous bool) {
 		}
 	}
 	if window <= 0 {
-		return
+		return false
 	}
 	s.contextMonitor.SetContextWindow(window)
 	// The turn's context fill is its last model call; result.usage is the sum
@@ -2122,11 +2134,11 @@ func (s *Session) checkContextRestart(res *SessionResult, autonomous bool) {
 		if s.contextMonitor.RearmBelow(usage) {
 			s.contextRearm.Store(false)
 		}
-		return
+		return false
 	}
 	ev := s.contextMonitor.Observe(usage)
 	if ev.Type != optimization.ContextEventRestart {
-		return
+		return false
 	}
 
 	mode := ev.RestartMode
@@ -2142,6 +2154,7 @@ func (s *Session) checkContextRestart(res *SessionResult, autonomous bool) {
 	default:
 		s.restartWithHandoff(ev.Utilization)
 	}
+	return true
 }
 
 // contextRestartOptions are the answers of the "ask" question, in order:
@@ -2158,13 +2171,18 @@ var contextRestartOptions = []string{
 // model as usual and counts as "continue". Either way of continuing leaves
 // the monitor fired, so this conversation is not asked again.
 func (s *Session) askContextRestart(util float64) {
+	s.askContextQuestion(util, fmt.Sprintf(
+		"Context usage reached %.0f%%. Every further turn re-reads the whole conversation. What should the manager do?",
+		util*100,
+	))
+}
+
+// askContextQuestion is askContextRestart with the question text given.
+func (s *Session) askContextQuestion(util float64, question string) {
 	pq := &PendingQuestion{
-		ID: uuid.NewString(),
-		Question: fmt.Sprintf(
-			"Context usage reached %.0f%%. Every further turn re-reads the whole conversation. What should the manager do?",
-			util*100,
-		),
-		Options: contextRestartOptions,
+		ID:       uuid.NewString(),
+		Question: question,
+		Options:  contextRestartOptions,
 		AskedAt: time.Now(),
 	}
 	pq.onAnswer = func(answer string) error {

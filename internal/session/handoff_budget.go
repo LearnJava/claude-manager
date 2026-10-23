@@ -115,3 +115,34 @@ func (s *Session) checkHandoffBudget(u TokenUsage, autonomous bool) {
 			"off to a fresh session (note %d of %d)", ctxTokens, budget, n, handoffMaxNotes),
 	}})
 }
+
+// checkInteractiveBudget is the interactive counterpart of checkHandoffBudget
+// (COST-03): at the end of a turn of a non-autonomous Claude run whose last
+// model call carried at least Config.HandoffContextTokens, the user is asked
+// (askContextQuestion) whether to compact, restart with a recap or go on.
+// The agent is told nothing — the user decides. Asked once per process; after
+// "continue" it asks again only when the context has grown by half a budget.
+// last is the usage of the turn's last model call (nil: nothing to judge).
+func (s *Session) checkInteractiveBudget(last *TokenUsage, autonomous bool) {
+	budget := s.Config.HandoffContextTokens
+	if budget <= 0 || autonomous || last == nil || s.runtime.PerTurnProcess() {
+		return
+	}
+	ctxTokens := last.InputTokens + last.CacheReadInputTokens + last.CacheCreationInputTokens
+	s.mu.Lock()
+	threshold := budget
+	if s.budgetAsked {
+		threshold = s.budgetNext
+	}
+	if ctxTokens < threshold || s.pendingQuestion != nil {
+		s.mu.Unlock()
+		return
+	}
+	s.budgetAsked = true
+	s.budgetNext = ctxTokens + budget/2
+	s.mu.Unlock()
+	logger.L.Info("session.handoff_budget.ask", "id", s.ID, "context", ctxTokens, "budget", budget)
+	s.askContextQuestion(0, fmt.Sprintf(
+		"The last model call sent %dk tokens of context (budget %dk) — every further turn re-reads all of it. What should the manager do?",
+		ctxTokens/1000, budget/1000))
+}

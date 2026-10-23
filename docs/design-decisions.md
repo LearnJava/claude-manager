@@ -1676,8 +1676,9 @@ tokens in short sessions to ~231k in the longest, and every call re-reads it.
 
 **Flag:** `SessionConfig.HandoffContextTokens` (`handoff_context_tokens`,
 0 = off — prompt byte-identical, nothing written to stdin). Autonomous Claude
-runs only: an interactive session has no slice to hand off, and Hermes runs
-one process per turn with no mid-turn stdin.
+runs only for the note: an interactive session has no slice to hand off (see
+"Interactive run" below), and Hermes runs one process per turn with no
+mid-turn stdin.
 
 **Trigger** (`checkHandoffBudget`, `internal/session/handoff_budget.go`):
 every `assistant` line's `usage` (input + cache read + cache creation = the
@@ -1711,6 +1712,16 @@ developer protocol's "an existing `p<N>-…` branch is your interrupted task"
 rule makes it continue from the note. Nothing is killed: an agent that
 finishes the task instead simply closes it. Each note is a `system` entry
 in the session feed and a `session.handoff_budget.note` line in the app log.
+
+**Interactive run (COST-03).** A non-autonomous Claude run gets no note — the
+user decides. At the end of a turn (`checkInteractiveBudget`), if the turn's
+last model call (CTX-01's `lastCallUsage`) carried at least the budget, the
+existing `askContextQuestion` asks: compact / restart with a recap / continue,
+worded in tokens ("160k tokens, budget 150k"). Independent of
+`context_handoff` and `context_restart_mode`; skipped when `checkContextRestart`
+asked in the same turn. Once per process; after "continue" it asks again only
+when the context has grown by half a budget (150k → 225k). A new process
+resets it. Nothing reaches the agent's prompt or stdin.
 
 Covered by `internal/session/handoff_budget_test.go` (off = byte-identical
 prompt and no input, the per-run tag, one note per crossing call, the
