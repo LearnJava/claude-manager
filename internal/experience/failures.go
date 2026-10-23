@@ -31,6 +31,9 @@ type FixPair struct {
 	// FailedArg is the command/arg that failed (source A: the failed gate's
 	// own command; source B: the failing call's arg).
 	FailedArg string
+	// Sig is the failed call's action signature (source B only; empty for
+	// source A) — how a cluster is tied to a SkillCandidate (relateFailures).
+	Sig string
 	// FixedArg is what worked instead (source A: the files the next round's
 	// patches touched; source B: the retried call's arg) — the diff between
 	// FailedArg and FixedArg is the rule.
@@ -159,6 +162,7 @@ func ExtractFromRun(rows []store.ActionRow, runKey string) []FixPair {
 			pairs = append(pairs, FixPair{
 				RunKey:    runKey,
 				FailedArg: r.Arg,
+				Sig:       r.Sig,
 				FixedArg:  rows[j].Arg,
 			})
 			break

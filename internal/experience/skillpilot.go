@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -559,8 +560,22 @@ func SkillDistillInputFromCandidate(c SkillCandidate, gates []string) analysis.S
 		Sig:   append([]string(nil), c.Sig...),
 		Gates: append([]string(nil), gates...),
 	}
-	for _, s := range c.Samples {
-		in.Samples = append(in.Samples, analysis.SkillSample{Command: s.Arg})
+	if len(c.Occurrences) > 0 {
+		for _, occ := range c.Occurrences {
+			lines := make([]string, 0, len(occ))
+			for _, r := range occ {
+				if r.Tool == "Bash" {
+					lines = append(lines, r.Arg)
+				} else {
+					lines = append(lines, r.Tool+" "+r.Arg)
+				}
+			}
+			in.Samples = append(in.Samples, analysis.SkillSample{Command: strings.Join(lines, "\n")})
+		}
+	} else {
+		for _, s := range c.Samples {
+			in.Samples = append(in.Samples, analysis.SkillSample{Command: s.Arg})
+		}
 	}
 	for _, f := range c.RelatedFailures {
 		if len(f.Examples) == 0 {
