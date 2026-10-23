@@ -1954,8 +1954,10 @@ would "wait for the automatic notification", ended its turn, got killed,
 and the next auto-restart iteration inherited a crash-recovery prompt and
 repeated the same dead-end pattern — no test run ever completed. The prompt
 tells the model to either run the command in the foreground within the
-current turn (picking a timeout that fits, polling its output file itself
-with short waits if needed) or, if it genuinely can't finish in one turn,
+current turn and wait for it in one blocking call (a large Bash `timeout`, or
+`timeout 590 bash -c 'until grep -q … <log>; do sleep 10; done'`) — never in
+`sleep N; cat log` polls, since every poll re-reads the whole conversation
+(Lumen 14–23.10.2026: 540 polls, ~12% of spend) — or, if it genuinely can't finish in one turn,
 persist progress to a file the *next* session can pick up — never end a
 turn assuming background work will still be running or will be reported
 back later.

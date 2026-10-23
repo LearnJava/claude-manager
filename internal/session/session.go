@@ -419,11 +419,11 @@ type Session struct {
 	// pendingWorkDirNote tells the next prompt that the work folder changed
 	// (see workDirSwitchNote; protected by mu; consumed by initialPromptText).
 	pendingWorkDirNote string
-	startW          *startWatch // narrates CLI start-up until the init event
+	startW             *startWatch // narrates CLI start-up until the init event
 
-	pythonUTF8   bool // see Params.PythonUTF8
-	commandGuard bool // see Params.CommandGuard
-	envCard      bool // see Params.EnvCard
+	pythonUTF8   bool   // see Params.PythonUTF8
+	commandGuard bool   // see Params.CommandGuard
+	envCard      bool   // see Params.EnvCard
 	managerCard  string // see Params.ManagerCard
 
 	// Context-budget handoff (Config.HandoffContextTokens, see
@@ -2545,20 +2545,28 @@ const askUserInteractivePrompt = "When you need a decision from the user, end yo
 // Bash command is a child of this same process, so it is killed with it too.
 // Never launch a long-running command in the background and end your turn
 // waiting for its completion to be reported to you later — it never will be.
-// Instead, either run it in the foreground within this turn (pick a timeout
-// that comfortably fits, and poll its output file yourself with short waits
-// if you must), or, if it truly cannot finish within one turn, write its
-// progress to a file your NEXT session (a fresh process) can read and resume
-// from — do not end this turn assuming anything you started in the
-// background will still be running, or that you'll be told when it's done.
+// Instead, wait for it in ONE blocking call within this turn: run it in the
+// foreground with a large Bash `timeout` (up to 600000 ms), or, if it writes a
+// log, block on the log in a single call (`timeout 590 bash -c 'until grep -qE
+// "Finished|error" <log>; do sleep 10; done'; tail -n 20 <log>`). Never poll
+// with `sleep N; cat log` in a loop: every model call re-reads the whole
+// conversation, so polling is the most expensive way to wait (measured on
+// Lumen 14-23.10.2026: 540 polls, ~12% of spend). If it truly cannot finish
+// within one turn, write its progress to a file your NEXT session (a fresh
+// process) can read and resume from — do not end this turn assuming anything
+// you started in the background will still be running, or that you'll be told
+// when it's done.
 const backgroundTaskWarningPrompt = "This session's process is killed the moment your reply ends (the manager " +
 	"closes stdin as soon as it sees your result event, so the next task in the loop can start). There is no " +
 	"notification mechanism that can reach you after that point, and any `run_in_background` Bash command is a " +
 	"child of this same process, so it is killed along with it. Never launch a long-running command in the " +
 	"background and end your turn expecting to be notified of its completion later — you never will be. " +
-	"Instead, either run it in the foreground within this turn (choose a timeout that comfortably fits, and " +
-	"poll its output file yourself with short waits if needed), or, if it genuinely cannot finish within one " +
-	"turn, write its progress to a file your next session (a fresh process) can read and resume from."
+	"Instead, wait for it in one blocking call within this turn: run it in the foreground with a large " +
+	"`timeout` on the Bash tool (up to 600000 ms), or, if it writes a log, block on the log in a single call, e.g. " +
+	"`timeout 590 bash -c 'until grep -qE \"Finished|error\" <log>; do sleep 10; done'; tail -n 20 <log>`. " +
+	"Never poll with `sleep N; cat log` in a loop: every model call re-reads the whole conversation, so polling is " +
+	"the most expensive way to wait. If it genuinely cannot finish within one turn, write its progress to a file " +
+	"your next session (a fresh process) can read and resume from."
 
 // buildCLIArgs constructs the argv for the Claude CLI based on SessionConfig
 // and global settings (see PLAN.md section 14). autonomous must be the same
