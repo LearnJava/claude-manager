@@ -160,6 +160,10 @@ func actionRows(traj Trajectory, project, sessionName, fallbackProjectPath strin
 		if step.Usage != nil {
 			outTokens = int64(step.Usage.OutputTokens)
 		}
+		errText := ""
+		if step.ResultIsError {
+			errText = ErrorLine(step.ResultText)
+		}
 		rows = append(rows, store.ActionRow{
 			Project:      project,
 			Session:      sessionName,
@@ -174,6 +178,7 @@ func actionRows(traj Trajectory, project, sessionName, fallbackProjectPath strin
 			OutTokens:    outTokens,
 			ResultChars:  step.ResultChars,
 			DurSec:       stepDurSec(step),
+			ErrText:      errText,
 			Timestamp:    step.Time,
 		})
 	}

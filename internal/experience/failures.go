@@ -164,6 +164,7 @@ func ExtractFromRun(rows []store.ActionRow, runKey string) []FixPair {
 				FailedArg: r.Arg,
 				Sig:       r.Sig,
 				FixedArg:  rows[j].Arg,
+				Output:    r.ErrText,
 			})
 			break
 		}

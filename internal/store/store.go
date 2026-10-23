@@ -181,7 +181,10 @@ type ActionRow struct {
 	// DurSec is the tool_use→tool_result gap in whole seconds (LEARN-TASKS.md
 	// LN-18); 0 means unknown, not instant — a call whose result never
 	// arrived within the ingested window.
-	DurSec    int64
+	DurSec int64
+	// ErrText is one meaningful error line of a failed call (LN-35); ""
+	// for a success or when none was recorded.
+	ErrText   string
 	Timestamp time.Time
 }
 
@@ -1026,8 +1029,8 @@ func (s *Store) InsertActions(rows []ActionRow) error {
 
 	stmt, err := tx.Prepare(
 		`INSERT INTO action_signatures
-	    (project, session, run_id, cli_session_id, task_ptr, step_index, tool, sig, arg, is_error, out_tokens, result_chars, dur_sec, ts)
-	    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	    (project, session, run_id, cli_session_id, task_ptr, step_index, tool, sig, arg, is_error, out_tokens, result_chars, dur_sec, err_text, ts)
+	    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return err
@@ -1042,7 +1045,7 @@ func (s *Store) InsertActions(rows []ActionRow) error {
 		if _, err := stmt.Exec(
 			r.Project, r.Session, nullInt64(r.RunID), nullStr(r.CLISessionID),
 			nullStr(r.TaskPtr), r.StepIndex, r.Tool, r.Sig, nullStr(r.Arg),
-			isErr, r.OutTokens, r.ResultChars, r.DurSec, r.Timestamp,
+			isErr, r.OutTokens, r.ResultChars, r.DurSec, nullStr(r.ErrText), r.Timestamp,
 		); err != nil {
 			return err
 		}
@@ -1050,7 +1053,7 @@ func (s *Store) InsertActions(rows []ActionRow) error {
 	return tx.Commit()
 }
 
-const selectActionCols = `id, project, session, run_id, cli_session_id, task_ptr, step_index, tool, sig, arg, is_error, out_tokens, result_chars, dur_sec, ts`
+const selectActionCols = `id, project, session, run_id, cli_session_id, task_ptr, step_index, tool, sig, arg, is_error, out_tokens, result_chars, dur_sec, err_text, ts`
 
 // ActionsForRun returns all action rows for one session_runs ID, in step order.
 func (s *Store) ActionsForRun(runID int64) ([]*ActionRow, error) {
@@ -1076,15 +1079,16 @@ func (s *Store) ActionsForRun(runID int64) ([]*ActionRow, error) {
 func scanAction(row rowScanner) (*ActionRow, error) {
 	var r ActionRow
 	var runID sql.NullInt64
-	var cliSessionID, taskPtr, arg sql.NullString
+	var cliSessionID, taskPtr, arg, errText sql.NullString
 	var isErr int
 	err := row.Scan(
 		&r.ID, &r.Project, &r.Session, &runID, &cliSessionID, &taskPtr,
-		&r.StepIndex, &r.Tool, &r.Sig, &arg, &isErr, &r.OutTokens, &r.ResultChars, &r.DurSec, &r.Timestamp,
+		&r.StepIndex, &r.Tool, &r.Sig, &arg, &isErr, &r.OutTokens, &r.ResultChars, &r.DurSec, &errText, &r.Timestamp,
 	)
 	if err != nil {
 		return nil, err
 	}
+	r.ErrText = errText.String
 	if runID.Valid {
 		v := runID.Int64
 		r.RunID = &v
@@ -1337,7 +1341,7 @@ type CandidateActionRow struct {
 // as evidence of success (see outcomeWeight's default case).
 func (s *Store) ActionRowsForCandidates(project string, sinceDays int) ([]CandidateActionRow, error) {
 	const q = `SELECT a.id, a.project, a.session, a.run_id, a.cli_session_id, a.task_ptr,
-       a.step_index, a.tool, a.sig, a.arg, a.is_error, a.out_tokens, a.result_chars, a.dur_sec, a.ts,
+       a.step_index, a.tool, a.sig, a.arg, a.is_error, a.out_tokens, a.result_chars, a.dur_sec, a.err_text, a.ts,
        COALESCE(r.status, '')
     FROM action_signatures a
     LEFT JOIN session_runs r ON r.id = a.run_id
@@ -1352,11 +1356,11 @@ func (s *Store) ActionRowsForCandidates(project string, sinceDays int) ([]Candid
 	for rows.Next() {
 		var r CandidateActionRow
 		var runID sql.NullInt64
-		var cliSessionID, taskPtr, arg sql.NullString
+		var cliSessionID, taskPtr, arg, errText sql.NullString
 		var isErr int
 		if err := rows.Scan(
 			&r.ID, &r.Project, &r.Session, &runID, &cliSessionID, &taskPtr,
-			&r.StepIndex, &r.Tool, &r.Sig, &arg, &isErr, &r.OutTokens, &r.ResultChars, &r.DurSec, &r.Timestamp,
+			&r.StepIndex, &r.Tool, &r.Sig, &arg, &isErr, &r.OutTokens, &r.ResultChars, &r.DurSec, &errText, &r.Timestamp,
 			&r.RunStatus,
 		); err != nil {
 			return nil, err
@@ -1368,6 +1372,7 @@ func (s *Store) ActionRowsForCandidates(project string, sinceDays int) ([]Candid
 		r.CLISessionID = cliSessionID.String
 		r.TaskPtr = taskPtr.String
 		r.Arg = arg.String
+		r.ErrText = errText.String
 		r.IsError = isErr != 0
 		out = append(out, r)
 	}

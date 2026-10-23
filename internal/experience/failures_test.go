@@ -302,3 +302,22 @@ func TestCluster_ExamplesCapped(t *testing.T) {
 		t.Errorf("Count = %d, want %d (capping Examples must not cap Count)", clusters[0].Count, maxClusterExamples+10)
 	}
 }
+
+// TestExtractFromRun_ErrTextClustersDifferentCommands checks LN-35: two
+// failures of different commands with the same error text land in one cluster
+// because ErrText travels into FixPair.Output.
+func TestExtractFromRun_ErrTextClustersDifferentCommands(t *testing.T) {
+	const e = "fatal: not a git repository"
+	mk := func(cmd string) []store.ActionRow {
+		return []store.ActionRow{
+			{StepIndex: 0, Sig: "Bash:" + cmd, Arg: cmd, IsError: true, ErrText: e},
+			{StepIndex: 1, Sig: "Bash:" + cmd, Arg: cmd + " -C x", IsError: false},
+		}
+	}
+	pairs := ExtractFromRun(mk("git status"), "run:1")
+	pairs = append(pairs, ExtractFromRun(mk("git log"), "run:2")...)
+	clusters := Cluster(pairs)
+	if len(clusters) != 1 || clusters[0].DistinctRuns != 2 {
+		t.Fatalf("clusters = %+v, want 1 cluster over 2 runs", clusters)
+	}
+}
