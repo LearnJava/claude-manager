@@ -1691,3 +1691,114 @@ func (s *Store) SetActionErrText(id int64, text string) error {
 	_, err := s.db.Exec(`UPDATE action_signatures SET err_text = ? WHERE id = ?`, text, id)
 	return err
 }
+
+// Failure rule statuses (LEARN-TASKS.md LN-37).
+const (
+	FailureRuleDraft     = "draft"
+	FailureRuleAccepted  = "accepted"
+	FailureRuleDismissed = "dismissed"
+)
+
+// FailureRule is one recurring error on its way to a one-line rule in the
+// project's CLAUDE.md (LN-37): ErrorKey is experience.ErrorKey of the error
+// text, ExamplesJSON the samples the rule was drafted from, DecidedAt when the
+// user accepted or dismissed it.
+type FailureRule struct {
+	ID           int64
+	Project      string
+	ErrorKey     string
+	ExamplesJSON string
+	RuleText     string
+	Status       string
+	DistinctRuns int
+	CostUSD      float64
+	CreatedAt    time.Time
+	DecidedAt    *time.Time
+}
+
+const selectFailureRuleCols = `id, project, error_key, examples_json, rule_text, status,
+	distinct_runs, cost_usd, created_at, decided_at`
+
+func scanFailureRule(sc interface{ Scan(...any) error }) (*FailureRule, error) {
+	var r FailureRule
+	var examples, text sql.NullString
+	var runs sql.NullInt64
+	var cost sql.NullFloat64
+	var decided sql.NullTime
+	if err := sc.Scan(&r.ID, &r.Project, &r.ErrorKey, &examples, &text, &r.Status,
+		&runs, &cost, &r.CreatedAt, &decided); err != nil {
+		return nil, err
+	}
+	r.ExamplesJSON = examples.String
+	r.RuleText = text.String
+	r.DistinctRuns = int(runs.Int64)
+	r.CostUSD = cost.Float64
+	if decided.Valid {
+		t := decided.Time
+		r.DecidedAt = &t
+	}
+	return &r, nil
+}
+
+// InsertFailureRule inserts a rule row and sets r.ID. A second row for the
+// same (project, error_key) fails on the UNIQUE constraint.
+func (s *Store) InsertFailureRule(r *FailureRule) error {
+	if r.Status == "" {
+		r.Status = FailureRuleDraft
+	}
+	if r.CreatedAt.IsZero() {
+		r.CreatedAt = time.Now().UTC()
+	}
+	var decided any
+	if r.DecidedAt != nil {
+		decided = *r.DecidedAt
+	}
+	res, err := s.db.Exec(`INSERT INTO failure_rules (project, error_key, examples_json, rule_text,
+	    status, distinct_runs, cost_usd, created_at, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.Project, r.ErrorKey, r.ExamplesJSON, r.RuleText, r.Status, r.DistinctRuns, r.CostUSD,
+		r.CreatedAt, decided)
+	if err != nil {
+		return err
+	}
+	r.ID, err = res.LastInsertId()
+	return err
+}
+
+// ListFailureRules returns every rule of a project, newest first.
+func (s *Store) ListFailureRules(project string) ([]FailureRule, error) {
+	rows, err := s.db.Query(`SELECT `+selectFailureRuleCols+` FROM failure_rules WHERE project=?
+	    ORDER BY created_at DESC, id DESC`, project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []FailureRule
+	for rows.Next() {
+		r, err := scanFailureRule(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *r)
+	}
+	return out, rows.Err()
+}
+
+// GetFailureRule returns a rule by ID, or nil if not found.
+func (s *Store) GetFailureRule(id int64) (*FailureRule, error) {
+	r, err := scanFailureRule(s.db.QueryRow(`SELECT `+selectFailureRuleCols+` FROM failure_rules WHERE id=?`, id))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return r, err
+}
+
+// UpdateFailureRule sets the status, rule text and decision time of a rule.
+func (s *Store) UpdateFailureRule(id int64, status, ruleText string, decidedAt *time.Time) error {
+	var decided any
+	if decidedAt != nil {
+		decided = *decidedAt
+	}
+	_, err := s.db.Exec(`UPDATE failure_rules SET status=?, rule_text=?, decided_at=? WHERE id=?`,
+		status, ruleText, decided, id)
+	return err
+}

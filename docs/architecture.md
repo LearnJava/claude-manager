@@ -174,6 +174,8 @@ claude-manager/
 │   │   │                            #   transitions and action_signatures error→success retries,
 │   │   │                            #   normalizes the failure text (ErrorKey) into a cluster key;
 │   │   │                            #   feeds LN-08/09 and the read-only "Failures" tab.
+│   │   ├── failurerules.go          # LN-37: ErrorClusters (all is_error rows by ErrorKey, noise skipped),
+│   │   │                            #   FailureRuleCandidates, AppendClaudeMdRule, FailureRuleEffect.
 │   │   ├── candidate.go             # LN-08: MineCandidates — n-grams (1..4) of signatures
 │   │   │                            #   recurring across a run-share of a project's runs,
 │   │   │                            #   scored distinctRuns*log(1+rediscoveryChars)*outcomeWeight,
@@ -502,6 +504,7 @@ No DI frameworks, no ORMs. Standard library for everything else.
 - `plan_subtasks` — subtasks within plans
 - `mixed_briefs` — generated mixed-programming briefs (MP-06)
 - `action_signatures` — normalized tool-call signatures mined from CLI transcripts, per run (LN-02); `dur_sec` is the tool_use→tool_result gap, feeding the duration profile (LN-18); `err_text` is one meaningful error line of a failed call (`experience.ErrorLine`, LN-35) — the failure-cluster key
+- `failure_rules` — one row per recurring error (`UNIQUE(project, error_key)`), `status` draft | accepted | dismissed, `rule_text` is the one-line rule written into the project's CLAUDE.md under "Learned from failures" (`experience.AppendClaudeMdRule`), `decided_at` anchors the before/after measurement (`experience.FailureRuleEffect`) (LN-37)
 - `ingest_state` — per-CLI-session transcript byte offset, so re-indexing never re-inserts rows (LN-02)
 - `imported_logfiles` — bulk-import dedup for `IngestDir`, keyed by (project, name, size, mtime) (LN-17)
 - `permission_events` — one row per resolved permission_request (auto-decided or human), source for the Permissions tab's rule suggestions (LN-04)
