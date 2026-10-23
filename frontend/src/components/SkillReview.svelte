@@ -138,6 +138,7 @@
         read_only: 'skillReview.reasonReadOnly',
         loop: 'skillReview.reasonLoop',
         single_step: 'skillReview.reasonSingleStep',
+        read_only_sequence: 'skillReview.reasonReadOnlySequence',
     };
 
     // Reactive assignments, not plain functions: the template calls these

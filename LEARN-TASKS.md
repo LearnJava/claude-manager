@@ -106,7 +106,7 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-30 | ✓ DONE | internal/analysis/*.go (промпт через stdin), cmd/fakeclaude/main.go |
 | LN-31 | ✓ DONE | internal/experience/skillpilot.go (сбой не сжигает кандидата), internal/analysis/skill.go (пределы промпта) |
 | LN-32 | ✓ DONE | internal/experience/failures.go, candidate.go (связь по своей команде, Occurrences) |
-| LN-33 | ○ TODO | internal/experience/candidate.go, skillpilot.go (read_only_sequence, выбор автопилота), SkillReview.svelte |
+| LN-33 | ✓ DONE | internal/experience/candidate.go, skillpilot.go (read_only_sequence, выбор автопилота), SkillReview.svelte |
 | LN-34 | ○ TODO | internal/analysis/skillreview.go, skill.go, internal/experience/skillpilot.go (память отказов) |
 | LN-35 | ○ TODO | internal/store (action_signatures.err_text), internal/experience/errtext.go, indexer.go, failures.go |
 | LN-36 | ○ TODO | internal/experience/backfill.go, internal/store/store.go, internal/session/manager.go |

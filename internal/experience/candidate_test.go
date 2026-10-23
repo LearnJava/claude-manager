@@ -555,22 +555,26 @@ func TestClassifyCandidate_Rules(t *testing.T) {
 		name       string
 		sig        []string
 		samples    []store.ActionRow
+		occs       [][]store.ActionRow
 		related    []FailureCluster
 		suspect    bool
 		wantKind   CandidateKind
 		wantReason string
 	}{
-		{"uniform loop beats length", []string{"A", "A"}, readOnly, failure, true, KindNoise, reasonLoop},
-		{"non-uniform is never a loop", []string{"A", "B"}, readOnly, nil, true, KindSkill, reasonMultiStep},
-		{"sequence", []string{"A", "B"}, readOnly, nil, false, KindSkill, reasonMultiStep},
-		{"single step with a known failure", []string{"A"}, readOnly, failure, false, KindSkill, reasonKnownFailure},
-		{"single read-only step", []string{"A"}, readOnly, nil, false, KindPermission, reasonReadOnly},
-		{"single writing step", []string{"A"}, writing, nil, false, KindSkill, reasonSingleStep},
-		{"no samples is not read-only", []string{"A"}, nil, nil, false, KindSkill, reasonSingleStep},
+		{"uniform loop beats length", []string{"A", "A"}, readOnly, nil, failure, true, KindNoise, reasonLoop},
+		{"non-uniform is never a loop", []string{"A", "B"}, readOnly, nil, nil, true, KindSkill, reasonMultiStep},
+		{"sequence", []string{"A", "B"}, readOnly, nil, nil, false, KindSkill, reasonMultiStep},
+		{"single step with a known failure", []string{"A"}, readOnly, nil, failure, false, KindSkill, reasonKnownFailure},
+		{"read-only sequence", []string{"A", "B"}, readOnly, [][]store.ActionRow{{readOnly[0], readOnly[0]}}, nil, false, KindNoise, reasonReadOnlySequence},
+		{"read-only sequence with a linked failure", []string{"A", "B"}, readOnly, [][]store.ActionRow{{readOnly[0], readOnly[0]}}, failure, false, KindSkill, reasonMultiStep},
+		{"sequence with a write", []string{"A", "B"}, readOnly, [][]store.ActionRow{{readOnly[0], writing[0]}}, nil, false, KindSkill, reasonMultiStep},
+		{"single read-only step", []string{"A"}, readOnly, nil, nil, false, KindPermission, reasonReadOnly},
+		{"single writing step", []string{"A"}, writing, nil, nil, false, KindSkill, reasonSingleStep},
+		{"no samples is not read-only", []string{"A"}, nil, nil, nil, false, KindSkill, reasonSingleStep},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			kind, reason := classifyCandidate(tc.sig, tc.samples, tc.related, tc.suspect)
+			kind, reason := classifyCandidate(tc.sig, tc.samples, tc.occs, tc.related, tc.suspect)
 			if kind != tc.wantKind || reason != tc.wantReason {
 				t.Errorf("classifyCandidate = (%q, %q), want (%q, %q)", kind, reason, tc.wantKind, tc.wantReason)
 			}
@@ -604,7 +608,7 @@ func TestClassifyCandidate_MaskedSignatureIsNotClassified(t *testing.T) {
 	}
 	ts := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
 	samples := []store.ActionRow{row("Bash:ls <ARG>", "Bash", "ls internal", 0, 10, ts)}
-	if kind, _ := classifyCandidate([]string{"Bash:ls <ARG>"}, samples, nil, false); kind != KindPermission {
+	if kind, _ := classifyCandidate([]string{"Bash:ls <ARG>"}, samples, nil, nil, false); kind != KindPermission {
 		t.Errorf("Kind = %q, want %q — classification must read the samples' verbatim args", kind, KindPermission)
 	}
 }

@@ -270,6 +270,23 @@ func (p *SkillPilot) archive(projectPath string, sk store.Skill, r SkillReason, 
 	return p.deps.Store.UpdateSkillStatus(sk.ID, store.SkillStatusArchived, r.Encode(), now)
 }
 
+// autopilotReason reports whether the autopilot may take a candidate: only a
+// skill backed by a known failure or a real multi-step sequence. A lone step
+// (single_step) has the biggest Score yet no procedure in it, so it stays
+// available to manual distillation only (LN-33).
+func autopilotReason(c SkillCandidate) bool {
+	return c.Kind == KindSkill && (c.KindReason == reasonKnownFailure || c.KindReason == reasonMultiStep)
+}
+
+// betterPick orders autopilot candidates: known_failure first, then Score.
+func betterPick(c, cur *SkillCandidate) bool {
+	cf, curf := c.KindReason == reasonKnownFailure, cur.KindReason == reasonKnownFailure
+	if cf != curf {
+		return cf
+	}
+	return c.Score > cur.Score
+}
+
 // distillNext distills, reviews and applies at most one new candidate.
 func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, rep *SkillPilotReport) error {
 	st := p.deps.Store
@@ -353,7 +370,7 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 	// reviewed top 3% does not push every remaining one below it.
 	var open []SkillCandidate
 	for _, c := range candidates {
-		if c.Kind == KindSkill && !c.ContextLossSuspect && !known[SigKey(sigJSON(c.Sig))] {
+		if autopilotReason(c) && !c.ContextLossSuspect && !known[SigKey(sigJSON(c.Sig))] {
 			open = append(open, c)
 		}
 	}
@@ -364,7 +381,7 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 		if c.Score < threshold {
 			continue
 		}
-		if pick == nil || c.Score > pick.Score {
+		if pick == nil || betterPick(c, pick) {
 			pick = c
 		}
 	}
