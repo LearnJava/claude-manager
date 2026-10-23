@@ -359,6 +359,7 @@ func optimizationDefaults() OptimizationSettings {
 		AutoModelRouting:           false,
 		ShowCostPerTurn:            true,
 		ShowCacheEfficiency:        true,
+		ExperienceTracking:         true,
 	}
 }
 

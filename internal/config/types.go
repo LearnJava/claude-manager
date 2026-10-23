@@ -62,7 +62,7 @@ type OptimizationSettings struct {
 
 	// Experience layer (LEARN-TASKS.md LN-03): mines CLI transcripts into
 	// action_signatures for the "Actions" tab and downstream candidate mining.
-	// Default off — with it off, finishRun never opens a transcript file.
+	// Default on; with it off, finishRun never opens a transcript file.
 	ExperienceTracking bool `toml:"experience_tracking"`
 }
 

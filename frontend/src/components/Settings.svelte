@@ -325,7 +325,7 @@
         }));
         const optimization: OptimizationSettings = {
             AutoModelRouting: false,
-            ExperienceTracking: false,
+            ExperienceTracking: true,
             ...(raw?.Optimization ?? {}),
         };
         return { Settings: settings, Optimization: optimization, Projects: projects, Workers: workers };

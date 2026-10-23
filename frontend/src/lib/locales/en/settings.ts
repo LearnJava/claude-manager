@@ -58,9 +58,9 @@ export default {
     'settings.modelRouting.autoRouting': 'Auto model routing (choose model by task complexity via pre-flight)',
 
     // Global tab — Experience layer
-    'settings.experienceLayer.heading': 'Experience layer',
-    'settings.experienceLayer.enable': 'Index finished runs into the Actions tab (LEARN-TASKS.md LN-03)',
-    'settings.experienceLayer.description': "Mines this app's own CLI transcripts into normalized tool-call signatures — no external service, nothing leaves this machine. Off by default: with it off, no transcript is ever opened.",
+    'settings.experienceLayer.heading': 'Experience tracking',
+    'settings.experienceLayer.enable': 'Remember what agents did in finished runs',
+    'settings.experienceLayer.description': "After each run the manager reads the transcript and stores in a local database which tools and commands the agent called, how it ended, how long it took and what it cost. This feeds the Experience tab (permissions, timing, cost, actions), skill suggestions and rules learned from recurring errors. No external service, nothing leaves this machine. On by default; if switched off, no transcript is ever opened.",
 
     // Global tab — Budget alerts
     'settings.budgetAlerts.heading': 'Budget alerts',
