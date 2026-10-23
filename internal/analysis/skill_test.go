@@ -361,3 +361,24 @@ func TestBuildSkillTaskText_Limits(t *testing.T) {
 		t.Errorf("no truncation marker at the end")
 	}
 }
+
+func TestBuildSkillTaskText_RejectedBefore(t *testing.T) {
+	const head = "Drafts already rejected in this project"
+	if got := buildSkillTaskText(SkillDistillInput{Sig: []string{"Bash:a"}}); strings.Contains(got, head) {
+		t.Errorf("empty RejectedBefore must add no section: %q", got)
+	}
+	got := buildSkillTaskText(SkillDistillInput{Sig: []string{"Bash:a"}, RejectedBefore: []string{"grep-read: generic"}})
+	if !strings.Contains(got, head) || !strings.Contains(got, "- grep-read: generic") {
+		t.Errorf("section missing: %q", got)
+	}
+}
+
+func TestSkillReview_ParsesGeneric(t *testing.T) {
+	var r SkillReview
+	if err := json.Unmarshal([]byte(`{"accept":false,"reason":"x","generic":true}`), &r); err != nil || !r.Generic {
+		t.Fatalf("r = %+v, err = %v", r, err)
+	}
+	if !strings.Contains(SkillReviewJSONSchema, `"generic"`) || !strings.Contains(SkillReviewSystemPrompt, "generic=true") {
+		t.Error("schema or prompt lacks generic")
+	}
+}

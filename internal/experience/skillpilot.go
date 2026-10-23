@@ -61,6 +61,8 @@ type SkillReason struct {
 	Before      float64 `json:"before,omitempty"`
 	After       float64 `json:"after,omitempty"`
 	DuplicateOf string  `json:"duplicate_of,omitempty"`
+	// Generic marks a reviewer rejection as "generic advice" (LN-34).
+	Generic bool `json:"generic,omitempty"`
 	// Attempts counts failed review calls of a draft (ReasonReviewFailed).
 	Attempts int `json:"attempts,omitempty"`
 }
@@ -302,6 +304,7 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 	spentToday := 0.0
 	known := make(map[string]bool)
 	failures := make(map[string]int)
+	genericSteps := make(map[string]bool)
 	taken := make(map[string]bool)
 	for i := range skills {
 		sk := &skills[i]
@@ -314,6 +317,16 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 			failures[SigKey(sk.SourceJSON)]++
 		} else {
 			known[SigKey(sk.SourceJSON)] = true
+		}
+		if sk.Status == store.SkillStatusRejected {
+			if r := decodeSkillReason(sk.Reason); r.Code == ReasonReviewRejected && r.Generic {
+				var steps []string
+				if json.Unmarshal([]byte(sk.SourceJSON), &steps) == nil {
+					for _, s := range steps {
+						genericSteps[s] = true
+					}
+				}
+			}
 		}
 		if sk.Status == store.SkillStatusApproved {
 			taken[sk.Name] = true
@@ -370,7 +383,7 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 	// reviewed top 3% does not push every remaining one below it.
 	var open []SkillCandidate
 	for _, c := range candidates {
-		if autopilotReason(c) && !c.ContextLossSuspect && !known[SigKey(sigJSON(c.Sig))] {
+		if autopilotReason(c) && !c.ContextLossSuspect && !known[SigKey(sigJSON(c.Sig))] && !allGeneric(c.Sig, genericSteps) {
 			open = append(open, c)
 		}
 	}
@@ -391,6 +404,7 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 	}
 
 	in := SkillDistillInputFromCandidate(*pick, params.Gates)
+	in.RejectedBefore = RejectedBefore(st, params.Project, 5)
 	row := &store.Skill{
 		Project:    params.Project,
 		SourceJSON: sigJSON(pick.Sig),
@@ -437,7 +451,7 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 	}
 	row.CostUSD += review.CostUSD
 	if !review.Accept {
-		row.Reason = SkillReason{Code: ReasonReviewRejected, Text: review.Reason, DuplicateOf: review.DuplicateOf}.Encode()
+		row.Reason = SkillReason{Code: ReasonReviewRejected, Text: review.Reason, DuplicateOf: review.DuplicateOf, Generic: review.Generic}.Encode()
 		return p.insertRejected(row, rep)
 	}
 
@@ -503,7 +517,7 @@ func (p *SkillPilot) reviewDraft(ctx context.Context, params SkillPilotParams, s
 		}
 	}
 	if !review.Accept {
-		return reject(SkillReason{Code: ReasonReviewRejected, Text: review.Reason, DuplicateOf: review.DuplicateOf})
+		return reject(SkillReason{Code: ReasonReviewRejected, Text: review.Reason, DuplicateOf: review.DuplicateOf, Generic: review.Generic})
 	}
 	if _, err := WriteSkillFile(params.ProjectPath, sk.Name, sk.MD, false); err != nil {
 		if err == ErrSkillFileExists {
@@ -554,6 +568,54 @@ func sameDay(a, b time.Time) bool {
 func sigJSON(sig []string) string {
 	b, _ := json.Marshal(sig)
 	return string(b)
+}
+
+// allGeneric reports whether every step of sig was part of a signature the
+// reviewer rejected as generic (LN-34). An empty sig is never generic.
+func allGeneric(sig []string, generic map[string]bool) bool {
+	if len(sig) == 0 {
+		return false
+	}
+	for _, s := range sig {
+		if !generic[s] {
+			return false
+		}
+	}
+	return true
+}
+
+// maxRejectedReasonRunes caps one reason in RejectedBefore.
+const maxRejectedReasonRunes = 200
+
+// RejectedBefore returns up to n of the project's latest reviewer rejections
+// as "<name>: <reason>", newest first (LN-34), for the distiller prompt.
+func RejectedBefore(st *store.Store, project string, n int) []string {
+	if st == nil || n <= 0 {
+		return nil
+	}
+	skills, err := st.ListSkills(project)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, sk := range skills {
+		if len(out) >= n {
+			break
+		}
+		if sk.Status != store.SkillStatusRejected {
+			continue
+		}
+		r := decodeSkillReason(sk.Reason)
+		if r.Code != ReasonReviewRejected {
+			continue
+		}
+		text := []rune(r.Text)
+		if len(text) > maxRejectedReasonRunes {
+			text = text[:maxRejectedReasonRunes]
+		}
+		out = append(out, sk.Name+": "+string(text))
+	}
+	return out
 }
 
 // SigKey normalizes a SourceJSON value for equality checks: decode and

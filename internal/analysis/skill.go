@@ -86,6 +86,10 @@ type SkillDistillInput struct {
 	RelatedFailures []SkillFailureSummary
 	// Gates are the project's configured gate commands.
 	Gates []string
+	// RejectedBefore lists drafts the reviewer already rejected in this
+	// project, as "<name>: <reason>" (LN-34); the distiller is told not to
+	// produce the same kind of skill again.
+	RejectedBefore []string
 }
 
 // SkillStep is one step of a distilled skill: a command plus, optionally, why
@@ -157,6 +161,14 @@ func buildSkillTaskText(in SkillDistillInput) string {
 		for _, f := range failures {
 			b.WriteString(fmt.Sprintf("- %s: failed with `%s`, next attempt fixed it with `%s`\n",
 				f.ErrorKey, truncateRunes(f.FailedArg, maxSkillFailureArgRunes), truncateRunes(f.FixedArg, maxSkillFailureArgRunes)))
+		}
+		b.WriteString("\n")
+	}
+
+	if len(in.RejectedBefore) > 0 {
+		b.WriteString("Drafts already rejected in this project (do not produce the same kind of skill):\n")
+		for _, r := range in.RejectedBefore {
+			b.WriteString("- " + r + "\n")
 		}
 		b.WriteString("\n")
 	}

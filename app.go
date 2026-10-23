@@ -1623,6 +1623,7 @@ func (a *App) DistillSkill(project string, candidate experience.SkillCandidate, 
 	if err != nil {
 		return nil, err
 	}
+	in.RejectedBefore = experience.RejectedBefore(a.store, project, 5)
 	effectiveMin := a.resolveSkillMinScore(project, minScore)
 	return a.manager.DistillSkill(project, in, sourceJSON, candidate.Score, effectiveMin, model)
 }

@@ -38,6 +38,9 @@ type SkillReview struct {
 	Accept      bool   `json:"accept"`
 	Reason      string `json:"reason"`
 	DuplicateOf string `json:"duplicate_of,omitempty"`
+	// Generic is set when the draft was rejected as generic advice (LN-34):
+	// the autopilot then also skips candidates made of the same steps.
+	Generic bool `json:"generic,omitempty"`
 
 	CostUSD float64 `json:"-"`
 }
@@ -48,7 +51,8 @@ const SkillReviewJSONSchema = `{
   "properties": {
     "accept": {"type": "boolean"},
     "reason": {"type": "string", "maxLength": 300},
-    "duplicate_of": {"type": "string"}
+    "duplicate_of": {"type": "string"},
+    "generic": {"type": "boolean"}
   },
   "required": ["accept", "reason"],
   "additionalProperties": false
@@ -67,6 +71,8 @@ Accept ONLY if all of these hold:
 - It contains no destructive or policy-violating steps (force push, rewriting history, --no-verify, deleting data, disabling checks) and does not contradict the project's CLAUDE.md, which you may read.
 
 Reject generic advice ("read the file before editing", "use grep to find code"), single trivial commands, and anything that just restates how a common tool works.
+
+Set generic=true when you reject because the draft is generic advice, a trivial command, restates how a common tool works, or repeats rules already in CLAUDE.md (global or project).
 
 Answer with one short sentence of reason, in Russian.`
 
