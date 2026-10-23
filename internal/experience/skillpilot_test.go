@@ -24,6 +24,7 @@ type pilotFixture struct {
 	cands    []SkillCandidate
 	draft    analysis.SkillDraft
 	accept   bool
+	generic  bool
 	distills int
 	reviews  int
 	pilot    *SkillPilot
@@ -53,7 +54,7 @@ func newPilotFixture(t *testing.T) *pilotFixture {
 		},
 		Review: func(context.Context, string, analysis.SkillReviewInput) (*analysis.SkillReview, error) {
 			f.reviews++
-			return &analysis.SkillReview{Accept: f.accept, Reason: "ok", CostUSD: 0.1}, nil
+			return &analysis.SkillReview{Accept: f.accept, Reason: "ok", Generic: f.generic, CostUSD: 0.1}, nil
 		},
 		Candidates: func(*store.Store, string) ([]SkillCandidate, error) { return f.cands, nil },
 	})
@@ -512,5 +513,75 @@ func TestSkillPilot_PicksOnlyProceduresAndKnownFailuresFirst(t *testing.T) {
 	f.tick()
 	if got := f.only().SourceJSON; got != sigJSON(known.Sig) {
 		t.Errorf("picked %s, want the known_failure candidate first", got)
+	}
+}
+
+func (f *pilotFixture) lastSigs() []string {
+	f.t.Helper()
+	skills, err := f.st.ListSkills("proj")
+	if err != nil || len(skills) == 0 {
+		f.t.Fatalf("ListSkills = %d rows, %v", len(skills), err)
+	}
+	return []string{skills[0].SourceJSON}
+}
+
+// TestSkillPilot_GenericRejectionBlocksCandidatesOfKnownSteps (LN-34).
+func TestSkillPilot_GenericRejectionBlocksCandidatesOfKnownSteps(t *testing.T) {
+	mk := func(sig ...string) SkillCandidate {
+		return SkillCandidate{Sig: sig, Kind: KindSkill, KindReason: reasonMultiStep, Score: 50, DistinctRuns: 8}
+	}
+	f := newPilotFixture(t)
+	f.accept, f.generic = false, true
+	f.cands = []SkillCandidate{mk("Bash:A", "Bash:B")}
+	f.tick()
+	f.addRuns(AutoDistillGapRuns+1, f.now, "", 0)
+	f.cands = []SkillCandidate{mk("Bash:B"), mk("Bash:A", "Bash:B"), mk("Bash:A", "Bash:C")}
+	f.tick()
+	if f.distills != 2 {
+		t.Fatalf("distills = %d, want 2 (only [A C] passes)", f.distills)
+	}
+	if got := f.lastSigs()[0]; got != sigJSON([]string{"Bash:A", "Bash:C"}) {
+		t.Errorf("second pick = %s, want [A C]", got)
+	}
+}
+
+func TestSkillPilot_NonGenericRejectionBlocksOnlyItsSignature(t *testing.T) {
+	mk := func(sig ...string) SkillCandidate {
+		return SkillCandidate{Sig: sig, Kind: KindSkill, KindReason: reasonMultiStep, Score: 50, DistinctRuns: 8}
+	}
+	f := newPilotFixture(t)
+	f.accept = false
+	f.cands = []SkillCandidate{mk("Bash:A", "Bash:B")}
+	f.tick()
+	f.addRuns(AutoDistillGapRuns+1, f.now, "", 0)
+	f.cands = []SkillCandidate{mk("Bash:A", "Bash:B"), mk("Bash:B")}
+	f.tick()
+	if got := f.lastSigs()[0]; got != sigJSON([]string{"Bash:B"}) {
+		t.Errorf("second pick = %s, want [B]", got)
+	}
+}
+
+func TestRejectedBefore(t *testing.T) {
+	f := newPilotFixture(t)
+	long := strings.Repeat("я", 300)
+	r1 := SkillReason{Code: ReasonReviewRejected, Text: long}.Encode()
+	r2 := SkillReason{Code: ReasonReviewFailed, Text: "boom"}.Encode()
+	for i, row := range []struct{ name, reason string }{{"one", r1}, {"two", r2}, {"three", r1}} {
+		sk := &store.Skill{Project: "proj", Name: row.name, SourceJSON: "[]", DraftJSON: "{}",
+			CreatedAt: f.now.Add(time.Duration(i) * time.Minute), Origin: store.SkillOriginAuto,
+			Status: store.SkillStatusRejected, Reason: row.reason}
+		if err := f.st.InsertSkill(sk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := RejectedBefore(f.st, "proj", 5)
+	if len(got) != 2 || !strings.HasPrefix(got[0], "three: ") || got[1][:5] != "one: " {
+		t.Fatalf("got %v, want [three, one] only", got)
+	}
+	if n := len([]rune(got[0])) - len("three: "); n != 200 {
+		t.Errorf("reason runes = %d, want 200", n)
+	}
+	if got := RejectedBefore(f.st, "proj", 1); len(got) != 1 {
+		t.Errorf("n=1 gave %d rows", len(got))
 	}
 }
