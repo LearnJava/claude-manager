@@ -65,9 +65,14 @@ type SkillCandidate struct {
 	RunShare float64
 	// Score ranks candidates for the distiller (LN-09); see scoreCandidate.
 	Score float64
-	// Samples is up to maxCandidateSamples concrete occurrences, one row per
-	// distinct run (the row at the sequence's first occurrence in that run).
+	// Samples is the first row of each of up to maxCandidateSamples best
+	// occurrences, one per distinct run.
 	Samples []store.ActionRow
+	// Occurrences are the best occurrences of the whole sequence (every row
+	// of the n-gram, not just the first), best first; Samples[i] is
+	// Occurrences[i][0]. Heaviest (stepOccurrenceWeight) first, newer first
+	// at equal weight.
+	Occurrences [][]store.ActionRow
 	// RelatedFailures are failure clusters (LN-07) observed in a run this
 	// candidate also appears in — see relateFailures for the matching rule.
 	RelatedFailures []FailureCluster
@@ -248,7 +253,6 @@ func stepOccurrenceWeight(rows []store.ActionRow, status string) float64 {
 // candAcc accumulates one n-gram's evidence across runs while scanning.
 type candAcc struct {
 	sig          []string
-	runKeys      []string // one entry per distinct run, in first-seen order — RelatedFailures matching
 	distinctRuns int
 	weightSum    float64 // Σ stepOccurrenceWeight(occurrence) over distinct runs
 	rediscovery  float64 // Σ charsToFirst(run) * stepOccurrenceWeight(occurrence) over distinct runs
@@ -256,7 +260,45 @@ type candAcc struct {
 	imported     bool
 	firstSeen    time.Time
 	lastSeen     time.Time
-	samples      []store.ActionRow
+	best         []gramOccurrence // up to maxCandidateSamples best occurrences, best first
+}
+
+// gramOccurrence is one occurrence of a gram: all of its rows, plus the
+// weight that ranks it against other occurrences of the same gram.
+type gramOccurrence struct {
+	rows   []store.ActionRow
+	weight float64
+}
+
+// better reports whether o outranks p: heavier first (a completed run's
+// occurrence beats an errored run's), newer first at equal weight.
+func (o gramOccurrence) better(p gramOccurrence) bool {
+	if o.weight != p.weight {
+		return o.weight > p.weight
+	}
+	return o.rows[0].Timestamp.After(p.rows[0].Timestamp)
+}
+
+// addOccurrence keeps acc.best bounded at maxCandidateSamples, evicting the
+// worst occurrence instead of accumulating all of them.
+func (acc *candAcc) addOccurrence(rows []store.ActionRow, weight float64) {
+	occ := gramOccurrence{rows: append([]store.ActionRow(nil), rows...), weight: weight}
+	pos := len(acc.best)
+	for k, b := range acc.best {
+		if occ.better(b) {
+			pos = k
+			break
+		}
+	}
+	if pos >= maxCandidateSamples {
+		return
+	}
+	acc.best = append(acc.best, gramOccurrence{})
+	copy(acc.best[pos+1:], acc.best[pos:])
+	acc.best[pos] = occ
+	if len(acc.best) > maxCandidateSamples {
+		acc.best = acc.best[:maxCandidateSamples]
+	}
 }
 
 // MineCandidates extracts recurring tool-call sequences from runs — single
@@ -317,7 +359,6 @@ func MineCandidates(runs []CandidateRun, minRunShare float64, clusters []Failure
 					accs[key] = acc
 					order = append(order, key)
 				}
-				acc.runKeys = append(acc.runKeys, run.Key)
 				acc.distinctRuns++
 				acc.weightSum += weight
 
@@ -341,9 +382,7 @@ func MineCandidates(runs []CandidateRun, minRunShare float64, clusters []Failure
 				if ts.After(acc.lastSeen) {
 					acc.lastSeen = ts
 				}
-				if len(acc.samples) < maxCandidateSamples {
-					acc.samples = append(acc.samples, rows[i])
-				}
+				acc.addOccurrence(rows[i:i+n], weight)
 			}
 		}
 	}
@@ -389,14 +428,21 @@ func MineCandidates(runs []CandidateRun, minRunShare float64, clusters []Failure
 			continue
 		}
 		acc := accs[key]
-		related := relateFailures(acc.runKeys, clusters)
-		kind, reason := classifyCandidate(acc.sig, acc.samples, related, acc.suspect)
+		related := relateFailures(acc.sig, clusters)
+		samples := make([]store.ActionRow, 0, len(acc.best))
+		occurrences := make([][]store.ActionRow, 0, len(acc.best))
+		for _, o := range acc.best {
+			samples = append(samples, o.rows[0])
+			occurrences = append(occurrences, o.rows)
+		}
+		kind, reason := classifyCandidate(acc.sig, samples, related, acc.suspect)
 		out = append(out, SkillCandidate{
 			Sig:                acc.sig,
 			DistinctRuns:       acc.distinctRuns,
 			RunShare:           float64(acc.distinctRuns) / float64(totalRuns),
 			Score:              acc.weightSum * math.Log(1+acc.rediscovery),
-			Samples:            acc.samples,
+			Samples:            samples,
+			Occurrences:        occurrences,
 			RelatedFailures:    related,
 			ContextLossSuspect: acc.suspect,
 			Imported:           acc.imported,
@@ -614,25 +660,25 @@ func containsContiguous(long, short []string) bool {
 	return false
 }
 
-// relateFailures links a candidate to the failure clusters (LN-07) observed
-// in a run it also appears in. Matching is by run key against each cluster's
-// kept Examples only (FailureCluster caps Examples at 5 — the underlying
-// per-cluster run set isn't otherwise exposed), so a large cluster whose
-// matching example got capped away can be missed; that is an acceptable
-// under-match for a "here's a related failure" hint, never a correctness
-// requirement.
-func relateFailures(runKeys []string, clusters []FailureCluster) []FailureCluster {
-	if len(clusters) == 0 || len(runKeys) == 0 {
+// relateFailures links a candidate to the failure clusters (LN-07) whose
+// failed call is one of the candidate's own steps: a cluster is related when
+// any kept Example carries a non-empty Sig contained in sig. Being in the same
+// run is not enough — a frequent command would collect dozens of unrelated
+// failures. Source-A examples have no Sig and never match. Only the kept
+// Examples are checked (FailureCluster caps them), an acceptable under-match
+// for a "here's a related failure" hint.
+func relateFailures(sig []string, clusters []FailureCluster) []FailureCluster {
+	if len(clusters) == 0 || len(sig) == 0 {
 		return nil
 	}
-	runSet := make(map[string]bool, len(runKeys))
-	for _, k := range runKeys {
-		runSet[k] = true
+	steps := make(map[string]bool, len(sig))
+	for _, s := range sig {
+		steps[s] = true
 	}
 	var related []FailureCluster
 	for _, c := range clusters {
 		for _, ex := range c.Examples {
-			if ex.RunKey != "" && runSet[ex.RunKey] {
+			if ex.Sig != "" && steps[ex.Sig] {
 				related = append(related, c)
 				break
 			}

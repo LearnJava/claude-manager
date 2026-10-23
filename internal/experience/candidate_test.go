@@ -319,8 +319,8 @@ func TestMineCandidates_RelatedFailures(t *testing.T) {
 		run("r2", "completed", row("A", "Bash", "a", 0, 1, ts), row("B", "Bash", "b", 1, 1, ts)),
 		run("r3", "completed", row("A", "Bash", "a", 0, 1, ts), row("B", "Bash", "b", 1, 1, ts)),
 	}
-	related := FailureCluster{ErrorKey: "boom", Examples: []FixPair{{RunKey: "r2", FailedArg: "x"}}}
-	unrelated := FailureCluster{ErrorKey: "other", Examples: []FixPair{{RunKey: "does-not-exist", FailedArg: "y"}}}
+	related := FailureCluster{ErrorKey: "boom", Examples: []FixPair{{RunKey: "r2", Sig: "B", FailedArg: "x"}}}
+	unrelated := FailureCluster{ErrorKey: "other", Examples: []FixPair{{RunKey: "r2", Sig: "Z", FailedArg: "y"}}}
 
 	cands := MineCandidates(runs, DefaultMinRunShare, []FailureCluster{related, unrelated})
 	c := findCandidate(cands, "A", "B")

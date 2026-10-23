@@ -2562,11 +2562,15 @@ refuses to distill a `KindPermission`/`KindNoise` row — the label is advisory.
 
 **RelatedFailures is a best-effort hint, not a guarantee.** A `FailureCluster`
 (LN-07) is attached to a candidate when one of the cluster's own kept
-`Examples` (capped at `maxClusterExamples`=5) shares a run key with one of the
-candidate's contributing runs — `FailureCluster` doesn't otherwise expose its
-full per-cluster run set, so a large cluster whose one overlapping example got
-capped away is silently missed. Acceptable for a "here's a related failure"
-pointer in LN-09's prompt, not a correctness requirement.
+`Examples` (capped at `maxClusterExamples`=5) has a non-empty `FixPair.Sig` (the
+failed call's signature, source B only) that is one of the candidate's own steps
+(LN-32) — sharing a run is not enough, a frequent command would collect dozens of
+unrelated failures. A large cluster whose matching example got capped away is
+silently missed; acceptable for a pointer in LN-09's prompt, not a correctness
+requirement. A candidate also keeps its best occurrences (`Occurrences`: every row
+of the n-gram, heaviest by `stepOccurrenceWeight` then newest, at most
+`maxCandidateSamples`); `Samples` is their first rows, and the distiller gets one
+multi-line sample per occurrence.
 
 **Skill distillation** (LN-09, `internal/analysis/skill.go`). Turns one LN-08
 `SkillCandidate` into a draft `SKILL.md` — the payoff the whole mining chain
