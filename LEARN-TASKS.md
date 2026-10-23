@@ -103,6 +103,16 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-27 | ✓ DONE (2026-10-01) | internal/session/manager.go (SetSkillAutopilot), app.go, internal/config, SkillReview.svelte |
 | LN-28 | ✓ DONE (2026-10-13) | internal/session/handoff_budget.go, session.go, internal/config/types.go |
 | LN-29 | ✓ DONE (2026-10-13) | internal/experience/attribution.go, internal/store/store.go, ExperiencePanel.svelte |
+| LN-30 | ○ TODO | internal/analysis/*.go (промпт через stdin), cmd/fakeclaude/main.go |
+| LN-31 | ○ TODO | internal/experience/skillpilot.go (сбой не сжигает кандидата), internal/analysis/skill.go (пределы промпта) |
+| LN-32 | ○ TODO | internal/experience/failures.go, candidate.go (связь по своей команде, Occurrences) |
+| LN-33 | ○ TODO | internal/experience/candidate.go, skillpilot.go (read_only_sequence, выбор автопилота), SkillReview.svelte |
+| LN-34 | ○ TODO | internal/analysis/skillreview.go, skill.go, internal/experience/skillpilot.go (память отказов) |
+| LN-35 | ○ TODO | internal/store (action_signatures.err_text), internal/experience/errtext.go, indexer.go, failures.go |
+| LN-36 | ○ TODO | internal/experience/backfill.go, internal/store/store.go, internal/session/manager.go |
+| LN-37 | ○ TODO | internal/store (failure_rules), internal/experience/failurerules.go |
+| LN-38 | ○ TODO | internal/analysis/failurerule.go, app.go, internal/control/mcptools_failures.go |
+| LN-39 | ○ TODO | frontend ExperiencePanel.svelte (вкладка «Ошибки»), stores/experience.ts |
 
 > LN-17 и LN-18 дописаны после разведки корпуса. LN-17 по приоритету идёт
 > **третьим**, сразу за LN-02 (без него нечего анализировать); LN-18 — после
@@ -1495,3 +1505,456 @@ LN-28.
 **Готово когда:** тесты — ранний результат обгоняет поздний больший; шаги другой
 CLI-сессии не считаются перечитыванием; полосы длины без прогонов без стоимости
 и без числа ходов; вкладка показывает столбцы и таблицу (EXP-24a).
+
+---
+
+# Блок LN-30…LN-39: почему автопилот отклоняет все навыки, и память ошибок
+
+**Замер 2026-10-23** (`history.db`, скрипт `.tmp/skill_diag.py` в главном
+checkout): автопилот потратил $1.88, все 15 навыков трёх проектов — `rejected`.
+
+1. **С 16.10 дистилляция не запускается** — 6 строк `distill_failed: fork/exec
+   claude.exe: The filename or extension is too long`. Промпт идёт последним
+   аргументом командной строки (лимит Windows — 32 767 символов), а
+   `relateFailures` (`candidate.go`) привязывает к кандидату каждый кластер
+   ошибок, случившийся *в том же прогоне*: частый `sed -n` встречается в 186 из
+   218 прогонов Lumen → 61 кластер → ~115 000 символов. Та же привязка делает
+   `git add`, `cat`, `sed -i` «навыками с известной ошибкой». Сбой пишется как
+   отказ, и сигнатура блокируется навсегда.
+2. **Кандидаты — общие приёмы чтения** (`grep -n → sed -n`, `cat`, `git status`):
+   ровно то, что предписывает глобальный `CLAUDE.md`. Рецензент их справедливо
+   отклоняет, а следующий вариант того же приёма (другая сигнатура) снова идёт
+   на дистилляцию за $0.38.
+3. **Ошибки не запоминаются.** `action_signatures` хранит только `is_error`, без
+   текста; ключ кластера строится из *упавшей команды*, поэтому почти каждый
+   кластер — из одного прогона. Правил из ошибок никто не делает: вкладки
+   «Failures» из LN-07 нет. В транскриптах из 270 ошибок 152 начинаются строкой
+   `Exit code N`, 60 — блокировкой хуком (`This session is isolated in the
+   worktree …`), есть `Traceback`, `<tool_use_error>…`.
+
+**Правила для исполнителя блока** (в дополнение к «Как сессия берёт задачу» и
+«Инварианты» выше):
+
+- Делай ровно то, что написано в «Что сделать», не расширяй объём. Если имя
+  функции/строка в описании разошлись с кодом — следуй коду, а расхождение назови
+  в сообщении коммита.
+- Каждая новая функция — с тестом; тесты, названные в «Готово когда», обязательны.
+- Никогда не перезапускай `claude-manager.exe` (см. CLAUDE.md, Known gotchas):
+  проверка на живом приложении — дело пользователя, ты проверяешь тестами.
+- Платные вызовы настоящего `claude` в тестах запрещены — только заглушки
+  (`SkillPilotDeps`, `skillDistillFn`, helper-процесс из LN-30).
+
+## LN-30: Промпт одноразовых вызовов `claude -p` — через stdin
+
+**Depends on:** —
+**Files:** `internal/analysis/{brief,executor,handoff,journal,preflight,skill,skillreview}.go`
+и их `_test.go`, новый `internal/analysis/cliprompt.go` (+ `cliprompt_test.go`),
+`cmd/fakeclaude/main.go`, `cmd/fakeclaude/main_test.go`,
+`docs/design-decisions.md`
+
+**Зачем.** Все одноразовые вызовы `claude -p` передают промпт последним
+аргументом командной строки. В Windows командная строка ограничена 32 767
+символами: дистиллятор навыков падает уже сейчас, а журнал/хендофф длинной
+задачи упадут так же. `claude -p` без позиционного промпта читает промпт из stdin.
+
+**Что сделать.**
+1. `cliprompt.go`: `func setPromptStdin(cmd *exec.Cmd, prompt string)` —
+   `cmd.Stdin = strings.NewReader(prompt)`; в doc-комментарии — причина (лимит
+   32 767 символов).
+2. Убрать промпт из argv в каждом построителе аргументов и выставить его через
+   `setPromptStdin` в месте запуска. Места (номера строк — на 2026-10-23):
+   `brief.go:68`/`:209`, `executor.go:56`/`:114`, `handoff.go:88`/`:159`,
+   `journal.go:92`/`:163`, `preflight.go:100`/`:187` и `:247`/`:302`,
+   `skill.go:209`/`:296`, `skillreview.go:115`/`:174`. Текст промпта
+   (например, `"Distill this recurring pattern into a skill:\n\n"+task`) вынести
+   в функцию рядом (`skillPrompt(task string) string` и т. п.), чтобы тесты могли
+   его проверить. Если вызов передаёт `--input-format` (сессия, а не
+   одноразовый вызов) — его не трогать. `internal/session/*` не трогать.
+3. `cmd/fakeclaude`: в режиме `-p`/`--print` без `--input-format` прочитать stdin
+   целиком; непустой (после `TrimSpace`) — это промпт для `MatchScenario`; пустой
+   — прежняя логика `printModePrompt` (последний аргумент). Сессионный режим без
+   изменений.
+4. Тесты построителей, которые проверяли «последний аргумент = промпт», переписать:
+   ни один аргумент не содержит текста задачи; функция промпта его содержит.
+5. Сквозной тест `TestDistillSkill_LongPromptViaStdin`: helper-процесс через
+   `TestMain` (если `os.Getenv("CM_HELPER_CLAUDE") == "1"` — читает stdin,
+   проверяет маркер, печатает одну строку `{"type":"result",...}` с валидным
+   `structured_output` черновика и выходит). `cfg.ClaudePath = os.Args[0]`,
+   `t.Setenv("CM_HELPER_CLAUDE", "1")`, в образце команды — 100 000 символов.
+   Если `TestMain` в пакете уже есть — расширить его.
+6. `docs/design-decisions.md`, раздел «CLI Launch Command»: абзац «одноразовые
+   вызовы получают промпт через stdin — лимит командной строки Windows».
+7. Ручная проверка реального CLI (стоит центы): `echo "Ответь одним словом: ok" |
+   claude -p --model haiku --output-format json` — в `result` есть ok.
+
+**Готово когда:** `go build ./... && go vet ./... && go test ./...` зелёные;
+`grep -nE 'append\(args, ".*"\+(task|sub\.Prompt)' internal/analysis/*.go`
+пусто; сквозной тест проходит; ручная проверка п.7 выполнена (результат — в
+сообщении коммита).
+
+## LN-31: Сбой дистилляции не сжигает кандидата; пределы промпта дистиллятора
+
+**Depends on:** LN-30
+**Files:** `internal/experience/skillpilot.go`, `skillpilot_test.go`,
+`internal/analysis/skill.go`, `skill_test.go`
+
+**Зачем.** Сейчас любой сбой вызова (`distill_failed`, `review_failed`)
+записывается строкой `rejected`, и `distillNext` больше никогда не берёт эту
+сигнатуру (`known[...] = true`). В Lumen так потеряно 6 кандидатов, которых
+никто не оценивал. Плюс промпт дистиллятора ничем не ограничен по размеру.
+
+**Что сделать.**
+1. `skillpilot.go`: `func decodeSkillReason(s string) SkillReason` (пустая или
+   битая строка → нулевое значение) + тест.
+2. Константа `MaxDistillAttempts = 3`. В цикле `distillNext` строки со статусом
+   `rejected` и кодом `ReasonDistillFailed` или `ReasonReviewFailed` **не**
+   кладутся в `known`; вместо этого считается число таких строк на `SigKey`.
+   После цикла сигнатуры с ≥ `MaxDistillAttempts` сбоями — в `known`. В
+   `lastAuto` (интервал `AutoDistillGapRuns`) и в `spentToday` сбойные строки
+   по-прежнему учитываются — интервал защищает от шквала повторов.
+3. `reviewDraft`: ошибка вызова рецензента больше не отклоняет оплаченный
+   черновик. В `SkillReason` новое поле `Attempts int \`json:"attempts,omitempty"\``;
+   при ошибке — статус остаётся `draft`, `Code = ReasonReviewFailed`,
+   `Attempts++` (через `UpdateSkillStatus(id, draft, reason, now)`); при
+   `Attempts >= MaxDistillAttempts` — `rejected`, как раньше.
+4. Порог `ResolveSkillMinScore(candidates, 0, 0)` в `distillNext` считается
+   сейчас по *всем* кандидатам, включая уже разобранные (`known`). Когда верхние
+   3 % разобраны, ни один оставшийся кандидат порог не проходит и автопилот
+   навсегда пишет `no_candidate`. Считать порог только по кандидатам, которые
+   прошли фильтры `Kind`/`ContextLossSuspect`/`known`.
+5. `analysis/skill.go`, `buildSkillTaskText` — пределы (константы рядом с
+   функцией): `maxSkillSampleRunes = 600` на команду образца,
+   `maxSkillFailures = 3` кластера (берутся первые — они уже отсортированы по
+   `DistinctRuns`), `maxSkillFailureArgRunes = 300` на `FailedArg`/`FixedArg`,
+   `maxSkillTaskRunes = 12000` на весь текст (обрезка в конце с маркером
+   `… (truncated)`). Обрезка — по рунам, не по байтам (кириллица).
+6. Текст ошибки в `SkillReason.Text` для `distill_failed`/`review_failed` —
+   не длиннее 300 рун.
+
+**Готово когда:** тесты: (а) после одной строки `distill_failed` следующий `Tick`
+дистиллирует тот же кандидат; (б) после трёх — не берёт; (в) ошибка рецензента
+оставляет черновик `draft` с `Attempts = 1`, третья — `rejected`;
+(г) `buildSkillTaskText` с 60 кластерами по 5 000 символов: ≤ 12 000 рун и не
+больше 3 кластеров; (д) когда лучший кандидат уже в `known`, второй всё равно
+выбирается (п.4). Все прежние тесты зелёные. Шесть существующих строк
+`distill_failed` становятся снова доступны без миграции — это следствие п.2,
+отметить в коммите.
+
+## LN-32: Ошибка связана с кандидатом только через его собственную команду; полные вхождения
+
+**Depends on:** LN-31
+**Files:** `internal/experience/failures.go`, `failures_test.go`, `candidate.go`,
+`candidate_test.go`, `skillpilot.go` (`SkillDistillInputFromCandidate`)
+
+**Зачем.** `relateFailures` связывает кластер с кандидатом, если они встретились в
+одном прогоне. У частой команды так набираются десятки чужих ошибок. Кроме того,
+`candAcc.samples` хранит только *первую* строку вхождения n-граммы: для
+`grep → sed` дистиллятор видит одни `grep`. И образцы — самые старые вхождения,
+а не лучшие.
+
+**Что сделать.**
+1. `FixPair` — новое поле `Sig string` (сигнатура упавшего вызова);
+   `ExtractFromRun` заполняет `Sig: r.Sig`. Источник A (mixed) оставляет пустым.
+2. `relateFailures(sig []string, clusters []FailureCluster)`: кластер связан, если
+   у какого-либо его `Example` непустой `Sig` входит в множество шагов `sig`.
+   `candAcc.runKeys` удалить, если больше нигде не используется.
+3. Вхождения: в `candAcc` вместо `samples` — до `maxCandidateSamples` лучших
+   вхождений `{rows []store.ActionRow (вся n-грамма, rows[i:i+n]); weight float64}`;
+   «лучше» = больше `stepOccurrenceWeight`, при равенстве — новее
+   (`rows[0].Timestamp`). Держать ограниченный срез, вытесняя худшее, — без
+   накопления всех вхождений.
+4. `SkillCandidate`: новое поле `Occurrences [][]store.ActionRow` (лучшие первыми);
+   `Samples` остаётся и равен первой строке каждого вхождения, в том же порядке
+   (UI и `ClassifyPermission` в `classifyCandidate` продолжают работать).
+5. `SkillDistillInputFromCandidate`: один `SkillSample` на вхождение, `Command` —
+   шаги построчно: для `Bash` — сам `Arg`, для остальных — `"<Tool> <Arg>"`.
+
+**Готово когда:** тесты: кластер, чья упавшая сигнатура не входит в кандидата, не
+связан даже в том же прогоне; связан, когда входит; вхождение 2-граммы содержит
+обе строки; при выборе образцов вхождение из `completed`-прогона вытесняет
+вхождение из `error`-прогона, а более новое — более старое при равном весе;
+`SkillCandidate` с `Occurrences` переживает `json.Marshal`/`Unmarshal` (фронтенд
+шлёт кандидата обратно в `App.DistillSkill`).
+
+## LN-33: Последовательность из одного чтения — не навык; что берёт автопилот
+
+**Depends on:** LN-32
+**Files:** `internal/experience/candidate.go`, `candidate_test.go`, `skillpilot.go`,
+`skillpilot_test.go`, `frontend/src/components/SkillReview.svelte`,
+`frontend/src/lib/locales/{ru,en}/skillReview.ts`
+
+**Зачем.** Все 9 отказов рецензента — последовательности из чтения
+(`grep -n`, `sed -n`, `cat`, `git status`): привычки, которые уже предписаны
+глобальным `CLAUDE.md`. А одиночные шаги (`reasonSingleStep`) имеют наибольший
+Score и потому побеждают в `distillNext`, хотя процедуры в них нет.
+
+**Что сделать.**
+1. `const reasonReadOnlySequence = "read_only_sequence"`.
+   `classifyCandidate` получает вхождения (LN-32). Новое правило — после правила
+   loop и до правила «2+ шагов → skill»: `len(sig) > 1`, связанных ошибок нет, и
+   каждая строка каждого вхождения проходит `ClassifyPermission(row.Tool, row.Arg)`
+   → `KindNoise, reasonReadOnlySequence`. Нет вхождений → правило не срабатывает
+   (отсутствие данных ничего не доказывает — как в `allSamplesReadOnly`).
+   Обновить doc-комментарий правил над функцией.
+2. `distillNext`: автопилот берёт только `KindSkill` с `KindReason` из
+   `{reasonKnownFailure, reasonMultiStep}`; сначала `known_failure`, внутри —
+   по `Score`. `single_step` остаётся видимым в ручной дистилляции во вкладке.
+3. UI: `REASON_KEYS` в `SkillReview.svelte` + ключ
+   `skillReview.reasonReadOnlySequence`: ru — «Только чтение — привычка, а не
+   процедура», en — «Read-only sequence — a habit, not a procedure».
+
+**Готово когда:** тесты: `grep -n → sed -n` (оба шага read-only) → `noise /
+read_only_sequence`; `grep -n → Edit` → `skill / multi_step`; read-only
+последовательность со связанной ошибкой (по LN-32) остаётся `skill`; автопилот
+при наличии `single_step` с бо́льшим Score выбирает `multi_step`; при наличии
+`known_failure` выбирает его. Фронтенд собирается (`npm run build` в `frontend`).
+
+## LN-34: Память отказов рецензента
+
+**Depends on:** LN-31, LN-33
+**Files:** `internal/analysis/skillreview.go`, `skillreview_test.go`,
+`internal/analysis/skill.go`, `skill_test.go`, `internal/experience/skillpilot.go`,
+`skillpilot_test.go`, `app.go` (`DistillSkill`)
+
+**Зачем.** Отказ запоминается только по точной сигнатуре, поэтому варианты одного
+приёма (`grep-locate-then-read-range`, `read-file-slices-with-sed`,
+`peek-wide-lines…`) дистиллируются заново за $0.38 каждый. Причина отказа нигде
+не используется.
+
+**Что сделать.**
+1. `SkillReviewJSONSchema`: свойство `"generic": {"type": "boolean"}` (не
+   обязательное). `SkillReview.Generic bool \`json:"generic,omitempty"\``.
+   В `SkillReviewSystemPrompt` строка: «Set generic=true when you reject because
+   the draft is generic advice, a trivial command, restates how a common tool
+   works, or repeats rules already in CLAUDE.md (global or project)».
+2. `SkillReason.Generic bool \`json:"generic,omitempty"\``; оба места отказа
+   рецензента (`distillNext`, `reviewDraft`) его заполняют.
+3. `distillNext`: `genericSteps` — объединение шагов сигнатур строк с
+   `review_rejected` и `Generic`. Кандидат, у которого **каждый** шаг входит в
+   `genericSteps`, пропускается.
+4. `experience.RejectedBefore(st *store.Store, project string, n int) []string` —
+   до `n` последних строк `review_rejected` проекта в виде
+   `"<name>: <reason, ≤200 рун>"`. `analysis.SkillDistillInput.RejectedBefore
+   []string`; `buildSkillTaskText` выводит раздел «Drafts already rejected in this
+   project (do not produce the same kind of skill):» (входит в общий предел
+   LN-31). Заполняют и автопилот (`n = 5`), и `App.DistillSkill` (ручная
+   дистилляция; у `App` есть `a.store`).
+
+**Готово когда:** тесты: разбор ответа с `generic`; после отказа с `Generic` для
+`[A, B]` кандидат `[B]` и `[A, B]` пропускаются, а `[A, C]` — нет; отказ без
+`Generic` ничего не блокирует, кроме своей сигнатуры; `buildSkillTaskText`
+содержит раздел отказов, когда он задан, и не содержит, когда пуст.
+
+## LN-35: Текст ошибки в `action_signatures`; ключ кластера по нему
+
+**Depends on:** —
+**Files:** `internal/store/migrations.go`, `internal/store/store.go`,
+`store_test.go`, новый `internal/experience/errtext.go` (+ `errtext_test.go`),
+`internal/experience/indexer.go`, `failures.go`, `failures_test.go`,
+`docs/architecture.md` (схема SQLite)
+
+**Зачем.** Индексатор сохраняет только флаг `is_error`, хотя текст ошибки у шага
+есть (`Step.ResultText`, и в транскриптах, и в md-логах). Поэтому `ErrorKey`
+строится из упавшей команды, и одинаковые ошибки разных команд не
+группируются.
+
+**Что сделать.**
+1. Колонка `err_text TEXT` в `action_signatures`: в `CREATE TABLE` и в список
+   `ALTER TABLE … ADD COLUMN` с терпимостью к «duplicate column» (образец —
+   `dur_sec` в `migrations.go`).
+2. `store.ActionRow.ErrText string`; запись в `InsertActions`; чтение во всех
+   `SELECT`, которые сканируют полную строку (`ActionsForRun`,
+   `ActionRowsForCandidates`, найди остальные по `dur_sec, ts`). NULL → `""`.
+3. `errtext.go`: `func ErrorLine(text string) string` — одна осмысленная строка
+   ошибки, ≤ 200 рун. Правила (из замера по 270 ошибкам транскриптов):
+   - снять теги `<tool_use_error>` / `</tool_use_error>`;
+   - пропустить начальную строку `Exit code N` / `Error: Exit code N`;
+   - если остаток начинается с `Traceback (most recent call last):` — взять
+     последнюю непустую строку (само исключение);
+   - иначе среди первых 20 непустых строк — первая, содержащая (без учёта
+     регистра) `error`, `fatal`, `failed`, `panic`, `not found`, `denied`,
+     `cannot`, `isolated`; если такой нет — первая непустая;
+   - если ничего не осталось — исходная строка `Exit code N`.
+   В doc-комментарии — замер (152 из 270 начинаются с `Exit code N`).
+4. `indexer.go`, `actionRows`: `ErrText: ErrorLine(step.ResultText)` только когда
+   `step.ResultIsError`. Это покрывает и транскрипты, и md-логи.
+5. `failures.go`, `ExtractFromRun`: `FixPair.Output = r.ErrText`. `errorKeySource`
+   уже предпочитает `Output`; при пустом остаётся старый ключ по команде.
+6. В тело строки ничего, кроме этой одной строки, не сохранять (приватность:
+   вывод инструментов в SQLite не дублируется — см. комментарий к `SkillSample`).
+
+**Готово когда:** табличный тест `ErrorLine` на реальных формах: `Exit code 1` +
+`/usr/bin/bash: -c: line 3: unexpected EOF…`; `Traceback … ValueError: x`;
+`<tool_use_error>File has not been read yet. Read it first…</tool_use_error>`;
+`This session is isolated in the worktree C:\…`; пустая строка. Тест
+round-trip `err_text` через `InsertActions`/`ActionRowsForCandidates`; тест, что
+две разные команды с одинаковой ошибкой дают один кластер; миграция на старой БД
+без колонки проходит (образец — существующие тесты миграций в `store_test.go`).
+
+## LN-36: Дозаполнение `err_text` для уже проиндексированной истории
+
+**Depends on:** LN-35
+**Files:** `internal/store/store.go`, `store_test.go`, новый
+`internal/experience/backfill.go` (+ `backfill_test.go`),
+`internal/session/manager.go`
+
+**Зачем.** Без этого кластеры по тексту ошибки начнут копиться только с нуля, а в
+истории Lumen уже 322 ошибки за 90 дней.
+
+**Что сделать.**
+1. `store`: `ErrorRowsMissingText(limit int) ([]ErrTextRef, error)` — строки
+   `is_error = 1 AND err_text IS NULL` (`ID`, `Project`, `CLISessionID`,
+   `StepIndex`); `SetActionErrText(id int64, text string) error`.
+2. `experience.BackfillErrorText(st *store.Store, projectPaths map[string]string)
+   (filled, missing int, err error)`: пачками по 500 строк, группировка по
+   `CLISessionID`; `FindTranscript(TranscriptsRoot(), projectPath, cliID)` →
+   `ReadFrom(path, 0)` → шаги по `Index` → `ErrorLine(step.ResultText)`.
+   Транскрипт не найден или шага нет → `SetActionErrText(id, "")`, чтобы строка
+   не обрабатывалась повторно. Пустой `CLISessionID` → тоже `""`. Цикл кончается,
+   когда пачка пуста.
+3. `manager.go`: один запуск в фоновой горутине при старте менеджера, если хотя бы
+   у одного проекта включён `experience_tracking`; итог — в лог
+   `experience.err_text_backfill` (`filled`, `missing`). Старт не блокировать.
+   Найди, где менеджер запускает индексацию (`IngestRun`), и поставь рядом.
+
+**Готово когда:** тест на фикстуре транскрипта с ошибочным `tool_result`
+(`testdata/transcripts/`, корень через `CM_TRANSCRIPTS_DIR`): строка получает
+текст; строка без транскрипта получает `""` и при втором запуске не выбирается;
+второй запуск возвращает `filled = 0`. Проверку на живой БД делает пользователь
+после перезапуска приложения.
+
+## LN-37: Повторяющиеся ошибки: кластеры, запись в CLAUDE.md, замер эффекта
+
+**Depends on:** LN-35
+**Files:** `internal/store/migrations.go`, `store.go`, `store_test.go`, новый
+`internal/experience/failurerules.go` (+ `failurerules_test.go`),
+`docs/architecture.md` (схема)
+
+**Зачем.** LN-07 обещал «факт в CLAUDE.md» из повторяющейся ошибки, но кластеры
+сейчас используются только как приписка к кандидатам в навыки. Нужен отдельный
+путь «ошибка повторяется → одна строка правила → после одобрения в `CLAUDE.md` →
+замер, перестала ли повторяться». Эта задача — данные и логика без LLM и UI.
+
+**Что сделать.**
+1. Таблица `failure_rules`: `id INTEGER PRIMARY KEY, project TEXT NOT NULL,
+   error_key TEXT NOT NULL, examples_json TEXT, rule_text TEXT, status TEXT NOT
+   NULL` (`draft | accepted | dismissed`), `distinct_runs INTEGER, cost_usd REAL
+   DEFAULT 0, created_at DATETIME NOT NULL, decided_at DATETIME`,
+   `UNIQUE(project, error_key)`. Тип `store.FailureRule`; методы
+   `InsertFailureRule`, `ListFailureRules(project)`,
+   `UpdateFailureRule(id, status, ruleText string, decidedAt *time.Time)`,
+   `GetFailureRule(id)`.
+2. `experience.ErrorClusters(rows []store.ActionRow) []ErrorCluster` — по **всем**
+   строкам `is_error` с непустым `ErrText` (не только по парам «упало → починили»):
+   ключ `ErrorKey(ErrText)`; `Count`, `DistinctRuns` (ключ прогона —
+   `actionRunKey`), `LastSeen`, до 3 примеров `{FailedArg, ErrText, FixedArg}`,
+   где `FixedArg` — первая следующая безошибочная строка того же прогона в
+   пределах `FailurePairWindow` с той же `Sig`, иначе с тем же `Tool`, иначе `""`.
+   Сортировка по `DistinctRuns`.
+   Не учить шум — пропускать ошибки, чей `ErrText` начинается с:
+   `The user doesn't want to proceed`, `[Tool call interrupted`,
+   `Permission to use`, `read ECONNRESET`, `Request interrupted`.
+   Список — константой с комментарием «не уроки, а действия пользователя или сеть».
+3. `experience.FailureRuleCandidates(st, project) ([]ErrorCluster, error)`:
+   `ActionRowsForCandidates(project, candidateWindowDays)` → `ErrorClusters` →
+   `DistinctRuns >= MinCandidateRuns` → без ключей, уже имеющих строку в
+   `failure_rules` (любой статус).
+4. `experience.AppendClaudeMdRule(projectPath, rule string) error`: в
+   `<projectPath>/CLAUDE.md` раздел `## Learned from failures`; нет файла —
+   создать; нет раздела — дописать в конец; строка `- <rule>` — в конец раздела
+   (до следующего `## ` или конца файла); такая строка уже есть — ничего не
+   делать. Сохранять переводы строк файла (CRLF остаётся CRLF).
+5. `experience.FailureRuleEffect(st, project string, r store.FailureRule)
+   (FailureEffect, error)`: `RunsBefore/HitsBefore` — последние 20 прогонов
+   проекта до `decided_at`, `RunsAfter/HitsAfter` — все прогоны после; «hit» —
+   в прогоне есть строка `is_error` с `ErrorKey(ErrText) == r.ErrorKey`. Для
+   не-`accepted` — нулевой результат.
+
+**Готово когда:** тесты: два прогона с одинаковым текстом ошибки и разными
+командами → один кластер, `DistinctRuns = 2`; шумовые ошибки не попадают;
+`FixedArg` берётся по `Sig`, затем по `Tool`; `AppendClaudeMdRule` — создание
+файла, создание раздела, вставка перед следующим `## `, идемпотентность, CRLF;
+`FailureRuleEffect` на синтетике (3 из 20 до → 0 из 5 после); CRUD и
+уникальность `failure_rules`.
+
+## LN-38: Черновик правила (LLM), привязки App и MCP-инструменты
+
+**Depends on:** LN-30, LN-37
+**Files:** новый `internal/analysis/failurerule.go` (+ `failurerule_test.go`),
+`internal/session/manager.go` (если нужен вызов через менеджер — как
+`DistillSkill`/`skillDistillFn`), `app.go`, новый
+`internal/control/mcptools_failures.go` (образец — `mcptools_skills.go`),
+`docs/architecture.md`, `docs/mcp.md` (генерируется)
+
+**Что сделать.**
+1. `analysis.DraftFailureRule(ctx, projectPath string, in FailureRuleInput, cfg
+   AnalysisConfig) (*FailureRuleDraft, error)`. `FailureRuleInput{ErrorKey string;
+   DistinctRuns int; Examples []FailureRuleExample{FailedArg, ErrText, FixedArg}}`
+   (каждое поле ≤ 300 рун). Вызов `claude -p` по образцу `ReviewSkill`:
+   `--permission-mode plan`, `--output-format json`, `--json-schema`
+   `{"rule": string maxLength 300, "duplicate": boolean}`, модель по умолчанию
+   `sonnet`, effort `low`, **промпт через stdin** (`setPromptStdin`, LN-30).
+   Системный промпт: написать ОДНУ строку-правило для `CLAUDE.md` в
+   повелительном наклонении — факт о проекте или порядок действий, — которая
+   предотвращает эту ошибку; на языке `CLAUDE.md` проекта; `duplicate = true`,
+   если `CLAUDE.md` (глобальный или проекта) уже это говорит. `FailureRuleDraft{Rule
+   string; Duplicate bool; CostUSD float64}`.
+2. `App` (`app.go`), с той же проверкой `experience_tracking`, что у
+   `GetSkillCandidates`:
+   - `GetFailureRules(project string) ([]FailureRuleView, error)` — строки
+     `failure_rules` + `Effect` (LN-37) + число ещё не разобранных кластеров
+     (`FailureRuleCandidates`);
+   - `DraftFailureRules(project string, limit int) ([]store.FailureRule, error)` —
+     для первых `limit` (≤ 0 → 3) кандидатов вызвать `DraftFailureRule` и вставить
+     строку: `draft`, а при `Duplicate` — сразу `dismissed` (чтобы не
+     дистиллировать повторно); `cost_usd` записать;
+   - `AcceptFailureRule(id int64, ruleText string) error` —
+     `AppendClaudeMdRule(projectPath, ruleText)`, затем `accepted`, `decided_at =
+     now`, `rule_text = ruleText` (пользователь мог поправить текст);
+   - `DismissFailureRule(id int64) error`.
+   Запись в `CLAUDE.md` — только из `AcceptFailureRule` (инвариант 4: явное
+   «Принять»).
+3. MCP: `get_failure_rules` (read), `draft_failure_rules` (write, платный — так и
+   сказать в описании), `accept_failure_rule` (write), `dismiss_failure_rule`
+   (write) — по образцу `mcptools_skills.go`; затем `go run ./cmd/cm-mcp
+   -gen-docs`. Если parity-тест (`app_parity_test.go`) требует — добавить.
+4. `docs/architecture.md`: строки четырёх методов в таблице «Wails Bindings
+   (app.go)».
+
+**Готово когда:** тесты: аргументы `DraftFailureRule` без промпта в argv, промпт
+содержит ключ ошибки и примеры; разбор ответа (голый объект и обёртка `result`);
+`DraftFailureRules` с заглушкой: `Duplicate` → `dismissed`, иначе `draft`;
+`AcceptFailureRule` пишет строку в `CLAUDE.md` временного проекта и ставит
+`accepted`; `TestDocsInSync` и parity-тест зелёные.
+
+## LN-39: Вкладка «Ошибки» во `ExperiencePanel`
+
+**Depends on:** LN-38
+**Files:** `frontend/src/components/ExperiencePanel.svelte`,
+`frontend/src/stores/experience.ts`,
+`frontend/src/lib/locales/{ru,en}/experiencePanel.ts`,
+`frontend/tests/experience.spec.ts`, `GUI-TESTS.md`
+
+**Что сделать.**
+1. Новая вкладка `'failures'` в `type Tab` и в ряд кнопок вкладок (образец —
+   вкладка `skills`); ключ `experiencePanel.tabs.failures`: ru «Ошибки», en
+   «Failures».
+2. Содержимое (данные — `GetFailureRules`):
+   - строка «Повторяющихся ошибок без правила: N» и кнопка «Предложить правила»
+     → `DraftFailureRules(project, 3)`, на время вызова — индикатор и
+     заблокированная кнопка; после — стоимость вызова и обновление списка;
+   - **Черновики**: ключ ошибки, «в N прогонах», примеры «упало → сработало»
+     (моноширинно, обрезка длинных строк), `textarea` с текстом правила, кнопки
+     «Принять в CLAUDE.md» и «Отклонить». Без `window.confirm()` (CLAUDE.md,
+     Conventions);
+   - **Принятые**: правило, дата, эффект «до: X из N прогонов → после: Y из M»;
+   - **Отклонённые** — свёрнутым списком.
+3. Ошибку вызова показывать строкой в самой вкладке, а не модальным окном.
+4. Playwright-тест в `frontend/tests/experience.spec.ts` с подменёнными
+   привязками (образец — существующие тесты вкладок там же): список рендерится;
+   «Принять» вызывает `AcceptFailureRule` с отредактированным текстом;
+   «Предложить правила» блокирует кнопку на время вызова. Строка в
+   `GUI-TESTS.md`.
+
+**Готово когда:** `npm run build` и Playwright-тест вкладки зелёные, `go test
+./...` зелёный; вкладка видна при включённом `experience_tracking`.

@@ -14,7 +14,7 @@ Desktop app (Windows) to launch, monitor, and control parallel Claude Code CLI s
 | [TASKS.md](./TASKS.md) | App task breakdown (TASK-01..15) |
 | [HARNESS-TASKS.md](./HARNESS-TASKS.md) | Test/control harness task breakdown (H1..H6) |
 | [MIXED-TASKS.md](./MIXED-TASKS.md) | Mixed programming task breakdown (MP-01..08) |
-| [LEARN-TASKS.md](./LEARN-TASKS.md) | Experience layer task breakdown (LN-01..18); queue in [LEARN-STATUS.md](./LEARN-STATUS.md) |
+| [LEARN-TASKS.md](./LEARN-TASKS.md) | Experience layer task breakdown (LN-01..29 done; LN-30..39: why the skill autopilot rejects everything, and rules learned from recurring errors); queue in [STATUS-P1.md](./STATUS-P1.md) |
 | [VIEW-TASKS.md](./VIEW-TASKS.md) | Hermes-style session feed in `LogStream` (UI-01..06); queue in [STATUS-P1.md](./STATUS-P1.md) |
 | [RUNTIME-TASKS.md](./RUNTIME-TASKS.md) | Common runtime event format + `Runtime` interface (RT-01..08); queue in [STATUS-P1.md](./STATUS-P1.md). Its RT-01 creates `docs/runtimes.md` — how Claude/Hermes streams map to `ParsedEvent` |
 | [MCP-TASKS.md](./MCP-TASKS.md) | `cm-mcp` as a public MCP server with full GUI parity for third-party agents (MCP-01..18 done; audit fixes MCP-19..23); queue in [STATUS-P1.md](./STATUS-P1.md). Its MCP-01 creates `docs/mcp.md` — the agent-facing guide |
@@ -60,7 +60,7 @@ prompt, which is why the prompt is one line.
 
 | Session | Queue (`task_source`) | Task specs | Branch prefix | Pool slot |
 |---|---|---|---|---|
-| `Developer 1` | `STATUS-P1.md` | `VIEW-TASKS.md` (UI-01..13 done, UI-14), `RUNTIME-TASKS.md` (RT-01..08, done), `WT-TASKS.md` (WT-01..03), `QUEUE-TASKS.md` (QV-01..03), `CTX-TASKS.md` (CTX-01), `COST-TASKS.md` (COST-01..04), `MCP-TASKS.md` (MCP-01..18 done, MCP-19..23) | `p1-` | `p1-work` |
+| `Developer 1` | `STATUS-P1.md` | `VIEW-TASKS.md` (UI-01..13 done, UI-14), `RUNTIME-TASKS.md` (RT-01..08, done), `WT-TASKS.md` (WT-01..03), `QUEUE-TASKS.md` (QV-01..03), `CTX-TASKS.md` (CTX-01), `COST-TASKS.md` (COST-01..04), `MCP-TASKS.md` (MCP-01..18 done, MCP-19..23), `LEARN-TASKS.md` (LN-30..39) | `p1-` | `p1-work` |
 
 Read the task file's own rules before starting — each breakdown carries
 invariants that are not repeated here (`LEARN-TASKS.md` §Инварианты: everything
