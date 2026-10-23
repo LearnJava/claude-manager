@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS action_signatures (
     out_tokens     INTEGER DEFAULT 0,
     result_chars   INTEGER DEFAULT 0,
     dur_sec        INTEGER DEFAULT 0,
+    err_text       TEXT,
     ts             DATETIME NOT NULL
 )`
 
@@ -253,6 +254,9 @@ func migrate(db *sql.DB) error {
 		// action_signatures predates the duration profile (LEARN-TASKS.md
 		// LN-18): same additive pattern as above.
 		`ALTER TABLE action_signatures ADD COLUMN dur_sec INTEGER DEFAULT 0`,
+		// err_text (LEARN-TASKS.md LN-35): one meaningful error line of a
+		// failed call, so ErrorKey clusters by the error, not the command.
+		`ALTER TABLE action_signatures ADD COLUMN err_text TEXT`,
 		// session_runs predates outcome-based model routing (LEARN-TASKS.md
 		// LN-13): a run's effort never had anywhere to land, so
 		// optimization.OutcomeStats (internal/store/store.go) had no way to

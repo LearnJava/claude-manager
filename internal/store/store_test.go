@@ -1520,3 +1520,39 @@ func TestUpdateSkillArchived(t *testing.T) {
 		t.Errorf("MD was modified: %q", got.MD)
 	}
 }
+
+// TestActionErrTextRoundTripAndMigration covers LN-35: err_text survives
+// InsertActions → ActionRowsForCandidates, and a database created before the
+// column existed is upgraded by migrate.
+func TestActionErrTextRoundTripAndMigration(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	rows := []ActionRow{
+		{Project: "p", Session: "S", StepIndex: 0, Tool: "Bash", Sig: "Bash:x", IsError: true, ErrText: "fatal: boom", Timestamp: now},
+		{Project: "p", Session: "S", StepIndex: 1, Tool: "Bash", Sig: "Bash:y", Timestamp: now},
+	}
+	if err := s.InsertActions(rows); err != nil {
+		t.Fatalf("InsertActions: %v", err)
+	}
+	got, err := s.ActionRowsForCandidates("p", 1)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("ActionRowsForCandidates: %v, %d rows", err, len(got))
+	}
+	byStep := map[int]string{}
+	for _, g := range got {
+		byStep[g.StepIndex] = g.ErrText
+	}
+	if byStep[0] != "fatal: boom" || byStep[1] != "" {
+		t.Errorf("ErrText by step = %v", byStep)
+	}
+
+	if _, err := s.db.Exec(`ALTER TABLE action_signatures DROP COLUMN err_text`); err != nil {
+		t.Fatalf("drop column: %v", err)
+	}
+	if err := migrate(s.db); err != nil {
+		t.Fatalf("migrate on old schema: %v", err)
+	}
+	if _, err := s.ActionsForRun(1); err != nil {
+		t.Fatalf("select after migrate: %v", err)
+	}
+}
