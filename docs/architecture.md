@@ -438,8 +438,10 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `RunSkillAutopilot(project)` | One autopilot step now: decide finished trials, then distill, review and apply at most one candidate; errors if the autopilot is off (LN-25/26) |
 | `GetFailureRules(project)` | A project's failure rules (newest first) with the examples each was drafted from and, for accepted ones, the effect (hits of the error in the 20 runs before vs the runs after), plus `Pending` — recurring errors without a rule yet (LN-38) |
 | `DraftFailureRules(project, limit)` | Paid: one `claude -p` call per recurring error (first `limit`, ≤ 0 → 3) writes a one-line CLAUDE.md rule; stored as `draft`, or `dismissed` when CLAUDE.md already says it. Writes nothing into the project (LN-38) |
-| `AcceptFailureRule(id, ruleText)` | Appends the (user-edited) rule to the "Learned from failures" section of the project's CLAUDE.md and marks it `accepted`; the only write into the repository (LN-38) |
+| `AcceptFailureRule(id, ruleText)` | For a draft, or an applied `trial`/`kept` rule (which then leaves the system prompt, LN-41): appends the (user-edited) rule to the "Learned from failures" section of the project's CLAUDE.md and marks it `accepted`; the only write into the repository (LN-38) |
 | `DismissFailureRule(id)` | Marks a draft `dismissed`; the error is not proposed again (LN-38) |
+| `RevertFailureRule(id)` | Switches an autopilot rule (`trial`/`kept`) off → `reverted`, `reason.code = reverted_manual`; it leaves the sessions' system prompt at their next start (LN-41) |
+| `RestoreFailureRule(id)` | `reverted` → `kept` (`restored_manual`), no new trial (LN-41) |
 | `ImportProjectLogs(project, dir)` | Bulk-import a directory of saved CLI logs into `action_signatures` (empty `dir` = the project's own `.claude-manager/logs/`); streams `experience:import` progress — the "Import logs" button (LEARN-TASKS.md LN-20) |
 | `GetRateLimitStatus()` | Current rate limit info |
 | `ExportLog(id, entries, format)` | Save log as MD/JSON/TXT via native dialog |
@@ -509,7 +511,7 @@ No DI frameworks, no ORMs. Standard library for everything else.
 - `plan_subtasks` — subtasks within plans
 - `mixed_briefs` — generated mixed-programming briefs (MP-06)
 - `action_signatures` — normalized tool-call signatures mined from CLI transcripts, per run (LN-02); `dur_sec` is the tool_use→tool_result gap, feeding the duration profile (LN-18); `err_text` is one meaningful error line of a failed call (`experience.ErrorLine`, LN-35) — the failure-cluster key
-- `failure_rules` — one row per recurring error (`UNIQUE(project, error_key)`), `status` draft | accepted | dismissed, `rule_text` is the one-line rule written into the project's CLAUDE.md under "Learned from failures" (`experience.AppendClaudeMdRule`), `decided_at` anchors the before/after measurement (`experience.FailureRuleEffect`) (LN-37)
+- `failure_rules` — one row per recurring error (`UNIQUE(project, error_key)`), `status` draft | accepted | dismissed | trial | kept | reverted (the last three: autopilot rules, LN-40/41), `rule_text` is the one-line rule written into the project's CLAUDE.md under "Learned from failures" (`experience.AppendClaudeMdRule`), `decided_at` anchors the before/after measurement (`experience.FailureRuleEffect`) (LN-37)
 - `ingest_state` — per-CLI-session transcript byte offset, so re-indexing never re-inserts rows (LN-02)
 - `imported_logfiles` — bulk-import dedup for `IngestDir`, keyed by (project, name, size, mtime) (LN-17)
 - `permission_events` — one row per resolved permission_request (auto-decided or human), source for the Permissions tab's rule suggestions (LN-04)

@@ -471,6 +471,8 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `draft_failure_rules` | operate | запускает модель | Ask a model to write a one-line CLAUDE.md rule for each of the project's most frequent recurring errors that has none yet. |
 | `accept_failure_rule` | admin | — | Append a drafted rule to the "Learned from failures" section of the project's CLAUDE.md and mark it accepted. |
 | `dismiss_failure_rule` | operate | идемпотентное | Turn a drafted rule down so the error is not proposed again. |
+| `revert_failure_rule` | operate | идемпотентное | Switch off a rule the skill autopilot applies to the project's sessions (status trial or kept). |
+| `restore_failure_rule` | operate | идемпотентное | Bring a reverted autopilot rule back into the system prompt of the project's sessions. |
 
 <!-- END GENERATED: tools -->
 
@@ -639,8 +641,8 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `GetMixedQuality` | `get_mixed_quality` | read |
 | `GetMixedRounds` | `get_mixed_rounds` | read |
 | `GetModelRecommendation` | `get_model_advice` | read |
-| `GetPendingPermissions` | `get_pending_permissions` | read |
 | `GetPendingPermissions` | `get_pending` | read |
+| `GetPendingPermissions` | `get_pending_permissions` | read |
 | `GetPendingQuestions` | `get_pending` | read |
 | `GetPendingQuestions` | `get_pending_questions` | read |
 | `GetPermissionCandidates` | `get_permission_candidates` | read |
@@ -672,11 +674,13 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `ListSlashCommands` | `list_slash_commands` | read |
 | `MirrorProject` | `mirror_project` | admin |
 | `RegisterMixedBrief` | `register_mixed_brief` | operate |
-| `RespondPermission` | `approve_permission` | admin |
 | `RespondPermission` | `deny_permission` | operate |
+| `RespondPermission` | `approve_permission` | admin |
 | `RestartSession` | `restart_session` | operate |
+| `RestoreFailureRule` | `restore_failure_rule` | operate |
 | `RestoreSkill` | `restore_skill` | admin |
 | `ResumeSession` | `restart_session` | operate |
+| `RevertFailureRule` | `revert_failure_rule` | operate |
 | `RunPreflight` | `run_preflight` | operate |
 | `RunSkillAutopilot` | `run_skill_autopilot` | operate |
 | `SendMessage` | `send_message` | operate |

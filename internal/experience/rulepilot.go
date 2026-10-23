@@ -24,6 +24,9 @@ const (
 
 	RuleReasonNoEffect = "no_effect"
 	RuleReasonWorse    = "worse"
+	// Codes of a decision the user made by hand (LN-41).
+	RuleReasonRevertedManual = "reverted_manual"
+	RuleReasonRestoredManual = "restored_manual"
 )
 
 // FailureRuleReason is the JSON stored in failure_rules.reason for a rule the
@@ -37,6 +40,21 @@ type FailureRuleReason struct {
 	RunsAfter    int    `json:"runs_after"`
 	CompletedBef int    `json:"completed_before"`
 	CompletedAft int    `json:"completed_after"`
+}
+
+// NewFailureRuleReason is the reason JSON for a decision with the measured effect e.
+func NewFailureRuleReason(code string, e FailureEffect) string { return newFailureRuleReason(code, e) }
+
+// ParseFailureRuleReason reads a stored reason; nil when empty or malformed.
+func ParseFailureRuleReason(raw string) *FailureRuleReason {
+	if raw == "" {
+		return nil
+	}
+	var r FailureRuleReason
+	if json.Unmarshal([]byte(raw), &r) != nil {
+		return nil
+	}
+	return &r
 }
 
 func newFailureRuleReason(code string, e FailureEffect) string {

@@ -353,4 +353,43 @@ test.describe('Experience panel', () => {
     await modal.getByRole('button', { name: 'Accept into CLAUDE.md' }).click();
     await expect.poll(() => page.evaluate(() => (window as any).__accept)).toEqual([[7, 'Always use ./ paths']]);
   });
+
+  test('Failures tab: autopilot rules can be switched off and brought back', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Experience' }).click();
+    const modal = page.getByRole('dialog');
+    await expect(modal).toBeVisible({ timeout: 3_000 });
+
+    await page.evaluate(() => {
+      const w = window as any;
+      const App = w.go.main.App;
+      w.__revert = [] as unknown[];
+      w.__restore = [] as unknown[];
+      const base = {
+        Project: 'test', ErrorKey: 'k', DistinctRuns: 3, CostUSD: 0, CreatedAt: new Date().toISOString(),
+        DecidedAt: new Date().toISOString(), Origin: 'auto', Examples: null, TrialRuns: 10,
+        Effect: { RunsBefore: 20, HitsBefore: 8, RunsAfter: 4, HitsAfter: 1 }, Why: null,
+      };
+      const rules = [
+        { ...base, ID: 1, RuleText: 'Rule on trial', Status: 'trial' },
+        {
+          ...base, ID: 2, RuleText: 'Rule thrown out', Status: 'reverted',
+          Why: { code: 'no_effect', hits_before: 8, runs_before: 20, hits_after: 5, runs_after: 10, completed_before: 0, completed_after: 0 },
+        },
+      ];
+      App.GetFailureRules = () => Promise.resolve({ Rules: rules, Pending: 0 });
+      App.RevertFailureRule = (...a: unknown[]) => { w.__revert.push(a); return Promise.resolve(undefined); };
+      App.RestoreFailureRule = (...a: unknown[]) => { w.__restore.push(a); return Promise.resolve(undefined); };
+    });
+
+    await modal.getByRole('button', { name: 'Failures' }).click();
+    await expect(modal.getByText('Applied by the autopilot (2)')).toBeVisible({ timeout: 5_000 });
+    await expect(modal.getByText('trial: 4 of 10 runs')).toBeVisible();
+    await expect(modal.getByText('the error did not get rarer', { exact: false })).toBeVisible();
+
+    await modal.getByRole('button', { name: 'Switch off' }).click();
+    await expect.poll(() => page.evaluate(() => (window as any).__revert)).toEqual([[1]]);
+    await modal.getByRole('button', { name: 'Bring back' }).click();
+    await expect.poll(() => page.evaluate(() => (window as any).__restore)).toEqual([[2]]);
+  });
 });

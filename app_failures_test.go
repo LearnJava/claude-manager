@@ -112,3 +112,59 @@ func TestDismissFailureRule(t *testing.T) {
 		t.Errorf("dismiss must not write CLAUDE.md")
 	}
 }
+
+func TestRevertRestoreFailureRule(t *testing.T) {
+	a, _ := failuresApp(t)
+	now := time.Now().UTC()
+	row := store.FailureRule{Project: "p", ErrorKey: "k", RuleText: "r", Status: store.FailureRuleTrial,
+		Origin: store.FailureRuleOriginAuto, DecidedAt: &now}
+	if err := a.store.InsertFailureRule(&row); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.RestoreFailureRule(row.ID); err == nil {
+		t.Errorf("restoring a trial rule must fail")
+	}
+	if err := a.RevertFailureRule(row.ID); err != nil {
+		t.Fatal(err)
+	}
+	if inj, _ := a.store.InjectedFailureRules("p"); len(inj) != 0 {
+		t.Errorf("reverted rule still injected: %+v", inj)
+	}
+	st, err := a.GetFailureRules("p")
+	if err != nil || len(st.Rules) != 1 || st.Rules[0].Why == nil || st.Rules[0].Why.Code != "reverted_manual" || st.Rules[0].Origin != "auto" {
+		t.Fatalf("view %+v %v", st, err)
+	}
+	if err := a.RevertFailureRule(row.ID); err == nil {
+		t.Errorf("reverting twice must fail")
+	}
+	if err := a.RestoreFailureRule(row.ID); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := a.store.GetFailureRule(row.ID)
+	if r.Status != store.FailureRuleKept || !strings.Contains(r.Reason, "restored_manual") {
+		t.Errorf("row %+v", r)
+	}
+	if inj, _ := a.store.InjectedFailureRules("p"); len(inj) != 1 {
+		t.Errorf("restored rule not injected")
+	}
+}
+
+func TestAcceptAppliedRuleLeavesSystemPrompt(t *testing.T) {
+	a, dir := failuresApp(t)
+	now := time.Now().UTC()
+	row := store.FailureRule{Project: "p", ErrorKey: "k", RuleText: "r", Status: store.FailureRuleKept,
+		Origin: store.FailureRuleOriginAuto, DecidedAt: &now}
+	if err := a.store.InsertFailureRule(&row); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.AcceptFailureRule(row.ID, "Moved rule."); err != nil {
+		t.Fatal(err)
+	}
+	if inj, _ := a.store.InjectedFailureRules("p"); len(inj) != 0 {
+		t.Errorf("accepted rule still injected: %+v", inj)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if !strings.Contains(string(data), "- Moved rule.") {
+		t.Errorf("CLAUDE.md = %q", data)
+	}
+}

@@ -4,11 +4,15 @@
     // nothing reaches the repository before "Accept into CLAUDE.md".
     import { formatCost, formatTime } from '../lib/formatters';
     import { t } from '../lib/i18n';
+    import { EventsOn } from '../../wailsjs/runtime/runtime';
+    import { onMount } from 'svelte';
     import {
         acceptFailureRule,
         dismissFailureRule,
         draftFailureRules,
         fetchFailureRules,
+        restoreFailureRule,
+        revertFailureRule,
         type FailureRule,
     } from '../stores/experience';
 
@@ -32,6 +36,15 @@
     $: drafts = rules.filter((r) => r.Status === 'draft');
     $: accepted = rules.filter((r) => r.Status === 'accepted');
     $: dismissed = rules.filter((r) => r.Status === 'dismissed');
+    $: applied = rules.filter((r) => r.Status === 'trial' || r.Status === 'kept' || r.Status === 'reverted');
+
+    // The autopilot (LN-40) sends skills:changed when it applied or switched off a rule.
+    onMount(() => {
+        const off = EventsOn('skills:changed', (evt: { project: string }) => {
+            if (evt?.project === project) void load();
+        });
+        return () => off?.();
+    });
 
     export async function load() {
         if (!project) {
@@ -67,6 +80,42 @@
             drafting = false;
         }
         await load();
+    }
+
+    async function act(r: FailureRule, what: 'revert' | 'restore' | 'move') {
+        busy[r.ID] = true;
+        busy = busy;
+        error = '';
+        try {
+            if (what === 'revert') await revertFailureRule(r.ID);
+            else if (what === 'restore') await restoreFailureRule(r.ID);
+            else await acceptFailureRule(r.ID, r.RuleText);
+            await load();
+        } catch (e) {
+            error = String(e);
+        } finally {
+            busy[r.ID] = false;
+            busy = busy;
+        }
+    }
+
+    function appliedStatus(r: FailureRule): string {
+        if (r.Status === 'trial') {
+            const n = Math.min(r.Effect?.RunsAfter ?? 0, r.TrialRuns || 10);
+            return $t('experiencePanel.failures.statusTrial', { n, total: r.TrialRuns || 10 });
+        }
+        return $t(r.Status === 'kept' ? 'experiencePanel.failures.statusKept' : 'experiencePanel.failures.statusReverted');
+    }
+
+    function appliedWhy(r: FailureRule): string {
+        const w = r.Why;
+        if (!w) return '';
+        const key = 'experiencePanel.failures.why.' + w.code;
+        const text = $t(key);
+        const head = text === key ? w.code : text;
+        return head + ': ' + $t('experiencePanel.failures.effect', {
+            hb: w.hits_before, rb: w.runs_before, ha: w.hits_after, ra: w.runs_after,
+        });
     }
 
     async function decide(r: FailureRule, accept: boolean) {
@@ -162,6 +211,44 @@
                             class="px-2 py-1 rounded border border-bg-border hover:bg-bg-elevated/60 disabled:opacity-50">
                             {$t('experiencePanel.failures.dismiss')}
                         </button>
+                    </div>
+                </div>
+            {/each}
+        {/if}
+
+        {#if applied.length > 0}
+            <h3 class="font-medium">{$t('experiencePanel.failures.applied', { n: applied.length })}</h3>
+            {#each applied as r (r.ID)}
+                <div class="border border-bg-border rounded p-3 space-y-1" data-testid="failure-applied">
+                    <div>{r.RuleText}</div>
+                    <div class="text-xs text-text-muted" data-testid="failure-applied-status">
+                        {appliedStatus(r)}{#if r.Why} · {appliedWhy(r)}{/if}
+                    </div>
+                    <div class="flex gap-2">
+                        {#if r.Status === 'reverted'}
+                            <button
+                                type="button"
+                                disabled={busy[r.ID]}
+                                on:click={() => act(r, 'restore')}
+                                class="px-2 py-1 rounded border border-bg-border hover:bg-bg-elevated/60 disabled:opacity-50">
+                                {$t('experiencePanel.failures.restore')}
+                            </button>
+                        {:else}
+                            <button
+                                type="button"
+                                disabled={busy[r.ID]}
+                                on:click={() => act(r, 'revert')}
+                                class="px-2 py-1 rounded border border-bg-border hover:bg-bg-elevated/60 disabled:opacity-50">
+                                {$t('experiencePanel.failures.revert')}
+                            </button>
+                            <button
+                                type="button"
+                                disabled={busy[r.ID]}
+                                on:click={() => act(r, 'move')}
+                                class="px-2 py-1 rounded border border-blue-500 hover:bg-bg-elevated/60 disabled:opacity-50">
+                                {$t('experiencePanel.failures.moveToClaudeMd')}
+                            </button>
+                        {/if}
                     </div>
                 </div>
             {/each}

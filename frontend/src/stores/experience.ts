@@ -8,6 +8,8 @@ import {
     AcceptFailureRule,
     AddPermissionRule,
     DismissFailureRule,
+    RestoreFailureRule,
+    RevertFailureRule,
     DraftFailureRules,
     GetFailureRules,
     ApproveSkill,
@@ -510,13 +512,27 @@ export interface FailureRule {
     Project: string;
     ErrorKey: string;
     RuleText: string;
-    Status: 'draft' | 'accepted' | 'dismissed';
+    Status: 'draft' | 'accepted' | 'dismissed' | 'trial' | 'kept' | 'reverted';
+    Origin: 'manual' | 'auto';
     DistinctRuns: number;
     CostUSD: number;
     CreatedAt: string;
     DecidedAt: string | null;
     Examples: FailureExample[] | null;
     Effect: FailureEffect;
+    // Parsed reason of a decided autopilot rule (LN-41), null otherwise.
+    Why: FailureRuleReason | null;
+    TrialRuns: number;
+}
+
+export interface FailureRuleReason {
+    code: string;
+    hits_before: number;
+    runs_before: number;
+    hits_after: number;
+    runs_after: number;
+    completed_before: number;
+    completed_after: number;
 }
 
 export interface FailureRulesState {
@@ -542,4 +558,12 @@ export function acceptFailureRule(id: number, ruleText: string): Promise<void> {
 
 export function dismissFailureRule(id: number): Promise<void> {
     return DismissFailureRule(id);
+}
+
+export function revertFailureRule(id: number): Promise<void> {
+    return RevertFailureRule(id);
+}
+
+export function restoreFailureRule(id: number): Promise<void> {
+    return RestoreFailureRule(id);
 }

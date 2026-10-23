@@ -1637,11 +1637,14 @@
           "type": "string"
         },
         "status": {
-          "description": "Only rules in this status: draft, accepted or dismissed; omit for all",
+          "description": "Only rules in this status: draft, accepted, dismissed, trial, kept or reverted; omit for all",
           "enum": [
             "draft",
             "accepted",
-            "dismissed"
+            "dismissed",
+            "trial",
+            "kept",
+            "reverted"
           ],
           "type": "string"
         }
@@ -1664,7 +1667,7 @@
           "type": "integer"
         },
         "rules": {
-          "description": "Rules: id, error_key, rule_text, status, distinct_runs, cost_usd, created_at, decided_at, examples (failed_arg, err_text, fixed_arg) and, for an accepted rule, effect (runs_before, hits_before, runs_after, hits_after)",
+          "description": "Rules: id, error_key, rule_text, status (draft, accepted, dismissed, trial, kept, reverted), origin (manual or auto), reason (for an autopilot rule: code, hits and runs before/after), distinct_runs, cost_usd, created_at, decided_at, examples (failed_arg, err_text, fixed_arg) and, for an accepted rule, effect (runs_before, hits_before, runs_after, hits_after)",
           "items": true,
           "type": [
             "null",
@@ -3911,6 +3914,52 @@
   },
   {
     "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Restore failure rule"
+    },
+    "description": "Bring a reverted autopilot rule back into the system prompt of the project's sessions. Use when: a rule with status reverted in get_failure_rules should apply again. Not for: drafts (use accept_failure_rule). Returns: ok and the rule_id. Side effects: marks the rule kept without a new trial; only a reverted rule can be restored; nothing is written into the project. Access: operate. Example: {\"rule_id\":\"4\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "rule_id": {
+          "description": "Rule id, the id of an item of get_failure_rules or draft_failure_rules, e.g. 4",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id"
+      ],
+      "type": "object"
+    },
+    "name": "restore_failure_rule",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was done",
+          "type": "boolean"
+        },
+        "rule_id": {
+          "description": "The rule acted on",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "rule_id"
+      ],
+      "type": "object"
+    },
+    "title": "Restore failure rule"
+  },
+  {
+    "_meta": {
       "cm/accessLevel": "admin"
     },
     "annotations": {
@@ -3962,6 +4011,52 @@
       "type": "object"
     },
     "title": "Restore skill"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Revert failure rule"
+    },
+    "description": "Switch off a rule the skill autopilot applies to the project's sessions (status trial or kept). Use when: a rule listed with status trial or kept in get_failure_rules does harm or is not wanted. Not for: moving it into CLAUDE.md (use accept_failure_rule) or turning a draft down (use dismiss_failure_rule). Returns: ok and the rule_id. Side effects: marks the rule reverted; it leaves the system prompt of sessions started afterwards; nothing is written into the project. Access: operate. Example: {\"rule_id\":\"4\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "rule_id": {
+          "description": "Rule id, the id of an item of get_failure_rules or draft_failure_rules, e.g. 4",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id"
+      ],
+      "type": "object"
+    },
+    "name": "revert_failure_rule",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was done",
+          "type": "boolean"
+        },
+        "rule_id": {
+          "description": "The rule acted on",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "rule_id"
+      ],
+      "type": "object"
+    },
+    "title": "Revert failure rule"
   },
   {
     "_meta": {
