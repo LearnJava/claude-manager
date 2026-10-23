@@ -194,6 +194,24 @@ CREATE TABLE IF NOT EXISTS skills (
     updated_at  DATETIME
 )`
 
+	// failure_rules (LEARN-TASKS.md LN-37): one row per recurring error, from
+	// draft through the user's decision. UNIQUE(project, error_key) keeps a
+	// dismissed rule from being proposed again.
+	sqlCreateFailureRules = `
+CREATE TABLE IF NOT EXISTS failure_rules (
+    id            INTEGER PRIMARY KEY,
+    project       TEXT NOT NULL,
+    error_key     TEXT NOT NULL,
+    examples_json TEXT,
+    rule_text     TEXT,
+    status        TEXT NOT NULL,
+    distinct_runs INTEGER,
+    cost_usd      REAL DEFAULT 0,
+    created_at    DATETIME NOT NULL,
+    decided_at    DATETIME,
+    UNIQUE(project, error_key)
+)`
+
 	sqlIdxLogsRun        = `CREATE INDEX IF NOT EXISTS idx_logs_run ON session_logs(run_id)`
 	sqlIdxRunsProject    = `CREATE INDEX IF NOT EXISTS idx_runs_project ON session_runs(project, session)`
 	sqlIdxBriefsProject  = `CREATE INDEX IF NOT EXISTS idx_briefs_project ON mixed_briefs(project)`
@@ -216,6 +234,7 @@ func migrate(db *sql.DB) error {
 		sqlCreateImportedLogfiles,
 		sqlCreatePermissionEvents,
 		sqlCreateSkills,
+		sqlCreateFailureRules,
 		sqlIdxLogsRun,
 		sqlIdxRunsProject,
 		sqlIdxBriefsProject,

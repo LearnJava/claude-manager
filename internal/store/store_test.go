@@ -1556,3 +1556,36 @@ func TestActionErrTextRoundTripAndMigration(t *testing.T) {
 		t.Fatalf("select after migrate: %v", err)
 	}
 }
+
+func TestFailureRulesCRUD(t *testing.T) {
+	s := newTestStore(t)
+	r := &FailureRule{Project: "p", ErrorKey: "boom N", ExamplesJSON: "[]", DistinctRuns: 3}
+	if err := s.InsertFailureRule(r); err != nil || r.ID == 0 {
+		t.Fatalf("insert: %v id=%d", err, r.ID)
+	}
+	if err := s.InsertFailureRule(&FailureRule{Project: "p", ErrorKey: "boom N"}); err == nil {
+		t.Error("duplicate (project, error_key) must fail")
+	}
+	if err := s.InsertFailureRule(&FailureRule{Project: "q", ErrorKey: "boom N"}); err != nil {
+		t.Errorf("same key in another project: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := s.UpdateFailureRule(r.ID, FailureRuleAccepted, "use X", &now); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetFailureRule(r.ID)
+	if err != nil || got == nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != FailureRuleAccepted || got.RuleText != "use X" || got.DecidedAt == nil ||
+		!got.DecidedAt.Equal(now) || got.DistinctRuns != 3 {
+		t.Errorf("got %+v", got)
+	}
+	list, err := s.ListFailureRules("p")
+	if err != nil || len(list) != 1 {
+		t.Errorf("list: %v %d", err, len(list))
+	}
+	if g, _ := s.GetFailureRule(9999); g != nil {
+		t.Error("missing id must return nil")
+	}
+}
