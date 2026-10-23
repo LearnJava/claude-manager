@@ -69,7 +69,7 @@ func run(args []string, in io.Reader, out io.Writer, scenarioEnv string) int {
 		// carries its prompt as the last argument instead and reads no stdin.
 		var firstLine, prompt string
 		restReader := in
-		if oneShot, ok := printModePrompt(args); ok {
+		if oneShot, ok := printModePromptStdin(args, in); ok {
 			prompt = oneShot
 			in = strings.NewReader("")
 			restReader = in
@@ -189,6 +189,30 @@ func extractPrompt(line string) string {
 		}
 	}
 	return ""
+}
+
+// printModePromptStdin is printModePrompt for a one-shot run whose prompt may
+// arrive on stdin (the app pipes it there to dodge the Windows command-line
+// limit): a non-blank stdin is the prompt, an empty one falls back to the last
+// argument. A session (--input-format) is left alone, stdin untouched.
+func printModePromptStdin(args []string, in io.Reader) (string, bool) {
+	hasP := false
+	for _, a := range args {
+		if a == "-p" || a == "--print" {
+			hasP = true
+		}
+		if a == "--input-format" || strings.HasPrefix(a, "--input-format=") {
+			return "", false
+		}
+	}
+	if hasP {
+		if data, err := io.ReadAll(in); err == nil {
+			if p := strings.TrimSpace(string(data)); p != "" {
+				return p, true
+			}
+		}
+	}
+	return printModePrompt(args)
 }
 
 // printModePrompt reports whether args describe a one-shot `-p` run and

@@ -25,7 +25,7 @@ type CLIExecutor struct {
 }
 
 // BuildSubtaskArgs constructs the argv for one subtask run. The subtask prompt
-// is the final positional argument; contextAppend (the rolling summary of
+// travels on stdin (setPromptStdin); contextAppend (the rolling summary of
 // prior groups) is forwarded via --append-system-prompt when present.
 func BuildSubtaskArgs(e CLIExecutor, sub PlannedSubtask, contextAppend string) []string {
 	model := sub.Model
@@ -53,7 +53,6 @@ func BuildSubtaskArgs(e CLIExecutor, sub PlannedSubtask, contextAppend string) [
 	if contextAppend != "" {
 		args = append(args, "--append-system-prompt", contextAppend)
 	}
-	args = append(args, sub.Prompt)
 	return args
 }
 
@@ -112,6 +111,7 @@ func (e *CLIExecutor) Execute(ctx context.Context, projectPath string, sub Plann
 	}
 
 	cmd := exec.CommandContext(ctx, bin, BuildSubtaskArgs(*e, sub, contextAppend)...)
+	setPromptStdin(cmd, sub.Prompt)
 	proc.HideConsole(cmd)
 	if projectPath != "" {
 		cmd.Dir = projectPath

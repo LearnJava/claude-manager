@@ -111,7 +111,13 @@ func BuildSkillReviewArgs(cfg AnalysisConfig, task string) []string {
 	if cfg.MaxBudgetUSD > 0 {
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(cfg.MaxBudgetUSD, 'f', -1, 64))
 	}
-	return append(args, "Review this skill draft:\n\n"+task)
+	return args
+}
+
+// skillReviewPrompt is the user prompt of the skill-review call; it travels on
+// stdin.
+func skillReviewPrompt(task string) string {
+	return "Review this skill draft:\n\n" + task
 }
 
 // ParseSkillReviewOutput decodes the reviewer's CLI stdout — either the
@@ -171,7 +177,9 @@ func ReviewSkill(ctx context.Context, projectPath string, in SkillReviewInput, c
 	if bin == "" {
 		bin = "claude"
 	}
-	cmd := exec.CommandContext(ctx, bin, BuildSkillReviewArgs(cfg, buildSkillReviewTask(in))...)
+	task := buildSkillReviewTask(in)
+	cmd := exec.CommandContext(ctx, bin, BuildSkillReviewArgs(cfg, task)...)
+	setPromptStdin(cmd, skillReviewPrompt(task))
 	proc.HideConsole(cmd)
 	if projectPath != "" {
 		cmd.Dir = projectPath

@@ -65,7 +65,7 @@ type resultWrapper struct {
 }
 
 // BuildAnalysisArgs constructs the argv passed to the Claude CLI for a
-// pre-flight analysis run. The task text is the final positional argument.
+// pre-flight analysis run. The task text is sent on stdin (analysisPrompt).
 func BuildAnalysisArgs(cfg AnalysisConfig, task string) []string {
 	model := cfg.Model
 	if model == "" {
@@ -97,7 +97,6 @@ func BuildAnalysisArgs(cfg AnalysisConfig, task string) []string {
 		args = append(args, "--max-budget-usd",
 			strconv.FormatFloat(cfg.MaxBudgetUSD, 'f', -1, 64))
 	}
-	args = append(args, "Analyze this task: "+task)
 	return args
 }
 
@@ -185,6 +184,7 @@ func RunAnalysis(ctx context.Context, projectPath, task string, cfg AnalysisConf
 
 	args := BuildAnalysisArgs(cfg, task)
 	cmd := exec.CommandContext(ctx, bin, args...)
+	setPromptStdin(cmd, analysisPrompt(task))
 	proc.HideConsole(cmd)
 	if projectPath != "" {
 		cmd.Dir = projectPath
@@ -208,6 +208,12 @@ func RunAnalysis(ctx context.Context, projectPath, task string, cfg AnalysisConf
 // process exits, which for a Opus roadmap decomposition can be many minutes
 // of total silence with no way to tell a slow run from a hung one.
 type ProgressFunc func(text string)
+
+// analysisPrompt is the user prompt of the pre-flight analysis calls; it
+// travels on stdin.
+func analysisPrompt(task string) string {
+	return "Analyze this task: " + task
+}
 
 // buildStreamingAnalysisArgs mirrors BuildAnalysisArgs but requests
 // `--output-format stream-json` (plus `--verbose`, which the CLI requires for
@@ -244,7 +250,6 @@ func buildStreamingAnalysisArgs(cfg AnalysisConfig, task string) []string {
 		args = append(args, "--max-budget-usd",
 			strconv.FormatFloat(cfg.MaxBudgetUSD, 'f', -1, 64))
 	}
-	args = append(args, "Analyze this task: "+task)
 	return args
 }
 
@@ -300,6 +305,7 @@ func RunAnalysisStreaming(ctx context.Context, projectPath, task string, cfg Ana
 
 	args := buildStreamingAnalysisArgs(cfg, task)
 	cmd := exec.CommandContext(ctx, bin, args...)
+	setPromptStdin(cmd, analysisPrompt(task))
 	proc.HideConsole(cmd)
 	if projectPath != "" {
 		cmd.Dir = projectPath

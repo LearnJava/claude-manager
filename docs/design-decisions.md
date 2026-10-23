@@ -125,6 +125,15 @@ the manager closes stdin when the turn's `result` event arrives so the CLI exits
 cleanly and the run loop can iterate; real Claude keeps the process alive on open
 stdin otherwise.
 
+**One-shot calls get the prompt on stdin.** The analysis helpers
+(`internal/analysis`: brief, executor, handoff, journal, preflight, skill,
+skillreview) run `claude -p` without a positional prompt and pipe it into stdin
+(`setPromptStdin`, `cliprompt.go`) — a Windows command line is capped at 32,767
+characters, which a long skill pattern or journal exceeded. The prompt text is
+built by a function next to each arg builder (`skillPrompt`, `journalPrompt`, …).
+`fakeclaude` mirrors this: in `-p` mode without `--input-format` a non-blank stdin
+is the prompt for scenario matching, an empty one falls back to the last argument.
+
 **Environment.** With `settings.python_utf8` (default true) the Claude process
 gets `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` (`utf8Env`,
 `internal/session/launch_env.go`); a variable already set, in any case, is kept.

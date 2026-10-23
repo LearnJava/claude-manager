@@ -240,3 +240,18 @@ func TestPrintModePrompt(t *testing.T) {
 		t.Errorf("got %q %v", p, ok)
 	}
 }
+
+func TestPrintModePromptStdin(t *testing.T) {
+	p, ok := printModePromptStdin([]string{"-p", "--permission-mode", "plan"}, strings.NewReader("  piped prompt\n"))
+	if !ok || p != "piped prompt" {
+		t.Errorf("stdin prompt = %q, %v", p, ok)
+	}
+	p, ok = printModePromptStdin([]string{"-p", "arg prompt"}, strings.NewReader(" \n"))
+	if !ok || p != "arg prompt" {
+		t.Errorf("empty stdin must fall back to the last arg, got %q, %v", p, ok)
+	}
+	in := strings.NewReader("keep")
+	if _, ok := printModePromptStdin([]string{"-p", "--input-format", "stream-json"}, in); ok || in.Len() != 4 {
+		t.Error("a session must not consume stdin")
+	}
+}

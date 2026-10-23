@@ -32,9 +32,8 @@ func TestBuildAnalysisArgsDefaults(t *testing.T) {
 	if args[0] != "-p" {
 		t.Errorf("expected -p first, got %q", args[0])
 	}
-	last := args[len(args)-1]
-	if !strings.HasPrefix(last, "Analyze this task:") {
-		t.Errorf("expected task as final positional arg, got %q", last)
+	if p := analysisPrompt("add retry logic to the client"); !strings.HasPrefix(p, "Analyze this task:") || !strings.Contains(p, "add retry logic") {
+		t.Errorf("unexpected analysis prompt %q", p)
 	}
 }
 

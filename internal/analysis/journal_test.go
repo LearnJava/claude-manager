@@ -56,9 +56,13 @@ func TestBuildJournalArgsDefaults(t *testing.T) {
 	if flagPresent(args, "--max-budget-usd") {
 		t.Error("--max-budget-usd should be absent when MaxBudgetUSD is 0")
 	}
-	last := args[len(args)-1]
-	if !strings.Contains(last, "some task text") {
-		t.Errorf("expected task text in final positional arg, got %q", last)
+	for _, a := range args {
+		if strings.Contains(a, "some task text") {
+			t.Errorf("task text must not be in argv, got %q", a)
+		}
+	}
+	if !strings.Contains(journalPrompt("some task text"), "some task text") {
+		t.Error("prompt function must contain the task text")
 	}
 }
 

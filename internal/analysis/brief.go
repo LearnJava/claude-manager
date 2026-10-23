@@ -65,8 +65,12 @@ func BuildBriefArgs(cfg AnalysisConfig, task string) []string {
 		args = append(args, "--max-budget-usd",
 			strconv.FormatFloat(cfg.MaxBudgetUSD, 'f', -1, 64))
 	}
-	args = append(args, "Write a mixed-programming brief for this task: "+task)
 	return args
+}
+
+// briefPrompt is the user prompt of the brief call; it travels on stdin.
+func briefPrompt(task string) string {
+	return "Write a mixed-programming brief for this task: " + task
 }
 
 // ParseBriefOutput decodes raw CLI stdout into a BriefResult. It accepts
@@ -207,6 +211,7 @@ func GenerateBrief(ctx context.Context, projectPath, task string, cfg AnalysisCo
 	}
 
 	cmd := exec.CommandContext(ctx, bin, BuildBriefArgs(cfg, task)...)
+	setPromptStdin(cmd, briefPrompt(task))
 	proc.HideConsole(cmd)
 	if projectPath != "" {
 		cmd.Dir = projectPath
