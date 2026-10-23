@@ -211,3 +211,34 @@ func TestFilesChangedFromLogs(t *testing.T) {
 		}
 	}
 }
+
+// TestRunJournalEntry_UsesJournalModel: the journal analyst model comes from
+// JournalModel, never from PreflightModel (COST-02).
+func TestRunJournalEntry_UsesJournalModel(t *testing.T) {
+	cases := []struct{ journalModel, want string }{
+		{"", "haiku"},
+		{"sonnet", "sonnet"},
+	}
+	for _, c := range cases {
+		m, _ := newTestManagerWithStore(t)
+		m.cfg.Settings.PreflightModel = "opus"
+		m.cfg.Settings.JournalModel = c.journalModel
+		m.SetJournalWriter(func(string, bool, JournalEntry) error { return nil })
+		var got analysis.AnalysisConfig
+		m.runJournalEntry(context.Background(), "lumen", t.TempDir(), "X:1", "r", nil, false,
+			func(_ context.Context, _ string, _ analysis.JournalInput, cfg analysis.AnalysisConfig) (*analysis.JournalResult, error) {
+				got = cfg
+				return &analysis.JournalResult{Done: "d"}, nil
+			})
+		args := analysis.BuildJournalArgs(got, "task")
+		found := false
+		for i, a := range args {
+			if a == "--model" && args[i+1] == c.want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("journal_model=%q: want --model %s in %v", c.journalModel, c.want, args)
+		}
+	}
+}

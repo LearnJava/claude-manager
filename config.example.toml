@@ -20,6 +20,7 @@ crash_recovery = true
 # start from the UI; only for sessions with a prompt and no task queue)
 preflight_analysis = true
 preflight_model = "haiku"
+journal_model = ""                     # task-journal analyst model; empty = haiku (independent of preflight_model)
 preflight_max_budget = 0               # 0 = no limit, >0 = USD cap
 preflight_auto_approve_single = true   # skip review dialog when plan has one session
 
