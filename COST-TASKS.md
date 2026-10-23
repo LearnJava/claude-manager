@@ -214,7 +214,7 @@
 
 | Задача | Статус | Ключевые файлы |
 |---|---|---|
-| COST-01 | ○ TODO | internal/session/session.go |
+| COST-01 | ✓ DONE | internal/session/session.go |
 | COST-02 | ○ TODO | internal/config/types.go, internal/session/manager.go |
 | COST-03 | ○ TODO | internal/session/session.go, handoff_budget.go |
 | COST-04 | ○ TODO | docs/Science_lab/claude-code-setup/tools/measure/measure.py |
