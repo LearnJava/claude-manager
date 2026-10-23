@@ -7,6 +7,7 @@ export default {
     'experiencePanel.tabs.timing': 'Timing',
     'experiencePanel.tabs.cost': 'Cost by tool',
     'experiencePanel.tabs.skills': 'Skills',
+    'experiencePanel.tabs.failures': 'Failures',
     'experiencePanel.refresh': 'Refresh',
 
     'experiencePanel.filters.project': 'Project',
@@ -102,4 +103,24 @@ export default {
         'Est. tokens are chars/4, an order-of-magnitude approximation — there is no exact tokenizer without hitting the API.',
     'experiencePanel.footer.skills':
         'Click a skill to see its markdown. Active skills live in <project>/.claude/skills/; switched-off ones in .claude-manager/archived-skills/.',
+
+    'experiencePanel.footer.failures':
+        'A rule reaches the project CLAUDE.md only after "Accept into CLAUDE.md"; the effect compares the last 20 runs before the decision with all runs after it.',
+    'experiencePanel.failures.pending': 'Recurring errors without a rule: {n}',
+    'experiencePanel.failures.suggest': 'Suggest rules',
+    'experiencePanel.failures.drafting': 'Drafting rules…',
+    'experiencePanel.failures.cost': 'Call cost: {cost}',
+    'experiencePanel.failures.error': 'Error: {error}',
+    'experiencePanel.failures.loading': 'Loading…',
+    'experiencePanel.failures.empty': 'No rules yet. They come from errors that repeat across several runs (needs experience_tracking).',
+    'experiencePanel.failures.drafts': 'Drafts ({n})',
+    'experiencePanel.failures.accepted': 'Accepted ({n})',
+    'experiencePanel.failures.dismissed': 'Dismissed ({n})',
+    'experiencePanel.failures.inRuns': 'in {n} runs',
+    'experiencePanel.failures.failed': 'failed',
+    'experiencePanel.failures.fixed': 'worked',
+    'experiencePanel.failures.accept': 'Accept into CLAUDE.md',
+    'experiencePanel.failures.dismiss': 'Dismiss',
+    'experiencePanel.failures.effect': 'before: {hb} of {rb} runs → after: {ha} of {ra}',
+    'experiencePanel.failures.decided': 'Accepted {date}',
 } as Record<string, string>;
