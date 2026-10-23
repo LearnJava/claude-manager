@@ -39,7 +39,7 @@ func newPilotFixture(t *testing.T) *pilotFixture {
 		accept: true,
 		draft:  analysis.SkillDraft{Name: "run-gates", Description: "Use before merging.", CostUSD: 0.2},
 		cands: []SkillCandidate{{
-			Sig: []string{"Bash:go build ./...", "Bash:go test ./..."}, Kind: KindSkill,
+			Sig: []string{"Bash:go build ./...", "Bash:go test ./..."}, Kind: KindSkill, KindReason: reasonMultiStep,
 			Score: 50, RunShare: 0.4, DistinctRuns: 8,
 		}},
 	}
@@ -162,7 +162,7 @@ func TestSkillPilot_NameTakenSkipsReview(t *testing.T) {
 func TestSkillPilot_OneTrialAtATime(t *testing.T) {
 	f := newPilotFixture(t)
 	f.tick()
-	f.cands = append(f.cands, SkillCandidate{Sig: []string{"Bash:make lint"}, Kind: KindSkill, Score: 60})
+	f.cands = append(f.cands, SkillCandidate{Sig: []string{"Bash:make lint"}, Kind: KindSkill, KindReason: reasonMultiStep, Score: 60})
 	f.addRuns(AutoDistillGapRuns+1, f.now, "", 0)
 	rep := f.tick()
 	if rep.Idle != "trial_in_progress" || f.distills != 1 {
@@ -185,7 +185,7 @@ func TestSkillPilot_GapBetweenDistillations(t *testing.T) {
 	f := newPilotFixture(t)
 	f.accept = false
 	f.tick()
-	f.cands = append(f.cands, SkillCandidate{Sig: []string{"Bash:make lint"}, Kind: KindSkill, Score: 60})
+	f.cands = append(f.cands, SkillCandidate{Sig: []string{"Bash:make lint"}, Kind: KindSkill, KindReason: reasonMultiStep, Score: 60})
 	f.addRuns(AutoDistillGapRuns-1, f.now, "", 0)
 	if rep := f.tick(); rep.Idle != "gap" {
 		t.Fatalf("report = %+v, want idle gap", rep)
@@ -200,7 +200,7 @@ func TestSkillPilot_DailyBudget(t *testing.T) {
 	f := newPilotFixture(t)
 	f.accept = false
 	f.tick() // spends 0.3
-	f.cands = append(f.cands, SkillCandidate{Sig: []string{"Bash:make lint"}, Kind: KindSkill, Score: 60})
+	f.cands = append(f.cands, SkillCandidate{Sig: []string{"Bash:make lint"}, Kind: KindSkill, KindReason: reasonMultiStep, Score: 60})
 	f.addRuns(AutoDistillGapRuns, f.now, "", 0)
 	rep, err := f.pilot.Tick(context.Background(), SkillPilotParams{Project: "proj", ProjectPath: f.dir, DailyBudgetUSD: 0.25})
 	if err != nil || rep.Idle != "budget" {
@@ -483,12 +483,34 @@ func TestSkillPilot_ThresholdIgnoresReviewedCandidates(t *testing.T) {
 	f.cands = nil
 	for i := 0; i < 40; i++ {
 		f.cands = append(f.cands, SkillCandidate{
-			Sig: []string{"Bash:cmd" + strings.Repeat("x", i)}, Kind: KindSkill, Score: float64(100 - i), DistinctRuns: 8,
+			Sig: []string{"Bash:cmd" + strings.Repeat("x", i)}, Kind: KindSkill, KindReason: reasonMultiStep, Score: float64(100 - i), DistinctRuns: 8,
 		})
 	}
 	f.tick()
 	f.addRuns(AutoDistillGapRuns+1, f.now, "", 0)
 	if rep := f.tick(); rep.Idle != "" || f.distills != 2 {
 		t.Fatalf("report = %+v, distills = %d; want a second candidate picked", rep, f.distills)
+	}
+}
+
+// TestSkillPilot_PicksOnlyProceduresAndKnownFailuresFirst (LN-33): a lone
+// step with the biggest Score is never taken; known_failure beats multi_step.
+func TestSkillPilot_PicksOnlyProceduresAndKnownFailuresFirst(t *testing.T) {
+	single := SkillCandidate{Sig: []string{"Bash:sed -n <ARG>"}, Kind: KindSkill, KindReason: reasonSingleStep, Score: 100, DistinctRuns: 8}
+	multi := SkillCandidate{Sig: []string{"Bash:a", "Bash:b"}, Kind: KindSkill, KindReason: reasonMultiStep, Score: 50, DistinctRuns: 8}
+	known := SkillCandidate{Sig: []string{"Bash:make lint"}, Kind: KindSkill, KindReason: reasonKnownFailure, Score: 50, DistinctRuns: 8}
+
+	f := newPilotFixture(t)
+	f.cands = []SkillCandidate{single, multi}
+	f.tick()
+	if got := f.only().SourceJSON; got != sigJSON(multi.Sig) {
+		t.Errorf("picked %s, want the multi_step candidate over a bigger single_step", got)
+	}
+
+	f = newPilotFixture(t)
+	f.cands = []SkillCandidate{single, multi, known}
+	f.tick()
+	if got := f.only().SourceJSON; got != sigJSON(known.Sig) {
+		t.Errorf("picked %s, want the known_failure candidate first", got)
 	}
 }

@@ -32,6 +32,7 @@ export default {
     'skillReview.reasonReadOnly': 'One read-only call. An auto-allow rule in the Permissions tab saves a prompt per run; a skill would teach nothing.',
     'skillReview.reasonLoop': 'The same call repeated identically — context loss, not a habit worth teaching back.',
     'skillReview.reasonSingleStep': 'A single step, but not read-only — weaker than a sequence.',
+    'skillReview.reasonReadOnlySequence': 'Read-only sequence — a habit, not a procedure',
     'skillReview.hideNonSkill': 'Skill candidates only',
     'skillReview.loopSuspect': 'possible loop',
     'skillReview.imported': 'partly imported',

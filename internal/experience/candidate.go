@@ -95,7 +95,7 @@ type SkillCandidate struct {
 	// population.
 	Kind CandidateKind
 	// KindReason is a stable code explaining Kind (reasonMultiStep,
-	// reasonKnownFailure, reasonReadOnly, reasonLoop, reasonSingleStep) —
+	// reasonKnownFailure, reasonReadOnly, reasonLoop, reasonSingleStep, reasonReadOnlySequence) —
 	// a code, not prose, because the UI is localized (frontend/src/lib/i18n.ts).
 	KindReason string
 }
@@ -132,6 +132,10 @@ const (
 	reasonReadOnly     = "read_only"
 	reasonLoop         = "loop"
 	reasonSingleStep   = "single_step"
+	// reasonReadOnlySequence — 2+ steps, but every step of every occurrence
+	// is read-only: a habit the global CLAUDE.md already prescribes, not a
+	// procedure (LN-33).
+	reasonReadOnlySequence = "read_only_sequence"
 )
 
 // kindRank orders KindSkill first, then KindPermission, then KindNoise — see
@@ -154,8 +158,11 @@ func kindRank(k CandidateKind) int {
 //  1. A uniform gram flagged as a loop is noise, whatever its length: the
 //     identical call repeated is the context-loss symptom ContextLossSuspect
 //     already names, and distilling it would teach the symptom back.
-//  2. Any sequence of 2+ distinct steps is a skill: the order is the content,
-//     and only a procedure can carry it.
+//  2. A sequence of 2+ steps with no related failure whose every row, in
+//     every observed occurrence, is read-only (ClassifyPermission) is noise:
+//     a reading habit, not a procedure (LN-33). No occurrences, no verdict.
+//  2b. Any other sequence of 2+ distinct steps is a skill: the order is the
+//     content, and only a procedure can carry it.
 //  3. A single step with a related failure cluster (LN-07) is a skill too —
 //     "this command fails like this, fix it like that" is the highest-value
 //     thing this whole pipeline produces, and it needs no second step.
@@ -172,11 +179,14 @@ func kindRank(k CandidateKind) int {
 // signature would come back unsafe. Every sample must pass — one unsafe
 // observation is enough to keep the candidate out of an allow-rule
 // suggestion.
-func classifyCandidate(sig []string, samples []store.ActionRow, related []FailureCluster, loopSuspect bool) (CandidateKind, string) {
+func classifyCandidate(sig []string, samples []store.ActionRow, occurrences [][]store.ActionRow, related []FailureCluster, loopSuspect bool) (CandidateKind, string) {
 	if loopSuspect && uniformGram(sig) {
 		return KindNoise, reasonLoop
 	}
 	if len(sig) > 1 {
+		if len(related) == 0 && allOccurrencesReadOnly(occurrences) {
+			return KindNoise, reasonReadOnlySequence
+		}
 		return KindSkill, reasonMultiStep
 	}
 	if len(related) > 0 {
@@ -186,6 +196,21 @@ func classifyCandidate(sig []string, samples []store.ActionRow, related []Failur
 		return KindPermission, reasonReadOnly
 	}
 	return KindSkill, reasonSingleStep
+}
+
+// allOccurrencesReadOnly reports whether every row of every occurrence is
+// cleared by ClassifyPermission. No occurrences (or an empty one) is not
+// read-only — absence of data proves nothing.
+func allOccurrencesReadOnly(occurrences [][]store.ActionRow) bool {
+	if len(occurrences) == 0 {
+		return false
+	}
+	for _, rows := range occurrences {
+		if len(rows) == 0 || !allSamplesReadOnly(rows) {
+			return false
+		}
+	}
+	return true
 }
 
 // allSamplesReadOnly reports whether every sample occurrence of a candidate
@@ -435,7 +460,7 @@ func MineCandidates(runs []CandidateRun, minRunShare float64, clusters []Failure
 			samples = append(samples, o.rows[0])
 			occurrences = append(occurrences, o.rows)
 		}
-		kind, reason := classifyCandidate(acc.sig, samples, related, acc.suspect)
+		kind, reason := classifyCandidate(acc.sig, samples, occurrences, related, acc.suspect)
 		out = append(out, SkillCandidate{
 			Sig:                acc.sig,
 			DistinctRuns:       acc.distinctRuns,

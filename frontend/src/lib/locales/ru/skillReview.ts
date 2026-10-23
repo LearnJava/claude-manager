@@ -32,6 +32,7 @@ export default {
     'skillReview.reasonReadOnly': 'Один read-only вызов. Правило авто-разрешения на вкладке «Разрешения» экономит по запросу за прогон; навык тут не научит ничему.',
     'skillReview.reasonLoop': 'Один и тот же вызов повторён буквально — потеря контекста, а не привычка, которой стоит учить.',
     'skillReview.reasonSingleStep': 'Один шаг, но не read-only — слабее последовательности.',
+    'skillReview.reasonReadOnlySequence': 'Только чтение — привычка, а не процедура',
     'skillReview.hideNonSkill': 'Только кандидаты в навыки',
     'skillReview.loopSuspect': 'возможно, цикл',
     'skillReview.imported': 'частично импортировано',
