@@ -111,6 +111,14 @@ type SkillDraft struct {
 	CostUSD float64 `json:"-"`
 }
 
+// Size limits of the distiller's task text (runes, not bytes).
+const (
+	maxSkillSampleRunes     = 600   // one sample command
+	maxSkillFailures        = 3     // related failure clusters (already sorted by DistinctRuns)
+	maxSkillFailureArgRunes = 300   // FailedArg / FixedArg
+	maxSkillTaskRunes       = 12000 // the whole text
+)
+
 // buildSkillTaskText composes SkillDistillInput into the plain-text task
 // Claude is asked to distill into a skill draft. truncateLines caps each
 // sample's captured output at 20 lines, per LEARN-TASKS.md LN-09 ("до 5
@@ -132,7 +140,7 @@ func buildSkillTaskText(in SkillDistillInput) string {
 			if s.Command == "" {
 				continue
 			}
-			b.WriteString("$ " + s.Command + "\n")
+			b.WriteString("$ " + truncateRunes(s.Command, maxSkillSampleRunes) + "\n")
 			if out := truncateLines(s.Output, 20); out != "" {
 				b.WriteString(out + "\n")
 			}
@@ -142,9 +150,13 @@ func buildSkillTaskText(in SkillDistillInput) string {
 
 	if len(in.RelatedFailures) > 0 {
 		b.WriteString("Related failures observed alongside this sequence:\n")
-		for _, f := range in.RelatedFailures {
+		failures := in.RelatedFailures
+		if len(failures) > maxSkillFailures {
+			failures = failures[:maxSkillFailures]
+		}
+		for _, f := range failures {
 			b.WriteString(fmt.Sprintf("- %s: failed with `%s`, next attempt fixed it with `%s`\n",
-				f.ErrorKey, f.FailedArg, f.FixedArg))
+				f.ErrorKey, truncateRunes(f.FailedArg, maxSkillFailureArgRunes), truncateRunes(f.FixedArg, maxSkillFailureArgRunes)))
 		}
 		b.WriteString("\n")
 	}
@@ -153,7 +165,12 @@ func buildSkillTaskText(in SkillDistillInput) string {
 		b.WriteString("Project gate commands:\n" + strings.Join(in.Gates, "\n") + "\n")
 	}
 
-	return strings.TrimSpace(b.String())
+	text := strings.TrimSpace(b.String())
+	if r := []rune(text); len(r) > maxSkillTaskRunes {
+		const marker = "\n… (truncated)"
+		text = string(r[:maxSkillTaskRunes-len([]rune(marker))]) + marker
+	}
+	return text
 }
 
 // truncateLines returns at most n lines of s, appending a marker when it cut

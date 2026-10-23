@@ -60,6 +60,30 @@ type SkillReason struct {
 	Before      float64 `json:"before,omitempty"`
 	After       float64 `json:"after,omitempty"`
 	DuplicateOf string  `json:"duplicate_of,omitempty"`
+	// Attempts counts failed review calls of a draft (ReasonReviewFailed).
+	Attempts int `json:"attempts,omitempty"`
+}
+
+// MaxDistillAttempts is how many failed distill/review calls one signature
+// gets before the autopilot gives up on it.
+const MaxDistillAttempts = 3
+
+// maxFailureTextRunes caps the error text stored in a failure SkillReason.
+const maxFailureTextRunes = 300
+
+// decodeSkillReason parses store.Skill.Reason; an empty or broken string
+// yields the zero value.
+func decodeSkillReason(s string) SkillReason {
+	var r SkillReason
+	if s == "" || json.Unmarshal([]byte(s), &r) != nil {
+		return SkillReason{}
+	}
+	return r
+}
+
+// failureText is err's message capped to maxFailureTextRunes runes.
+func failureText(err error) string {
+	return truncateRunes(err.Error(), maxFailureTextRunes)
 }
 
 // Encode returns r as the JSON stored in store.Skill.Reason.
@@ -259,6 +283,7 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 	var lastAuto, pending *store.Skill
 	spentToday := 0.0
 	known := make(map[string]bool)
+	failures := make(map[string]int)
 	taken := make(map[string]bool)
 	for i := range skills {
 		sk := &skills[i]
@@ -266,7 +291,12 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 			rep.Idle = "trial_in_progress"
 			return nil
 		}
-		known[SigKey(sk.SourceJSON)] = true
+		if sk.Status == store.SkillStatusRejected && isCallFailure(sk.Reason) {
+			// A failed call evaluated nothing: retry until MaxDistillAttempts.
+			failures[SigKey(sk.SourceJSON)]++
+		} else {
+			known[SigKey(sk.SourceJSON)] = true
+		}
 		if sk.Status == store.SkillStatusApproved {
 			taken[sk.Name] = true
 		}
@@ -313,14 +343,24 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 	if err != nil {
 		return err
 	}
-	threshold := ResolveSkillMinScore(candidates, 0, 0)
-	var pick *SkillCandidate
-	for i := range candidates {
-		c := &candidates[i]
-		if c.Kind != KindSkill || c.ContextLossSuspect || c.Score < threshold {
-			continue
+	for k, n := range failures {
+		if n >= MaxDistillAttempts {
+			known[k] = true
 		}
-		if known[SigKey(sigJSON(c.Sig))] {
+	}
+	// The threshold is taken over the candidates still in play, so a
+	// reviewed top 3% does not push every remaining one below it.
+	var open []SkillCandidate
+	for _, c := range candidates {
+		if c.Kind == KindSkill && !c.ContextLossSuspect && !known[SigKey(sigJSON(c.Sig))] {
+			open = append(open, c)
+		}
+	}
+	threshold := ResolveSkillMinScore(open, 0, 0)
+	var pick *SkillCandidate
+	for i := range open {
+		c := &open[i]
+		if c.Score < threshold {
 			continue
 		}
 		if pick == nil || c.Score > pick.Score {
@@ -345,7 +385,7 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 	draft, err := p.deps.Distill(ctx, params.ProjectPath, in)
 	if err != nil {
 		row.Name = fallbackSkillName(pick.Sig)
-		row.Reason = SkillReason{Code: ReasonDistillFailed, Text: err.Error()}.Encode()
+		row.Reason = SkillReason{Code: ReasonDistillFailed, Text: failureText(err)}.Encode()
 		return p.insertRejected(row, rep)
 	}
 	draftJSON, _ := json.Marshal(draft)
@@ -374,7 +414,7 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 	}
 	review, err := p.deps.Review(ctx, params.ProjectPath, reviewIn)
 	if err != nil {
-		row.Reason = SkillReason{Code: ReasonReviewFailed, Text: err.Error()}.Encode()
+		row.Reason = SkillReason{Code: ReasonReviewFailed, Text: failureText(err)}.Encode()
 		return p.insertRejected(row, rep)
 	}
 	row.CostUSD += review.CostUSD
@@ -431,7 +471,13 @@ func (p *SkillPilot) reviewDraft(ctx context.Context, params SkillPilotParams, s
 	}
 	review, err := p.deps.Review(ctx, params.ProjectPath, in)
 	if err != nil {
-		return reject(SkillReason{Code: ReasonReviewFailed, Text: err.Error()})
+		// The draft is already paid for: keep it for another try.
+		r := SkillReason{Code: ReasonReviewFailed, Text: failureText(err),
+			Attempts: decodeSkillReason(sk.Reason).Attempts + 1}
+		if r.Attempts >= MaxDistillAttempts {
+			return reject(r)
+		}
+		return st.UpdateSkillStatus(sk.ID, store.SkillStatusDraft, r.Encode(), now)
 	}
 	if review.CostUSD > 0 {
 		if err := st.AddSkillCost(sk.ID, review.CostUSD); err != nil {
@@ -453,6 +499,13 @@ func (p *SkillPilot) reviewDraft(ctx context.Context, params SkillPilotParams, s
 	}
 	rep.Applied = append(rep.Applied, sk.Name)
 	return nil
+}
+
+// isCallFailure reports whether a rejected row's reason is a failed paid call
+// rather than a verdict.
+func isCallFailure(reason string) bool {
+	c := decodeSkillReason(reason).Code
+	return c == ReasonDistillFailed || c == ReasonReviewFailed
 }
 
 func (p *SkillPilot) insertRejected(row *store.Skill, rep *SkillPilotReport) error {

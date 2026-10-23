@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -403,5 +404,91 @@ func TestSkillPilot_TrialThatMadeRunsWorseIsSwitchedOff(t *testing.T) {
 	skills, _ := f.st.ListSkills("proj")
 	if len(rep.Archived) != 1 || reasonOf(t, skills[0]).Code != ReasonWorse {
 		t.Fatalf("report = %+v, row = %+v; want archived/worse", rep, skills[0])
+	}
+}
+
+func TestDecodeSkillReason(t *testing.T) {
+	if got := decodeSkillReason(""); got != (SkillReason{}) {
+		t.Errorf("empty = %+v", got)
+	}
+	if got := decodeSkillReason("{not json"); got != (SkillReason{}) {
+		t.Errorf("broken = %+v", got)
+	}
+	in := SkillReason{Code: ReasonReviewFailed, Attempts: 2}
+	if got := decodeSkillReason(in.Encode()); got != in {
+		t.Errorf("round trip = %+v, want %+v", got, in)
+	}
+}
+
+func TestSkillPilot_DistillFailureIsRetriedUpToMaxAttempts(t *testing.T) {
+	f := newPilotFixture(t)
+	f.pilot.deps.Distill = func(context.Context, string, analysis.SkillDistillInput) (*analysis.SkillDraft, error) {
+		f.distills++
+		return nil, errors.New("claude: rate limited")
+	}
+	for i := 1; i <= MaxDistillAttempts; i++ {
+		if rep := f.tick(); rep.Idle != "" {
+			t.Fatalf("attempt %d: idle %q, want a retry", i, rep.Idle)
+		}
+		if f.distills != i {
+			t.Fatalf("after tick %d distills = %d", i, f.distills)
+		}
+		f.addRuns(AutoDistillGapRuns+1, f.now, "", 0)
+		f.now = f.now.Add(48 * time.Hour)
+	}
+	if rep := f.tick(); rep.Idle != "no_candidate" || f.distills != MaxDistillAttempts {
+		t.Fatalf("report = %+v, distills = %d; want no_candidate after %d failures", rep, f.distills, MaxDistillAttempts)
+	}
+}
+
+func TestSkillPilot_ReviewFailureKeepsDraftUntilMaxAttempts(t *testing.T) {
+	f := newPilotFixture(t)
+	f.pilot.deps.Review = func(context.Context, string, analysis.SkillReviewInput) (*analysis.SkillReview, error) {
+		f.reviews++
+		return nil, errors.New("claude: rate limited")
+	}
+	draft := &store.Skill{Project: "proj", Name: "peek-lines", Status: store.SkillStatusDraft,
+		DraftJSON: "{}", MD: "---\nname: peek-lines\n---\n", SourceJSON: `["Bash:sed -n <ARG>"]`, CreatedAt: f.now.Add(-time.Hour)}
+	if err := f.st.InsertSkill(draft); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i < MaxDistillAttempts; i++ {
+		f.tick()
+		sk := f.only()
+		if r := reasonOf(t, sk); sk.Status != store.SkillStatusDraft || r.Code != ReasonReviewFailed || r.Attempts != i {
+			t.Fatalf("after %d failures: %+v / %+v, want draft with Attempts=%d", i, sk, r, i)
+		}
+	}
+	f.tick()
+	sk := f.only()
+	if r := reasonOf(t, sk); sk.Status != store.SkillStatusRejected || r.Attempts != MaxDistillAttempts {
+		t.Fatalf("after max failures: %+v / %+v, want rejected", sk, r)
+	}
+}
+
+func TestSkillPilot_FailureTextIsCapped(t *testing.T) {
+	f := newPilotFixture(t)
+	f.pilot.deps.Distill = func(context.Context, string, analysis.SkillDistillInput) (*analysis.SkillDraft, error) {
+		return nil, errors.New(strings.Repeat("ж", 2000))
+	}
+	f.tick()
+	if n := len([]rune(reasonOf(t, f.only()).Text)); n > 300 {
+		t.Fatalf("text = %d runes, want <= 300", n)
+	}
+}
+
+func TestSkillPilot_ThresholdIgnoresReviewedCandidates(t *testing.T) {
+	f := newPilotFixture(t)
+	f.accept = false
+	f.cands = nil
+	for i := 0; i < 40; i++ {
+		f.cands = append(f.cands, SkillCandidate{
+			Sig: []string{"Bash:cmd" + strings.Repeat("x", i)}, Kind: KindSkill, Score: float64(100 - i), DistinctRuns: 8,
+		})
+	}
+	f.tick()
+	f.addRuns(AutoDistillGapRuns+1, f.now, "", 0)
+	if rep := f.tick(); rep.Idle != "" || f.distills != 2 {
+		t.Fatalf("report = %+v, distills = %d; want a second candidate picked", rep, f.distills)
 	}
 }
