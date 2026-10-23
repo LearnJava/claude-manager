@@ -35,16 +35,17 @@ const toastAppID = "Claude Session Manager"
 // App is the Wails application struct. All exported methods become callable
 // from the frontend via auto-generated JS bindings.
 type App struct {
-	ctx          context.Context
-	cfg          *config.AppConfig
-	cfgPath      string
-	store        *store.Store
-	manager      *session.SessionManager
-	wailsEmitter *control.WailsEmitter
-	ctrlServer   *control.Server
-	closeLog     func()                 // shuts down the file logger on exit
-	trayEnabled  bool                   // set by main() before wails.Run; see main.go for why
-	skillPilot   *experience.SkillPilot // nil without a store (LEARN-TASKS.md LN-27)
+	ctx              context.Context
+	cfg              *config.AppConfig
+	cfgPath          string
+	store            *store.Store
+	manager          *session.SessionManager
+	wailsEmitter     *control.WailsEmitter
+	ctrlServer       *control.Server
+	closeLog         func()                                                                                                          // shuts down the file logger on exit
+	trayEnabled      bool                                                                                                            // set by main() before wails.Run; see main.go for why
+	skillPilot       *experience.SkillPilot                                                                                          // nil without a store (LEARN-TASKS.md LN-27)
+	draftFailureRule func(ctx context.Context, projectPath string, in analysis.FailureRuleInput) (*analysis.FailureRuleDraft, error) // test hook (LN-38)
 }
 
 // NewApp creates a new App with the default config path.

@@ -107,6 +107,7 @@ claude-manager/
 │   │   │                            #   SkillCandidate (+ related failures, gates) into a
 │   │   │                            #   SkillDraft; RenderSkillMarkdown renders the SKILL.md body
 │   │   ├── skillreview.go           # LN-25: ReviewSkill — second-model verdict on an autopilot draft
+│   │   ├── failurerule.go           # LN-38: DraftFailureRule — one-line CLAUDE.md rule for a recurring error (claude -p, prompt on stdin)
 │   │   └── schema.go                # JSON Schema for analyst structured output + brief output
 │   ├── optimization/
 │   │   ├── routing.go               # ModelRouter: auto model routing by task complexity, now
@@ -435,6 +436,10 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetSkillUsage(project)` | Loads, runs-with-load, runs since last load per skill, keyed by skill ID (LN-24) |
 | `GetSkillAutopilot(project)` / `SetSkillAutopilot(project, enabled, dailyBudgetUSD)` | Read / persist the project's skill-autopilot switch and daily budget (private `config.local.toml`; turning it on also turns on `experience_tracking`) (LN-27) |
 | `RunSkillAutopilot(project)` | One autopilot step now: decide finished trials, then distill, review and apply at most one candidate; errors if the autopilot is off (LN-25/26) |
+| `GetFailureRules(project)` | A project's failure rules (newest first) with the examples each was drafted from and, for accepted ones, the effect (hits of the error in the 20 runs before vs the runs after), plus `Pending` — recurring errors without a rule yet (LN-38) |
+| `DraftFailureRules(project, limit)` | Paid: one `claude -p` call per recurring error (first `limit`, ≤ 0 → 3) writes a one-line CLAUDE.md rule; stored as `draft`, or `dismissed` when CLAUDE.md already says it. Writes nothing into the project (LN-38) |
+| `AcceptFailureRule(id, ruleText)` | Appends the (user-edited) rule to the "Learned from failures" section of the project's CLAUDE.md and marks it `accepted`; the only write into the repository (LN-38) |
+| `DismissFailureRule(id)` | Marks a draft `dismissed`; the error is not proposed again (LN-38) |
 | `ImportProjectLogs(project, dir)` | Bulk-import a directory of saved CLI logs into `action_signatures` (empty `dir` = the project's own `.claude-manager/logs/`); streams `experience:import` progress — the "Import logs" button (LEARN-TASKS.md LN-20) |
 | `GetRateLimitStatus()` | Current rate limit info |
 | `ExportLog(id, entries, format)` | Save log as MD/JSON/TXT via native dialog |

@@ -467,6 +467,10 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `get_skill_autopilot` | read | только чтение, идемпотентное | Show whether the skill autopilot is on for a project, its daily budget and what it has spent. |
 | `set_skill_autopilot` | admin | идемпотентное | Turn the skill autopilot on or off for a project and set its daily budget. |
 | `run_skill_autopilot` | operate | запускает модель | Run one autopilot step for a project now instead of waiting for the next finished run. |
+| `get_failure_rules` | read | только чтение, идемпотентное | List the CLAUDE.md rules drafted from a project's recurring errors, with the examples and, for accepted ones, how often the error came back. |
+| `draft_failure_rules` | operate | запускает модель | Ask a model to write a one-line CLAUDE.md rule for each of the project's most frequent recurring errors that has none yet. |
+| `accept_failure_rule` | admin | — | Append a drafted rule to the "Learned from failures" section of the project's CLAUDE.md and mark it accepted. |
+| `dismiss_failure_rule` | operate | идемпотентное | Turn a drafted rule down so the error is not proposed again. |
 
 <!-- END GENERATED: tools -->
 
@@ -603,6 +607,7 @@ cursor="N"`. Страница дополнительно режется до `Ma
 
 | Метод `App` | Инструмент | Уровень |
 |---|---|---|
+| `AcceptFailureRule` | `accept_failure_rule` | admin |
 | `AddPermissionRule` | `add_permission_rule` | admin |
 | `AnswerQuestion` | `answer_question` | operate |
 | `ApprovePlan` | `approve_plan` | admin |
@@ -614,8 +619,10 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `CleanOldLogs` | `clean_old_logs` | admin |
 | `ClearProjectLogs` | `clear_project_logs` | admin |
 | `ClearSessionState` | `clear_session_state` | admin |
+| `DismissFailureRule` | `dismiss_failure_rule` | operate |
 | `DispatchMixedTask` | `dispatch_mixed_task` | operate |
 | `DistillSkill` | `distill_skill` | operate |
+| `DraftFailureRules` | `draft_failure_rules` | operate |
 | `ExecutePlan` | `execute_plan` | operate |
 | `ExportLog` | `export_log` | operate |
 | `GenerateClaudeMdSession` | `generate_claude_md` | admin |
@@ -626,13 +633,14 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `GetDailyCost` | `get_cost` | read |
 | `GetDailyTokens` | `get_cost` | read |
 | `GetDurationProfile` | `get_duration_profile` | read |
+| `GetFailureRules` | `get_failure_rules` | read |
 | `GetHistory` | `get_history` | read |
 | `GetLatestDraftRoadmap` | `get_latest_draft_roadmap` | read |
 | `GetMixedQuality` | `get_mixed_quality` | read |
 | `GetMixedRounds` | `get_mixed_rounds` | read |
 | `GetModelRecommendation` | `get_model_advice` | read |
-| `GetPendingPermissions` | `get_pending` | read |
 | `GetPendingPermissions` | `get_pending_permissions` | read |
+| `GetPendingPermissions` | `get_pending` | read |
 | `GetPendingQuestions` | `get_pending` | read |
 | `GetPendingQuestions` | `get_pending_questions` | read |
 | `GetPermissionCandidates` | `get_permission_candidates` | read |
@@ -664,8 +672,8 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `ListSlashCommands` | `list_slash_commands` | read |
 | `MirrorProject` | `mirror_project` | admin |
 | `RegisterMixedBrief` | `register_mixed_brief` | operate |
-| `RespondPermission` | `deny_permission` | operate |
 | `RespondPermission` | `approve_permission` | admin |
+| `RespondPermission` | `deny_permission` | operate |
 | `RestartSession` | `restart_session` | operate |
 | `RestoreSkill` | `restore_skill` | admin |
 | `ResumeSession` | `restart_session` | operate |

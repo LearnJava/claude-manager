@@ -44,3 +44,13 @@ var _ control.InteractionApp = (*App)(nil)
 
 // The project RPCs get the App wrapped as controlApp.
 var _ control.ProjectsApp = controlApp{}
+
+// The App, wrapped as controlApp, must keep serving the failure-rule RPCs
+// (LEARN-TASKS.md LN-38).
+var _ control.FailuresApp = controlApp{}
+
+// FailureRulesOf is GetFailureRules with its package-main result type
+// returned as a plain value (control.FailuresApp).
+func (c controlApp) FailureRulesOf(project string) (any, error) {
+	return c.App.GetFailureRules(project)
+}

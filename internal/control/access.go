@@ -94,6 +94,8 @@ var rpcLevels = map[string]AccessLevel{
 	"GenerateRoadmap": LevelOperate, "ApproveRoadmap": LevelAdmin,
 	"GetSkills": LevelRead, "GetSkillCandidates": LevelRead, "GetSkillQuality": LevelRead, "GetSkillUsage": LevelRead,
 	"GetSkillAutopilot": LevelRead, "DistillSkill": LevelOperate, "ArchiveSkill": LevelOperate,
+	"GetFailureRules": LevelRead, "DraftFailureRules": LevelOperate, "DismissFailureRule": LevelOperate,
+	"AcceptFailureRule": LevelAdmin,
 	"RunSkillAutopilot": LevelOperate, "ApproveSkill": LevelAdmin, "RestoreSkill": LevelAdmin, "SetSkillAutopilot": LevelAdmin,
 	// operate
 	"StartSession": LevelOperate, "StartSessionWithOverride": LevelOperate, "InterruptSession": LevelOperate,

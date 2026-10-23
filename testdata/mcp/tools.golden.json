@@ -5,6 +5,57 @@
     },
     "annotations": {
       "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Accept failure rule"
+    },
+    "description": "Append a drafted rule to the \"Learned from failures\" section of the project's CLAUDE.md and mark it accepted. Use when: a draft from get_failure_rules is right (edit the text first if it is not) and you are authorised to change CLAUDE.md. Not for: turning a draft down (use dismiss_failure_rule). Returns: ok and the rule_id. Side effects: writes one line into the project's CLAUDE.md; only a draft can be accepted. Access: admin. Example: {\"rule_id\":\"4\",\"text\":\"Run go vet before go test.\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "rule_id": {
+          "description": "Rule id of a draft, the id of an item of get_failure_rules, e.g. 4",
+          "type": "string"
+        },
+        "text": {
+          "description": "The final rule line to append to CLAUDE.md; start from the rule_text of the draft and edit it if needed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "accept_failure_rule",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was done",
+          "type": "boolean"
+        },
+        "rule_id": {
+          "description": "The rule acted on",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "rule_id"
+      ],
+      "type": "object"
+    },
+    "title": "Accept failure rule"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "admin"
+    },
+    "annotations": {
+      "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": false,
@@ -866,6 +917,52 @@
     },
     "annotations": {
       "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Dismiss failure rule"
+    },
+    "description": "Turn a drafted rule down so the error is not proposed again. Use when: a draft from get_failure_rules is wrong or not worth a line in CLAUDE.md. Not for: accepting it (use accept_failure_rule). Returns: ok and the rule_id. Side effects: marks the rule dismissed; nothing is written into the project; only a draft can be dismissed. Access: operate. Example: {\"rule_id\":\"4\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "rule_id": {
+          "description": "Rule id, the id of an item of get_failure_rules or draft_failure_rules, e.g. 4",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id"
+      ],
+      "type": "object"
+    },
+    "name": "dismiss_failure_rule",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "True when the action was done",
+          "type": "boolean"
+        },
+        "rule_id": {
+          "description": "The rule acted on",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "rule_id"
+      ],
+      "type": "object"
+    },
+    "title": "Dismiss failure rule"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
       "idempotentHint": false,
       "openWorldHint": true,
       "readOnlyHint": false,
@@ -968,6 +1065,55 @@
       "type": "object"
     },
     "title": "Distil a skill"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Draft failure rules"
+    },
+    "description": "Ask a model to write a one-line CLAUDE.md rule for each of the project's most frequent recurring errors that has none yet. Use when: get_failure_rules shows pending errors and you want drafts to review. Not for: writing the rule into CLAUDE.md (use accept_failure_rule). Returns: the rows created; a rule CLAUDE.md already states comes back as dismissed. Side effects: runs one paid model call per error (tokens are spent); CLAUDE.md is not changed until accept_failure_rule. Access: operate. Example: {\"project\":\"lumen\",\"limit\":3}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "description": "How many recurring errors to draft a rule for, the most frequent first; omit or 0 for 3",
+          "type": "integer"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "draft_failure_rules",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "rules": {
+          "description": "The rows created: id, error_key, rule_text, status (draft, or dismissed when CLAUDE.md already says it), distinct_runs and cost_usd",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "rules"
+      ],
+      "type": "object"
+    },
+    "title": "Draft failure rules"
   },
   {
     "_meta": {
@@ -1459,6 +1605,85 @@
       "type": "object"
     },
     "title": "Get action durations"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get failure rules"
+    },
+    "description": "List the CLAUDE.md rules drafted from a project's recurring errors, with the examples and, for accepted ones, how often the error came back. Use when: you review what the failure layer proposed, or look up a rule id. Not for: producing new drafts (use draft_failure_rules). Returns: rules with id, error_key, rule_text, status and dates, plus pending (errors without a rule yet), with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\",\"status\":\"draft\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "description": "Position to continue from: the next_cursor of the previous response, e.g. 100; omit for the first page",
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "Maximum number of items to return, 1-500 (default 100)",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Project name, e.g. lumen",
+          "type": "string"
+        },
+        "status": {
+          "description": "Only rules in this status: draft, accepted or dismissed; omit for all",
+          "enum": [
+            "draft",
+            "accepted",
+            "dismissed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_failure_rules",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "next_cursor": {
+          "description": "Pass as cursor to get the next page; absent when this is the last page",
+          "type": "string"
+        },
+        "pending": {
+          "description": "Recurring errors that have no rule yet; draft_failure_rules drafts them",
+          "type": "integer"
+        },
+        "rules": {
+          "description": "Rules: id, error_key, rule_text, status, distinct_runs, cost_usd, created_at, decided_at, examples (failed_arg, err_text, fixed_arg) and, for an accepted rule, effect (runs_before, hits_before, runs_after, hits_after)",
+          "items": true,
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "truncated": {
+          "description": "True when more items exist than were returned (page limit or response size limit)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "rules",
+        "pending",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "title": "Get failure rules"
   },
   {
     "_meta": {
