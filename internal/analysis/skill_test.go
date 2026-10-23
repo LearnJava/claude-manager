@@ -50,9 +50,13 @@ func TestBuildSkillStreamArgsDefaults(t *testing.T) {
 	if !flagPresent(args, "--verbose") {
 		t.Error("expected --verbose (required for stream-json output)")
 	}
-	last := args[len(args)-1]
-	if !strings.Contains(last, "do the thing") {
-		t.Errorf("expected task text in final positional arg, got %q", last)
+	for _, a := range args {
+		if strings.Contains(a, "do the thing") {
+			t.Errorf("task text must not be in argv, got %q", a)
+		}
+	}
+	if !strings.Contains(skillPrompt("do the thing"), "do the thing") {
+		t.Error("skillPrompt must contain the task text")
 	}
 }
 

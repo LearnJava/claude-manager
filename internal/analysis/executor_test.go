@@ -35,8 +35,10 @@ func TestBuildSubtaskArgs_Defaults(t *testing.T) {
 			t.Error("empty contextAppend must omit --append-system-prompt")
 		}
 	}
-	if args[len(args)-1] != "do it" {
-		t.Errorf("prompt must be the final positional arg, got %q", args[len(args)-1])
+	for _, a := range args {
+		if a == "do it" {
+			t.Errorf("prompt must travel on stdin, not in argv: %q", args)
+		}
 	}
 }
 

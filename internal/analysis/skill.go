@@ -170,6 +170,12 @@ func truncateLines(s string, n int) string {
 	return strings.Join(lines[:n], "\n") + "\n… (truncated)"
 }
 
+// skillPrompt is the user prompt of the skill-distillation call; it travels
+// on stdin.
+func skillPrompt(task string) string {
+	return "Distill this recurring pattern into a skill:\n\n" + task
+}
+
 // buildSkillStreamArgs mirrors buildStreamingAnalysisArgs but with skill
 // distillation's own default model (sonnet, not haiku — a distillation is
 // invoked rarely and only past DefaultSkillMinScore, so quality is worth more
@@ -206,7 +212,6 @@ func buildSkillStreamArgs(cfg AnalysisConfig, task string) []string {
 		args = append(args, "--max-budget-usd",
 			strconv.FormatFloat(cfg.MaxBudgetUSD, 'f', -1, 64))
 	}
-	args = append(args, "Distill this recurring pattern into a skill:\n\n"+task)
 	return args
 }
 
@@ -294,6 +299,7 @@ func DistillSkill(ctx context.Context, projectPath string, in SkillDistillInput,
 
 	args := buildSkillStreamArgs(cfg, task)
 	cmd := exec.CommandContext(ctx, bin, args...)
+	setPromptStdin(cmd, skillPrompt(task))
 	proc.HideConsole(cmd)
 	if projectPath != "" {
 		cmd.Dir = projectPath

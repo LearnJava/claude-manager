@@ -85,8 +85,12 @@ func BuildHandoffArgs(cfg AnalysisConfig, task string) []string {
 		args = append(args, "--max-budget-usd",
 			strconv.FormatFloat(cfg.MaxBudgetUSD, 'f', -1, 64))
 	}
-	args = append(args, "Summarize this interrupted task so a fresh session can continue it:\n\n"+task)
 	return args
+}
+
+// handoffPrompt is the user prompt of the handoff call; it travels on stdin.
+func handoffPrompt(task string) string {
+	return "Summarize this interrupted task so a fresh session can continue it:\n\n" + task
 }
 
 // ParseHandoffOutput decodes raw CLI stdout into a HandoffResult. It accepts
@@ -157,6 +161,7 @@ func GenerateHandoff(ctx context.Context, projectPath string, in HandoffInput, c
 	}
 
 	cmd := exec.CommandContext(ctx, bin, BuildHandoffArgs(cfg, task)...)
+	setPromptStdin(cmd, handoffPrompt(task))
 	proc.HideConsole(cmd)
 	if projectPath != "" {
 		cmd.Dir = projectPath

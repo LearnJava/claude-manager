@@ -89,8 +89,12 @@ func BuildJournalArgs(cfg AnalysisConfig, task string) []string {
 		args = append(args, "--max-budget-usd",
 			strconv.FormatFloat(cfg.MaxBudgetUSD, 'f', -1, 64))
 	}
-	args = append(args, "Summarize this completed task for the project journal:\n\n"+task)
 	return args
+}
+
+// journalPrompt is the user prompt of the journal call; it travels on stdin.
+func journalPrompt(task string) string {
+	return "Summarize this completed task for the project journal:\n\n" + task
 }
 
 // ParseJournalOutput decodes raw CLI stdout into a JournalResult. It accepts
@@ -161,6 +165,7 @@ func GenerateJournalEntry(ctx context.Context, projectPath string, in JournalInp
 	}
 
 	cmd := exec.CommandContext(ctx, bin, BuildJournalArgs(cfg, task)...)
+	setPromptStdin(cmd, journalPrompt(task))
 	proc.HideConsole(cmd)
 	if projectPath != "" {
 		cmd.Dir = projectPath
