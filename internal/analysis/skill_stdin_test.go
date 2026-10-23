@@ -33,7 +33,7 @@ func helperClaude() int {
 	}
 	prompt := string(data)
 	if !strings.HasPrefix(prompt, "Distill this recurring pattern into a skill:") ||
-		!strings.Contains(prompt, "LONGMARK") || len(prompt) < 100000 {
+		!strings.Contains(prompt, "LONGMARK") || len(prompt) < 10000 {
 		fmt.Fprintf(os.Stderr, "helper: prompt wrong, len=%d\n", len(prompt))
 		return 4
 	}
@@ -44,11 +44,16 @@ func helperClaude() int {
 
 func TestDistillSkill_LongPromptViaStdin(t *testing.T) {
 	t.Setenv("CM_HELPER_CLAUDE", "1")
-	long := "LONGMARK" + strings.Repeat("x", 100000)
+	// Samples are capped at 600 runes each and the text at 12000: 30 samples
+	// still make a prompt far longer than any argv entry the helper accepts.
+	var samples []SkillSample
+	for i := 0; i < 30; i++ {
+		samples = append(samples, SkillSample{Command: "LONGMARK" + strings.Repeat("x", 1000)})
+	}
 	d, err := DistillSkill(context.Background(), t.TempDir(),
 		SkillDistillInput{
 			Sig:     []string{"Bash:long"},
-			Samples: []SkillSample{{Command: long}},
+			Samples: samples,
 		}, 100, 1, AnalysisConfig{ClaudePath: os.Args[0]}, nil)
 	if err != nil {
 		t.Fatalf("DistillSkill: %v", err)

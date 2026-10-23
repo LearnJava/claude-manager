@@ -340,3 +340,24 @@ func strconvQuote(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
 }
+
+func TestBuildSkillTaskText_Limits(t *testing.T) {
+	big := strings.Repeat("ж", 5000)
+	in := SkillDistillInput{Sig: []string{"Bash:a"}, Samples: []SkillSample{{Command: big, Output: big}}}
+	for i := 0; i < 30; i++ {
+		in.Samples = append(in.Samples, SkillSample{Command: big})
+	}
+	for i := 0; i < 60; i++ {
+		in.RelatedFailures = append(in.RelatedFailures, SkillFailureSummary{ErrorKey: "E", FailedArg: big, FixedArg: big})
+	}
+	got := buildSkillTaskText(in)
+	if n := len([]rune(got)); n > maxSkillTaskRunes {
+		t.Errorf("text = %d runes, want <= %d", n, maxSkillTaskRunes)
+	}
+	if n := strings.Count(got, "failed with"); n > maxSkillFailures {
+		t.Errorf("failure lines = %d, want <= %d", n, maxSkillFailures)
+	}
+	if !strings.HasSuffix(got, "… (truncated)") {
+		t.Errorf("no truncation marker at the end")
+	}
+}
