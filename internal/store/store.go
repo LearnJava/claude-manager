@@ -1655,3 +1655,39 @@ func (s *Store) AddSkillCost(id int64, usd float64) error {
 	_, err := s.db.Exec(`UPDATE skills SET cost_usd = cost_usd + ? WHERE id=?`, usd, id)
 	return err
 }
+
+// ErrTextRef identifies one failed action row whose err_text has not been
+// filled yet (LEARN-TASKS.md LN-36).
+type ErrTextRef struct {
+	ID           int64
+	Project      string
+	CLISessionID string
+	StepIndex    int
+}
+
+// ErrorRowsMissingText returns up to limit failed rows with err_text IS NULL.
+// A backfilled row that has no recoverable text stores "" (not NULL), so it
+// is never selected again.
+func (s *Store) ErrorRowsMissingText(limit int) ([]ErrTextRef, error) {
+	rows, err := s.db.Query(`SELECT id, project, COALESCE(cli_session_id, ''), step_index
+    FROM action_signatures WHERE is_error = 1 AND err_text IS NULL ORDER BY id LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ErrTextRef
+	for rows.Next() {
+		var r ErrTextRef
+		if err := rows.Scan(&r.ID, &r.Project, &r.CLISessionID, &r.StepIndex); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// SetActionErrText stores text (possibly "") as the row's err_text.
+func (s *Store) SetActionErrText(id int64, text string) error {
+	_, err := s.db.Exec(`UPDATE action_signatures SET err_text = ? WHERE id = ?`, text, id)
+	return err
+}
