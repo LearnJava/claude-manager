@@ -142,6 +142,8 @@ claude-manager/
 │   │                                #   aggregable sig (Bash argv rules, path/pattern rules) +
 │   │                                #   the verbatim arg; feeds action_signatures/ingest_state
 │   │                                #   (store/migrations.go) via Store.InsertActions/TopSignatures.
+│   │   ├── backfill.go              # LN-36: BackfillErrorText — fills err_text of failed rows indexed
+│   │                                #   before LN-35 from their transcripts (once per start, background).
 │   │   ├── mdlog.go                 # LN-17: ParseLogFile — the markdown-backend twin of
 │   │                                #   transcript.go's Read/ReadFrom, parsing store.RenderExport's
 │   │                                #   "md" format (auto-saved per-run logs) into a Trajectory via

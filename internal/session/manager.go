@@ -2991,3 +2991,32 @@ func (m *SessionManager) slotConflictLocked(project, id string, sc *config.Sessi
 	}
 	return nil
 }
+
+// ErrTextBackfillFunc fills err_text of already-indexed failed actions from
+// their transcripts (wired from app.go to experience.BackfillErrorText).
+type ErrTextBackfillFunc func(projectPaths map[string]string) (filled, missing int, err error)
+
+// StartErrTextBackfill runs fn once in a background goroutine (LEARN-TASKS.md
+// LN-36) when experience_tracking is on; it never blocks startup. It reports
+// whether a run was started.
+func (m *SessionManager) StartErrTextBackfill(fn ErrTextBackfillFunc) bool {
+	m.mu.Lock()
+	cfg := m.cfg
+	m.mu.Unlock()
+	if fn == nil || cfg == nil || !cfg.Optimization.ExperienceTracking {
+		return false
+	}
+	paths := make(map[string]string, len(cfg.Projects))
+	for _, p := range cfg.Projects {
+		paths[p.Name] = p.Path
+	}
+	go func() {
+		filled, missing, err := fn(paths)
+		if err != nil {
+			logger.L.Error("experience.err_text_backfill", "error", err, "filled", filled, "missing", missing)
+			return
+		}
+		logger.L.Info("experience.err_text_backfill", "filled", filled, "missing", missing)
+	}()
+	return true
+}

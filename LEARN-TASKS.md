@@ -109,7 +109,7 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-33 | ✓ DONE | internal/experience/candidate.go, skillpilot.go (read_only_sequence, выбор автопилота), SkillReview.svelte |
 | LN-34 | ✓ DONE | internal/analysis/skillreview.go, skill.go, internal/experience/skillpilot.go (память отказов) |
 | LN-35 | ✓ DONE | internal/store (action_signatures.err_text), internal/experience/errtext.go, indexer.go, failures.go |
-| LN-36 | ○ TODO | internal/experience/backfill.go, internal/store/store.go, internal/session/manager.go |
+| LN-36 | ✓ DONE | internal/experience/backfill.go, internal/store/store.go, internal/session/manager.go |
 | LN-37 | ○ TODO | internal/store (failure_rules), internal/experience/failurerules.go |
 | LN-38 | ○ TODO | internal/analysis/failurerule.go, app.go, internal/control/mcptools_failures.go |
 | LN-39 | ○ TODO | frontend ExperiencePanel.svelte (вкладка «Ошибки»), stores/experience.ts |

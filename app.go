@@ -253,6 +253,15 @@ func (a *App) startup(ctx context.Context) {
 		})
 	}
 
+	// Fill err_text of failed actions indexed before LN-35 (LEARN-TASKS.md
+	// LN-36): one background pass per start, gated on experience_tracking.
+	if a.store != nil {
+		st := a.store
+		a.manager.StartErrTextBackfill(func(paths map[string]string) (int, int, error) {
+			return experience.BackfillErrorText(st, paths)
+		})
+	}
+
 	// Start the control-plane server (no-op when CM_CONTROL disables it).
 	if controlEmitter != nil {
 		srv, err := control.StartFromEnv(ctx, a.manager, controlApp{a}, controlEmitter)
