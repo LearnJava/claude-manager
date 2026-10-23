@@ -703,6 +703,7 @@ func (m *SessionManager) StartSession(project, name string) error {
 		CommandGuard:      m.cfg.Settings.CommandGuard,
 		EnvCard:           m.cfg.Settings.EnvCard,
 		ManagerCard:       m.managerCardFor(proj, name),
+		LearnedRules:      m.learnedRulesFor(proj),
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
 		Optimization:      &m.cfg.Optimization,
@@ -789,6 +790,7 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 		CommandGuard:      m.cfg.Settings.CommandGuard,
 		EnvCard:           m.cfg.Settings.EnvCard,
 		ManagerCard:       m.managerCardFor(proj, name),
+		LearnedRules:      m.learnedRulesFor(proj),
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
 		Optimization:      &m.cfg.Optimization,
@@ -1102,6 +1104,7 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 		CommandGuard:      m.cfg.Settings.CommandGuard,
 		EnvCard:           m.cfg.Settings.EnvCard,
 		ManagerCard:       m.managerCardFor(proj, name),
+		LearnedRules:      m.learnedRulesFor(proj),
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
 		Optimization:      &m.cfg.Optimization,
@@ -2968,6 +2971,34 @@ func (m *SessionManager) managerCardFor(proj *config.ProjectConfig, session stri
 		return ""
 	}
 	return managerCard(proj.Name, proj.Path, proj.Sessions, session)
+}
+
+// learnedRulesFor renders the failure rules the autopilot applied (trial and
+// kept) as a system-prompt block for proj's Claude sessions, or "" when the
+// project has auto_skills off, there is no store or no such rule (LN-40).
+func (m *SessionManager) learnedRulesFor(proj *config.ProjectConfig) string {
+	if proj == nil || !proj.AutoSkills || m.store == nil {
+		return ""
+	}
+	rules, err := m.store.InjectedFailureRules(proj.Name)
+	if err != nil || len(rules) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Learned from failures (Claude Manager)\nErrors that kept recurring in this project's past runs, with the rule that avoids each:")
+	n := 0
+	for _, r := range rules {
+		text := strings.Join(strings.Fields(r.RuleText), " ")
+		if text == "" {
+			continue
+		}
+		b.WriteString("\n- " + text)
+		n++
+	}
+	if n == 0 {
+		return ""
+	}
+	return b.String()
 }
 
 // slotConflictLocked refuses to start a session whose work folder (pool slot)

@@ -3010,3 +3010,23 @@ process with `cmd.Dir` = the session's persistent pool slot
   dialogs); the list lives in one Go registry (MCP-03) and the test stays in
   the gate. Frontend-only state (`localStorage` view prefs) is purely visual
   and excluded. No tool may kill or restart the manager process.
+
+### Autopilot Applies Failure Rules via the System Prompt (LEARN-TASKS.md LN-40)
+
+With `auto_skills` on, the skill autopilot's tick also runs `rulesStep`
+(`internal/experience/rulepilot.go`): it decides on a rule under trial, then
+applies at most one more — a ready `draft` first, else a freshly drafted rule
+for an error that still hit ≥ 2 of the last 20 runs. The rule is **not** written
+to `CLAUDE.md`: that file belongs to the repository, developer sessions edit it
+during doc-sync, and an uncommitted change in the main checkout (or in a pool
+worktree) breaks their `merge`. An applied rule lives in `failure_rules`
+(`origin = auto`, status `trial` → `kept` | `reverted`) and
+`SessionManager.learnedRulesFor` renders the `trial`/`kept` ones as a
+`## Learned from failures (Claude Manager)` block appended to
+`--append-system-prompt` of Claude sessions at process launch (Hermes is not
+touched; mid-session changes would break the prompt cache). Switching a rule off
+is a status change; the next session no longer sees it. `accepted` rules are
+already in `CLAUDE.md` and are not injected twice. A trial ends after 10 runs:
+kept when the error's per-run rate fell to half or less and the `completed`
+share did not drop by 0.2, else reverted (`no_effect` / `worse`). The daily
+budget is shared with skills (`autoSpentToday`).

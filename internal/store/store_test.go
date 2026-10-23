@@ -1589,3 +1589,29 @@ func TestFailureRulesCRUD(t *testing.T) {
 		t.Error("missing id must return nil")
 	}
 }
+
+func TestInjectedFailureRules(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	now := time.Now().UTC()
+	for i, st := range []string{FailureRuleDraft, FailureRuleAccepted, FailureRuleTrial, FailureRuleKept, FailureRuleReverted, FailureRuleDismissed} {
+		d := now.Add(time.Duration(i) * time.Minute)
+		if err := s.InsertFailureRule(&FailureRule{Project: "p", ErrorKey: st, RuleText: st, Status: st, DecidedAt: &d,
+			Origin: FailureRuleOriginAuto, Reason: `{"code":"x"}`}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.InjectedFailureRules("p")
+	if err != nil || len(got) != 2 || got[0].Status != FailureRuleTrial || got[1].Status != FailureRuleKept {
+		t.Fatalf("injected = %+v, %v", got, err)
+	}
+	if got[0].Origin != FailureRuleOriginAuto || got[0].Reason != `{"code":"x"}` {
+		t.Errorf("origin/reason lost: %+v", got[0])
+	}
+	if other, _ := s.InjectedFailureRules("q"); len(other) != 0 {
+		t.Errorf("other project: %+v", other)
+	}
+}

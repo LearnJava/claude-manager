@@ -227,29 +227,44 @@ func AppendClaudeMdRule(projectPath, rule string) error {
 	return os.WriteFile(path, []byte(strings.Join(lines, nl)+nl), 0o644)
 }
 
-// FailureEffect compares how often an accepted rule's error showed up in the
-// runs before and after the decision.
+// FailureEffect compares how often a rule's error showed up in the runs
+// before and after the decision. CompletedBefore/After count the runs of each
+// window that ended with status "completed".
 type FailureEffect struct {
 	RunsBefore, HitsBefore int
 	RunsAfter, HitsAfter   int
+	CompletedBefore        int
+	CompletedAfter         int
 }
 
-// FailureRuleEffect measures an accepted rule: the last 20 runs of the project
-// that started before decided_at versus every run after it; a run is a hit
-// when it holds an is_error row whose ErrorKey equals the rule's. A rule that
-// is not accepted yields the zero result.
+// FailureRuleEffect measures a decided rule (accepted, trial, kept or
+// reverted): the last 20 runs of the project that started before decided_at
+// versus every run after it; a run is a hit when it holds an is_error row
+// whose ErrorKey equals the rule's. A draft or dismissed rule yields the zero
+// result.
 func FailureRuleEffect(st *store.Store, project string, r store.FailureRule) (FailureEffect, error) {
-	var eff FailureEffect
-	if r.Status != store.FailureRuleAccepted || r.DecidedAt == nil {
-		return eff, nil
+	switch r.Status {
+	case store.FailureRuleAccepted, store.FailureRuleTrial, store.FailureRuleKept, store.FailureRuleReverted:
+	default:
+		return FailureEffect{}, nil
 	}
+	if r.DecidedAt == nil {
+		return FailureEffect{}, nil
+	}
+	return failureEffectAt(st, project, r.ErrorKey, *r.DecidedAt)
+}
+
+// failureEffectAt is FailureRuleEffect for an error key and a decision time.
+func failureEffectAt(st *store.Store, project, errorKey string, decidedAt time.Time) (FailureEffect, error) {
+	var eff FailureEffect
 	rows, err := st.ActionRowsForCandidates(project, effectWindowDays)
 	if err != nil {
 		return eff, err
 	}
 	type runInfo struct {
-		start time.Time
-		hit   bool
+		start     time.Time
+		hit       bool
+		completed bool
 	}
 	runs := make(map[string]*runInfo)
 	for _, row := range rows {
@@ -262,19 +277,25 @@ func FailureRuleEffect(st *store.Store, project string, r store.FailureRule) (Fa
 		if row.Timestamp.Before(ri.start) {
 			ri.start = row.Timestamp
 		}
-		if row.IsError && row.ErrText != "" && ErrorKey(row.ErrText) == r.ErrorKey {
+		if row.RunStatus == "completed" {
+			ri.completed = true
+		}
+		if row.IsError && row.ErrText != "" && ErrorKey(row.ErrText) == errorKey {
 			ri.hit = true
 		}
 	}
 	var before []*runInfo
 	for _, ri := range runs {
-		if ri.start.Before(*r.DecidedAt) {
+		if ri.start.Before(decidedAt) {
 			before = append(before, ri)
 			continue
 		}
 		eff.RunsAfter++
 		if ri.hit {
 			eff.HitsAfter++
+		}
+		if ri.completed {
+			eff.CompletedAfter++
 		}
 	}
 	sort.Slice(before, func(i, j int) bool { return before[i].start.After(before[j].start) })
@@ -285,6 +306,9 @@ func FailureRuleEffect(st *store.Store, project string, r store.FailureRule) (Fa
 		eff.RunsBefore++
 		if ri.hit {
 			eff.HitsBefore++
+		}
+		if ri.completed {
+			eff.CompletedBefore++
 		}
 	}
 	return eff, nil

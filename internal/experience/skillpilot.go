@@ -104,6 +104,9 @@ type SkillPilotDeps struct {
 	// Candidates mines the project's skill candidates; nil uses
 	// MineProjectCandidates.
 	Candidates func(st *store.Store, project string) ([]SkillCandidate, error)
+	// DraftRule drafts a one-line rule for a recurring error (LN-40); nil
+	// disables drafting new rules (ready drafts are still applied).
+	DraftRule func(ctx context.Context, projectPath string, in analysis.FailureRuleInput) (*analysis.FailureRuleDraft, error)
 }
 
 // SkillPilotParams is one project's autopilot input.
@@ -123,6 +126,10 @@ type SkillPilotReport struct {
 	Kept     []string `json:"kept,omitempty"`
 	Archived []string `json:"archived,omitempty"`
 	Rejected []string `json:"rejected,omitempty"`
+	// Failure rules (LN-40): rule texts, at most 80 runes each.
+	RulesApplied  []string `json:"rules_applied,omitempty"`
+	RulesKept     []string `json:"rules_kept,omitempty"`
+	RulesReverted []string `json:"rules_reverted,omitempty"`
 	// Idle names why no distillation happened this tick ("busy",
 	// "trial_in_progress", "gap", "budget", "no_candidate"); "" when one did.
 	Idle string `json:"idle,omitempty"`
@@ -130,7 +137,8 @@ type SkillPilotReport struct {
 
 // Changed reports whether the tick changed any skill row.
 func (r SkillPilotReport) Changed() bool {
-	return len(r.Applied)+len(r.Kept)+len(r.Archived)+len(r.Rejected) > 0
+	return len(r.Applied)+len(r.Kept)+len(r.Archived)+len(r.Rejected)+
+		len(r.RulesApplied)+len(r.RulesKept)+len(r.RulesReverted) > 0
 }
 
 // SkillPilot runs the autopilot; one instance serves every project.
@@ -175,7 +183,13 @@ func (p *SkillPilot) Tick(ctx context.Context, params SkillPilotParams) (SkillPi
 	if err := p.evaluate(params, &rep); err != nil {
 		return rep, err
 	}
+	// A failing rules step must not starve skills: run distillNext anyway
+	// and return the first error.
+	rulesErr := p.rulesStep(ctx, params, &rep)
 	err := p.distillNext(ctx, params, &rep)
+	if rulesErr != nil {
+		return rep, rulesErr
+	}
 	return rep, err
 }
 
@@ -301,7 +315,6 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 	// One experiment at a time: a second skill applied mid-trial would
 	// make both trials' before/after numbers meaningless.
 	var lastAuto, pending *store.Skill
-	spentToday := 0.0
 	known := make(map[string]bool)
 	failures := make(map[string]int)
 	genericSteps := make(map[string]bool)
@@ -338,9 +351,6 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 			if lastAuto == nil || sk.CreatedAt.After(lastAuto.CreatedAt) {
 				lastAuto = sk
 			}
-			if sameDay(sk.CreatedAt, now) {
-				spentToday += sk.CostUSD
-			}
 		}
 	}
 	// A draft someone already paid to distill is reviewed before anything
@@ -364,6 +374,10 @@ func (p *SkillPilot) distillNext(ctx context.Context, params SkillPilotParams, r
 			rep.Idle = "gap"
 			return nil
 		}
+	}
+	spentToday, err := autoSpentToday(st, params.Project, now)
+	if err != nil {
+		return err
 	}
 	if params.DailyBudgetUSD > 0 && spentToday >= params.DailyBudgetUSD {
 		rep.Idle = "budget"

@@ -132,6 +132,9 @@ path = 'D:\RustProjects\lumen-browser'
 # .claude-manager/archived-skills/, restorable from the Skills tab). Private
 # layer: it spends money and writes into the repository. Needs
 # [optimization] experience_tracking (the UI switch turns it on too).
+# Also turns on auto-applying rules from recurring errors (LN-40): they go
+# into the --append-system-prompt of the project's Claude sessions, never
+# into CLAUDE.md; the daily budget below covers them too.
 # auto_skills = true
 # auto_skills_daily_budget_usd = 0       # 0 = no cap
 
