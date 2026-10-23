@@ -17,6 +17,8 @@ type FailuresApp interface {
 	DraftFailureRules(project string, limit int) ([]store.FailureRule, error)
 	AcceptFailureRule(id int64, ruleText string) error
 	DismissFailureRule(id int64) error
+	RevertFailureRule(id int64) error
+	RestoreFailureRule(id int64) error
 }
 
 // parseRuleID reads a rule id sent as a number or a numeric string.
@@ -97,5 +99,31 @@ func (s *Server) registerFailuresRPCs(reg map[string]handler) {
 			return nil, err
 		}
 		return nil, app.DismissFailureRule(id)
+	})
+	withApp("RevertFailureRule", "reverting a failure rule", func(app FailuresApp, p json.RawMessage) (any, error) {
+		var a struct {
+			RuleID json.RawMessage `json:"rule_id"`
+		}
+		if err := json.Unmarshal(p, &a); err != nil {
+			return nil, err
+		}
+		id, err := parseRuleID(a.RuleID)
+		if err != nil {
+			return nil, err
+		}
+		return nil, app.RevertFailureRule(id)
+	})
+	withApp("RestoreFailureRule", "restoring a failure rule", func(app FailuresApp, p json.RawMessage) (any, error) {
+		var a struct {
+			RuleID json.RawMessage `json:"rule_id"`
+		}
+		if err := json.Unmarshal(p, &a); err != nil {
+			return nil, err
+		}
+		id, err := parseRuleID(a.RuleID)
+		if err != nil {
+			return nil, err
+		}
+		return nil, app.RestoreFailureRule(id)
 	})
 }

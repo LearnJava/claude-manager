@@ -23,6 +23,10 @@ type FailureRuleView struct {
 	store.FailureRule
 	Examples []experience.ErrorExample
 	Effect   experience.FailureEffect
+	// Why is the parsed Reason of a decided autopilot rule (nil otherwise).
+	Why *experience.FailureRuleReason
+	// TrialRuns is how many runs a trial lasts (experience.FailureRuleTrialRuns).
+	TrialRuns int
 }
 
 // FailureRulesState is GetFailureRules' answer: the project's rules plus how
@@ -45,7 +49,7 @@ func (a *App) GetFailureRules(project string) (*FailureRulesState, error) {
 	}
 	st := &FailureRulesState{Rules: make([]FailureRuleView, 0, len(rows))}
 	for _, r := range rows {
-		v := FailureRuleView{FailureRule: r}
+		v := FailureRuleView{FailureRule: r, Why: experience.ParseFailureRuleReason(r.Reason), TrialRuns: experience.FailureRuleTrialRuns}
 		if r.ExamplesJSON != "" {
 			_ = json.Unmarshal([]byte(r.ExamplesJSON), &v.Examples)
 		}
@@ -136,8 +140,12 @@ func (a *App) AcceptFailureRule(id int64, ruleText string) error {
 	if r == nil {
 		return fmt.Errorf("failure rule %d not found", id)
 	}
-	if r.Status != store.FailureRuleDraft {
-		return fmt.Errorf("failure rule %d is %s, only a draft can be accepted", id, r.Status)
+	// A draft, or a rule the autopilot applies (trial/kept): moving it into
+	// CLAUDE.md takes it out of the system prompt, so it is not stated twice.
+	switch r.Status {
+	case store.FailureRuleDraft, store.FailureRuleTrial, store.FailureRuleKept:
+	default:
+		return fmt.Errorf("failure rule %d is %s, only a draft or an applied rule can be accepted", id, r.Status)
 	}
 	ruleText = strings.TrimSpace(ruleText)
 	if ruleText == "" {
@@ -171,4 +179,46 @@ func (a *App) DismissFailureRule(id int64) error {
 	}
 	now := time.Now().UTC()
 	return a.store.UpdateFailureRule(id, store.FailureRuleDismissed, r.RuleText, &now)
+}
+
+// RevertFailureRule switches an autopilot rule (trial or kept) off: it leaves
+// the system prompt of the project's sessions at their next start.
+func (a *App) RevertFailureRule(id int64) error {
+	return a.decideAppliedRule(id, "revert", []string{store.FailureRuleTrial, store.FailureRuleKept},
+		store.FailureRuleReverted, experience.RuleReasonRevertedManual)
+}
+
+// RestoreFailureRule brings a reverted rule back as kept: the user's explicit
+// choice, so no new trial.
+func (a *App) RestoreFailureRule(id int64) error {
+	return a.decideAppliedRule(id, "restore", []string{store.FailureRuleReverted},
+		store.FailureRuleKept, experience.RuleReasonRestoredManual)
+}
+
+func (a *App) decideAppliedRule(id int64, verb string, from []string, to, code string) error {
+	if a.store == nil {
+		return fmt.Errorf("no store")
+	}
+	r, err := a.store.GetFailureRule(id)
+	if err != nil {
+		return err
+	}
+	if r == nil {
+		return fmt.Errorf("failure rule %d not found", id)
+	}
+	ok := false
+	for _, s := range from {
+		ok = ok || r.Status == s
+	}
+	if !ok {
+		return fmt.Errorf("failure rule %d is %s, cannot %s it", id, r.Status, verb)
+	}
+	eff, err := experience.FailureRuleEffect(a.store, r.Project, *r)
+	if err != nil {
+		return err
+	}
+	if err := a.store.UpdateFailureRule(id, to, r.RuleText, r.DecidedAt); err != nil {
+		return err
+	}
+	return a.store.SetFailureRuleReason(id, experience.NewFailureRuleReason(code, eff))
 }

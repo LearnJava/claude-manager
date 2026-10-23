@@ -14,7 +14,7 @@ import (
 
 type failureRulesIn struct {
 	projectPageIn
-	Status string `json:"status,omitempty" jsonschema:"Only rules in this status: draft, accepted or dismissed; omit for all"`
+	Status string `json:"status,omitempty" jsonschema:"Only rules in this status: draft, accepted, dismissed, trial, kept or reverted; omit for all"`
 }
 
 type draftFailureRulesIn struct {
@@ -32,7 +32,7 @@ type acceptFailureRuleIn struct {
 }
 
 type failureRulesOut struct {
-	Rules   []any `json:"rules" jsonschema:"Rules: id, error_key, rule_text, status, distinct_runs, cost_usd, created_at, decided_at, examples (failed_arg, err_text, fixed_arg) and, for an accepted rule, effect (runs_before, hits_before, runs_after, hits_after)"`
+	Rules   []any `json:"rules" jsonschema:"Rules: id, error_key, rule_text, status (draft, accepted, dismissed, trial, kept, reverted), origin (manual or auto), reason (for an autopilot rule: code, hits and runs before/after), distinct_runs, cost_usd, created_at, decided_at, examples (failed_arg, err_text, fixed_arg) and, for an accepted rule, effect (runs_before, hits_before, runs_after, hits_after)"`
 	Pending int   `json:"pending" jsonschema:"Recurring errors that have no rule yet; draft_failure_rules drafts them"`
 	pageOut
 }
@@ -62,7 +62,7 @@ func failureRuleItem(raw any) any {
 	out := map[string]any{
 		"id": m["ID"], "error_key": m["ErrorKey"], "rule_text": m["RuleText"], "status": m["Status"],
 		"distinct_runs": m["DistinctRuns"], "cost_usd": m["CostUSD"], "created_at": m["CreatedAt"],
-		"decided_at": m["DecidedAt"],
+		"decided_at": m["DecidedAt"], "origin": m["Origin"], "reason": m["Why"],
 	}
 	if ex, ok := m["Examples"]; ok {
 		items := []any{}
@@ -75,7 +75,7 @@ func failureRuleItem(raw any) any {
 		}
 		out["examples"] = items
 	}
-	if ef, ok := m["Effect"].(map[string]any); ok && m["Status"] == "accepted" {
+	if ef, ok := m["Effect"].(map[string]any); ok && (m["Status"] == "accepted" || m["Status"] == "trial" || m["Status"] == "kept" || m["Status"] == "reverted") {
 		out["effect"] = map[string]any{
 			"runs_before": ef["RunsBefore"], "hits_before": ef["HitsBefore"],
 			"runs_after": ef["RunsAfter"], "hits_after": ef["HitsAfter"],
@@ -100,7 +100,7 @@ func failuresTools() []Tool {
 			},
 			Input: func(props map[string]*jsonschema.Schema) {
 				tunePage(props)
-				props["status"].Enum = []any{"draft", "accepted", "dismissed"}
+				props["status"].Enum = []any{"draft", "accepted", "dismissed", "trial", "kept", "reverted"}
 			},
 			Level: LevelRead, Annotations: ro, Covers: []string{"GetFailureRules"},
 			Translate: func(in failureRulesIn) (string, any, error) {
@@ -205,6 +205,46 @@ func failuresTools() []Tool {
 			},
 			Result:  func(in failureRuleIDIn, _ any) failureRuleAck { return failureRuleAck{OK: true, RuleID: in.RuleID} },
 			Summary: func(in failureRuleIDIn, _ failureRuleAck) string { return "Rule " + in.RuleID + " dismissed." },
+		}),
+		define(spec[failureRuleIDIn, failureRuleAck]{
+			Name: "revert_failure_rule", Title: "Revert failure rule",
+			Doc: Doc{
+				What:    "Switch off a rule the skill autopilot applies to the project's sessions (status trial or kept).",
+				UseWhen: "a rule listed with status trial or kept in get_failure_rules does harm or is not wanted.",
+				NotFor:  "moving it into CLAUDE.md (use accept_failure_rule) or turning a draft down (use dismiss_failure_rule).",
+				Returns: "ok and the rule_id.",
+				Effects: "marks the rule reverted; it leaves the system prompt of sessions started afterwards; nothing is written into the project.",
+				Example: `{"rule_id":"4"}`,
+			},
+			Level: LevelOperate, Annotations: ToolAnnotations{Idempotent: true}, Covers: []string{"RevertFailureRule"},
+			Translate: func(in failureRuleIDIn) (string, any, error) {
+				if err := needRuleID(in.RuleID); err != nil {
+					return "", nil, err
+				}
+				return "/rpc", rpcCallBody("RevertFailureRule", map[string]string{"rule_id": in.RuleID}), nil
+			},
+			Result:  func(in failureRuleIDIn, _ any) failureRuleAck { return failureRuleAck{OK: true, RuleID: in.RuleID} },
+			Summary: func(in failureRuleIDIn, _ failureRuleAck) string { return "Rule " + in.RuleID + " reverted." },
+		}),
+		define(spec[failureRuleIDIn, failureRuleAck]{
+			Name: "restore_failure_rule", Title: "Restore failure rule",
+			Doc: Doc{
+				What:    "Bring a reverted autopilot rule back into the system prompt of the project's sessions.",
+				UseWhen: "a rule with status reverted in get_failure_rules should apply again.",
+				NotFor:  "drafts (use accept_failure_rule).",
+				Returns: "ok and the rule_id.",
+				Effects: "marks the rule kept without a new trial; only a reverted rule can be restored; nothing is written into the project.",
+				Example: `{"rule_id":"4"}`,
+			},
+			Level: LevelOperate, Annotations: ToolAnnotations{Idempotent: true}, Covers: []string{"RestoreFailureRule"},
+			Translate: func(in failureRuleIDIn) (string, any, error) {
+				if err := needRuleID(in.RuleID); err != nil {
+					return "", nil, err
+				}
+				return "/rpc", rpcCallBody("RestoreFailureRule", map[string]string{"rule_id": in.RuleID}), nil
+			},
+			Result:  func(in failureRuleIDIn, _ any) failureRuleAck { return failureRuleAck{OK: true, RuleID: in.RuleID} },
+			Summary: func(in failureRuleIDIn, _ failureRuleAck) string { return "Rule " + in.RuleID + " restored." },
 		}),
 	}
 }

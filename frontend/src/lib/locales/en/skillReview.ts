@@ -63,7 +63,7 @@ export default {
     'skillReview.autopilotTitle': 'Skill autopilot',
     'skillReview.autopilotOn': 'on',
     'skillReview.autopilotOff': 'off',
-    'skillReview.autopilotExplainOn': 'After finished runs it distills recurring patterns into skills, has a second model review them, applies accepted ones on trial and, after {trial} runs, keeps the ones agents load or switches off the rest (moved to .claude-manager/archived-skills, one click brings them back). Drafts already waiting below are reviewed first.',
+    'skillReview.autopilotExplainOn': 'After finished runs it distills recurring patterns into skills, has a second model review them, applies accepted ones on trial and, after {trial} runs, keeps the ones agents load or switches off the rest (moved to .claude-manager/archived-skills, one click brings them back). Drafts already waiting below are reviewed first. It also applies rules drawn from recurring errors the same way: they go into the system prompt of the project\'s sessions, not into CLAUDE.md (Failures tab).',
     'skillReview.autopilotExplainOff': 'Off: skills are distilled and applied only by hand. Turn it on to let the manager distill, review, try and switch off skills by itself — you only watch the list below.',
     'skillReview.autopilotEnablesTracking': 'Turning it on also turns on action-history tracking.',
     'skillReview.budgetLabel': 'Daily limit, $',

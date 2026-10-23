@@ -92,6 +92,8 @@ var toolSamples = map[string]struct {
 	"draft_failure_rules":       {`{"project":"p"}`, `[{"ID":4,"ErrorKey":"boom","RuleText":"r","Status":"draft"}]`},
 	"accept_failure_rule":       {`{"rule_id":"4","text":"r"}`, `null`},
 	"dismiss_failure_rule":      {`{"rule_id":"4"}`, `null`},
+	"revert_failure_rule":       {`{"rule_id":"4"}`, `null`},
+	"restore_failure_rule":      {`{"rule_id":"4"}`, `null`},
 	"get_skills":                {`{"project":"p"}`, `[{"ID":7,"Name":"ls","Status":"draft","MD":"# ls"}]`},
 	"approve_skill":             {`{"project":"p","skill_id":"7"}`, `{"path":"/p/.claude/skills/ls/SKILL.md"}`},
 	"archive_skill":             {`{"skill_id":"7"}`, `null`},
