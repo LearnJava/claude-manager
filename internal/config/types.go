@@ -87,6 +87,7 @@ type GlobalSettings struct {
 	// Pre-flight analysis
 	PreflightAnalysis          bool    `toml:"preflight_analysis"`
 	PreflightModel             string  `toml:"preflight_model"`
+	JournalModel               string  `toml:"journal_model"` // task-journal analyst; empty = haiku (not inherited from preflight_model)
 	PreflightMaxBudget         float64 `toml:"preflight_max_budget"`
 	PreflightAutoApproveSingle bool    `toml:"preflight_auto_approve_single"`
 

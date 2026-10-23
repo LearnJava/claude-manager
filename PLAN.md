@@ -173,6 +173,7 @@ language = "en"                           # en | ru — только UI, про�
 # Pre-flight analysis (см. секцию 17)
 preflight_analysis = true                 # Включить анализ перед запуском
 preflight_model = "haiku"                 # Модель для анализа
+journal_model = ""                       # Модель журнала задач; пусто = haiku (не наследует preflight_model)
 preflight_max_budget = 0                  # 0 = без лимита. >0 = лимит в USD
 preflight_auto_approve_single = true      # Если single_session → запускать сразу
 
@@ -330,6 +331,7 @@ type GlobalSettings struct {
     // Pre-flight analysis
     PreflightAnalysis         bool    `toml:"preflight_analysis"`
     PreflightModel            string  `toml:"preflight_model"`
+    JournalModel              string  `toml:"journal_model"`   // журнал задач; пусто = haiku
     PreflightMaxBudget        float64 `toml:"preflight_max_budget"`        // 0 = без лимита
     PreflightAutoApproveSingle bool   `toml:"preflight_auto_approve_single"`
 

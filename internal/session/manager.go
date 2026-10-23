@@ -2261,7 +2261,7 @@ func (m *SessionManager) runJournalEntry(ctx context.Context, project, projectPa
 	write := m.journalFn
 	acfg := analysis.AnalysisConfig{
 		ClaudePath: m.cfg.Settings.ClaudePath,
-		Model:      m.cfg.Settings.PreflightModel,
+		Model:      m.cfg.Settings.JournalModel,
 	}
 	m.mu.Unlock()
 	if write == nil || analyze == nil {
