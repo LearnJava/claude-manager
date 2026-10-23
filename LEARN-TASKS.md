@@ -113,11 +113,11 @@ use_worktree = false   # worktree заводит сам протокол (script
 | LN-37 | ○ TODO | internal/store (failure_rules), internal/experience/failurerules.go |
 | LN-38 | ○ TODO | internal/analysis/failurerule.go, app.go, internal/control/mcptools_failures.go |
 | LN-39 | ○ TODO | frontend ExperiencePanel.svelte (вкладка «Ошибки»), stores/experience.ts |
+| LN-40 | ○ TODO | internal/experience/skillpilot.go (шаг правил), internal/store (failure_rules.origin/reason), internal/session/session.go, manager.go (LearnedRules) |
+| LN-41 | ○ TODO | app.go (RevertFailureRule/RestoreFailureRule), internal/control/mcptools_failures.go, ExperiencePanel.svelte, SkillReview.svelte |
 
-> LN-17 и LN-18 дописаны после разведки корпуса. LN-17 по приоритету идёт
-> **третьим**, сразу за LN-02 (без него нечего анализировать); LN-18 — после
-> LN-05, т.к. пишет в тёплый бриф. Порядок берётся из `LEARN-STATUS.md`, а не
-> из номеров.
+> LN-17 и LN-18 дописаны после разведки корпуса. LN-17 по приоритету идёт **третьим**, сразу за LN-02 (без него нечего анализировать);
+> LN-18 — после LN-05, т.к. пишет в тёплый бриф. Порядок берётся из очереди, а не из номеров.
 
 ## Инварианты (обязательны для всех задач блока)
 
@@ -134,7 +134,7 @@ use_worktree = false   # worktree заводит сам протокол (script
    правила разрешений, строки в `CLAUDE.md` — только после явного «Принять» в
    UI. **Исключение (LN-24..27):** скиллы пишет автопилот, но только в проекте,
    где пользователь явно включил `auto_skills` (приватный слой, по умолчанию
-   выключено); всё им записанное обратимо (архив, а не удаление) и измеряется. Автоматически пишутся лишь файлы под `<project>/.claude-manager/`
+   выключено); всё им записанное обратимо (архив, а не удаление) и измеряется. **С LN-40** автопилот при том же `auto_skills` сам применяет и правила из повторяющихся ошибок — не в `CLAUDE.md`, а блоком в `--append-system-prompt` Claude-сессий проекта (в репозиторий ничего не пишется); выключается одним кликом, эффект меряется по повторяемости ошибки; в `CLAUDE.md` правило попадает только по «Принять» (LN-38). Автоматически пишутся лишь файлы под `<project>/.claude-manager/`
    (гитигнорятся через `config.EnsureGitignore`).
 5. **Любая фича, меняющая промпт, обязана быть измеримой.** Замер — через
    `session_runs` (LN-11, LN-16). Фича без замера не принимается: молча
@@ -1958,3 +1958,138 @@ round-trip `err_text` через `InsertActions`/`ActionRowsForCandidates`; те
 
 **Готово когда:** `npm run build` и Playwright-тест вкладки зелёные, `go test
 ./...` зелёный; вкладка видна при включённом `experience_tracking`.
+
+## LN-40: Автопилот сам применяет правила из ошибок (через системный промпт)
+
+**Depends on:** LN-37, LN-38
+**Files:** `internal/store/migrations.go`, `store.go`, `store_test.go`,
+`internal/experience/skillpilot.go`, новый `internal/experience/rulepilot.go`
+(+ `rulepilot_test.go`), `failurerules.go`, `internal/session/session.go`,
+`internal/session/manager.go`, `session_wire_test.go` (или рядом),
+`app.go` (там, где собираются `SkillPilotDeps`), `config.example.toml`
+(комментарий к `auto_skills`), `docs/design-decisions.md`
+
+**Зачем.** Пользователь хочет, чтобы правило из повторяющейся ошибки начинало
+действовать без клика — как навыки при `auto_skills`. Писать в `CLAUDE.md`
+автоматически нельзя: это файл репозитория, его правят developer-сессии при
+doc-sync, и грязный `CLAUDE.md` в главном checkout ломает их `merge`. Поэтому
+автоприменённое правило живёт в БД и подставляется блоком в
+`--append-system-prompt` при запуске Claude-сессий проекта. Выключить — значит
+сменить статус; следующая сессия правило уже не увидит. См. инвариант 4.
+
+**Статусы `failure_rules`** (к `draft | accepted | dismissed` из LN-37):
+`trial` — применено автопилотом, идёт замер; `kept` — прошло замер, остаётся в
+промпте; `reverted` — снято (замер не прошёл или клик). В промпт идут `trial` и
+`kept`. `accepted` = лежит в `CLAUDE.md`, в промпт не идёт (без дубля).
+
+**Что сделать.**
+1. `failure_rules`: колонки `origin TEXT NOT NULL DEFAULT 'manual'`
+   (`manual | auto`) и `reason TEXT` (JSON `{code, text, hits_before,
+   runs_before, hits_after, runs_after}`) — через `ALTER … ADD COLUMN` с
+   терпимостью к «duplicate column» и в `CREATE TABLE`. `store.FailureRule`
+   получает `Origin`, `Reason`; метод
+   `InjectedFailureRules(project) ([]FailureRule, error)` — `status IN
+   ('trial','kept')`, по `decided_at`.
+2. `FailureEffect` (LN-37) получает `CompletedBefore`, `CompletedAfter` —
+   число прогонов со статусом `completed` в каждом окне (статус уже есть в
+   `CandidateActionRow.RunStatus`).
+3. `rulepilot.go`: `func (p *SkillPilot) rulesStep(ctx, params, rep) error`.
+   Константы: `FailureRuleTrialRuns = 10`, `MaxInjectedRules = 10`,
+   `MinRecentHits = 2`. Порядок:
+   - **Решение по испытанию.** Для строки `trial`: `FailureRuleEffect`; пока
+     `RunsAfter < FailureRuleTrialRuns` — ждать. Затем `kept`, если доля
+     прогонов с ошибкой после ≤ половины доли до **и** доля `completed` не упала
+     на ≥ 0.2; иначе `reverted` с `reason.code = "no_effect"` или `"worse"`.
+     Числа — в `reason`.
+   - **Одно испытание за раз.** Есть строка `trial` → дальше не идти.
+   - **Пределы.** `InjectedFailureRules` ≥ `MaxInjectedRules` → стоп. С
+     `created_at` последнего `origin = auto` прошло < `AutoDistillGapRuns`
+     проиндексированных прогонов → стоп. Дневной бюджет
+     `params.DailyBudgetUSD` — **общий с навыками**: вынести подсчёт
+     «потрачено сегодня автопилотом» в одну функцию, которая суммирует
+     `skills.cost_usd` и `failure_rules.cost_usd` строк `origin = auto` за
+     сегодня, и использовать её и в `distillNext`, и здесь.
+   - **Готовый черновик первым.** Есть строка `draft` (например, после кнопки
+     «Предложить правила») → применить её без нового вызова LLM.
+   - **Иначе новый.** Первый кандидат `FailureRuleCandidates`, у которого
+     `FailureRuleEffect` с `DecidedAt = now` даёт `HitsBefore ≥ MinRecentHits`
+     (ошибка повторяется *сейчас*, а не только когда-то за 90 дней — иначе
+     замер нечем подтвердить) → `deps.DraftRule` → `Duplicate` → строка
+     `dismissed`; иначе строка `origin = auto`.
+   - **Применить** = статус `trial`, `decided_at = now`. В `CLAUDE.md` не писать.
+   Отчёт: в `SkillPilotReport` поля `RulesApplied`, `RulesKept`,
+   `RulesReverted []string` (текст правила, ≤ 80 рун); `Changed()` их учитывает.
+4. `SkillPilotDeps.DraftRule func(ctx, projectPath string, in
+   analysis.FailureRuleInput) (*analysis.FailureRuleDraft, error)`; в `app.go`
+   подключить `analysis.DraftFailureRule` (LN-38) там же, где `Distill`/`Review`.
+5. `Tick`: после `evaluate` вызвать `rulesStep`, затем `distillNext`. Ошибка
+   `rulesStep` не мешает навыкам: запомнить, выполнить `distillNext`, вернуть
+   первую ошибку. Ранние `return` в `distillNext` (`trial_in_progress` навыка) на
+   правила не влияют — они выполнены раньше.
+6. Подстановка в промпт. `session.Params.LearnedRules string` и поле сессии
+   (как `ManagerCard`). В `session.go` (сборка `--append-system-prompt`, рядом с
+   `card`) — если строка не пустая, дописать её отдельным абзацем; условие
+   `if s.Config.SystemPromptAppend != "" || … || card != ""` дополнить
+   `|| s.learnedRules != ""`. Только Claude-runtime: Hermes не трогать.
+   `manager.go`: `func (m *SessionManager) learnedRulesFor(proj
+   *config.ProjectConfig) string` — `""`, если `!proj.AutoSkills`, нет store или
+   нет правил; иначе
+   ```
+   ## Learned from failures (Claude Manager)
+   Errors that kept recurring in this project's past runs, with the rule that avoids each:
+   - <rule_text>
+   ```
+   Передать во всех трёх местах, где сейчас передаётся `ManagerCard:
+   m.managerCardFor(proj, name)`. Правила читаются при запуске процесса CLI, не
+   посреди сессии (кэш промпта не ломается).
+7. `config.example.toml`: в комментарии к `auto_skills` — «включает и
+   автоприменение правил из ошибок (LN-40), они идут в системный промпт, не в
+   CLAUDE.md». `docs/design-decisions.md`: абзац в разделе про автопилот навыков —
+   почему системный промпт, а не `CLAUDE.md` (merge developer-сессий, worktree).
+
+**Готово когда:** тесты: (а) **инвариант 6** — при `LearnedRules == ""` argv сессии
+байт-в-байт прежний (сравнить с выводом до изменения); при непустом — блок есть в
+`--append-system-prompt`; (б) `learnedRulesFor` пуст при `auto_skills = false` и
+при отсутствии `trial`/`kept`, `accepted`/`reverted` в блок не попадают;
+(в) `rulesStep`: черновик применяется раньше нового вызова LLM; при `trial` новых
+нет; кандидат без свежих ошибок (`HitsBefore < 2`) пропускается; `Duplicate` →
+`dismissed`; после 10 прогонов без ошибки → `kept`, с прежней частотой →
+`reverted/no_effect`, при падении доли `completed` на 0.2 → `reverted/worse`;
+(г) общий дневной бюджет: траты на правила останавливают и дистилляцию навыков;
+(д) ошибка `DraftRule` не мешает `distillNext`. `go build/vet/test` зелёные.
+
+## LN-41: Автоправила в UI и MCP: видно, выключается, возвращается
+
+**Depends on:** LN-39, LN-40
+**Files:** `app.go`, `app_test.go` (или где тесты App для навыков),
+`internal/control/mcptools_failures.go`, `docs/architecture.md`, `docs/mcp.md`
+(генерируется), `frontend/src/components/ExperiencePanel.svelte`,
+`frontend/src/components/SkillReview.svelte`, `frontend/src/stores/experience.ts`,
+`frontend/src/lib/locales/{ru,en}/{experiencePanel,skillReview}.ts`,
+`frontend/tests/experience.spec.ts`, `GUI-TESTS.md`
+
+**Что сделать.**
+1. `App`: `RevertFailureRule(id int64) error` (`trial`/`kept` → `reverted`,
+   `reason.code = "reverted_manual"`) и `RestoreFailureRule(id int64) error`
+   (`reverted` → `kept`, `reason.code = "restored_manual"`: явный выбор
+   пользователя, без нового испытания). `AcceptFailureRule` (LN-38) для строки
+   `trial`/`kept` пишет её в `CLAUDE.md` и ставит `accepted` — после этого она
+   уходит из системного промпта, дубля нет; проверить тестом.
+   `GetFailureRules` отдаёт `origin` и разобранный `reason`.
+2. MCP: `revert_failure_rule`, `restore_failure_rule` (write) — по образцу
+   `mcptools_failures.go`; `go run ./cmd/cm-mcp -gen-docs`; строки в таблице
+   «Wails Bindings» `docs/architecture.md`.
+3. Вкладка «Ошибки» (LN-39): раздел **«Применено автопилотом»** — правило,
+   статус («испытание: N из 10 прогонов» / «оставлено» / «снято»), «почему»
+   словами из `reason` (до → после), кнопки «Выключить» (`trial`/`kept`),
+   «Вернуть» (`reverted`), «Перенести в CLAUDE.md» (`AcceptFailureRule` с текущим
+   текстом). Без `window.confirm()`.
+4. `SkillReview.svelte`: подпись у переключателя автопилота — что он теперь
+   применяет и правила из ошибок (через системный промпт сессий проекта); ru/en.
+5. Подписка на `skills:changed` уже обновляет вкладку навыков — обновлять по ней
+   и вкладку «Ошибки» (автопилот шлёт это событие, когда `Changed()`).
+
+**Готово когда:** Go-тесты `Revert`/`Restore`/перенос в `CLAUDE.md` (строка
+пропадает из `InjectedFailureRules`); `TestDocsInSync` и parity-тест зелёные;
+Playwright: раздел автоправил рендерится, «Выключить» вызывает
+`RevertFailureRule`, «Вернуть» — `RestoreFailureRule`; `npm run build` зелёный.
