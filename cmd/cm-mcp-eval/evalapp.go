@@ -200,6 +200,10 @@ func (a *evalApp) GetTokenAttribution(string, int) (experience.AttributionReport
 	return experience.AttributionReport{}, nil
 }
 
+func (a *evalApp) GetWasteReport(string) (experience.WasteReport, error) {
+	return experience.WasteReport{}, nil
+}
+
 func (a *evalApp) GetModelRecommendation(string, string) (*optimization.ModelRecommendation, error) {
 	return nil, nil
 }

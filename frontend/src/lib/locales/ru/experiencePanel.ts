@@ -8,6 +8,7 @@ export default {
     'experiencePanel.tabs.cost': 'Стоимость по инструментам',
     'experiencePanel.tabs.skills': 'Навыки',
     'experiencePanel.tabs.failures': 'Ошибки',
+    'experiencePanel.tabs.waste': 'Потери',
     'experiencePanel.refresh': 'Обновить',
 
     'experiencePanel.filters.project': 'Проект',
@@ -102,6 +103,27 @@ export default {
         'Время выполнения берётся из action_signatures.dur_sec — промежутка между tool_use и tool_result для каждого записанного вызова. Сигнатуре нужно минимум 10 замеров, чтобы появиться здесь.',
     'experiencePanel.footer.cost':
         'Оцен. токены = символы/4, приближение по порядку величины — точного токенайзера без обращения к API нет.',
+    'experiencePanel.footer.waste':
+        'Оцениваются только успешные вызовы. Токены = символы/4 с учётом перечитываний, как на вкладке стоимости; один вызов может попасть в две категории, в итоге он считается один раз.',
+    'experiencePanel.waste.loading': 'Ищу потери…',
+    'experiencePanel.waste.errorLoad': 'Не удалось загрузить отчёт о потерях: {error}',
+    'experiencePanel.waste.emptyPre': 'Для этого проекта пока нет записанных вызовов. Включите',
+    'experiencePanel.waste.clean': 'В записанных вызовах потерь не найдено.',
+    'experiencePanel.waste.headline': 'Потеряно {calls} вызовов из {total} — {share} взвешенного объёма токенов ({tokens})',
+    'experiencePanel.waste.colCategory': 'Категория',
+    'experiencePanel.waste.colCalls': 'Вызовов',
+    'experiencePanel.waste.colEstTokens': 'Оцен. токены',
+    'experiencePanel.waste.colLifetime': 'С перечитываниями',
+    'experiencePanel.waste.colShare': 'Доля',
+    'experiencePanel.waste.example': '{session} · прогон {run} · шаг {step}',
+    'experiencePanel.waste.cat.repeat_read': 'Повторные чтения',
+    'experiencePanel.waste.cat.repeat_read.hint': 'Тот же файл или поиск ещё раз, без правки, которая могла бы изменить ответ',
+    'experiencePanel.waste.cat.empty_search': 'Серии пустых поисков',
+    'experiencePanel.waste.cat.empty_search.hint': 'Два и больше поиска подряд с разными шаблонами и без результата',
+    'experiencePanel.waste.cat.oversized_read': 'Чтение файла целиком',
+    'experiencePanel.waste.cat.oversized_read.hint': 'Чтение сильно больше нужного куска; считается то, что сверх порога',
+    'experiencePanel.waste.cat.rerun_cmd': 'Повтор без изменений',
+    'experiencePanel.waste.cat.rerun_cmd.hint': 'Та же команда ещё раз, без правки между запусками',
     'experiencePanel.footer.skills':
         'Кликните по навыку, чтобы увидеть его markdown. Работающие навыки лежат в <project>/.claude/skills/, выключенные — в .claude-manager/archived-skills/.',
 

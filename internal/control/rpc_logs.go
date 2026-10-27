@@ -28,6 +28,7 @@ type LogsApp interface {
 	GetActionSamples(project, sig string, limit int) ([]store.ActionRow, error)
 	GetDurationProfile(project string) ([]experience.SignatureDuration, error)
 	GetTokenAttribution(project string, topN int) (experience.AttributionReport, error)
+	GetWasteReport(project string) (experience.WasteReport, error)
 	GetModelRecommendation(project, name string) (*optimization.ModelRecommendation, error)
 	GetAutoModelRouting() bool
 }
@@ -304,6 +305,19 @@ func (s *Server) registerLogsRPCs(reg map[string]handler) {
 			return nil, needApp("token attribution")
 		}
 		return lapp.GetTokenAttribution(a.Project, a.TopN)
+	}
+
+	reg["GetWasteReport"] = func(p json.RawMessage) (any, error) {
+		var a struct {
+			Project string `json:"project"`
+		}
+		if err := json.Unmarshal(p, &a); err != nil {
+			return nil, err
+		}
+		if lapp == nil {
+			return nil, needApp("the waste report")
+		}
+		return lapp.GetWasteReport(a.Project)
 	}
 
 	reg["GetAutoModelRouting"] = func(_ json.RawMessage) (any, error) {

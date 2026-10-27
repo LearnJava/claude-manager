@@ -1846,3 +1846,41 @@ func (s *Store) InjectedFailureRules(project string) ([]FailureRule, error) {
 	}
 	return out, rows.Err()
 }
+
+// ActionsForWaste returns every action_signatures row of project over the
+// last sinceDays days with just the columns experience.AnalyzeWaste reads
+// (WASTE-TASKS.md WS-01): errored rows included — they still take a step
+// position and count toward the project's total volume, the analysis itself
+// decides what to ignore. Order is unspecified; the caller groups by run and
+// sorts by step.
+func (s *Store) ActionsForWaste(project string, sinceDays int) ([]ActionRow, error) {
+	const q = `SELECT id, session, run_id, cli_session_id, step_index, tool, sig, arg, is_error, result_chars
+    FROM action_signatures
+    WHERE project=? AND ts >= datetime('now', ?)`
+	rows, err := s.db.Query(q, project, fmt.Sprintf("-%d days", sinceDays))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []ActionRow
+	for rows.Next() {
+		var r ActionRow
+		var runID sql.NullInt64
+		var cliSessionID, arg sql.NullString
+		var isErr int
+		if err := rows.Scan(&r.ID, &r.Session, &runID, &cliSessionID, &r.StepIndex, &r.Tool, &r.Sig, &arg, &isErr, &r.ResultChars); err != nil {
+			return nil, err
+		}
+		r.Project = project
+		if runID.Valid {
+			v := runID.Int64
+			r.RunID = &v
+		}
+		r.CLISessionID = cliSessionID.String
+		r.Arg = arg.String
+		r.IsError = isErr != 0
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}

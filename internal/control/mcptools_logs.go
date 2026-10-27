@@ -80,6 +80,10 @@ type attributionIn struct {
 	TopN    int64  `json:"top_n,omitempty" jsonschema:"Keep this many most expensive signatures, 1-100 (default 20)"`
 }
 
+type wasteIn struct {
+	Project string `json:"project" jsonschema:"Project name as in get_projects, e.g. lumen"`
+}
+
 type adviceIn struct {
 	sessionRef
 }
@@ -149,6 +153,10 @@ type durationOut struct {
 
 type attributionOut struct {
 	Report any `json:"report" jsonschema:"TotalEstTokens, TotalLifetimeTokens and the BySignature, ByTool and ByLength tables, most expensive first"`
+}
+
+type wasteOut struct {
+	Report any `json:"report" jsonschema:"TotalCalls, TotalLifetimeTokens, WastedCalls, WastedLifetimeTokens, WastedShare and Categories (Category, Count, EstTokens, LifetimeTokens, Share, up to 5 Examples with Session, RunID, Step, Tool, Arg), most expensive first"`
 }
 
 type adviceOut struct {
@@ -587,6 +595,26 @@ func logsTools() []Tool {
 			},
 			Result:  func(_ attributionIn, raw any) attributionOut { return attributionOut{Report: raw} },
 			Summary: func(in attributionIn, _ attributionOut) string { return "Token attribution of " + in.Project + "." },
+		}),
+		define(spec[wasteIn, wasteOut]{
+			Name: "get_waste_report", Title: "Get waste report",
+			Doc: Doc{
+				What:    "Find work in a project that succeeded and still bought nothing: reads repeated with no edit between, streaks of empty searches, whole-file reads, commands rerun unchanged. Per category: count, estimated tokens, share of the project's volume and examples.",
+				UseWhen: "you look for what to cut from agents' habits, after get_token_attribution shows where the context goes.",
+				NotFor:  "errors (use get_failure_rules) or the heaviest calls as such (use get_token_attribution).",
+				Returns: "report with totals and the categories that occurred; an empty Categories list means no waste found; empty unless experience tracking was on.",
+				Effects: "none, read only.",
+				Example: `{"project":"lumen"}`,
+			},
+			Level: LevelRead, Annotations: ro, Covers: []string{"GetWasteReport"},
+			Translate: func(in wasteIn) (string, any, error) {
+				if err := needProject(in.Project); err != nil {
+					return "", nil, err
+				}
+				return "/rpc", rpcCallBody("GetWasteReport", map[string]string{"project": in.Project}), nil
+			},
+			Result:  func(_ wasteIn, raw any) wasteOut { return wasteOut{Report: raw} },
+			Summary: func(in wasteIn, _ wasteOut) string { return "Waste report of " + in.Project + "." },
 		}),
 		define(spec[adviceIn, adviceOut]{
 			Name: "get_model_advice", Title: "Get model recommendation",

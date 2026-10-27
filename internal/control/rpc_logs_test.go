@@ -68,6 +68,10 @@ func (a logsApp) GetTokenAttribution(p string, n int) (experience.AttributionRep
 	a.rec(fmt.Sprintf("GetTokenAttribution %s %d", p, n))
 	return experience.AttributionReport{TotalEstTokens: 10}, nil
 }
+func (a logsApp) GetWasteReport(p string) (experience.WasteReport, error) {
+	a.rec("GetWasteReport " + p)
+	return experience.WasteReport{TotalCalls: 4}, nil
+}
 func (a logsApp) GetModelRecommendation(p, n string) (*optimization.ModelRecommendation, error) {
 	return &optimization.ModelRecommendation{Model: "sonnet"}, nil
 }

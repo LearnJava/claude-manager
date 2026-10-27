@@ -1524,6 +1524,23 @@ func (a *App) GetTokenAttribution(project string, topN int) (experience.Attribut
 	return experience.BuildAttributionReport(a.store, project, topN)
 }
 
+// GetWasteReport mines a project's action_signatures for successful but
+// useless work — repeated reads, streaks of empty searches, whole-file reads,
+// commands rerun with no edit between — the "Waste" tab of the Experience
+// panel (WASTE-TASKS.md WS-01). Read only; cut-offs come from [optimization]
+// waste_* (0 = default).
+func (a *App) GetWasteReport(project string) (experience.WasteReport, error) {
+	if a.store == nil {
+		return experience.WasteReport{}, fmt.Errorf("no store")
+	}
+	var th experience.WasteThresholds
+	if a.cfg != nil {
+		th.EmptySearchChars = a.cfg.Optimization.WasteEmptySearchChars
+		th.OversizedReadTokens = a.cfg.Optimization.WasteOversizedReadTokens
+	}
+	return experience.BuildWasteReport(a.store, project, th)
+}
+
 // GetPermissionCandidates aggregates permission_events for a project into
 // suggested auto-allow rules (LEARN-TASKS.md LN-04) — the "Permissions" tab
 // of the Experience panel. Safe are (tool, pattern) pairs that keep asking,

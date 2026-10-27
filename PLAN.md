@@ -3022,6 +3022,8 @@ show_cache_efficiency = true         # Показывать cache efficiency в 
 # history into token/time savings. Off by default: no transcript is opened
 # until this is set.
 experience_tracking = false
+# waste_empty_search_chars = 100       # WS-01: Grep/Glob result shorter than this is "empty" (0 = default)
+# waste_oversized_read_tokens = 8000   # WS-01: Read result above this is a whole-file read (0 = default)
 ```
 
 ### 20.5 Автоматические действия менеджера (без участия пользователя)

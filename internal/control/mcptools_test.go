@@ -78,6 +78,7 @@ var toolSamples = map[string]struct {
 	"get_action_samples":        {`{"project":"p","signature":"Bash:ls"}`, `[{"Tool":"Bash","Arg":"ls"}]`},
 	"get_duration_profile":      {`{"project":"p"}`, `[{"Sig":"Bash:go test","Count":4}]`},
 	"get_token_attribution":     {`{"project":"p","top_n":5}`, `{"TotalEstTokens":10,"BySignature":[]}`},
+	"get_waste_report":          {`{"project":"p"}`, `{"TotalCalls":4,"Categories":[]}`},
 	"get_model_advice":          {`{"session_id":"p/s"}`, `{"auto_routing":true,"recommendation":{"model":"sonnet"}}`},
 	"session_preflight":         {`{"session_id":"p/s"}`, `{"id":3}`},
 	"generate_roadmap":          {`{"project":"p","idea":"an app"}`, `{"id":9,"kind":"roadmap"}`},

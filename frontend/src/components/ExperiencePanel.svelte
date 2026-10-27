@@ -9,11 +9,13 @@
     import { EventsOn } from '../../wailsjs/runtime/runtime';
     import {
         addPermissionRule,
+        emptyWasteReport,
         fetchActionSamples,
         fetchDurationProfile,
         fetchPermissionCandidates,
         fetchTokenAttribution,
         fetchTopActions,
+        fetchWasteReport,
         importProjectLogs,
         type ActionRow,
         type AttributionReport,
@@ -21,13 +23,14 @@
         type PermissionCandidate,
         type SignatureDuration,
         type SignatureStat,
+        type WasteReport,
     } from '../stores/experience';
 
     const dispatch = createEventDispatcher();
 
     // This modal gains more tabs as later LN items land — one modal, not a
     // new one per tab (see LEARN-TASKS.md LN-03 "UI").
-    type Tab = 'actions' | 'permissions' | 'timing' | 'cost' | 'skills' | 'failures';
+    type Tab = 'actions' | 'permissions' | 'timing' | 'cost' | 'waste' | 'skills' | 'failures';
     let tab: Tab = 'actions';
     let skillReview: SkillReview;
     let failureReview: FailureReview;
@@ -79,6 +82,11 @@
     let attribution: AttributionReport = { TotalEstTokens: 0, BySignature: [], ByTool: [] };
     let costLoading = true;
     let costError = '';
+
+    // Waste tab (WASTE-TASKS.md WS-01) — same fixed window as Cost by tool.
+    let waste: WasteReport = emptyWasteReport();
+    let wasteLoading = true;
+    let wasteError = '';
 
     // Import logs (LEARN-TASKS.md LN-20) — the UI to LN-17's IngestDir.
     let importMenuOpen = false;
@@ -183,6 +191,24 @@
             attribution = { TotalEstTokens: 0, BySignature: [], ByTool: [] };
         } finally {
             costLoading = false;
+        }
+    }
+
+    async function loadWaste() {
+        if (!project) {
+            waste = emptyWasteReport();
+            wasteLoading = false;
+            return;
+        }
+        wasteLoading = true;
+        wasteError = '';
+        try {
+            waste = await fetchWasteReport(project);
+        } catch (e: any) {
+            wasteError = $t('experiencePanel.waste.errorLoad', { error: e?.message ?? String(e) });
+            waste = emptyWasteReport();
+        } finally {
+            wasteLoading = false;
         }
     }
 
@@ -377,6 +403,16 @@
                     </button>
                     <button
                         type="button"
+                        on:click={() => (tab = 'waste')}
+                        data-testid="tab-waste"
+                        class="px-2 py-1 rounded border
+                            {tab === 'waste'
+                                ? 'bg-bg-elevated border-blue-500 text-text'
+                                : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
+                        {$t('experiencePanel.tabs.waste')}
+                    </button>
+                    <button
+                        type="button"
                         on:click={() => (tab = 'skills')}
                         class="px-2 py-1 rounded border
                             {tab === 'skills'
@@ -428,6 +464,7 @@
                         else if (tab === 'permissions') loadPermissions();
                         else if (tab === 'timing') loadDurations();
                         else if (tab === 'cost') loadAttribution();
+                        else if (tab === 'waste') loadWaste();
                         else if (tab === 'failures') failureReview?.load();
                         else skillReview?.load();
                     }}
@@ -682,6 +719,82 @@
                             {/each}
                         </tbody>
                     </table>
+                {/if}
+            {:else if tab === 'waste'}
+                {#if !project}
+                    <div class="text-text-muted text-sm italic py-10 text-center">
+                        {$t('experiencePanel.noProject')}
+                    </div>
+                {:else if wasteLoading}
+                    <div class="text-text-muted text-sm italic py-10 text-center">
+                        {$t('experiencePanel.waste.loading')}
+                    </div>
+                {:else if wasteError}
+                    <div class="text-status-error text-sm py-10 text-center">{wasteError}</div>
+                {:else if waste.TotalCalls === 0}
+                    <div class="text-text-muted text-sm italic py-10 text-center">
+                        {$t('experiencePanel.waste.emptyPre')}
+                        <code class="font-mono">[optimization] experience_tracking</code>
+                        {$t('experiencePanel.enable.collectItSuffix')}
+                    </div>
+                {:else if waste.Categories.length === 0}
+                    <div data-testid="waste-clean" class="text-text-muted text-sm italic py-10 text-center">
+                        {$t('experiencePanel.waste.clean')}
+                    </div>
+                {:else}
+                    <div class="px-4 py-3" data-testid="waste-report">
+                        <h3 class="text-text text-sm font-medium mb-3" data-testid="waste-headline">
+                            {$t('experiencePanel.waste.headline', {
+                                calls: waste.WastedCalls,
+                                total: waste.TotalCalls,
+                                share: formatPercent(waste.WastedShare),
+                                tokens: formatTokens(waste.WastedLifetimeTokens),
+                            })}
+                        </h3>
+                        <table class="w-full text-sm border-collapse mb-4">
+                            <thead class="bg-bg-elevated text-text-muted text-xs">
+                                <tr>
+                                    <th class="text-left px-3 py-2 font-medium">{$t('experiencePanel.waste.colCategory')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.waste.colCalls')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.waste.colEstTokens')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.waste.colLifetime')}</th>
+                                    <th class="text-right px-3 py-2 font-medium">{$t('experiencePanel.waste.colShare')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {#each waste.Categories as c (c.Category)}
+                                    <tr class="border-t border-bg-border" data-testid="waste-cat-{c.Category}">
+                                        <td class="px-3 py-1.5 text-text text-xs">
+                                            {$t(`experiencePanel.waste.cat.${c.Category}`)}
+                                            <div class="text-text-muted">{$t(`experiencePanel.waste.cat.${c.Category}.hint`)}</div>
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">{c.Count}</td>
+                                        <td class="px-3 py-1.5 text-right text-text-muted font-mono text-xs">
+                                            {formatTokens(c.EstTokens)}
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right text-text font-mono text-xs">
+                                            {formatTokens(c.LifetimeTokens)}
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right text-text font-mono text-xs">
+                                            {formatPercent(c.Share)}
+                                        </td>
+                                    </tr>
+                                    {#each c.Examples as ex}
+                                        <tr class="text-xs text-text-muted">
+                                            <td colspan="5" class="px-3 pb-1 pl-6 font-mono truncate max-w-0">
+                                                {ex.Tool} {ex.Arg}
+                                                — {$t('experiencePanel.waste.example', {
+                                                    session: ex.Session,
+                                                    run: ex.RunID || '—',
+                                                    step: ex.Step,
+                                                })}
+                                            </td>
+                                        </tr>
+                                    {/each}
+                                {/each}
+                            </tbody>
+                        </table>
+                    </div>
                 {/if}
             {:else if tab === 'cost'}
                 {#if !project}
@@ -965,6 +1078,8 @@
                 {$t('experiencePanel.footer.timing')}
             {:else if tab === 'cost'}
                 {$t('experiencePanel.footer.cost')}
+            {:else if tab === 'waste'}
+                {$t('experiencePanel.footer.waste')}
             {:else if tab === 'skills'}
                 {$t('experiencePanel.footer.skills')}
             {:else if tab === 'failures'}

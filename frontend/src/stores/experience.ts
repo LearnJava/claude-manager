@@ -22,6 +22,7 @@ import {
     GetSkillQuality,
     GetSkills,
     GetTokenAttribution,
+    GetWasteReport,
     GetTopActions,
     ImportProjectLogs,
     GetSkillAutopilot,
@@ -156,6 +157,54 @@ export interface AttributionReport {
 export async function fetchTokenAttribution(project: string, topN = 0): Promise<AttributionReport> {
     const raw = (await GetTokenAttribution(project, topN)) as AttributionReport | null;
     return raw ?? { TotalEstTokens: 0, BySignature: [], ByTool: [] };
+}
+
+// WasteExample/WasteCategory/WasteReport mirror experience.WasteExample/
+// WasteCategory/WasteReport (WASTE-TASKS.md WS-01): successful but useless
+// work. Categories lists only the kinds that occurred; one call can sit in
+// two of them, so WastedCalls (not the sum of Count) is the distinct total.
+export interface WasteExample {
+    Session: string;
+    RunID: number;
+    Step: number;
+    Tool: string;
+    Arg: string;
+    Tokens: number;
+    LifetimeTokens: number;
+}
+
+export interface WasteCategory {
+    Category: string;
+    Count: number;
+    EstTokens: number;
+    LifetimeTokens: number;
+    Share: number;
+    Examples: WasteExample[];
+}
+
+export interface WasteReport {
+    TotalCalls: number;
+    TotalLifetimeTokens: number;
+    WastedCalls: number;
+    WastedLifetimeTokens: number;
+    WastedShare: number;
+    Categories: WasteCategory[];
+}
+
+export const emptyWasteReport = (): WasteReport => ({
+    TotalCalls: 0,
+    TotalLifetimeTokens: 0,
+    WastedCalls: 0,
+    WastedLifetimeTokens: 0,
+    WastedShare: 0,
+    Categories: [],
+});
+
+// fetchWasteReport mines a project's action_signatures for repeated reads,
+// empty-search streaks, whole-file reads and reruns without an edit.
+export async function fetchWasteReport(project: string): Promise<WasteReport> {
+    const raw = (await GetWasteReport(project)) as WasteReport | null;
+    return raw ? { ...emptyWasteReport(), ...raw, Categories: raw.Categories ?? [] } : emptyWasteReport();
 }
 
 // PermissionCandidate is a suggested permission rule mined from repeated

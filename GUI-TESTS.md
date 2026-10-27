@@ -425,6 +425,7 @@ a no-op success), so every case below overrides the stubs via `page.evaluate`
 | EXP-21 | Effect table renders verdicts (LN-11) | Override `GetSkillQuality` with an OK row, a stale/no_improvement row and an insufficient-data row, click Refresh | Each row's before/after runs+tokens+turns render; verdict cell shows "OK", "Suggest archiving …" or "Not enough data" respectively — insufficient-data always wins over a stale flag | **✓** |
 | EXP-30 | Failures tab (LN-39) | Override `GetFailureRules` with one draft, open "Failures"; click "Suggest rules" (call held open); edit the textarea, click "Accept into CLAUDE.md" | Pending count and draft render; button disabled while `DraftFailureRules` runs; `AcceptFailureRule` gets the edited text | **✓** |
 | EXP-31 | Autopilot rules in the Failures tab (LN-41) | Override `GetFailureRules` with a `trial`, a `kept` and a `reverted` rule; click "Switch off" on the trial one, "Bring back" on the reverted one | "Applied by the autopilot" section shows status and reason; `RevertFailureRule` / `RestoreFailureRule` get the id | **✓** |
+| EXP-32 | Waste tab (WS-01) | Open "Waste" with the empty stub, then override `GetWasteReport` with two categories and one example, Refresh; then override with `Categories: []`, Refresh | Empty state names the flag; headline "4 of 50 calls wasted" + share; per-category rows and the example line; a clean report shows the "no waste" message, not a table | ○ (written in `experience.spec.ts`, not run — the Playwright stand does not start in a developer session) |
 
 ---
 

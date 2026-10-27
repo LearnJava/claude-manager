@@ -226,6 +226,15 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         // GetTokenAttribution (LEARN-TASKS.md LN-12) reads from the same store
         // as GetTopActions above — same reason, same empty stub shape.
         GetTokenAttribution: () => Promise.resolve({ TotalEstTokens: 0, BySignature: [], ByTool: [] }),
+        GetWasteReport: () =>
+          Promise.resolve({
+            TotalCalls: 0,
+            TotalLifetimeTokens: 0,
+            WastedCalls: 0,
+            WastedLifetimeTokens: 0,
+            WastedShare: 0,
+            Categories: [],
+          }),
         // ImportProjectLogs (LEARN-TASKS.md LN-20) writes to the same store as
         // GetTopActions above — same reason, same empty stub shape. Tests that
         // need to see a populated result override it per-test.
