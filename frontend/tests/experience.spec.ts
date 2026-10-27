@@ -225,6 +225,65 @@ test.describe('Experience panel', () => {
     await expect(modal).not.toBeVisible({ timeout: 3_000 });
   });
 
+  test('Waste tab: clean window, then categories with examples (WS-01)', async ({ page }) => {
+    await page.goto('/');
+
+    await page.getByRole('button', { name: 'Experience' }).click();
+    const modal = page.getByRole('dialog');
+    await expect(modal).toBeVisible({ timeout: 3_000 });
+
+    await modal.getByTestId('tab-waste').click();
+    // GetWasteReport is stubbed with no calls — the empty state, not an error.
+    await expect(modal.getByText(/No recorded tool calls/i)).toBeVisible({ timeout: 5_000 });
+
+    await page.evaluate(() => {
+      const w = window as any;
+      w.go.main.App.GetWasteReport = () =>
+        Promise.resolve({
+          TotalCalls: 50,
+          TotalLifetimeTokens: 10000,
+          WastedCalls: 4,
+          WastedLifetimeTokens: 2500,
+          WastedShare: 0.25,
+          Categories: [
+            {
+              Category: 'repeat_read',
+              Count: 3,
+              EstTokens: 1000,
+              LifetimeTokens: 2000,
+              Share: 0.2,
+              Examples: [
+                { Session: 'P1', RunID: 7, Step: 12, Tool: 'Read', Arg: 'a.go', Tokens: 500, LifetimeTokens: 1000 },
+              ],
+            },
+            { Category: 'rerun_cmd', Count: 1, EstTokens: 100, LifetimeTokens: 500, Share: 0.05, Examples: [] },
+          ],
+        });
+    });
+    await modal.getByRole('button', { name: 'Refresh' }).click();
+
+    await expect(modal.getByTestId('waste-headline')).toContainText('4 of 50 calls wasted');
+    await expect(modal.getByTestId('waste-headline')).toContainText('25%');
+    await expect(modal.getByTestId('waste-cat-repeat_read')).toContainText('Repeated reads');
+    await expect(modal.getByTestId('waste-cat-rerun_cmd')).toBeVisible();
+    await expect(modal.getByText(/Read a\.go — P1 · run 7 · step 12/)).toBeVisible();
+
+    // No category occurred: a clean message, not a table of zeros.
+    await page.evaluate(() => {
+      (window as any).go.main.App.GetWasteReport = () =>
+        Promise.resolve({
+          TotalCalls: 9,
+          TotalLifetimeTokens: 900,
+          WastedCalls: 0,
+          WastedLifetimeTokens: 0,
+          WastedShare: 0,
+          Categories: [],
+        });
+    });
+    await modal.getByRole('button', { name: 'Refresh' }).click();
+    await expect(modal.getByTestId('waste-clean')).toBeVisible({ timeout: 5_000 });
+  });
+
   test('Import logs button: menu, progress event, and result summary', async ({ page }) => {
     await page.goto('/');
 

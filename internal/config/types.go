@@ -64,6 +64,11 @@ type OptimizationSettings struct {
 	// action_signatures for the "Actions" tab and downstream candidate mining.
 	// Default on; with it off, finishRun never opens a transcript file.
 	ExperienceTracking bool `toml:"experience_tracking"`
+
+	// Waste report cut-offs (WASTE-TASKS.md WS-01). 0 = built-in default
+	// (experience.DefaultEmptySearchChars / DefaultOversizedReadTokens).
+	WasteEmptySearchChars    int `toml:"waste_empty_search_chars"`
+	WasteOversizedReadTokens int `toml:"waste_oversized_read_tokens"`
 }
 
 type GlobalSettings struct {

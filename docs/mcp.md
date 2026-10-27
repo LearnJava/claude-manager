@@ -446,6 +446,7 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `get_action_samples` | read | только чтение, идемпотентное | List concrete calls that make up one action signature of a project. |
 | `get_duration_profile` | read | только чтение, идемпотентное | Show how long each kind of tool call takes in a project: median, 90th percentile, maximum, total and failure rate. |
 | `get_token_attribution` | read | только чтение, идемпотентное | Estimate which tool calls fill a project's context: tokens per signature, per tool and per result length. |
+| `get_waste_report` | read | только чтение, идемпотентное | Find work in a project that succeeded and still bought nothing: reads repeated with no edit between, streaks of empty searches, whole-file reads, commands rerun unchanged. Per category: count, estimated tokens, share of the project's volume and examples. |
 | `get_model_advice` | read | только чтение, идемпотентное | Say whether automatic model routing is on and which model and effort it recommends for a configured session's prompt. |
 | `session_preflight` | operate | запускает модель | Run the preflight analysis the settings of a session call for (what the Start button does) and return the plan to review, or nothing when the session should simply start. |
 | `generate_roadmap` | operate | запускает модель | Split a whole project idea into a backlog of phases and tasks and save it as a draft roadmap plan. |
@@ -665,6 +666,7 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `GetSkills` | `get_skills` | read |
 | `GetTokenAttribution` | `get_token_attribution` | read |
 | `GetTopActions` | `get_top_actions` | read |
+| `GetWasteReport` | `get_waste_report` | read |
 | `HasClaudeMd` | `get_project_setup` | read |
 | `HasSessionProtocol` | `get_project_setup` | read |
 | `ImportProjectLogs` | `import_project_logs` | operate |
@@ -836,6 +838,7 @@ the wrong type». Правки идут под одним замком серв�
 | `get_action_samples` | read | Конкретные вызовы за одной сигнатурой (`signature` из `get_top_actions`) |
 | `get_duration_profile` | read | Медиана, p90, максимум, сумма и доля отказов по сигнатурам |
 | `get_token_attribution` | read | Оценка токенов контекста по сигнатурам, инструментам и длине результата; `top_n` самых дорогих |
+| `get_waste_report` | read | Бесполезная успешная работа: повторные чтения, серии пустых поисков, чтение файла целиком, повтор команд без правки — по категориям: число, токены, доля, примеры |
 | `get_model_advice` | read | Включена ли авто-маршрутизация моделей и какую модель/усилие она советует для промпта сессии |
 
 **Новые RPC.** `GetDailyTokens`, `GetProjectTokens`, `SearchSessionLog`, `GetModelAdvice`
@@ -844,7 +847,7 @@ the wrong type». Правки идут под одним замком серв�
 `daily_metrics`, что и `GetDailyCost`.
 
 **Таблицы опыта пусты, пока выключен `experience_tracking`** в настройках проекта
-(`get_top_actions`, `get_action_samples`, `get_duration_profile`, `get_token_attribution`).
+(`get_top_actions`, `get_action_samples`, `get_duration_profile`, `get_token_attribution`, `get_waste_report`).
 
 **App или менеджер.** Файлы логов, очистка, импорт, таблицы опыта и совет по модели нужны
 GUI-приложению; в `playwright-server` они отвечают ошибкой «needs the Claude Manager app».

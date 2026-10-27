@@ -2916,6 +2916,41 @@ to on the event and filtered by `dismissRegression(seq)` on click — client-sid
 only, matching every other "closes on click, not persisted" convention in
 this app (no `window.confirm()`, no re-fetch).
 
+## Waste report (WS-01)
+
+The loop detector catches the same call N times in a row and the failure
+rules catch calls that failed. What neither sees is work that *succeeded*,
+did not repeat back-to-back and still bought nothing — most of what a long
+session spends (the re-read of every result on every later step is 65% of
+spend, `docs/Science_lab/MEASURE.md`). `experience.AnalyzeWaste`
+(`internal/experience/waste.go`) mines `action_signatures` for four kinds,
+per conversation (the same grouping key as `ActionResultChars`: CLI session
+id, else run id, else session name), judging only `is_error = 0` rows:
+
+| Category | Rule |
+|---|---|
+| `repeat_read` | Read/Grep/Glob that repeats an earlier call with no edit in between — an edit of *the same file* for a Read, *any* edit for a search (its recorded argument is only the pattern, not the searched path) |
+| `empty_search` | ≥2 adjacent Grep/Glob calls with ≥2 distinct patterns, each result under `waste_empty_search_chars` (default 100; a miss is ~20 chars, a real hit starts well above) |
+| `oversized_read` | Read whose result is over `waste_oversized_read_tokens` (default 8000 ≈ an 800-line file); only the excess counts |
+| `rerun_cmd` | Same Bash command again with no Edit/Write/MultiEdit/NotebookEdit between |
+
+Deviations from the first sketch, both forced by what the table records:
+`oversized_read` uses the *result* size (`result_chars`), because
+`out_tokens` is the tokens of the assistant message that issued the call,
+not of what came back; and a repeated Read counts only when it returned the
+same number of characters, because the recorded Read argument is just the
+path — reading one file in slices (offset/limit) would otherwise look like
+reading it again.
+
+Weights follow `attribution.go` exactly (`tokens × (2 + 0.1 × later steps)`),
+so the numbers compare with the Cost tab. A call can fall into two
+categories (a repeated read of a huge file): per-category counts may overlap,
+while `WastedCalls`/`WastedLifetimeTokens` count each call once, at its larger
+loss. `Categories` lists only kinds that occurred, so a clean window is an
+empty list, not a row of zeros. Surfaced as `App.GetWasteReport(project)`,
+the `get_waste_report` MCP tool and the "Waste" tab of the Experience panel.
+The report only reads; acting on it is WS-03.
+
 ## Session work folder (slot)
 
 `use_worktree` no longer passes `--worktree` to the CLI. Both runtimes launch the

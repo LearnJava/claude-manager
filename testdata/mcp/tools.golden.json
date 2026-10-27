@@ -3356,6 +3356,46 @@
   },
   {
     "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get waste report"
+    },
+    "description": "Find work in a project that succeeded and still bought nothing: reads repeated with no edit between, streaks of empty searches, whole-file reads, commands rerun unchanged. Per category: count, estimated tokens, share of the project's volume and examples. Use when: you look for what to cut from agents' habits, after get_token_attribution shows where the context goes. Not for: errors (use get_failure_rules) or the heaviest calls as such (use get_token_attribution). Returns: report with totals and the categories that occurred; an empty Categories list means no waste found; empty unless experience tracking was on. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_waste_report",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "report": {
+          "description": "TotalCalls, TotalLifetimeTokens, WastedCalls, WastedLifetimeTokens, WastedShare and Categories (Category, Count, EstTokens, LifetimeTokens, Share, up to 5 Examples with Session, RunID, Step, Tool, Arg), most expensive first"
+        }
+      },
+      "required": [
+        "report"
+      ],
+      "type": "object"
+    },
+    "title": "Get waste report"
+  },
+  {
+    "_meta": {
       "cm/accessLevel": "operate"
     },
     "annotations": {

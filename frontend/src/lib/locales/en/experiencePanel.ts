@@ -8,6 +8,7 @@ export default {
     'experiencePanel.tabs.cost': 'Cost by tool',
     'experiencePanel.tabs.skills': 'Skills',
     'experiencePanel.tabs.failures': 'Failures',
+    'experiencePanel.tabs.waste': 'Waste',
     'experiencePanel.refresh': 'Refresh',
 
     'experiencePanel.filters.project': 'Project',
@@ -101,6 +102,27 @@ export default {
         'Durations come from action_signatures.dur_sec — the tool_use→tool_result gap in each logged call. A signature needs at least 10 timed calls to appear here.',
     'experiencePanel.footer.cost':
         'Est. tokens are chars/4, an order-of-magnitude approximation — there is no exact tokenizer without hitting the API.',
+    'experiencePanel.footer.waste':
+        'Only successful calls are judged. Tokens are chars/4 priced with re-reads, like the Cost tab; one call can fall into two categories, so the headline counts it once.',
+    'experiencePanel.waste.loading': 'Looking for waste…',
+    'experiencePanel.waste.errorLoad': 'Failed to load the waste report: {error}',
+    'experiencePanel.waste.emptyPre': 'No recorded tool calls for this project yet. Enable',
+    'experiencePanel.waste.clean': 'No waste found in the recorded calls.',
+    'experiencePanel.waste.headline': '{calls} of {total} calls wasted — {share} of the weighted token volume ({tokens})',
+    'experiencePanel.waste.colCategory': 'Category',
+    'experiencePanel.waste.colCalls': 'Calls',
+    'experiencePanel.waste.colEstTokens': 'Est. tokens',
+    'experiencePanel.waste.colLifetime': 'With re-reads',
+    'experiencePanel.waste.colShare': 'Share',
+    'experiencePanel.waste.example': '{session} · run {run} · step {step}',
+    'experiencePanel.waste.cat.repeat_read': 'Repeated reads',
+    'experiencePanel.waste.cat.repeat_read.hint': 'The same file or search again, with no edit that could change it',
+    'experiencePanel.waste.cat.empty_search': 'Empty search streaks',
+    'experiencePanel.waste.cat.empty_search.hint': 'Two or more searches in a row with different patterns and no hits',
+    'experiencePanel.waste.cat.oversized_read': 'Whole-file reads',
+    'experiencePanel.waste.cat.oversized_read.hint': 'A read far bigger than the part needed; counted above the threshold',
+    'experiencePanel.waste.cat.rerun_cmd': 'Reruns without a change',
+    'experiencePanel.waste.cat.rerun_cmd.hint': 'The same command again with no edit between the runs',
     'experiencePanel.footer.skills':
         'Click a skill to see its markdown. Active skills live in <project>/.claude/skills/; switched-off ones in .claude-manager/archived-skills/.',
 
