@@ -84,6 +84,17 @@ type wasteIn struct {
 	Project string `json:"project" jsonschema:"Project name as in get_projects, e.g. lumen"`
 }
 
+type refReportIn struct {
+	Project string `json:"project" jsonschema:"Project name as in get_projects, e.g. lumen"`
+}
+
+type replayCaseIn struct {
+	Project string `json:"project" jsonschema:"Project name as in get_projects, e.g. lumen"`
+	CaseID  int64  `json:"case_id" jsonschema:"Reference case ID, the CaseID of an item of get_reference_report, e.g. 3"`
+	Model   string `json:"model,omitempty" jsonschema:"Model to replay with, e.g. sonnet (default: the one-shot runner default)"`
+	Effort  string `json:"effort,omitempty" jsonschema:"Effort to replay with: low, medium, high (default: medium)"`
+}
+
 type adviceIn struct {
 	sessionRef
 }
@@ -153,6 +164,14 @@ type durationOut struct {
 
 type attributionOut struct {
 	Report any `json:"report" jsonschema:"TotalEstTokens, TotalLifetimeTokens and the BySignature, ByTool and ByLength tables, most expensive first"`
+}
+
+type refReportOut struct {
+	Report any `json:"report" jsonschema:"Project and Cases; each case has CaseID, TaskPtr, BaseCommit, Gates, InvalidReason (set when the case can no longer be replayed) and Runs: the original first (Original true), then replays, each with Model, Effort, Passed, Rounds, Tokens, DurationSec, ResultCommit, Note, At"`
+}
+
+type replayCaseOut struct {
+	Replay any `json:"replay" jsonschema:"The stored replay: ID, CaseID, Model, Effort, Passed (gates green), Rounds (rework rounds it took), Tokens, DurationSec, ResultCommit (pinned under refs/cm-replay/, empty if nothing changed), Note"`
 }
 
 type wasteOut struct {
@@ -615,6 +634,53 @@ func logsTools() []Tool {
 			},
 			Result:  func(_ wasteIn, raw any) wasteOut { return wasteOut{Report: raw} },
 			Summary: func(in wasteIn, _ wasteOut) string { return "Waste report of " + in.Project + "." },
+		}),
+		define(spec[refReportIn, refReportOut]{
+			Name: "get_reference_report", Title: "Get reference cases report",
+			Doc: Doc{
+				What:    "List a project's reference cases - finished tasks kept with their text, starting commit, gates and cost - and, per task, every model/setting that has run it: whether the gates went green, in how many rework rounds, with how many tokens and how much time.",
+				UseWhen: "you compare models or settings on the same task, or look up a case_id for replay_reference_case.",
+				NotFor:  "running a case again (use replay_reference_case) or the cost of ordinary sessions (use get_cost).",
+				Returns: "report with one entry per task; an empty Cases list means no task was recorded (needs [optimization] reference_cases and the project's gates); a case whose starting commit is gone is listed with InvalidReason.",
+				Effects: "none, apart from marking a case invalid when its starting commit is provably gone.",
+				Example: `{"project":"lumen"}`,
+			},
+			Level: LevelRead, Annotations: ro, Covers: []string{"GetReferenceReport"},
+			Translate: func(in refReportIn) (string, any, error) {
+				if err := needProject(in.Project); err != nil {
+					return "", nil, err
+				}
+				return "/rpc", rpcCallBody("GetReferenceReport", map[string]string{"project": in.Project}), nil
+			},
+			Result:  func(_ refReportIn, raw any) refReportOut { return refReportOut{Report: raw} },
+			Summary: func(in refReportIn, _ refReportOut) string { return "Reference cases of " + in.Project + "." },
+		}),
+		define(spec[replayCaseIn, replayCaseOut]{
+			Name: "replay_reference_case", Title: "Replay a reference case",
+			Doc: Doc{
+				What:    "Run a stored reference case again with another model or effort: a detached worktree at the case's starting commit, the task text as the prompt, the same gates, up to two rework rounds on red gates. The outcome is stored next to the original.",
+				UseWhen: "you want the same task's result under a different model or setting, to compare with get_reference_report.",
+				NotFor:  "work on the project itself - a replay changes no project branch and its result is only pinned under refs/cm-replay/.",
+				Returns: "the stored replay: whether the gates went green, rework rounds, tokens, seconds and the pinned result commit; fails if the case is invalid or the model could not be run.",
+				Effects: "runs a model that spends tokens for minutes; creates and removes a temporary worktree of the project's repository; adds a ref under refs/cm-replay/.",
+				Example: `{"project":"lumen","case_id":3,"model":"sonnet"}`,
+			},
+			Level: LevelOperate, Annotations: ToolAnnotations{OpenWorld: true}, Covers: []string{"ReplayReferenceCase"},
+			Translate: func(in replayCaseIn) (string, any, error) {
+				if err := needProject(in.Project); err != nil {
+					return "", nil, err
+				}
+				if in.CaseID <= 0 {
+					return "", nil, fmt.Errorf("case_id is required: take the CaseID of an item of get_reference_report")
+				}
+				return "/rpc", rpcCallBody("ReplayReferenceCase", map[string]any{
+					"project": in.Project, "case_id": in.CaseID, "model": in.Model, "effort": in.Effort,
+				}), nil
+			},
+			Result: func(_ replayCaseIn, raw any) replayCaseOut { return replayCaseOut{Replay: raw} },
+			Summary: func(in replayCaseIn, _ replayCaseOut) string {
+				return fmt.Sprintf("Case %d of %s replayed; compare with get_reference_report.", in.CaseID, in.Project)
+			},
 		}),
 		define(spec[adviceIn, adviceOut]{
 			Name: "get_model_advice", Title: "Get model recommendation",

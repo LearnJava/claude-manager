@@ -48,6 +48,7 @@ rate_limit_alert_threshold = 0.80      # notify when rate-limit utilisation > 80
 # hook_rules = false                    # Waste tab: propose PreToolUse hook rules (forbid a repeated read, ...) as a diff for .claude/hooks/ + settings.json; installed only on approval, on trial with auto-revert (WS-03)
 # loop_memory = false                   # remember loops across runs (loop_events): catch a repeat outside the window, answer a loop broken before with what broke it (WS-04)
 # loop_far_threshold = 6                # with loop_memory: occurrences of one call in a run that count as a far repeat (0 = default)
+# reference_cases = false               # keep every task that closed well (and, with gate_rounds, passed its gates) as a reference case: text, starting commit, gates, cost. Needs the project's `gates`. Replay it with another model via get_reference_report / replay_reference_case (WS-06)
 # waste_empty_search_chars = 100        # Waste tab: a Grep/Glob result shorter than this counts as empty (0 = default)
 # waste_oversized_read_tokens = 8000    # Waste tab: a Read result above this many tokens counts as a whole-file read (0 = default)
 

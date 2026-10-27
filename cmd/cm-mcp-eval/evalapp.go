@@ -204,6 +204,14 @@ func (a *evalApp) GetWasteReport(string) (experience.WasteReport, error) {
 	return experience.WasteReport{}, nil
 }
 
+func (a *evalApp) GetReferenceReport(string) (experience.ReferenceReport, error) {
+	return experience.ReferenceReport{}, nil
+}
+
+func (a *evalApp) ReplayReferenceCase(string, int64, string, string) (*store.ReferenceReplay, error) {
+	return nil, nil
+}
+
 func (a *evalApp) GetModelRecommendation(string, string) (*optimization.ModelRecommendation, error) {
 	return nil, nil
 }

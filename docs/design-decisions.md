@@ -3064,6 +3064,53 @@ off is untouched: no gate runs, no log line, no prompt change.
   A `slice` (marker, pointer still queued) is not gated: a half-done task is
   allowed to be red.
 
+## Reference cases from the project's own runs (WS-06)
+
+Comparing models and settings fairly needs one task run twice, and there is no
+ready set of such tasks - but every task that finished well already is one: it
+has a text, a commit it started from, the gates it passed and a known good
+outcome. `[optimization] reference_cases = true` (default off; also needs the
+project's `gates` and a Claude runtime) keeps them as a by-product of work. With
+the flag off the session makes no git call and `task_done` carries nothing extra.
+
+- **Capture.** On each task start the session notes the queue pointer and reads
+  its task section (the `## ` heading at `<file>:<line>` down to the next heading
+  of the same or a higher level; `#` lines inside code fences do not end it) from
+  the integration branch, as the queue itself is read. Right before the first
+  launch of the task it notes `HEAD` of the work folder - the base commit. When
+  the task closes (and strict gates, if on, are green) it reports
+  `RefCaseRecord{ptr, text, base, result = HEAD of the work folder, gates,
+  rounds}` on `EvtTaskDone`; the manager adds what it measured - input+output
+  tokens (cache excluded: that is all a one-shot replay reports, so original
+  and replay compare), the run's wall-clock seconds, model, effort - and stores
+  it. Snapshot first, then `finishRun`.
+- **Only good tasks.** A task that did not close, closed red, or changed nothing
+  in the repository is not a case; neither is one without gates (nothing to check
+  a replay with), without a readable text, or already stored (same project, task
+  pointer and base commit). A task that spans several runs in one session - a
+  slice, an unfinished retry, a crash/rate-limit retry - is dropped as well: its
+  tokens and start would be partial. (A slice continued by a *different* session
+  cannot be seen from here; its case covers the last session only.)
+- **Replay.** `git worktree add --detach <tmp> <base_commit>` of the project's
+  repository, the task text behind a framing line ("measured replay, edit files
+  only, do not commit/branch/push/touch the queue") as a one-shot `claude -p`
+  (`analysis.CLIExecutor`, `--permission-mode acceptEdits`) with the chosen
+  model/effort, then the case's own gates. Red gates -> `Feedback()` goes back in
+  the next attempt's prompt, up to 2 rework rounds. The outcome row sits next to
+  the original; the resulting tree is pinned with plumbing only (`write-tree`,
+  `commit-tree`, `update-ref refs/cm-replay/case-N-ts`) - no hooks, no config, no
+  branch - and the worktree is removed. `refs/heads` and `HEAD` of the project
+  are never touched; one replay runs at a time. A fresh checkout has no
+  `node_modules`/build caches, so a gate that needs them is red for every
+  configuration alike.
+- **Vanished base.** The report checks `base_commit` with `rev-parse --verify`;
+  exit 1 (the commit is not there) marks the case `invalid_reason` and the report
+  lists it anyway. A git failure (not a repository, git missing) proves nothing
+  and marks nothing; replay refuses an invalid case.
+- **Report.** `GetReferenceReport` / MCP `get_reference_report`: per task the
+  original and every replay - gates green or not, rework rounds, tokens, seconds.
+  `replay_reference_case` is bounded by the MCP long-tool timeout (15 minutes).
+
 ## Billing mode: the limit window and time, not dollars (WS-02)
 
 On a subscription a dollar is a ruler, not a bill: what runs out is the

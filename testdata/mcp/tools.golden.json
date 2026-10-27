@@ -2466,6 +2466,46 @@
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Get reference cases report"
+    },
+    "description": "List a project's reference cases - finished tasks kept with their text, starting commit, gates and cost - and, per task, every model/setting that has run it: whether the gates went green, in how many rework rounds, with how many tokens and how much time. Use when: you compare models or settings on the same task, or look up a case_id for replay_reference_case. Not for: running a case again (use replay_reference_case) or the cost of ordinary sessions (use get_cost). Returns: report with one entry per task; an empty Cases list means no task was recorded (needs [optimization] reference_cases and the project's gates); a case whose starting commit is gone is listed with InvalidReason. Side effects: none, apart from marking a case invalid when its starting commit is provably gone. Access: read. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_reference_report",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "report": {
+          "description": "Project and Cases; each case has CaseID, TaskPtr, BaseCommit, Gates, InvalidReason (set when the case can no longer be replayed) and Runs: the original first (Original true), then replays, each with Model, Effort, Passed, Rounds, Tokens, DurationSec, ResultCommit, Note, At"
+        }
+      },
+      "required": [
+        "report"
+      ],
+      "type": "object"
+    },
+    "title": "Get reference cases report"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Get roadmap row text"
     },
     "description": "Read the long text of one roadmap row: its note column, else the raw row. Use when: a roadmap keeps task descriptions inline and you need the full text of one task. Not for: rows with a task file (use get_roadmap_task_detail). Returns: the text, with next_cursor and truncated when it is longer than one response. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\",\"roadmap_file\":\"ROADMAP.md\",\"line\":42}",
@@ -3897,6 +3937,59 @@
       "type": "object"
     },
     "title": "Remove session"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Replay a reference case"
+    },
+    "description": "Run a stored reference case again with another model or effort: a detached worktree at the case's starting commit, the task text as the prompt, the same gates, up to two rework rounds on red gates. The outcome is stored next to the original. Use when: you want the same task's result under a different model or setting, to compare with get_reference_report. Not for: work on the project itself - a replay changes no project branch and its result is only pinned under refs/cm-replay/. Returns: the stored replay: whether the gates went green, rework rounds, tokens, seconds and the pinned result commit; fails if the case is invalid or the model could not be run. Side effects: runs a model that spends tokens for minutes; creates and removes a temporary worktree of the project's repository; adds a ref under refs/cm-replay/. Access: operate. Example: {\"project\":\"lumen\",\"case_id\":3,\"model\":\"sonnet\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "description": "Reference case ID, the CaseID of an item of get_reference_report, e.g. 3",
+          "type": "integer"
+        },
+        "effort": {
+          "description": "Effort to replay with: low, medium, high (default: medium)",
+          "type": "string"
+        },
+        "model": {
+          "description": "Model to replay with, e.g. sonnet (default: the one-shot runner default)",
+          "type": "string"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "case_id"
+      ],
+      "type": "object"
+    },
+    "name": "replay_reference_case",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "replay": {
+          "description": "The stored replay: ID, CaseID, Model, Effort, Passed (gates green), Rounds (rework rounds it took), Tokens, DurationSec, ResultCommit (pinned under refs/cm-replay/, empty if nothing changed), Note"
+        }
+      },
+      "required": [
+        "replay"
+      ],
+      "type": "object"
+    },
+    "title": "Replay a reference case"
   },
   {
     "_meta": {

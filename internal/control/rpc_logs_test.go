@@ -72,6 +72,14 @@ func (a logsApp) GetWasteReport(p string) (experience.WasteReport, error) {
 	a.rec("GetWasteReport " + p)
 	return experience.WasteReport{TotalCalls: 4}, nil
 }
+func (a logsApp) GetReferenceReport(p string) (experience.ReferenceReport, error) {
+	a.rec("GetReferenceReport " + p)
+	return experience.ReferenceReport{Project: p, Cases: []experience.ReferencePair{{CaseID: 3}}}, nil
+}
+func (a logsApp) ReplayReferenceCase(p string, id int64, model, effort string) (*store.ReferenceReplay, error) {
+	a.rec(fmt.Sprintf("ReplayReferenceCase %s %d %s %s", p, id, model, effort))
+	return &store.ReferenceReplay{ID: 1, CaseID: id, Passed: true}, nil
+}
 func (a logsApp) GetModelRecommendation(p, n string) (*optimization.ModelRecommendation, error) {
 	return &optimization.ModelRecommendation{Model: "sonnet"}, nil
 }

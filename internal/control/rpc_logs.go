@@ -29,6 +29,8 @@ type LogsApp interface {
 	GetDurationProfile(project string) ([]experience.SignatureDuration, error)
 	GetTokenAttribution(project string, topN int) (experience.AttributionReport, error)
 	GetWasteReport(project string) (experience.WasteReport, error)
+	GetReferenceReport(project string) (experience.ReferenceReport, error)
+	ReplayReferenceCase(project string, caseID int64, model, effort string) (*store.ReferenceReplay, error)
 	GetModelRecommendation(project, name string) (*optimization.ModelRecommendation, error)
 	GetAutoModelRouting() bool
 }
@@ -318,6 +320,35 @@ func (s *Server) registerLogsRPCs(reg map[string]handler) {
 			return nil, needApp("the waste report")
 		}
 		return lapp.GetWasteReport(a.Project)
+	}
+
+	reg["GetReferenceReport"] = func(p json.RawMessage) (any, error) {
+		var a struct {
+			Project string `json:"project"`
+		}
+		if err := json.Unmarshal(p, &a); err != nil {
+			return nil, err
+		}
+		if lapp == nil {
+			return nil, needApp("the reference report")
+		}
+		return lapp.GetReferenceReport(a.Project)
+	}
+
+	reg["ReplayReferenceCase"] = func(p json.RawMessage) (any, error) {
+		var a struct {
+			Project string `json:"project"`
+			CaseID  int64  `json:"case_id"`
+			Model   string `json:"model"`
+			Effort  string `json:"effort"`
+		}
+		if err := json.Unmarshal(p, &a); err != nil {
+			return nil, err
+		}
+		if lapp == nil {
+			return nil, needApp("reference case replay")
+		}
+		return lapp.ReplayReferenceCase(a.Project, a.CaseID, a.Model, a.Effort)
 	}
 
 	reg["GetAutoModelRouting"] = func(_ json.RawMessage) (any, error) {

@@ -70,6 +70,9 @@ type SessionEvent struct {
 	Activity       *ActivityInfo
 	TaskSourceDesc string
 	Err            error
+	// RefCase is set on EvtTaskDone when the session records reference cases
+	// (WS-06) and the closed task qualifies for one.
+	RefCase *RefCaseRecord
 	// CLISessionID is populated on EvtTaskDone with the CLI session id of the
 	// run that just finished (LEARN-TASKS.md LN-21) — captured before the
 	// next task's fresh id is rotated onto the Session, so a consumer never
@@ -371,6 +374,13 @@ type Session struct {
 	// the next (resumed) run (WS-05; protected by mu; consumed by
 	// initialPromptBody, ahead of crash recovery).
 	pendingGateFeedback string
+	// refCap is the start of the task in flight and refSpanned the pointer
+	// whose task already spans several runs (WS-06 reference cases; protected
+	// by mu; see reference_case.go). refCasesFlag is [optimization]
+	// reference_cases as read when the session was built.
+	refCap       refCapture
+	refSpanned   string
+	refCasesFlag bool
 	// endInput closes the live run's stdin (idempotent; protected by mu,
 	// nil between runs). It lets a context restart chosen later — from the
 	// "ask" question — end an interactive process idling between turns.
@@ -564,6 +574,7 @@ func New(p Params) *Session {
 		contextMonitor:    optimization.NewContextMonitor(p.Optimization, 0),
 		loopDetector:      optimization.NewLoopDetector(p.Optimization),
 		loopMemory:        p.LoopMemory,
+		refCasesFlag:      p.Optimization != nil && p.Optimization.ReferenceCases,
 		status:            config.StatusIdle,
 		stateStore:        p.StateStore,
 		crashRecovery:     p.CrashRecovery,
@@ -1152,6 +1163,7 @@ func (s *Session) Run(ctx context.Context) {
 		pointerBefore := ""
 		if s.Config.TaskSource != "" && !reworking {
 			pointerBefore = firstTaskPointer(readTaskQueue(ctx, s.ProjectPath, s.Config.TaskSource))
+			s.beginReferenceCase(ctx, pointerBefore)
 		}
 		err := s.runOnce(ctx, false)
 		atTaskBoundary = false
@@ -1359,6 +1371,7 @@ func (s *Session) Run(ctx context.Context) {
 					return
 				}
 			}
+			refCase := s.finishReferenceCase(ctx, gateRound)
 			reworking = false
 			gateRound = 0
 			unfinishedStreak = 0
@@ -1379,7 +1392,7 @@ func (s *Session) Run(ctx context.Context) {
 			// meant the manager's EvtTaskDone handler always read the NEXT
 			// task's not-yet-existing id instead, so IngestRun's FindTranscript
 			// failed on effectively every completed autonomous task.
-			s.emit(SessionEvent{Type: EvtTaskDone, TasksDone: done, CLISessionID: finishedCLISessionID})
+			s.emit(SessionEvent{Type: EvtTaskDone, TasksDone: done, CLISessionID: finishedCLISessionID, RefCase: refCase})
 			// Each task gets a fresh CLI session: reusing the previous
 			// --session-id would resume the old conversation and drag the whole
 			// finished task's dialogue into the next task's context. Rotated
@@ -1600,6 +1613,7 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 
 	s.emitRunStartLog("Готовлю промпт…")
 	workDir, slot := s.prepareWorkDir(ctx)
+	s.captureRefBase(ctx, workDir)
 	args := s.runtime.Args(s, autonomous, "", "")
 
 	logger.L.Debug("session.launch",

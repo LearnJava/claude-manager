@@ -85,6 +85,12 @@ type OptimizationSettings struct {
 	// LoopFarThreshold is how many times one call must occur in a run, window
 	// or not, to count as a far repeat. 0 = built-in default (6).
 	LoopFarThreshold int `toml:"loop_far_threshold"`
+
+	// ReferenceCases keeps every task that finished well as a reference case
+	// (WASTE-TASKS.md WS-06): text, starting commit, gates and cost, so the same
+	// task can be replayed with another model or setting. Needs the project's
+	// `gates`. Default off: the session records nothing and runs no extra git.
+	ReferenceCases bool `toml:"reference_cases"`
 }
 
 // Billing modes (GlobalSettings.Billing).

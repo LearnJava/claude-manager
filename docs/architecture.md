@@ -71,6 +71,8 @@ claude-manager/
 │   │   ├── loop_guard.go            # loop_detection: feeds tool calls to optimization.LoopDetector; warn / send_hint / restart + alert:loop
 │   │   ├── loop_memory.go           # WS-04: SetLoopMemory wiring (factory + resolve) for [optimization] loop_memory
 │   │   ├── strict_gates.go          # WS-05: gate_rounds — gates after a closed task, red output sent back as a resumed turn
+│   │   ├── reference_case.go        # WS-06: notes a task's text + start commit, reports it as RefCaseRecord on task_done
+│   │   ├── reference_wiring.go      # WS-06: SetReferenceCases wiring, tokens/time/model snapshot before finishRun
 │   │   ├── launch_tuning.go         # [optimization] → launch flags: --exclude-dynamic-system-prompt-sections,
 │   │   │                            #   adaptive --max-turns (1.6 × longest recent run, ≥ max_turns_default)
 │   │   ├── permission_timeout.go    # permission_timeout/_action auto-answer; notify/sound flags on session:permission
@@ -214,6 +216,8 @@ claude-manager/
 │   │   ├── hookrules.go             # WS-03: HookRuleCandidates (waste kinds + commands that
 │   │   │                            #   kept failing), HookRuleEffect, EvaluateHookTrials
 │   │   │                            #   (keep, or take out when runs got longer/more erroneous).
+│   │   ├── refcases.go              # WS-06: RecordReferenceCase (only good tasks), BuildReferenceReport
+│   │   │                            #   (pairs, invalid base commits), ReplayReferenceCase (detached worktree)
 │   │   ├── loopmemory.go            # WS-04: LoopMemory (loop_events record + hint from an earlier
 │   │   │                            #   resolved loop), ResolveRunLoops (resolved_by from the
 │   │   │                            #   indexed run's action_signatures)
@@ -244,6 +248,7 @@ claude-manager/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs/skills
 │   │   ├── migrations.go            # CREATE TABLE statements, indexes
 │   │   ├── loopevents.go            # WS-04: loop_events (detected loops, resolved_by)
+│   │   ├── refcases.go              # WS-06: reference_cases + reference_replays
 │   │   └── logfiles.go              # Auto-saved per-run log files in <project>/.claude-manager/logs/,
 │   │                                #   shared RenderExport (md/json/txt) for auto-save + manual export
 │   └── hooks/
@@ -456,6 +461,8 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetSkillUsage(project)` | Loads, runs-with-load, runs since last load per skill, keyed by skill ID (LN-24) |
 | `GetSkillAutopilot(project)` / `SetSkillAutopilot(project, enabled, dailyBudgetUSD)` | Read / persist the project's skill-autopilot switch and daily budget (private `config.local.toml`; turning it on also turns on `experience_tracking`) (LN-27) |
 | `RunSkillAutopilot(project)` | One autopilot step now: decide finished trials, then distill, review and apply at most one candidate; errors if the autopilot is off (LN-25/26) |
+| `GetReferenceReport(project)` | WS-06. The project's reference cases, one pair per task: the original run first, then every replay (model, effort, gates green?, rework rounds, tokens, seconds, pinned result commit). Cases whose `base_commit` vanished are marked `InvalidReason`, not dropped. MCP `get_reference_report` |
+| `ReplayReferenceCase(project, caseID, model, effort)` | WS-06. Blocking and paid: a detached worktree at the case's base commit, the task text as a one-shot `claude -p` prompt, the same gates, up to 2 rework rounds; the outcome is stored beside the original. No project branch is touched. MCP `replay_reference_case` |
 | `GetHookRules(project)` | WS-03. The project's hook rules (newest first) with the effect of installed ones (steps and errors per run, before vs after); first decides trials that ran `HookRuleTrialRuns` runs. `Enabled=false` and no side effect unless `[optimization] hook_rules = true`. No MCP tool (see `ApplyHookRule`) |
 | `ProposeHookRules(project)` | WS-03. Stores as drafts the rules the history justifies (repeat_read / empty_search / oversized_read when the Waste report found them; failure_cmd for a Bash command that failed in ≥3 runs and was fixed by another form). Rows only, no files |
 | `PreviewHookRule(id)` | WS-03. The diff installing a draft would make in the project (`.claude/hooks/cm-waste-guard.py`, `.claude/settings.json`); writes nothing |
@@ -537,6 +544,7 @@ No DI frameworks, no ORMs. Standard library for everything else.
 - `mixed_briefs` — generated mixed-programming briefs (MP-06)
 - `action_signatures` — normalized tool-call signatures mined from CLI transcripts, per run (LN-02); `dur_sec` is the tool_use→tool_result gap, feeding the duration profile (LN-18); `err_text` is one meaningful error line of a failed call (`experience.ErrorLine`, LN-35) — the failure-cluster key
 - `failure_rules` — one row per recurring error (`UNIQUE(project, error_key)`), `status` draft | accepted | dismissed | trial | kept | reverted (the last three: autopilot rules, LN-40/41), `rule_text` is the one-line rule written into the project's CLAUDE.md under "Learned from failures" (`experience.AppendClaudeMdRule`), `decided_at` anchors the before/after measurement (`experience.FailureRuleEffect`) (LN-37)
+- `reference_cases` / `reference_replays` — a task that closed well kept as a case with a known right answer (`task_text`, `base_commit`, `gate_cmds` JSON, `result_commit`, `rounds`, `tokens` = input+output without cache, `duration_sec`, `model`, `effort`; `invalid_reason` set once the base commit is gone from the repository) and the same task run again with another model/setting (`passed`, `rounds`, `tokens`, `duration_sec`, `result_commit` pinned under `refs/cm-replay/`); only written with `[optimization] reference_cases` or by a replay (WS-06)
 - `loop_events` — one row per detected tool-call loop (`sig` joins to `action_signatures`, `far` = found outside the ring buffer), `resolved_by` = the first different successful action after it, filled in once the run is indexed; only written with `[optimization] loop_memory` (WS-04)
 - `ingest_state` — per-CLI-session transcript byte offset, so re-indexing never re-inserts rows (LN-02)
 - `imported_logfiles` — bulk-import dedup for `IngestDir`, keyed by (project, name, size, mtime) (LN-17)

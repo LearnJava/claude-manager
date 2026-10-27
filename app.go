@@ -149,6 +149,17 @@ func (a *App) startup(ctx context.Context) {
 			},
 			func(runID int64) (int, error) { return experience.ResolveRunLoops(st, runID) },
 		)
+		// Reference cases (WASTE-TASKS.md WS-06): a task that closed well is
+		// stored as a case; only fed when [optimization] reference_cases is on.
+		a.manager.SetReferenceCases(func(info session.ReferenceCaseInfo) error {
+			_, err := experience.RecordReferenceCase(st, experience.RefCaseInput{
+				Project: info.Project, TaskPtr: info.TaskPtr, TaskText: info.TaskText,
+				BaseCommit: info.BaseCommit, ResultCommit: info.ResultCommit, Gates: info.Gates,
+				Rounds: info.Rounds, Tokens: info.Tokens, DurationSec: info.DurationSec,
+				Model: info.Model, Effort: info.Effort, Success: true,
+			})
+			return err
+		})
 	}
 
 	// Wire the context primer (LEARN-TASKS.md LN-05): only ever called for a
