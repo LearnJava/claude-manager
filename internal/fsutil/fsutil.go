@@ -67,3 +67,23 @@ func ResolveCaseInsensitive(root, path string) string {
 	}
 	return current
 }
+
+// SafeName maps an arbitrary name (project, host) to a folder name: anything
+// outside [A-Za-z0-9._-] becomes '_', leading/trailing dots are trimmed, and
+// an empty result is "_".
+func SafeName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	out := strings.Trim(b.String(), ".")
+	if out == "" {
+		out = "_"
+	}
+	return out
+}

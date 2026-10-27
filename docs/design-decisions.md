@@ -999,6 +999,16 @@ ms.session.ID, logs)` call runs in its own goroutine (fire-and-forget,
 `logger.Recover`-guarded) so a filesystem failure can never affect the run's
 own completed/error/stopped status — only a log line either way.
 
+**Machine and build line.** Right after `_Saved …_` the md header carries
+`_Machine <host> · build <rev>_` (txt: `Machine …`; json: `machine`/`build`).
+`internal/buildinfo` supplies both: the Windows host name (not the config, so a
+`config.toml` copied to another computer cannot merge two machines into one log
+folder) and the 7-char VCS revision (`-dirty` if modified, `unknown` outside
+git). A review of logs from several computers needs it to tell a fixed bug from
+a live one. `experience.ParseLogFile` reads it into `Trajectory.Machine/Build`;
+old logs without the line parse as before. `app.log`'s `startup` line carries
+`host` and `build` too.
+
 **Rendering** (`internal/store/logfiles.go:RenderExport`): the exact same
 function backs both this automatic save (always `"md"`) and the manual
 "Export log" button (`app.go:ExportLog`, any of md/json/txt) — moved out of

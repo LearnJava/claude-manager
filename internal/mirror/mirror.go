@@ -26,6 +26,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"claude-manager/internal/config"
+	"claude-manager/internal/fsutil"
 	"claude-manager/internal/proc"
 )
 
@@ -121,20 +122,7 @@ func checkoutFromExe(exe string) string {
 
 // DirName maps a project name to its folder under the mirror root.
 func DirName(project string) string {
-	var b strings.Builder
-	for _, r := range project {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
-			b.WriteRune(r)
-		default:
-			b.WriteRune('_')
-		}
-	}
-	name := strings.Trim(b.String(), ".")
-	if name == "" {
-		name = "_"
-	}
-	return name
+	return fsutil.SafeName(project)
 }
 
 // SyncAll copies every project with Mirror set into root, rewrites the index
