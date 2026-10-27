@@ -343,6 +343,7 @@ func (a *App) startup(ctx context.Context) {
 	runtime.EventsEmit(ctx, "app:ready")
 
 	a.startMirrorLoop(ctx)
+	a.startLogShipLoop(ctx)
 	a.startNightlyLoop(ctx)
 
 	go func() {
@@ -1266,6 +1267,7 @@ func (a *App) UpdateConfig(cfg config.AppConfig) error {
 		a.manager.SetConfig(reloaded)
 	}
 	kickMirror()
+	kickLogShip()
 	return nil
 }
 

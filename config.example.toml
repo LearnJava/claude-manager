@@ -99,6 +99,13 @@ manager_card = true
 # mirror_dir = ''
 mirror_interval_min = 15                 # re-sync period; 0 = only on start/save/button
 
+# Log shipping (internal/logship): run logs of every project and the manager's own
+# logs are pushed into logs/<host name>/ of one private git repository, so logs of
+# all machines can be reviewed together. Empty logs_repo = off (nothing is cloned).
+# Secrets are masked before anything is written to the clone.
+# logs_repo = 'git@github.com:LearnJava/cm-logs.git'
+logs_interval_min = 60                   # push period; 0 = only from the button
+
 # ─── Mixed-programming workers (MIXED-TASKS.md) ──────────────────────────────
 # External OpenAI-compatible models that write code as FIND/REPLACE patches.
 # The manager applies patches in a worktree, runs the project gates and returns

@@ -432,6 +432,8 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `install_session_protocol` | admin | идемпотентное | Write the developer-session protocol (docs/git-workflow.md, scripts/worktree-pool.sh, the cm-task skills) into a project and gitignore its worktree pool. |
 | `mirror_project` | admin | идемпотентное | Turn on "Mirror into Claude Manager" for a project and copy its settings and saved run logs now. |
 | `unmirror_project` | admin | идемпотентное | Stop re-syncing a project's mirror. |
+| `ship_logs_now` | operate | идемпотентное | Push run logs of every project and the manager's own logs into logs/<host>/ of the logs repository (logs_repo) now. |
+| `get_log_ship_status` | read | только чтение, идемпотентное | Report whether log shipping is on, the repository, this machine's host name, and the last pass. |
 | `sync_project_mirrors` | operate | идемпотентное | Re-sync every mirrored project now. |
 | `get_history` | read | только чтение, идемпотентное | List the past runs of a project's sessions, or of all projects, newest first. |
 | `search_session_log` | read | только чтение, идемпотентное | Find log entries of a session's latest run by kind, tool or text, oldest first, one page at a time. |
@@ -645,6 +647,7 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `GetFailureRules` | `get_failure_rules` | read |
 | `GetHistory` | `get_history` | read |
 | `GetLatestDraftRoadmap` | `get_latest_draft_roadmap` | read |
+| `GetLogShipStatus` | `get_log_ship_status` | read |
 | `GetMixedQuality` | `get_mixed_quality` | read |
 | `GetMixedRounds` | `get_mixed_rounds` | read |
 | `GetModelRecommendation` | `get_model_advice` | read |
@@ -685,8 +688,8 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `MirrorProject` | `mirror_project` | admin |
 | `RegisterMixedBrief` | `register_mixed_brief` | operate |
 | `ReplayReferenceCase` | `replay_reference_case` | operate |
-| `RespondPermission` | `deny_permission` | operate |
 | `RespondPermission` | `approve_permission` | admin |
+| `RespondPermission` | `deny_permission` | operate |
 | `RestartSession` | `restart_session` | operate |
 | `RestoreFailureRule` | `restore_failure_rule` | operate |
 | `RestoreSkill` | `restore_skill` | admin |
@@ -701,6 +704,7 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `SetSessionModel` | `set_session_model` | operate |
 | `SetSessionRuntime` | `set_session_runtime` | operate |
 | `SetSkillAutopilot` | `set_skill_autopilot` | admin |
+| `ShipLogsNow` | `ship_logs_now` | operate |
 | `StartAdHocChatSession` | `start_ad_hoc_chat` | operate |
 | `StartProject` | `start_project` | operate |
 | `StartSession` | `start_session` | operate |

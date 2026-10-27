@@ -44,6 +44,8 @@ func (a *fileApp) InitGitRepo(string) error                        { return nil 
 func (a *fileApp) MirrorProjectStatus(string) (any, error)         { return map[string]any{"enabled": true}, nil }
 func (a *fileApp) UnmirrorProject(string) error                    { return nil }
 func (a *fileApp) SyncProjectMirrorsResults() (any, error)         { return []any{}, nil }
+func (a *fileApp) ShipLogsNowResult() (any, error)                  { return nil, nil }
+func (a *fileApp) LogShipStatusOf() any                             { return nil }
 func (a *fileApp) MirrorStatusOf(string) any                       { return map[string]any{"enabled": false} }
 
 func newProjectsServer(t *testing.T, mgr ManagerAPI) (*fileApp, *httptest.Server, string) {
