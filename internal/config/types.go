@@ -329,6 +329,14 @@ type SessionConfig struct {
 	// default; crash recovery is unaffected — it still always uses --resume.
 	ContextHandoff bool `toml:"context_handoff"`
 
+	// GateRounds turns on strict gates for a Claude session (WASTE-TASKS.md
+	// WS-05): when a task ends on the done marker, the project's `gates` run in
+	// the session's work folder and, if red, their output goes back to the
+	// session as the next request — up to GateRounds times, then the session
+	// stops with an explicit reason. 0 (default) = off, the dialog is untouched;
+	// it also needs a non-empty project `gates`.
+	GateRounds int `toml:"gate_rounds"`
+
 	// AskUserMarker makes an interactive (non-autonomous) session teach the
 	// model the ```ask-user JSON block and render it as a question with
 	// option buttons, waiting for the user with no timeout. Autonomous runs

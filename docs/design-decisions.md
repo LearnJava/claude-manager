@@ -3031,6 +3031,39 @@ before) adds three things:
 The session package cannot import `experience`, so `app.go` supplies a
 `LoopMemoryFactory` and a `LoopResolveFunc` (`SessionManager.SetLoopMemory`).
 
+## Strict gates for Claude sessions (WS-05)
+
+Mixed programming runs the project's `gates` as a blocking check and sends a
+red result back to the worker; a Claude session only had `post_task_hook`,
+which logs and blocks nothing. `gate_rounds = N` on a session (default `0` =
+off; also needs a non-empty project `gates`, and a Claude runtime — Hermes
+keeps its own turn loop) closes that gap. The dialog of a session with the flag
+off is untouched: no gate runs, no log line, no prompt change.
+
+- **When.** Run's clean-exit branch, once the task is classified `closed`
+  (the queue pointer left, or there is no queue to consult) and before
+  `tasks_done` is bumped. `worker.RunGates` runs in the session's work folder
+  (`workDir`: the pool slot or the project root).
+- **Red → rework round.** `GateResult.Feedback()` — the same text mixed
+  programming sends, not a paraphrase — behind a one-line frame ("rework round
+  K of N") becomes `pendingGateFeedback`. The next iteration resumes the
+  conversation (`resumeSessionID = CLISessionID`, as for a transient API
+  error) and `initialPromptBody` sends the feedback first, ahead of the
+  crash-recovery prompt. A rework iteration neither re-reads the queue (its
+  task already left it) nor falls into the "no pending tasks" interactive
+  branch, and nothing is emitted between rounds: the rounds are one run, one
+  `session_runs` row.
+- **Green → done.** The usual `task_done` path.
+- **Limit.** After `gate_rounds` rework rounds the gates run once more; still
+  red → the session stops with status `error`, an explicit message, the red
+  output in the log and a run ending `unfinished`. The task does not count,
+  and nothing releases the pool slot — the work folder stays as it was.
+- **Why the done marker is not the trigger.** The spec says "on the marker";
+  the closed-task classification is a superset (the pointer leaving the queue
+  is the durable fact) and the marker alone would skip queue-less sessions.
+  A `slice` (marker, pointer still queued) is not gated: a half-done task is
+  allowed to be red.
+
 ## Billing mode: the limit window and time, not dollars (WS-02)
 
 On a subscription a dollar is a ruler, not a bill: what runs out is the

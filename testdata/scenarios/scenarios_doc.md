@@ -337,3 +337,16 @@ Emits `init` and a `result` carrying the `continue_session` marker, then idles
 `TestRun_LingeringCLIAfterDoneMarkerIsForceKilled`: after `turnExitNotice` +
 `turnExitGrace` the manager terminates the process, the run counts as a
 normal finish and the late output never arrives.
+
+---
+
+### gate-rework.json
+**State/Feature:** a rework round after red gates (WASTE-TASKS.md WS-05)
+**Match:** `rework round \d+ of \d+`
+
+One turn: `init`, an assistant line "Reworking after the gate report." and a
+`result`. Matches only the frame the manager puts in front of the gates' output
+when it sends a task back, so a first prompt ("hello") never lands here.
+Drives `internal/session/strict_gates_test.go`. Keep the stubbed gate output
+free of words other scenarios match (`fail`, `error`, `loop`, …): the whole
+rework prompt is matched, gate output included.

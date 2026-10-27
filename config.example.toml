@@ -228,6 +228,12 @@ path = 'D:\RustProjects\lumen-browser'
   pre_task_hook = ""
   post_task_hook = ""
 
+  # Strict gates (WS-05): after a task ends, run the project's `gates` in the
+  # work folder; red output goes back to the session as its next request, up to
+  # this many rework rounds, then the session stops with an error and the work
+  # folder is left as is. 0 = off (the dialog is untouched). Needs `gates`.
+  gate_rounds = 0
+
   # Crash recovery prompt: message sent to Claude when resuming an interrupted
   # session via --resume. Leave empty to use the built-in English default.
   # crash_recovery_prompt = "Сессия была прервана. Проверь git status и STATUS-P1.md, продолжи задачу."

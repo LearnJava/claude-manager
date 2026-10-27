@@ -367,6 +367,10 @@ type Session struct {
 	// pendingLoopNote is put in front of the next run's prompt after such a
 	// restart (protected by mu; consumed by initialPromptText).
 	pendingLoopNote string
+	// pendingGateFeedback is the red gates' output sent back as the prompt of
+	// the next (resumed) run (WS-05; protected by mu; consumed by
+	// initialPromptBody, ahead of crash recovery).
+	pendingGateFeedback string
 	// endInput closes the live run's stdin (idempotent; protected by mu,
 	// nil between runs). It lets a context restart chosen later — from the
 	// "ask" question — end an interactive process idling between turns.
@@ -1052,6 +1056,12 @@ func (s *Session) Run(ctx context.Context) {
 	// two hours earlier fired on the rate-limit error and the session never
 	// resumed after the limit reset).
 	atTaskBoundary := true
+	// Strict gates (WS-05): reworking is true while the run in flight is a
+	// rework round sent back after red gates; gateRound counts those rounds.
+	// A rework run neither re-reads the queue (its task already left it) nor
+	// looks for a new pointer.
+	reworking := false
+	gateRound := 0
 	for {
 		if ctx.Err() != nil {
 			logger.L.Info("session.run.cancelled", "id", s.ID)
@@ -1086,7 +1096,7 @@ func (s *Session) Run(ctx context.Context) {
 		// has pending tasks (mirrors orchestrator.py has_tasks()). The resolved
 		// description is shown in the UI whenever task_source is set, even if
 		// run_without_tasks is on — display and auto-stop are separate concerns.
-		if s.Config.TaskSource != "" {
+		if s.Config.TaskSource != "" && !reworking {
 			taskPath := s.Config.TaskSource
 			if !filepath.IsAbs(taskPath) {
 				taskPath = filepath.Join(s.ProjectPath, taskPath)
@@ -1140,7 +1150,7 @@ func (s *Session) Run(ctx context.Context) {
 		// it, so the outcome is judged by whether that pointer left the queue
 		// rather than by the agent's word for it.
 		pointerBefore := ""
-		if s.Config.TaskSource != "" {
+		if s.Config.TaskSource != "" && !reworking {
 			pointerBefore = firstTaskPointer(readTaskQueue(ctx, s.ProjectPath, s.Config.TaskSource))
 		}
 		err := s.runOnce(ctx, false)
@@ -1336,6 +1346,21 @@ func (s *Session) Run(ctx context.Context) {
 				}
 				break
 			}
+			if s.strictGatesOn() {
+				switch s.checkStrictGates(ctx, &gateRound) {
+				case gatesRework:
+					reworking = true
+					continue
+				case gatesExhausted:
+					s.emit(SessionEvent{Type: EvtRunEnd, RunStatus: RunStatusUnfinished, CLISessionID: s.CLISessionID})
+					s.setStatus(config.StatusError)
+					s.emitErr(fmt.Errorf("gates still red after %d rework rounds — stopped, the work folder is left as is for a person to look at",
+						s.Config.GateRounds))
+					return
+				}
+			}
+			reworking = false
+			gateRound = 0
 			unfinishedStreak = 0
 			atTaskBoundary = true
 			s.mu.Lock()
@@ -1806,8 +1831,13 @@ func (s *Session) initialPromptBody(forceInteractive bool) string {
 	s.pendingHandoff = ""
 	loopNote := s.pendingLoopNote
 	s.pendingLoopNote = ""
+	gateFeedback := s.pendingGateFeedback
+	s.pendingGateFeedback = ""
 	s.mu.Unlock()
 
+	if gateFeedback != "" {
+		return gateFeedback
+	}
 	if recovering {
 		if p := strings.TrimSpace(s.Config.CrashRecoveryPrompt); p != "" {
 			return p
