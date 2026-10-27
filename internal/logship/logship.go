@@ -6,11 +6,11 @@ package logship
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -43,6 +43,9 @@ type Options struct {
 	DataDir  string // manager data dir: holds the clone and logship.json
 	Projects []Project
 	Now      func() time.Time
+
+	ManagerLogsDir string   // folder with app.log, crash.log, ...; empty = skip
+	ExtraSecrets   []string // exact strings masked besides the known shapes
 }
 
 // Result describes one pass.
@@ -98,12 +101,28 @@ func Ship(ctx context.Context, opt Options) (Result, error) {
 		}
 		res.Files, res.Bytes, res.Pushed = 0, 0, false
 		for _, f := range files {
-			n, err := copyFile(f.src, filepath.Join(clone, filepath.FromSlash(f.rel)))
+			n, err := copyMasked(f.src, filepath.Join(clone, filepath.FromSlash(f.rel)), opt.ExtraSecrets)
 			if err != nil {
 				return fail(err)
 			}
 			res.Files++
 			res.Bytes += n
+		}
+		offsets, mf, mb, err := shipManagerLogs(opt, st, clone, res.At)
+		if err != nil {
+			return fail(err)
+		}
+		res.Files += mf
+		res.Bytes += mb
+		merged := map[string]string{}
+		for p, m := range st.Marks {
+			merged[p] = m
+		}
+		for p, m := range marks {
+			merged[p] = m
+		}
+		if err := writeMachine(opt, clone, merged, res.At); err != nil {
+			return fail(err)
 		}
 		if _, err := os.Stat(filepath.Join(clone, "logs", fsutil.SafeName(opt.Host))); err == nil {
 			if _, err := git(ctx, clone, "add", "-A", "logs/"+fsutil.SafeName(opt.Host)); err != nil {
@@ -129,6 +148,9 @@ func Ship(ctx context.Context, opt Options) (Result, error) {
 		}
 		for p, m := range marks {
 			st.Marks[p] = m
+		}
+		for f, o := range offsets {
+			st.Offsets[f] = o
 		}
 		if err := saveState(opt.DataDir, st); err != nil {
 			return fail(err)
@@ -236,27 +258,108 @@ func collect(opt Options, st state, now time.Time, clone string) ([]shipFile, ma
 	return out, marks, nil
 }
 
-func copyFile(src, dst string) (int64, error) {
+// copyMasked writes src into dst with secrets masked and returns the bytes written.
+func copyMasked(src, dst string, extra []string) (int64, error) {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return 0, fmt.Errorf("logship: read %s: %w", src, err)
+	}
+	return writeMasked(dst, data, extra, os.O_CREATE|os.O_TRUNC|os.O_WRONLY)
+}
+
+func writeMasked(dst string, data []byte, extra []string, flag int) (int64, error) {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return 0, fmt.Errorf("logship: mkdir: %w", err)
 	}
-	in, err := os.Open(src)
+	out := []byte(Mask(string(data), extra))
+	f, err := os.OpenFile(dst, flag, 0o644)
 	if err != nil {
-		return 0, fmt.Errorf("logship: open %s: %w", src, err)
+		return 0, fmt.Errorf("logship: open %s: %w", dst, err)
 	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return 0, fmt.Errorf("logship: create %s: %w", dst, err)
-	}
-	n, err := io.Copy(out, in)
-	if cerr := out.Close(); err == nil {
+	n, err := f.Write(out)
+	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
-		return n, fmt.Errorf("logship: copy %s: %w", src, err)
+		return int64(n), fmt.Errorf("logship: write %s: %w", dst, err)
 	}
-	return n, nil
+	return int64(n), nil
+}
+
+// shipManagerLogs appends the unshipped tail of every *.log in
+// ManagerLogsDir to logs/<host>/manager/<name>-<date>.log of the clone. The
+// returned offsets are stored only after a successful push.
+func shipManagerLogs(opt Options, st state, clone string, at time.Time) (map[string]int64, int, int64, error) {
+	offsets := map[string]int64{}
+	if opt.ManagerLogsDir == "" {
+		return offsets, 0, 0, nil
+	}
+	entries, err := os.ReadDir(opt.ManagerLogsDir)
+	if err != nil {
+		return offsets, 0, 0, nil // no manager logs yet
+	}
+	files, bytes := 0, int64(0)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".log") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(opt.ManagerLogsDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		off := st.Offsets[e.Name()]
+		if off > int64(len(data)) {
+			off = 0 // truncated or rotated
+		}
+		offsets[e.Name()] = int64(len(data))
+		if off == int64(len(data)) {
+			continue
+		}
+		base := strings.TrimSuffix(e.Name(), ".log")
+		dst := filepath.Join(clone, "logs", fsutil.SafeName(opt.Host), "manager", base+"-"+at.Format("2006-01-02")+".log")
+		n, err := writeMasked(dst, data[off:], opt.ExtraSecrets, os.O_CREATE|os.O_APPEND|os.O_WRONLY)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		files++
+		bytes += n
+	}
+	return offsets, files, bytes, nil
+}
+
+// writeMachine rewrites logs/<host>/machine.md. The pass time is kept from the
+// previous file when nothing else changed, so an idle pass makes no commit.
+func writeMachine(opt Options, clone string, marks map[string]string, at time.Time) error {
+	const passPrefix = "- Last pass: "
+	var b strings.Builder
+	fmt.Fprintf(&b, "# %s\n\n- Host: %s\n- Build: %s\n- Go: %s\n", opt.Host, opt.Host, opt.Build, runtime.Version())
+	body := b.String()
+	b.Reset()
+	b.WriteString("\n## Projects\n\n| Project | Folder | Last log shipped |\n|---|---|---|\n")
+	projects := append([]Project(nil), opt.Projects...)
+	sort.Slice(projects, func(i, j int) bool { return projects[i].Name < projects[j].Name })
+	for _, p := range projects {
+		last := marks[p.Name]
+		if last == "" {
+			last = "-"
+		}
+		fmt.Fprintf(&b, "| %s | %s | %s |\n", p.Name, p.Path, last)
+	}
+	tail := b.String()
+	path := filepath.Join(clone, "logs", fsutil.SafeName(opt.Host), "machine.md")
+	stamp := at.Format(time.RFC3339)
+	if old, err := os.ReadFile(path); err == nil {
+		for _, line := range strings.Split(string(old), "\n") {
+			if strings.HasPrefix(line, passPrefix) {
+				prev := strings.TrimPrefix(strings.TrimRight(line, "\r"), passPrefix)
+				if Mask(body, opt.ExtraSecrets)+passPrefix+prev+"\n"+Mask(tail, opt.ExtraSecrets) == string(old) {
+					stamp = prev
+				}
+			}
+		}
+	}
+	_, err := writeMasked(path, []byte(body+passPrefix+stamp+"\n"+tail), opt.ExtraSecrets, os.O_CREATE|os.O_TRUNC|os.O_WRONLY)
+	return err
 }
 
 func git(ctx context.Context, dir string, args ...string) (string, error) {

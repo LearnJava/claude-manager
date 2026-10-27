@@ -25,6 +25,7 @@ claude-manager/
 │   ├── buildinfo/                   # Host name and VCS revision stamped into run logs and the app.log startup line
 │   ├── logship/                     # One pass (Ship) pushing run logs into logs/<host>/ of the private cm-logs repo:
 │   │                                #   clone in <data dir>/cm-logs, marks in logship.json outside the clone, 3 push attempts
+│   │                                #   LG-03: manager logs appended by byte offset, machine.md, mask.go (Mask) on everything written
 │   ├── envcheck/                    # Finds claude/git/Git Bash/Python/gh/go/node/wails and their versions, and the
 │   │                                #   install command for this OS + package manager (Settings → Environment);
 │   │                                #   NewestPython picks the newest off-PATH Windows Python (also env card)

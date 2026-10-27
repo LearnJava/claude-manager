@@ -17,10 +17,12 @@ const stateFile = "logship.json"
 // the newest file already pushed. Strings compare lexicographically.
 type state struct {
 	Marks map[string]string `json:"marks"`
+	// Offsets is, per manager log file name, how many bytes were already shipped.
+	Offsets map[string]int64 `json:"offsets,omitempty"`
 }
 
 func loadState(dataDir string) (state, error) {
-	st := state{Marks: map[string]string{}}
+	st := state{Marks: map[string]string{}, Offsets: map[string]int64{}}
 	data, err := os.ReadFile(filepath.Join(dataDir, stateFile))
 	if errors.Is(err, os.ErrNotExist) {
 		return st, nil
@@ -30,10 +32,13 @@ func loadState(dataDir string) (state, error) {
 	}
 	if err := json.Unmarshal(data, &st); err != nil {
 		// A corrupt marks file only costs a re-send of the last 7 days.
-		return state{Marks: map[string]string{}}, nil
+		return state{Marks: map[string]string{}, Offsets: map[string]int64{}}, nil
 	}
 	if st.Marks == nil {
 		st.Marks = map[string]string{}
+	}
+	if st.Offsets == nil {
+		st.Offsets = map[string]int64{}
 	}
 	return st, nil
 }
