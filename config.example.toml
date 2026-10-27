@@ -49,6 +49,8 @@ rate_limit_alert_threshold = 0.80      # notify when rate-limit utilisation > 80
 # loop_memory = false                   # remember loops across runs (loop_events): catch a repeat outside the window, answer a loop broken before with what broke it (WS-04)
 # loop_far_threshold = 6                # with loop_memory: occurrences of one call in a run that count as a far repeat (0 = default)
 # reference_cases = false               # keep every task that closed well (and, with gate_rounds, passed its gates) as a reference case: text, starting commit, gates, cost. Needs the project's `gates`. Replay it with another model via get_reference_report / replay_reference_case (WS-06)
+# repo_suggestions = false             # Waste tab: scan the repository for work that keeps being postponed (stale TODO/FIXME, red gates, code/doc drift, broken queue pointers, abandoned branches/folders) as a checklist; a ticked entry is written to SUGGESTED-TASKS.md and its pointer appended to the chosen queue. No model is called (WS-07)
+# suggest_stale_days = 0                # repo_suggestions: age (days) of a TODO / branch / work folder to be suggested; 0 = 90 for a TODO, 7 for branches and folders
 # waste_empty_search_chars = 100        # Waste tab: a Grep/Glob result shorter than this counts as empty (0 = default)
 # waste_oversized_read_tokens = 8000    # Waste tab: a Read result above this many tokens counts as a whole-file read (0 = default)
 
@@ -126,6 +128,7 @@ path = 'D:\RustProjects\lumen-browser'
 # blocking check commands run after worker patches (model tests are untrusted).
 # mixed_programming = true
 # gates = ["cargo check", "cargo clippy --all-targets -- -D warnings", "cargo test"]
+# doc_sync = ["src/**/*.rs => docs/architecture.md"]   # WS-07 repo_suggestions: "code_glob => doc_path"; code that changed since the doc was last touched becomes a suggestion
 # mixed_max_rounds = 3                   # feedback rounds before needs-human
 
 # Project journal (LEARN-TASKS.md LN-06): episodic memory between sessions —

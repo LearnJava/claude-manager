@@ -3033,6 +3033,7 @@ experience_tracking = false
 # loop_memory = false                   # WS-04: loops outlive a window and a session (loop_events); a loop broken before is answered with what broke it
 # loop_far_threshold = 6                # WS-04: occurrences of one call in a run that count as a far repeat (0 = default)
 # reference_cases = false               # WS-06: a task that closed well is kept as a reference case (text, base commit, gates, cost); replay it with another model
+# repo_suggestions = false             # WS-07: scan the repository for postponed work (stale TODO/FIXME, red gates, doc drift, broken queue pointers, abandoned branches/folders) as a checklist; per project `doc_sync = ["code_glob => doc"]`
 ```
 
 ### 20.5 Автоматические действия менеджера (без участия пользователя)

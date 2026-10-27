@@ -91,6 +91,18 @@ type OptimizationSettings struct {
 	// task can be replayed with another model or setting. Needs the project's
 	// `gates`. Default off: the session records nothing and runs no extra git.
 	ReferenceCases bool `toml:"reference_cases"`
+
+	// RepoSuggestions enables the repository scanner (WASTE-TASKS.md WS-07):
+	// stale TODO/FIXME, red gates, code/doc drift, broken queue pointers,
+	// abandoned branches and work folders become a checklist of suggested
+	// tasks; a ticked one is written to SUGGESTED-TASKS.md and its pointer
+	// appended to the chosen queue. No model is called. Default off: nothing is
+	// scanned, and gate results are not recorded.
+	RepoSuggestions bool `toml:"repo_suggestions"`
+	// SuggestStaleDays is how old (by git blame / last commit) a TODO, a branch
+	// or a work folder must be to be suggested. 0 = built-in default (90 days
+	// for a TODO, 7 for branches and folders).
+	SuggestStaleDays int `toml:"suggest_stale_days"`
 }
 
 // Billing modes (GlobalSettings.Billing).
@@ -200,6 +212,7 @@ type GlobalSettings struct {
 type ProjectOverlay struct {
 	Sessions              []SessionConfig `toml:"session"`
 	Gates                 []string        `toml:"gates"`
+	DocSync               []string        `toml:"doc_sync"`
 	DefaultPermissionMode string          `toml:"default_permission_mode"`
 	MixedProgramming      *bool           `toml:"mixed_programming"`
 	MixedMaxRounds        int             `toml:"mixed_max_rounds"`
@@ -249,6 +262,11 @@ type ProjectConfig struct {
 	// exit rejects the round; the output is returned to the model as feedback.
 	// Model-written tests are never trusted as the ground truth — gates are.
 	Gates []string `toml:"gates"`
+	// DocSync is the project's doc-sync matrix for the repository scanner
+	// (WASTE-TASKS.md WS-07): "code_glob => doc_path" rules ("internal/**/*.go =>
+	// docs/architecture.md"). Code changed since the doc was last touched = a
+	// suggested task. Empty = that kind is not scanned.
+	DocSync []string `toml:"doc_sync"`
 	// MixedMaxRounds caps feedback rounds per subtask before the task is marked
 	// needs-human (default 3).
 	MixedMaxRounds int `toml:"mixed_max_rounds"`

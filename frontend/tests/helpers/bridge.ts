@@ -203,6 +203,8 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         // Failure rules (LEARN-TASKS.md LN-39): same store, same empty stub.
         GetFailureRules: () => Promise.resolve({ Rules: [], Pending: 0 }),
         GetHookRules: () => Promise.resolve({ Enabled: false, Rules: [], TrialRuns: 10 }),
+        GetSuggestions: () => Promise.resolve({ Enabled: false, Items: [], QueueFiles: [], TaskFile: 'SUGGESTED-TASKS.md' }),
+        AcceptSuggestions: () => Promise.resolve([]),
         DraftFailureRules: () => Promise.resolve([]),
         AcceptFailureRule: () => Promise.resolve(undefined),
         DismissFailureRule: () => Promise.resolve(undefined),

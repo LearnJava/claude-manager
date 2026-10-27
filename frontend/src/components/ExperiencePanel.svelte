@@ -8,6 +8,7 @@
     import SkillReview from './SkillReview.svelte';
     import FailureReview from './FailureReview.svelte';
     import HookRules from './HookRules.svelte';
+    import Suggestions from './Suggestions.svelte';
     import { PickDirectory } from '../../wailsjs/go/main/App';
     import { EventsOn } from '../../wailsjs/runtime/runtime';
     import {
@@ -815,6 +816,7 @@
                 {/if}
                 {#if project}
                     <HookRules {project} />
+                    <Suggestions {project} />
                 {/if}
             {:else if tab === 'cost'}
                 {#if !project}

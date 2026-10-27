@@ -375,6 +375,8 @@ type SessionManager struct {
 	// refCaseFn is nil unless app.go has wired the reference-case recorder
 	// (WASTE-TASKS.md WS-06) — see SetReferenceCases.
 	refCaseFn ReferenceCaseFunc
+	// gateRunFn is nil unless app.go has wired the gate-run recorder (WS-07).
+	gateRunFn GateRunFunc
 
 	// regressionFn is nil unless app.go has wired the cost-regression
 	// detector (LEARN-TASKS.md LN-16); even then, finishRun only calls it
@@ -715,6 +717,7 @@ func (m *SessionManager) StartSession(project, name string) error {
 		LearnedRules:      m.learnedRulesFor(proj),
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
+		GateRunFn:         m.gateRunFnFor(project),
 		Optimization:      &m.cfg.Optimization,
 		MaxTurns:          m.adaptiveMaxTurns(project, name),
 		ExcludeDynamic:    m.excludeDynamicSystemPrompt(),
@@ -803,6 +806,7 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 		LearnedRules:      m.learnedRulesFor(proj),
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
+		GateRunFn:         m.gateRunFnFor(project),
 		Optimization:      &m.cfg.Optimization,
 		MaxTurns:          m.adaptiveMaxTurns(project, name),
 		ExcludeDynamic:    m.excludeDynamicSystemPrompt(),
@@ -1118,6 +1122,7 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 		LearnedRules:      m.learnedRulesFor(proj),
 		Gates:             proj.Gates,
 		PrimerFn:          primerFn,
+		GateRunFn:         m.gateRunFnFor(project),
 		Optimization:      &m.cfg.Optimization,
 		MaxTurns:          m.adaptiveMaxTurns(project, name),
 		ExcludeDynamic:    m.excludeDynamicSystemPrompt(),

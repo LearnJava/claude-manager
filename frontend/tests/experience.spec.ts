@@ -266,6 +266,48 @@ test.describe('Experience panel', () => {
     await expect(modal.getByTestId('hook-rule-installed-repeat_read')).toBeVisible();
   });
 
+  test('Waste tab: suggestions reach a queue only when ticked (WS-07)', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Experience' }).click();
+    const modal = page.getByRole('dialog');
+    await modal.getByTestId('tab-waste').click();
+    // Feature off (the default stub): the block is not rendered at all.
+    await expect(modal.getByText(/No recorded tool calls/i)).toBeVisible({ timeout: 5_000 });
+    await expect(modal.getByTestId('suggestions')).toHaveCount(0);
+
+    await page.evaluate(() => {
+      const App = (window as any).go.main.App;
+      const w = window as any;
+      w.__accepted = [];
+      let items = [
+        { Kind: 'stale_todo', Key: 'stale_todo:aa', Title: 'Fix the old TODO in a.go', Detail: 'x', Done: 'y' },
+        { Kind: 'red_gates', Key: 'red_gates:bb', Title: 'Repair the red gates', Detail: 'x', Done: 'y' },
+      ];
+      App.GetSuggestions = () =>
+        Promise.resolve({ Enabled: true, Items: items, QueueFiles: ['STATUS-P1.md'], TaskFile: 'SUGGESTED-TASKS.md' });
+      App.AcceptSuggestions = (_p: string, q: string, keys: string[]) => {
+        w.__accepted.push([q, keys]);
+        items = items.filter((i) => !keys.includes(i.Key));
+        return Promise.resolve(['SUGGESTED-TASKS.md:6']);
+      };
+    });
+    await modal.getByRole('button', { name: '✕' }).click();
+    await page.getByRole('button', { name: 'Experience' }).click();
+    await modal.getByTestId('tab-waste').click();
+
+    const block = modal.getByTestId('suggestions');
+    await expect(block.getByTestId('suggestion-stale_todo')).toBeVisible({ timeout: 5_000 });
+    await expect(block.getByTestId('suggestions-add')).toBeDisabled(); // nothing ticked: nothing to add
+    expect(await page.evaluate(() => (window as any).__accepted)).toEqual([]);
+
+    await block.getByTestId('suggestion-red_gates').getByTestId('suggestion-check').check();
+    await block.getByTestId('suggestions-add').click();
+    await expect.poll(() => page.evaluate(() => (window as any).__accepted)).toEqual([['STATUS-P1.md', ['red_gates:bb']]]);
+    await expect(block.getByTestId('suggestions-note')).toContainText('SUGGESTED-TASKS.md:6');
+    await expect(block.getByTestId('suggestion-red_gates')).toHaveCount(0);
+    await expect(block.getByTestId('suggestion-stale_todo')).toBeVisible();
+  });
+
   test('Waste tab: clean window, then categories with examples (WS-01)', async ({ page }) => {
     await page.goto('/');
 

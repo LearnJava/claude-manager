@@ -245,6 +245,9 @@ type Params struct {
 	// disables it regardless of Config.ContextPrimer (e.g. app.go wires it
 	// only when a store is open).
 	PrimerFn PrimerFunc
+	// GateRunFn records the outcome of a strict-gates run (WASTE-TASKS.md WS-07);
+	// nil unless [optimization] repo_suggestions is on.
+	GateRunFn GateRunFunc
 
 	// Optimization carries the global context-restart thresholds/mode
 	// ([optimization] in config.toml) that drive the mid-run context
@@ -318,6 +321,7 @@ type Session struct {
 	onEvent           EventCallback
 	gates             []string
 	primerFn          PrimerFunc
+	gateRunFn         GateRunFunc
 	handoffFn         HandoffFunc
 	contextMonitor    *optimization.ContextMonitor
 	loopDetector      *optimization.LoopDetector
@@ -570,6 +574,7 @@ func New(p Params) *Session {
 		onEvent:           p.OnEvent,
 		gates:             p.Gates,
 		primerFn:          p.PrimerFn,
+		gateRunFn:         p.GateRunFn,
 		handoffFn:         p.HandoffFn,
 		contextMonitor:    optimization.NewContextMonitor(p.Optimization, 0),
 		loopDetector:      optimization.NewLoopDetector(p.Optimization),
