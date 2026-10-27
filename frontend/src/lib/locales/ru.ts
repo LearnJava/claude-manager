@@ -19,6 +19,7 @@ import hookRules from './ru/hookRules';
 import suggestions from './ru/suggestions';
 import learned from './ru/learned';
 import waiting from './ru/waiting';
+import quality from './ru/quality';
 import modelPicker from './ru/modelPicker';
 import logStream from './ru/logStream';
 import roadmapTree from './ru/roadmapTree';
@@ -54,6 +55,7 @@ export default {
     ...suggestions,
     ...learned,
     ...waiting,
+    ...quality,
     ...modelPicker,
     ...logStream,
     ...roadmapTree,

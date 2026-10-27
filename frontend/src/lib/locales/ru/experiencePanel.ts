@@ -8,6 +8,8 @@ export default {
     'experiencePanel.tabs.cost': 'Стоимость по инструментам',
     'experiencePanel.tabs.skills': 'Навыки',
     'experiencePanel.tabs.failures': 'Ошибки',
+    'experiencePanel.tabs.quality': 'Качество',
+    'experiencePanel.footer.quality': 'Эталонные задачи, метки качества и бенчмарк конфигураций по выбранному проекту.',
     'experiencePanel.tabs.waste': 'Потери',
     'experiencePanel.refresh': 'Обновить',
 

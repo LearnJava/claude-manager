@@ -45,6 +45,8 @@ rate_limit_alert_threshold = 0.80      # notify when rate-limit utilisation > 80
 # max_turns_auto_adjust = true          # --max-turns = 1.6 × longest recent run, after 5 finished runs (autonomous sessions only; Chat is uncapped)
 # max_turns_default = 50                # floor for that cap
 # experience_tracking = true            # record what agents did into the local DB for the Experience tab (set false to stop opening transcripts)
+# The WS switches below (hook_rules .. benchmark) are also in Settings → Global → "Savings and control";
+# project gates / gate_schedule are on Settings → Projects, a session's gate_rounds on Settings → Sessions.
 # hook_rules = false                    # Waste tab: propose PreToolUse hook rules (forbid a repeated read, ...) as a diff for .claude/hooks/ + settings.json; installed only on approval, on trial with auto-revert (WS-03)
 # loop_memory = false                   # remember loops across runs (loop_events): catch a repeat outside the window, answer a loop broken before with what broke it (WS-04)
 # loop_far_threshold = 6                # with loop_memory: occurrences of one call in a run that count as a far repeat (0 = default)

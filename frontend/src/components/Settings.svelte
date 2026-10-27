@@ -21,6 +21,7 @@
     import { setTheme, type Theme } from '../stores/theme';
     import { setLocale, t, type Locale } from '../lib/i18n';
     import { applyBillingFromSettings } from '../stores/billing';
+    import { applyWaitingFromConfig } from '../stores/waiting';
     import { formatBytes } from '../lib/formatters';
     import { MODELS, EFFORTS, isKnownModel } from '../lib/models';
     import PlanReview from './PlanReview.svelte';
@@ -80,6 +81,8 @@
         ContextHandoff?: boolean;
         AskUserMarker?: boolean;
         HandoffContextTokens?: number;
+        // WASTE-TASKS.md WS-05: rework rounds on red gates; 0 = off.
+        GateRounds?: number;
     }
 
     interface ProjectConfig {
@@ -98,6 +101,9 @@
         // Manager-side: keep a local copy of the project in the mirror folder.
         Mirror?: boolean;
         AutoSkills?: boolean;
+        // WASTE-TASKS.md WS-10: nightly gate run "HH:MM" (private layer); '' = off.
+        GateSchedule?: string;
+        GateScheduleQueue?: string;
     }
 
     interface WorkerConfig {
@@ -142,7 +148,28 @@
     interface OptimizationSettings {
         AutoModelRouting: boolean;
         ExperienceTracking: boolean;
+        // WASTE-TASKS.md WS-03..WS-12; all off by default.
+        HookRules?: boolean;
+        LoopMemory?: boolean;
+        ReferenceCases?: boolean;
+        QualityLabels?: boolean;
+        RepoSuggestions?: boolean;
+        WaitingScreen?: boolean;
+        LearnedFiles?: boolean;
+        Benchmark?: boolean;
     }
+
+    // Order and locale keys of the WS feature switches on the Global tab.
+    const wasteFlags: { key: keyof OptimizationSettings; name: string }[] = [
+        { key: 'WaitingScreen', name: 'waitingScreen' },
+        { key: 'RepoSuggestions', name: 'repoSuggestions' },
+        { key: 'HookRules', name: 'hookRules' },
+        { key: 'LoopMemory', name: 'loopMemory' },
+        { key: 'LearnedFiles', name: 'learnedFiles' },
+        { key: 'ReferenceCases', name: 'referenceCases' },
+        { key: 'QualityLabels', name: 'qualityLabels' },
+        { key: 'Benchmark', name: 'benchmark' },
+    ];
 
     interface AppConfig {
         Settings: GlobalSettings;
@@ -800,6 +827,9 @@
             info = $t('settings.msg.saved');
             // Re-pull so we see canonicalised values.
             await load();
+            // The status bar's "waiting for you" button follows the switch now,
+            // not after the next app start.
+            applyWaitingFromConfig(cfg);
         } catch (e: any) {
             error = $t('settings.msg.saveFailed', { error: e?.message ?? String(e) });
         } finally {
@@ -1053,6 +1083,26 @@
                         </p>
                     </section>
 
+                    <section data-testid="waste-flags-section">
+                        <h3 class="text-text font-semibold text-sm mb-1">{$t('settings.waste.heading')}</h3>
+                        <p class="text-text-dim text-xs mb-2">{$t('settings.waste.description')}</p>
+                        <div class="space-y-2">
+                            {#each wasteFlags as f}
+                                <label class="flex items-start gap-2 text-sm text-text">
+                                    <input
+                                        type="checkbox"
+                                        class="mt-1"
+                                        data-testid={`waste-flag-${f.name}`}
+                                        bind:checked={cfg.Optimization[f.key]} />
+                                    <span>
+                                        {$t(`settings.waste.${f.name}`)}
+                                        <span class="block text-text-dim text-xs">{$t(`settings.waste.${f.name}Hint`)}</span>
+                                    </span>
+                                </label>
+                            {/each}
+                        </div>
+                    </section>
+
                     <section data-testid="billing-section">
                         <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.billing.heading')}</h3>
                         <div class="grid grid-cols-2 gap-3">
@@ -1221,6 +1271,47 @@
                                         </button>
                                     </div>
 
+                                    <!-- Gates: shared by strict gates (WS-05), reference cases
+                                         (WS-06), the nightly run (WS-10) and mixed programming -->
+                                    <div class="border-t border-bg-border pt-2 mt-1 space-y-2" data-testid={`gates-block-${i}`}>
+                                        <label class="flex flex-col text-xs text-text-muted gap-1">
+                                            {$t('settings.gates.label')}
+                                            <textarea
+                                                rows="2"
+                                                data-testid={`project-gates-${i}`}
+                                                value={joinList(p.Gates)}
+                                                on:input={(e) => onProjectGatesInput(e, i)}
+                                                placeholder="go build ./...&#10;go test ./..."
+                                                class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono resize-y"
+                                            ></textarea>
+                                            <span class="text-[11px] text-text-muted/70 leading-snug">{$t('settings.gates.hint')}</span>
+                                        </label>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <label class="flex flex-col text-xs text-text-muted gap-1">
+                                                {$t('settings.gates.schedule')}
+                                                <input
+                                                    type="text"
+                                                    data-testid={`gate-schedule-${i}`}
+                                                    placeholder="03:00"
+                                                    bind:value={p.GateSchedule}
+                                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono" />
+                                            </label>
+                                            <label class="flex flex-col text-xs text-text-muted gap-1">
+                                                {$t('settings.gates.scheduleQueue')}
+                                                <select
+                                                    data-testid={`gate-schedule-queue-${i}`}
+                                                    bind:value={p.GateScheduleQueue}
+                                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
+                                                    <option value="">{$t('settings.gates.scheduleQueueDefault')}</option>
+                                                    {#each [...new Set(p.Sessions.map((s) => s.TaskSource).filter(Boolean))] as q}
+                                                        <option value={q}>{q}</option>
+                                                    {/each}
+                                                </select>
+                                            </label>
+                                        </div>
+                                        <span class="block text-[11px] text-text-muted/70 leading-snug">{$t('settings.gates.scheduleHint')}</span>
+                                    </div>
+
                                     <!-- Mixed programming (MIXED-TASKS.md) -->
                                     <div class="border-t border-bg-border pt-2 mt-1 space-y-2">
                                         <label class="flex items-center gap-2 text-sm text-text">
@@ -1237,16 +1328,7 @@
                                                 <code class="font-mono">config.local.toml</code>
                                                 {$t('settings.mixed.warning2b')}</span>
                                             </p>
-                                            <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                {$t('settings.mixed.gatesLabel')}
-                                                <textarea
-                                                    rows="2"
-                                                    value={joinList(p.Gates)}
-                                                    on:input={(e) => onProjectGatesInput(e, i)}
-                                                    placeholder="go build ./...&#10;go test ./..."
-                                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono resize-y"
-                                                ></textarea>
-                                            </label>
+                                            <p class="text-xs text-text-muted">{$t('settings.mixed.gatesAbove')}</p>
                                             <label class="flex flex-col text-xs text-text-muted gap-1 w-40">
                                                 {$t('settings.mixed.maxRounds')}
                                                 <input
@@ -1744,6 +1826,20 @@
                                                     min="0"
                                                     bind:value={sess.MaxTasks}
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                                            </label>
+                                            <label class="flex flex-col text-xs text-text-muted gap-1 col-span-2">
+                                                {$t('settings.sessions.gateRounds')}
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    data-testid="session-gate-rounds"
+                                                    bind:value={sess.GateRounds}
+                                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text w-40" />
+                                                <span class="text-[11px] text-text-muted/70 leading-snug">
+                                                    {proj && (proj.Gates ?? []).length === 0
+                                                        ? $t('settings.sessions.gateRoundsNoGates')
+                                                        : $t('settings.sessions.gateRoundsHint')}
+                                                </span>
                                             </label>
                                             <div class="flex flex-col gap-2">
                                                 <label class="flex items-center gap-2 text-sm text-text">

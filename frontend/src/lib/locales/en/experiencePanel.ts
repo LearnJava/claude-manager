@@ -8,6 +8,8 @@ export default {
     'experiencePanel.tabs.cost': 'Cost by tool',
     'experiencePanel.tabs.skills': 'Skills',
     'experiencePanel.tabs.failures': 'Failures',
+    'experiencePanel.tabs.quality': 'Quality',
+    'experiencePanel.footer.quality': 'Reference cases, quality labels and the configuration benchmark for the selected project.',
     'experiencePanel.tabs.waste': 'Waste',
     'experiencePanel.refresh': 'Refresh',
 
