@@ -34,6 +34,10 @@ const (
 	KindPointer Kind = "broken_pointer"
 	KindBranch  Kind = "abandoned_branch"
 	KindFolder  Kind = "abandoned_folder"
+
+	// KindNightly marks a task filed by the scheduled gate run (WS-10). It is
+	// not a scanner kind, so it is not in Kinds.
+	KindNightly Kind = "nightly_gates"
 )
 
 // Kinds lists every kind in the order Scan reports them.
@@ -120,6 +124,10 @@ func Scan(ctx context.Context, o Options) ([]Suggestion, error) {
 	}
 	return out, nil
 }
+
+// NewKey builds the stable key of a finding of kind k from the parts that
+// identify it (for callers outside the scanner, e.g. the nightly gate run).
+func NewKey(k Kind, parts ...string) string { return makeKey(k, parts...) }
 
 // makeKey builds the opaque stable key of a finding from the parts that
 // identify it.

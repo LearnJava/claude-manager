@@ -250,6 +250,16 @@ CREATE TABLE IF NOT EXISTS gate_runs (
     summary TEXT NOT NULL DEFAULT ''
 )`
 
+	// nightly_runs (WASTE-TASKS.md WS-10): when a project's scheduled gate run
+	// last happened, so a restart neither repeats it nor loses a missed one.
+	sqlCreateNightlyRuns = `
+CREATE TABLE IF NOT EXISTS nightly_runs (
+    project TEXT PRIMARY KEY,
+    ts      DATETIME NOT NULL,
+    passed  INTEGER NOT NULL,
+    note    TEXT NOT NULL DEFAULT ''
+)`
+
 	sqlIdxGateRuns = `CREATE INDEX IF NOT EXISTS idx_gate_runs_project ON gate_runs(project, id)`
 
 	sqlIdxLoopEvents = `CREATE INDEX IF NOT EXISTS idx_loop_events_sig ON loop_events(project, sig)`
@@ -341,6 +351,7 @@ func migrate(db *sql.DB) error {
 		sqlCreateReferenceCases,
 		sqlCreateReferenceReplays,
 		sqlCreateGateRuns,
+		sqlCreateNightlyRuns,
 		sqlIdxLogsRun,
 		sqlIdxRunsProject,
 		sqlIdxBriefsProject,

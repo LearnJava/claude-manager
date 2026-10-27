@@ -319,6 +319,7 @@ func (a *App) startup(ctx context.Context) {
 	runtime.EventsEmit(ctx, "app:ready")
 
 	a.startMirrorLoop(ctx)
+	a.startNightlyLoop(ctx)
 
 	go func() {
 		defer logger.Recover("window.ensure_on_screen")
@@ -1288,6 +1289,15 @@ func adoptExistingOverlay(p config.ProjectConfig) (config.ProjectConfig, error) 
 	p.AutoSkills = p.AutoSkills || ov.AutoSkills
 	if p.AutoSkillsDailyBudgetUSD == 0 {
 		p.AutoSkillsDailyBudgetUSD = ov.AutoSkillsDailyBudgetUSD
+	}
+	if p.GateSchedule == "" {
+		p.GateSchedule = ov.GateSchedule
+	}
+	if len(p.GateScheduleGates) == 0 {
+		p.GateScheduleGates = ov.GateScheduleGates
+	}
+	if p.GateScheduleQueue == "" {
+		p.GateScheduleQueue = ov.GateScheduleQueue
 	}
 	return p, nil
 }

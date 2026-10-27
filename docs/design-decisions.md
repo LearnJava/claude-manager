@@ -3151,6 +3151,43 @@ shows the result as a checklist ("Suggestions"); `GetSuggestions` only reads.
   git missing, a rule on a path with no history: that kind yields nothing, and a
   clean repository is an empty list, not an error.
 
+## Nightly gate run (WS-10)
+
+Nobody watches a session at night, and what comes back in the morning should be
+a decision, not a result of unattended work. A project with `gate_schedule =
+"HH:MM"` (private layer, `config.local.toml`; empty = off) has its gates run by
+`internal/nightly` at that local time, in the project folder as it stands.
+Gates are `gate_schedule_gates`, else the project's `gates`.
+
+- **A red run files a task; it never starts a session.** The failed command and
+  the tail of its output become a `## SG-NN:` section of `SUGGESTED-TASKS.md`
+  (the same file and format WS-07 writes) and its pointer is appended to
+  `gate_schedule_queue`, else the first session's `task_source`. The queue stays
+  the only way work begins. Setting a schedule is the approval for these writes
+  (invariant 2 of the WASTE block): the user switched the job on, and no other
+  file is touched. A project with no gates or no queue is skipped with one log
+  line, not scheduled half-way.
+- **The same failure is one task.** The key is the failed command plus the tail
+  of its output with timings, timestamps and addresses removed, so a rerun that
+  only differs in `0.01s` vs `0.07s` is the same key. A section is skipped while
+  its pointer is still in a queue (`AcceptUnlessOpen`); once the pointer is gone
+  the task was taken, so the failure coming back is filed again — unlike WS-07,
+  where an accepted key is never offered twice.
+- **Restarts neither repeat nor lose a night.** The last run of each project is
+  in `nightly_runs`. A project that ran before is due when its latest slot is
+  newer than that run, so a night missed with the app closed runs once on the
+  next start; one that never ran waits for its first slot after the app started,
+  so enabling a schedule at noon does not run at noon. The loop looks at the
+  clock every minute, runs projects in parallel, never one project twice at
+  once, and bounds a run at 30 minutes.
+- **Gates run in the working folder, not in a clean checkout.** A session
+  editing the project at that moment can make them red for a reason that is not a
+  defect; the task text says what ran and when, and the same failure the next night
+  is not filed again while the task is open.
+- **No bound method, no GUI.** The schedule is configuration; the result is a
+  task in the queue the Queue panel already shows. Hence nothing in the Wails
+  table and no MCP tool.
+
 ## The "waiting for you" screen (WS-08)
 
 With several sessions in several projects, finding the one that is stuck meant

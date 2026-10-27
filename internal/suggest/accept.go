@@ -53,13 +53,71 @@ func ValidQueueFile(name string) bool {
 // It returns the pointers appended, in order. Nothing is written when picked
 // is empty. The caller must pass only suggestions a human ticked.
 func Accept(root, queueFile string, picked []Suggestion) ([]string, error) {
+	return accept(root, queueFile, picked, nil)
+}
+
+// AcceptUnlessOpen is Accept for a task a schedule files by itself (WASTE-TASKS.md
+// WS-10): a suggestion whose key is already in TaskFile is skipped only while
+// its section is still pointed at by one of queueFiles. Once the pointer is
+// gone the task was taken and finished, so the same failure appearing again is
+// a new task, not a duplicate.
+func AcceptUnlessOpen(root, queueFile string, queueFiles []string, picked []Suggestion) ([]string, error) {
+	open := openKeys(root, append([]string{queueFile}, queueFiles...))
+	return accept(root, queueFile, picked, open)
+}
+
+// openKeys returns the keys whose latest section in TaskFile is still pointed
+// at from one of queueFiles.
+func openKeys(root string, queueFiles []string) map[string]bool {
+	out := map[string]bool{}
+	data, err := os.ReadFile(filepath.Join(root, TaskFile))
+	if err != nil {
+		return out
+	}
+	lines := strings.Split(string(data), "\n")
+	line := map[string]int{} // key -> 1-based line of its latest heading
+	for i := 0; i+1 < len(lines); i++ {
+		if !strings.HasPrefix(lines[i], "## ") {
+			continue
+		}
+		if m := keyRe.FindStringSubmatch(lines[i+1]); m != nil {
+			line[m[1]] = i + 1
+		}
+	}
+	pointers := map[string]bool{}
+	for _, q := range queueFiles {
+		if !ValidQueueFile(q) {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(q)))
+		if err != nil {
+			continue
+		}
+		for _, l := range strings.Split(string(b), "\n") {
+			pointers[strings.TrimSpace(l)] = true
+		}
+	}
+	for k, n := range line {
+		if pointers[fmt.Sprintf("%s:%d", TaskFile, n)] {
+			out[k] = true
+		}
+	}
+	return out
+}
+
+// accept writes picked; skip is the set of keys not to write again, nil = every
+// key already in TaskFile.
+func accept(root, queueFile string, picked []Suggestion, skip map[string]bool) ([]string, error) {
 	if len(picked) == 0 {
 		return nil, nil
 	}
 	if !ValidQueueFile(queueFile) {
 		return nil, fmt.Errorf("suggest: %q is not a queue file inside the project", queueFile)
 	}
-	known := acceptedKeys(root)
+	known := skip
+	if known == nil {
+		known = acceptedKeys(root)
+	}
 	taskPath := filepath.Join(root, TaskFile)
 	existing, err := os.ReadFile(taskPath)
 	if err != nil && !os.IsNotExist(err) {
