@@ -99,3 +99,12 @@ func TestResolveCaseInsensitive_NeverEscapesRoot(t *testing.T) {
 		t.Errorf("got %q, want unchanged %q (must not resolve outside root)", got, outside)
 	}
 }
+
+func TestSafeName(t *testing.T) {
+	cases := map[string]string{"abc-1_2.x": "abc-1_2.x", "a b/c": "a_b_c", "..": "_", "": "_", ".x.": "x"}
+	for in, want := range cases {
+		if got := SafeName(in); got != want {
+			t.Errorf("SafeName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

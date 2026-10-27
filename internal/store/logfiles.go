@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"claude-manager/internal/buildinfo"
 	"claude-manager/internal/config"
 )
 
@@ -37,13 +38,16 @@ func RenderExport(sessionID string, entries []LogEntry, format string) ([]byte, 
 	case "json":
 		return json.MarshalIndent(struct {
 			Session string     `json:"session"`
+			Machine string     `json:"machine"`
+			Build   string     `json:"build"`
 			Entries []LogEntry `json:"entries"`
-		}{Session: sessionID, Entries: entries}, "", "  ")
+		}{Session: sessionID, Machine: buildinfo.Host(), Build: buildinfo.Revision(), Entries: entries}, "", "  ")
 
 	case "md":
 		var b strings.Builder
 		fmt.Fprintf(&b, "# Session log — %s\n\n", sessionID)
 		fmt.Fprintf(&b, "_Saved %s, %d entries._\n\n", time.Now().Format(time.RFC3339), len(entries))
+		fmt.Fprintf(&b, "_Machine %s · build %s_\n\n", buildinfo.Host(), buildinfo.Revision())
 		for _, e := range entries {
 			fmt.Fprintf(&b, "- `%s` **%s** %s\n",
 				e.Timestamp.Format("15:04:05"),
@@ -59,7 +63,8 @@ func RenderExport(sessionID string, entries []LogEntry, format string) ([]byte, 
 	default: // txt
 		var b strings.Builder
 		fmt.Fprintf(&b, "Session log — %s\n", sessionID)
-		fmt.Fprintf(&b, "Saved %s\n\n", time.Now().Format(time.RFC3339))
+		fmt.Fprintf(&b, "Saved %s\n", time.Now().Format(time.RFC3339))
+		fmt.Fprintf(&b, "Machine %s · build %s\n\n", buildinfo.Host(), buildinfo.Revision())
 		for _, e := range entries {
 			fmt.Fprintf(&b, "[%s] %-7s %s\n",
 				e.Timestamp.Format("15:04:05"),

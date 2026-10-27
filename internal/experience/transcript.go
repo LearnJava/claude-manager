@@ -78,6 +78,8 @@ type Trajectory struct {
 	SessionID   string
 	ProjectPath string
 	Branch      string
+	Machine     string // host that wrote the log ("" for logs without a _Machine line)
+	Build       string // manager build (revision) that wrote it
 	Steps       []Step
 	Skipped     int
 
