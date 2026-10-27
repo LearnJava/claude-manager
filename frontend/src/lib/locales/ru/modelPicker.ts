@@ -3,6 +3,9 @@
 export default {
     'modelPicker.title': 'Запуск сессии',
     'modelPicker.analyzing': 'Анализ сложности задачи…',
+    'modelPicker.analyzingHint': 'Claude читает задачу и подбирает модель и уровень усилий. Обычно это занимает 10–30 секунд. Можно подождать или выбрать модель самому.',
+    'modelPicker.analyzingSlow': 'Анализ идёт дольше обычного — можно не ждать и выбрать вручную.',
+    'modelPicker.secondsShort': ' с',
     'modelPicker.skipAnalysis': 'Пропустить анализ — выбрать вручную',
     'modelPicker.noRecommendation': 'Нет рекомендации (промпт не настроен).',
     'modelPicker.complexity': 'Сложность:',

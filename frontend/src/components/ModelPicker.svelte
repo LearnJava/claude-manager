@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { createEventDispatcher } from 'svelte';
+    import { createEventDispatcher, onDestroy } from 'svelte';
     import { t } from '../lib/i18n';
 
     export let project: string;
@@ -48,6 +48,12 @@
     }
 
     load();
+
+    // Seconds since the analysis started — shown so the wait visibly moves.
+    // The analysis is a full CLI run and can take tens of seconds.
+    let elapsed = 0;
+    const timer = setInterval(() => { if (loading) elapsed += 1; }, 1000);
+    onDestroy(() => clearInterval(timer));
 
     // Skip waiting for the analysis entirely — go straight to manual choice.
     function skipAnalysis() {
@@ -106,11 +112,21 @@
 
         <!-- Body -->
         {#if loading}
-            <div class="text-text-muted text-sm py-4 text-center flex flex-col items-center gap-2">
-                <span>{$t('modelPicker.analyzing')}</span>
+            <div class="text-text-muted text-sm py-3 text-center flex flex-col items-center gap-3"
+                 data-testid="model-picker-analyzing">
+                <div class="flex items-center gap-2 text-text">
+                    <span class="shrink-0 inline-block w-4 h-4 rounded-full border-2
+                                 border-blue-400 border-t-transparent animate-spin"></span>
+                    <span>{$t('modelPicker.analyzing')}</span>
+                    <span class="font-mono text-text-muted" data-testid="model-picker-elapsed">{elapsed}{$t('modelPicker.secondsShort')}</span>
+                </div>
+                <div style="font-size:13px">{$t('modelPicker.analyzingHint')}</div>
+                {#if elapsed >= 30}
+                    <div class="text-status-ratelimit" style="font-size:13px">{$t('modelPicker.analyzingSlow')}</div>
+                {/if}
                 <button
                     type="button"
-                    class="text-blue-400 hover:underline"
+                    class="px-3 py-1 rounded border border-blue-500/60 text-blue-400 hover:bg-blue-500/10"
                     style="font-size:13px"
                     on:click={skipAnalysis}>
                     {$t('modelPicker.skipAnalysis')}

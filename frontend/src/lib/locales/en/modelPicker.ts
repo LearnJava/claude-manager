@@ -3,6 +3,9 @@
 export default {
     'modelPicker.title': 'Start session',
     'modelPicker.analyzing': 'Analyzing task complexity…',
+    'modelPicker.analyzingHint': 'Claude is reading the task to pick a model and effort level. This usually takes 10–30 seconds. Wait, or choose the model yourself.',
+    'modelPicker.analyzingSlow': 'The analysis is taking longer than usual — you can stop waiting and choose manually.',
+    'modelPicker.secondsShort': 's',
     'modelPicker.skipAnalysis': 'Skip analysis — choose manually',
     'modelPicker.noRecommendation': 'No recommendation (no prompt configured).',
     'modelPicker.complexity': 'Complexity:',
