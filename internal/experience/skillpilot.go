@@ -118,6 +118,10 @@ type SkillPilotParams struct {
 	// day in this project; 0 = no cap (the run-gap and one-trial-at-a-time
 	// rules still bound it).
 	DailyBudgetUSD float64
+	// HookRules turns on deciding finished hook-rule trials (WS-03,
+	// [optimization] hook_rules). Off: the tick never touches hook_rules or
+	// the project's files.
+	HookRules bool
 }
 
 // SkillPilotReport says what one Tick did.
@@ -130,6 +134,9 @@ type SkillPilotReport struct {
 	RulesApplied  []string `json:"rules_applied,omitempty"`
 	RulesKept     []string `json:"rules_kept,omitempty"`
 	RulesReverted []string `json:"rules_reverted,omitempty"`
+	// Hook rules (WS-03): the rules' kinds.
+	HookRulesKept     []string `json:"hook_rules_kept,omitempty"`
+	HookRulesReverted []string `json:"hook_rules_reverted,omitempty"`
 	// Idle names why no distillation happened this tick ("busy",
 	// "trial_in_progress", "gap", "budget", "no_candidate"); "" when one did.
 	Idle string `json:"idle,omitempty"`
@@ -138,7 +145,8 @@ type SkillPilotReport struct {
 // Changed reports whether the tick changed any skill row.
 func (r SkillPilotReport) Changed() bool {
 	return len(r.Applied)+len(r.Kept)+len(r.Archived)+len(r.Rejected)+
-		len(r.RulesApplied)+len(r.RulesKept)+len(r.RulesReverted) > 0
+		len(r.RulesApplied)+len(r.RulesKept)+len(r.RulesReverted)+
+		len(r.HookRulesKept)+len(r.HookRulesReverted) > 0
 }
 
 // SkillPilot runs the autopilot; one instance serves every project.
@@ -186,6 +194,19 @@ func (p *SkillPilot) Tick(ctx context.Context, params SkillPilotParams) (SkillPi
 	// A failing rules step must not starve skills: run distillNext anyway
 	// and return the first error.
 	rulesErr := p.rulesStep(ctx, params, &rep)
+	if params.HookRules {
+		changes, err := EvaluateHookTrials(p.deps.Store, params.Project, params.ProjectPath)
+		for _, c := range changes {
+			if c.Kept {
+				rep.HookRulesKept = append(rep.HookRulesKept, c.Rule.Kind)
+			} else {
+				rep.HookRulesReverted = append(rep.HookRulesReverted, c.Rule.Kind)
+			}
+		}
+		if err != nil && rulesErr == nil {
+			rulesErr = err
+		}
+	}
 	err := p.distillNext(ctx, params, &rep)
 	if rulesErr != nil {
 		return rep, rulesErr
