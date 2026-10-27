@@ -68,7 +68,7 @@ MCP отдаёт пустой список. Причина: `SessionManager.GetS
 `cd frontend && npx playwright test tests/log-feed.spec.ts` без `env -u` поднимает
 свой сервер и проходит; с `CM_PW_CONTROL_TOKEN` используется внешний сервер.
 
-## FIX-03: В тестовом мосте нет GetSessionRoadmap и других методов
+## FIX-03: В тестовом мосте нет GetSessionRoadmap и других методов ✓ DONE (2026-10-28)
 
 **Depends on:** —
 
