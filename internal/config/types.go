@@ -103,6 +103,13 @@ type OptimizationSettings struct {
 	// or a work folder must be to be suggested. 0 = built-in default (90 days
 	// for a TODO, 7 for branches and folders).
 	SuggestStaleDays int `toml:"suggest_stale_days"`
+
+	// WaitingScreen adds the "waiting for you" screen (WASTE-TASKS.md WS-08): a
+	// status-bar button with a count that opens one panel over every project,
+	// a row for each session that needs a person (permission, question, stop
+	// reason, rate limit, exhausted gate rounds, empty queue, a mixed task that
+	// needs a human). Purely a view; default off: the status bar is unchanged.
+	WaitingScreen bool `toml:"waiting_screen"`
 }
 
 // Billing modes (GlobalSettings.Billing).

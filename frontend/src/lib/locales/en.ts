@@ -18,6 +18,7 @@ import questionBanner from './en/questionBanner';
 import resumePrompt from './en/resumePrompt';
 import hookRules from './en/hookRules';
 import suggestions from './en/suggestions';
+import waiting from './en/waiting';
 import modelPicker from './en/modelPicker';
 import logStream from './en/logStream';
 import roadmapTree from './en/roadmapTree';
@@ -51,6 +52,7 @@ export default {
     ...resumePrompt,
     ...hookRules,
     ...suggestions,
+    ...waiting,
     ...modelPicker,
     ...logStream,
     ...roadmapTree,
