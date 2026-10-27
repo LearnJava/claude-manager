@@ -8,8 +8,11 @@
  * spawns playwright-server, reads its token from stdout, and stores everything
  * in .playwright-state.json for tests and teardown.
  *
- * If CM_CONTROL_TOKEN is already set the build/spawn steps are skipped and
- * the existing server is used instead.
+ * If CM_PW_CONTROL_TOKEN (and optionally CM_PW_CONTROL_PORT) is set the
+ * build/spawn steps are skipped and that external server is used instead.
+ * CM_CONTROL_TOKEN/CM_CONTROL_PORT are NOT consulted: the manager sets them in
+ * every session it launches (for cm-mcp) and they point at the real manager.
+ * They are overwritten with the test server's values.
  */
 
 import { execSync, spawn, ChildProcess } from 'child_process';
@@ -23,7 +26,7 @@ const __dirname = path.dirname(__filename);
 
 const ROOT = path.resolve(__dirname, '../..');
 const STATE_FILE = path.join(__dirname, '../.playwright-state.json');
-const CM_PORT = process.env.CM_CONTROL_PORT ?? '7334';
+const CM_PORT = process.env.CM_PW_CONTROL_PORT ?? '7334';
 const SCENARIOS_DIR = path.join(ROOT, 'testdata', 'scenarios');
 const WORKER_SCENARIO = path.join(ROOT, 'testdata', 'worker-scenarios', 'clean-round1.json');
 
@@ -39,9 +42,10 @@ export interface PlaywrightState {
 
 export default async function globalSetup(): Promise<void> {
   // If an external server is already running, just validate it.
-  if (process.env.CM_CONTROL_TOKEN) {
+  if (process.env.CM_PW_CONTROL_TOKEN) {
+    process.env.CM_CONTROL_TOKEN = process.env.CM_PW_CONTROL_TOKEN;
     process.env.CM_CONTROL_PORT = CM_PORT;
-    await assertConnectable(CM_PORT, process.env.CM_CONTROL_TOKEN);
+    await assertConnectable(CM_PORT, process.env.CM_PW_CONTROL_TOKEN);
     await warmUpVite();
     return;
   }
