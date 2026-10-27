@@ -20,6 +20,7 @@ import hookRules from './en/hookRules';
 import suggestions from './en/suggestions';
 import learned from './en/learned';
 import waiting from './en/waiting';
+import quality from './en/quality';
 import modelPicker from './en/modelPicker';
 import logStream from './en/logStream';
 import roadmapTree from './en/roadmapTree';
@@ -55,6 +56,7 @@ export default {
     ...suggestions,
     ...learned,
     ...waiting,
+    ...quality,
     ...modelPicker,
     ...logStream,
     ...roadmapTree,

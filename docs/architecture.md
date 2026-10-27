@@ -328,6 +328,7 @@ claude-manager/
 │   │   ├── PermissionQueue.svelte   # Global permission queue (all sessions)
 │   │   ├── WaitingScreen.svelte     # WS-08: "waiting for you" overlay body, one row per session that needs a person
 │   │   ├── LearnedFiles.svelte      # WS-09: Waste tab block — lessons to export/import/retire, conflicts need a choice, applied only for ticked rows
+│   │   ├── QualityPanel.svelte      # Experience "Quality" tab — reference cases with replay (WS-06), quality labels (WS-11), benchmark form + report (WS-12)
 │   │   ├── PlanReview.svelte        # Pre-flight analysis plan view/edit/approve
 │   │   ├── StatusBar.svelte         # Bottom bar: active count, waiting, cost, rate limit
 │   │   ├── History.svelte           # Past runs table with filter, sort, CSV export

@@ -243,6 +243,13 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         // ImportProjectLogs (LEARN-TASKS.md LN-20) writes to the same store as
         // GetTopActions above — same reason, same empty stub shape. Tests that
         // need to see a populated result override it per-test.
+        // Reference cases / labels / benchmark (WS-06, WS-11, WS-12) read the
+        // same store playwright-server never opens; tests override per-test.
+        GetReferenceReport: () => Promise.resolve({ Project: '', Cases: [] }),
+        ReplayReferenceCase: () => Promise.resolve(null),
+        GetTaskLabels: () => Promise.resolve({ Project: '', Total: 0, Tokens: 0, Counts: [], Recent: [] }),
+        GetBenchmarkReport: () => Promise.resolve({ RunID: 0 }),
+        RunBenchmark: () => Promise.reject(new Error('benchmark is off')),
         ImportProjectLogs: () =>
           Promise.resolve({ Files: 0, Runs: 0, Actions: 0, Skipped: 0, Errors: 0 }),
       };
