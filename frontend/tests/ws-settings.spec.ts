@@ -40,6 +40,9 @@ test('project gates and nightly run are on the Projects tab, gate rounds on Sess
   await expect(modal.getByTestId('gate-schedule-queue-0')).toBeVisible();
   await modal.getByRole('button', { name: 'Sessions' }).click();
   await expect(modal.getByTestId('session-gate-rounds')).toBeVisible();
+  // A missing locale key renders as the key itself.
+  await expect(modal.getByText('Rework rounds on red gates (0 = off)')).toBeVisible();
+  await expect(modal.getByText('settings.sessions', { exact: false })).toHaveCount(0);
 });
 
 test('Quality tab says how to turn on what is off', async ({ page }) => {
