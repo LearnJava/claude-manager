@@ -79,6 +79,19 @@ func (s *Session) onLoop(hit *optimization.LoopDetected) {
 		"count", hit.Count, "action", action)
 
 	msg := fmt.Sprintf("Possible loop: `%s` repeated %d times in the last %d tool calls.", what, hit.Count, hit.WindowSize)
+	if hit.Far {
+		msg = fmt.Sprintf("Possible loop: `%s` repeated %d times in this run.", what, hit.Count)
+	}
+	// What broke this loop the last time, if it was seen before (loop_memory).
+	// Asked before the new event is stored, so a loop never answers itself.
+	var past string
+	if s.loopMemory != nil {
+		past = s.loopMemory.Hint(hit.Tool, hit.Input)
+		s.loopMemory.Record(hit)
+	}
+	if past != "" {
+		msg += " " + past
+	}
 	switch action {
 	case optimization.LoopActionSendHint:
 		msg += " Sending the agent a hint."
@@ -94,6 +107,12 @@ func (s *Session) onLoop(hit *optimization.LoopDetected) {
 	case optimization.LoopActionSendHint:
 		hint := fmt.Sprintf("%s (`%s` was repeated %d times in your last %d tool calls.)",
 			hit.Hint, what, hit.Count, hit.WindowSize)
+		if hit.Far {
+			hint = fmt.Sprintf("%s (`%s` was repeated %d times in this run.)", hit.Hint, what, hit.Count)
+		}
+		if past != "" {
+			hint += " " + past
+		}
 		data, err := json.Marshal(userMessage(hint))
 		if err == nil {
 			err = s.queueInput(append(data, '\n'))
@@ -107,6 +126,9 @@ func (s *Session) onLoop(hit *optimization.LoopDetected) {
 			"The session manager stopped the previous run of this session: it repeated `%s` %d times within %d tool calls "+
 				"without getting further. Do not repeat that. Check git status and where the task stands, then continue "+
 				"it with a different approach.", what, hit.Count, hit.WindowSize)
+		if past != "" {
+			s.pendingLoopNote += " " + past
+		}
 		cancel := s.cancelRun
 		s.mu.Unlock()
 		s.loopRestartHit.Store(true)

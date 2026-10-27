@@ -141,6 +141,14 @@ func (a *App) startup(ctx context.Context) {
 			res, err := experience.IngestRun(st, project, sessionName, runID, cliSessionID, projectPath, taskPtr, mdLogPath)
 			return session.IngestResult{Rows: res.Rows, Reason: res.Reason}, err
 		})
+		// Loop history (WASTE-TASKS.md WS-04): only built for a session when
+		// [optimization] loop_memory is on.
+		a.manager.SetLoopMemory(
+			func(project, sessionName, projectPath string, runID func() int64) optimization.LoopMemory {
+				return experience.NewLoopMemory(st, project, sessionName, projectPath, runID)
+			},
+			func(runID int64) (int, error) { return experience.ResolveRunLoops(st, runID) },
+		)
 	}
 
 	// Wire the context primer (LEARN-TASKS.md LN-05): only ever called for a
