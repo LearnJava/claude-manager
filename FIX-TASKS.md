@@ -2,8 +2,8 @@
 
 Очередь — [STATUS-P1.md](./STATUS-P1.md). Задачи независимы друг от друга.
 
-Как запускать GUI-тесты Playwright из сессии внутри менеджера (пока не сделана
-FIX-02): `cd frontend && env -u CM_CONTROL_TOKEN -u CM_CONTROL_PORT npx playwright test <spec>`.
+Как запускать GUI-тесты Playwright из сессии внутри менеджера (FIX-02 ✓ DONE,
+`CM_CONTROL_TOKEN` игнорируется): `cd frontend && npx playwright test <spec>`.
 Если на машине уже запущен чужой Vite на 5173, добавьте `CM_VITE_PORT=5199`.
 
 ## FIX-01: Лог работающей сессии через cm-mcp пустой
