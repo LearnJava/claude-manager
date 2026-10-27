@@ -204,6 +204,8 @@ manager_card = true                       # Карточка менеджера:
 # git-репозиторий без remote. Пусто = <checkout claude-manager>/projects.
 mirror_dir = ""
 mirror_interval_min = 15                  # период пересинхронизации, 0 = только старт/сохранение/кнопка
+# logs_repo = "git@github.com:LearnJava/cm-logs.git"  # репозиторий логов всех компов; пусто = выключено
+logs_interval_min = 60                    # период отправки логов, 0 = только кнопка
 
 # ─── Проект 1 ───────────────────────────────────────────
 

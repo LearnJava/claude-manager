@@ -84,6 +84,38 @@ projects/                     <checkout>/projects, or [settings] mirror_dir
   git config is written, and `core.autocrlf=false` so copies are byte-exact.
   Files over 5 MB are skipped.
 
+### Log Shipping (cm-logs)
+
+The manager runs on several machines, each with its own logs: run logs
+`<project>/.claude-manager/logs/*.md` (gitignored, so they never travel with the
+project) and the manager's `~/.claude-manager/logs/{app,crash,cmdguard}.log`.
+To review the manager across all machines, each one pushes its logs to one
+private repository (`logs_repo`, e.g. `cm-logs`). Off by default: an empty
+`logs_repo` clones and sends nothing.
+
+- **Layout.** `logs/<host>/machine.md` (build, Go version, projects, last push),
+  `logs/<host>/manager/<name>-<date>.log` (only the new bytes of each manager
+  log per day) and `logs/<host>/<project>/<YYYY-MM>/<run log>.md`. A machine
+  only changes its own `logs/<host>/`, so pushes from different machines never
+  conflict; `ANALYZED.md` belongs to the review skill and is never touched.
+- **Marks live outside the clone.** What was already sent (per-project last log
+  stamp, per-file byte offsets) is in `logship.json` in the data dir, not in the
+  repository, so a recreated repository does not make the manager resend old
+  logs. Marks move only after a successful push.
+- **Reset to `origin/main`, not rebase.** Every pass (and every retry after a
+  rejected push, up to 3) first resets the clone to the remote branch and then
+  re-collects, so a retry cannot duplicate lines. An empty or recreated remote
+  is picked up as a fresh repository on branch `main`. No force-push, no
+  history rewriting, no `git config` (identity and `core.autocrlf=false` are
+  passed with `-c`).
+- **Masking.** Known secret shapes and the control-plane token are replaced by
+  `***` before a byte is written into the clone, in run logs and manager logs.
+- **When.** 30 s after start, every `logs_interval_min` minutes (default 60,
+  0 = timer off), after a settings save and from Settings → Global → "Send now"
+  (`ShipLogsNow`, MCP `ship_logs_now`; state: `get_log_ship_status`). Passes
+  never overlap (`app_logship.go`); a failure is logged as `logship` at Warn and
+  shown in the status line.
+
 ### Bidirectional Streaming
 Sessions use `--input-format stream-json` + `--output-format stream-json`. Manager writes to stdin (user messages, permission responses) and reads stdout (events). This enables interactive sessions, not just one-shot `-p` calls.
 

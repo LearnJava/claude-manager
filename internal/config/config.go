@@ -368,6 +368,7 @@ func defaults() *AppConfig {
 			EnvCard:                      true,
 			ManagerCard:                  true,
 			MirrorIntervalMin:            15,
+			LogsIntervalMin:              60,
 		},
 		Optimization: optimizationDefaults(),
 	}

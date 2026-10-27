@@ -159,6 +159,8 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         MirrorProject: (project: string) => rpc('MirrorProject', { project }),
         UnmirrorProject: (project: string) => rpc('UnmirrorProject', { project }),
         SyncProjectMirrors: () => rpc('SyncProjectMirrors', {}),
+        GetLogShipStatus: () => rpc('GetLogShipStatus', {}),
+        ShipLogsNow: () => rpc('ShipLogsNow', {}),
         HasSessionProtocol: (project: string) =>
           rpc<{ installed?: boolean }>('HasSessionProtocol', { project }).then(
             (r) => (r as { installed?: boolean })?.installed ?? false,

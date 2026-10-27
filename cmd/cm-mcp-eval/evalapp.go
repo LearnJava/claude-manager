@@ -82,6 +82,8 @@ func (a *evalApp) InitGitRepo(string) error                        { return errN
 func (a *evalApp) MirrorProjectStatus(string) (any, error)         { return nil, errNoGUI }
 func (a *evalApp) UnmirrorProject(string) error                    { return errNoGUI }
 func (a *evalApp) SyncProjectMirrorsResults() (any, error)         { return nil, errNoGUI }
+func (a *evalApp) ShipLogsNowResult() (any, error)                  { return nil, errNoGUI }
+func (a *evalApp) LogShipStatusOf() any                             { return nil }
 func (a *evalApp) MirrorStatusOf(string) any                       { return nil }
 
 // PlanningApp.

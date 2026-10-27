@@ -12,6 +12,8 @@
         MirrorProject,
         UnmirrorProject,
         SyncProjectMirrors,
+        GetLogShipStatus,
+        ShipLogsNow,
         InstallSessionProtocol,
         HasSessionProtocol,
     } from '../../wailsjs/go/main/App';
@@ -143,6 +145,8 @@
         WeeklyBudgetAlert: number;
         RateLimitAlertThreshold: number;
         SessionStartDelay?: number;
+        LogsRepo?: string;
+        LogsIntervalMin?: number;
     }
 
     interface OptimizationSettings {
@@ -326,6 +330,8 @@
             WeeklyBudgetAlert: 0,
             RateLimitAlertThreshold: 0.8,
             SessionStartDelay: 3,
+            LogsRepo: '',
+            LogsIntervalMin: 60,
             ...(raw?.Settings ?? {}),
         };
         // Spread first: fields this form does not edit (Mirror, Journal,
@@ -382,6 +388,7 @@
             }
             loadAllProjectLogInfo();
             loadAllRoadmapDrafts();
+            loadLogShip();
         } catch (e: any) {
             error = $t('settings.msg.loadFailed', { error: e?.message ?? String(e) });
         } finally {
@@ -661,6 +668,34 @@
             if (p.Path) loadProjectLogInfo(i);
             loadProjectMirror(i);
         });
+    }
+
+    // ---- Log shipping: run logs and manager logs pushed to one repository
+    // (internal/logship) ----
+    type LogShipStatus = { enabled: boolean; repo: string; host: string; lastRun: string; files: number; error: string };
+    let logShip: LogShipStatus | null = null;
+    let logShipBusy = false;
+
+    async function loadLogShip() {
+        try {
+            logShip = (await GetLogShipStatus()) as LogShipStatus;
+        } catch {
+            logShip = null;
+        }
+    }
+
+    async function shipLogsNow() {
+        logShipBusy = true;
+        error = '';
+        try {
+            await ShipLogsNow();
+            info = $t('settings.logs.done');
+        } catch (e: any) {
+            error = $t('settings.logs.failed', { error: e?.message ?? String(e) });
+        } finally {
+            await loadLogShip();
+            logShipBusy = false;
+        }
     }
 
     // ---- Project mirror: a local copy of the project's settings and logs in
@@ -969,6 +1004,54 @@
                                     title={$t('settings.general.sessionStartDelayTitle')}
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                             </label>
+                        </div>
+                    </section>
+
+                    <section data-testid="log-ship">
+                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.logs.heading')}</h3>
+                        <div class="space-y-2">
+                            <div class="grid grid-cols-2 gap-3">
+                                <label class="flex flex-col text-xs text-text-muted gap-1">
+                                    {$t('settings.logs.repo')}
+                                    <input
+                                        type="text"
+                                        data-testid="logs-repo"
+                                        bind:value={gs.LogsRepo}
+                                        placeholder="git@github.com:owner/cm-logs.git"
+                                        class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                                </label>
+                                <label class="flex flex-col text-xs text-text-muted gap-1">
+                                    {$t('settings.logs.interval')}
+                                    <input
+                                        type="number"
+                                        data-testid="logs-interval"
+                                        bind:value={gs.LogsIntervalMin}
+                                        min="0"
+                                        class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                                </label>
+                            </div>
+                            <p class="text-xs text-text-muted leading-relaxed">{$t('settings.logs.hint')}</p>
+                            <div class="flex items-center gap-3 text-xs text-text-muted">
+                                <button
+                                    type="button"
+                                    data-testid="logs-ship-now"
+                                    on:click={shipLogsNow}
+                                    disabled={logShipBusy || !logShip?.enabled}
+                                    title={$t('settings.logs.shipTitle')}
+                                    class="px-2 py-1 rounded border border-bg-border text-text hover:bg-bg disabled:opacity-50">
+                                    {#if logShipBusy}…{:else}{$t('settings.logs.shipButton')}{/if}
+                                </button>
+                                <span data-testid="logs-status">
+                                    {#if !logShip?.enabled}
+                                        {$t('settings.logs.off')}
+                                    {:else if logShip.lastRun}
+                                        {$t('settings.logs.last', { files: logShip.files, time: new Date(logShip.lastRun).toLocaleString() })}
+                                    {:else}
+                                        {$t('settings.logs.waiting')}
+                                    {/if}
+                                    {#if logShip?.error}<span class="text-red-400"> · {logShip.error}</span>{/if}
+                                </span>
+                            </div>
                         </div>
                     </section>
 

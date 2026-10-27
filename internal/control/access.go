@@ -104,7 +104,7 @@ var rpcLevels = map[string]AccessLevel{
 	"SessionPreflight": LevelOperate, "ExecutePlan": LevelOperate, "RegisterMixedBrief": LevelOperate,
 	"DispatchMixedTask": LevelOperate, "CancelMixedTask": LevelOperate,
 	"StartSessionWithModel": LevelOperate, "StartAdHocChatSession": LevelOperate,
-	"SyncProjectMirrors": LevelOperate,
+	"SyncProjectMirrors": LevelOperate, "ShipLogsNow": LevelOperate, "GetLogShipStatus": LevelRead,
 	"AnswerQuestion":     LevelOperate, "SendMessageWithImages": LevelOperate, "SetSessionRuntime": LevelOperate, "SetSessionModel": LevelOperate,
 	// admin
 	"StopAll": LevelAdmin, "StopProject": LevelAdmin, "ClearSessionState": LevelAdmin,

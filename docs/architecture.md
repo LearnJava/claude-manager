@@ -515,6 +515,8 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `MirrorProject(project)` | "Mirror into Claude Manager": set the project's `mirror` flag and sync it now → `ProjectMirrorStatus` |
 | `UnmirrorProject(project)` | Clear the `mirror` flag; the copy and its history stay |
 | `SyncProjectMirrors()` | Re-sync every mirrored project now → `[]mirror.Result` |
+| `ShipLogsNow()` | One log-shipping pass now (`logs_repo` must be set; `app_logship.go`) → `logship.Result` |
+| `GetLogShipStatus()` | `LogShipStatus`: `enabled`, `repo`, `host`, `lastRun`, `files`, `error` of the last pass this run |
 | `GetProjectMirror(project)` | `{enabled, dir, lastSync, files, error}` for Settings |
 | `ClearSessionState(project, name)` | Delete crash-recovery state file (equivalent to --new) |
 | `GetSessionState(project, name)` | Return persisted state (session_id + started_at) or nil |
