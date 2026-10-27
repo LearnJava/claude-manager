@@ -69,6 +69,12 @@ type OptimizationSettings struct {
 	// (experience.DefaultEmptySearchChars / DefaultOversizedReadTokens).
 	WasteEmptySearchChars    int `toml:"waste_empty_search_chars"`
 	WasteOversizedReadTokens int `toml:"waste_oversized_read_tokens"`
+
+	// HookRules enables generated PreToolUse hook rules (WASTE-TASKS.md
+	// WS-03): the Waste tab proposes rules, shows the diff against the
+	// project's .claude/ files and installs one only on the user's approval.
+	// Default off: nothing is proposed, written or measured.
+	HookRules bool `toml:"hook_rules"`
 }
 
 // Billing modes (GlobalSettings.Billing).

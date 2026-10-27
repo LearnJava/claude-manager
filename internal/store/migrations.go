@@ -198,6 +198,24 @@ CREATE TABLE IF NOT EXISTS skills (
 	// failure_rules (LEARN-TASKS.md LN-37): one row per recurring error, from
 	// draft through the user's decision. UNIQUE(project, error_key) keeps a
 	// dismissed rule from being proposed again.
+	// hook_rules (WASTE-TASKS.md WS-03): a rule of the generated PreToolUse
+	// hook in the project's .claude/hooks/. UNIQUE(project, kind, param) keeps
+	// a dismissed or reverted rule from being proposed again.
+	sqlCreateHookRules = `
+CREATE TABLE IF NOT EXISTS hook_rules (
+    id         INTEGER PRIMARY KEY,
+    project    TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    param      TEXT NOT NULL DEFAULT '',
+    hint       TEXT NOT NULL DEFAULT '',
+    status     TEXT NOT NULL,
+    origin     TEXT NOT NULL DEFAULT 'manual',
+    reason     TEXT NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL,
+    decided_at DATETIME,
+    UNIQUE(project, kind, param)
+)`
+
 	sqlCreateFailureRules = `
 CREATE TABLE IF NOT EXISTS failure_rules (
     id            INTEGER PRIMARY KEY,
@@ -238,6 +256,7 @@ func migrate(db *sql.DB) error {
 		sqlCreatePermissionEvents,
 		sqlCreateSkills,
 		sqlCreateFailureRules,
+		sqlCreateHookRules,
 		sqlIdxLogsRun,
 		sqlIdxRunsProject,
 		sqlIdxBriefsProject,

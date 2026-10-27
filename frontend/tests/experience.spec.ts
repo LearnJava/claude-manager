@@ -225,6 +225,47 @@ test.describe('Experience panel', () => {
     await expect(modal).not.toBeVisible({ timeout: 3_000 });
   });
 
+  test('Waste tab: hook rules show a diff first and install only on approval (WS-03)', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Experience' }).click();
+    const modal = page.getByRole('dialog');
+    await modal.getByTestId('tab-waste').click();
+    // Feature off (the default stub): the block is not rendered at all.
+    await expect(modal.getByText(/No recorded tool calls/i)).toBeVisible({ timeout: 5_000 });
+    await expect(modal.getByTestId('hook-rules')).toHaveCount(0);
+
+    await page.evaluate(() => {
+      const App = (window as any).go.main.App;
+      const w = window as any;
+      w.__applied = [];
+      let status = 'draft';
+      const eff = { runs_before: 0, runs_after: 0, steps_before: 0, steps_after: 0, errors_before: 0, errors_after: 0 };
+      App.GetHookRules = () =>
+        Promise.resolve({ Enabled: true, TrialRuns: 10, Rules: [{ ID: 4, Kind: 'repeat_read', Param: '', Hint: '', Status: status, Effect: eff, Why: null }] });
+      App.PreviewHookRule = () =>
+        Promise.resolve({ Files: [{ Path: '.claude/hooks/cm-waste-guard.py', Diff: '+RULES = []', Delete: false }] });
+      App.ApplyHookRule = (id: number) => {
+        w.__applied.push(id);
+        status = 'trial';
+        return Promise.resolve();
+      };
+    });
+    await modal.getByRole('button', { name: '✕' }).click();
+    await page.getByRole('button', { name: 'Experience' }).click();
+    await modal.getByTestId('tab-waste').click();
+
+    const draft = modal.getByTestId('hook-rule-draft-repeat_read');
+    await expect(draft).toBeVisible({ timeout: 5_000 });
+    await expect(draft.getByTestId('hook-rule-install')).toHaveCount(0); // no install before the diff is seen
+    await draft.getByTestId('hook-rule-diff-btn').click();
+    await expect(draft.getByTestId('hook-rule-diff')).toContainText('+RULES = []');
+    expect(await page.evaluate(() => (window as any).__applied)).toEqual([]);
+
+    await draft.getByTestId('hook-rule-install').click();
+    await expect.poll(() => page.evaluate(() => (window as any).__applied)).toEqual([4]);
+    await expect(modal.getByTestId('hook-rule-installed-repeat_read')).toBeVisible();
+  });
+
   test('Waste tab: clean window, then categories with examples (WS-01)', async ({ page }) => {
     await page.goto('/');
 

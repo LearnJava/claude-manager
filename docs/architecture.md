@@ -203,6 +203,13 @@ claude-manager/
 │   │   │                            #   useless calls per run (repeat_read, empty_search,
 │   │   │                            #   oversized_read, rerun_cmd), priced like attribution.go;
 │   │   │                            #   the "Waste" tab. Read only.
+│   │   ├── hookguard.go / .py       # WS-03: the generated PreToolUse/PostToolUse hook —
+│   │   │                            #   RenderHookScript (embedded hookguard.py + rules JSON),
+│   │   │                            #   PlanHook/ApplyHookPlan (script + settings.json
+│   │   │                            #   registration as a diff, written only on approval).
+│   │   ├── hookrules.go             # WS-03: HookRuleCandidates (waste kinds + commands that
+│   │   │                            #   kept failing), HookRuleEffect, EvaluateHookTrials
+│   │   │                            #   (keep, or take out when runs got longer/more erroneous).
 │   │   ├── duration.go              # LN-18: DurationProfile — median/p90/max/fail-rate per
 │   │   │                            #   signature from action_signatures.dur_sec (n>=10 only);
 │   │   │                            #   durationSection renders the primer's "Command timing"
@@ -441,6 +448,11 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetSkillUsage(project)` | Loads, runs-with-load, runs since last load per skill, keyed by skill ID (LN-24) |
 | `GetSkillAutopilot(project)` / `SetSkillAutopilot(project, enabled, dailyBudgetUSD)` | Read / persist the project's skill-autopilot switch and daily budget (private `config.local.toml`; turning it on also turns on `experience_tracking`) (LN-27) |
 | `RunSkillAutopilot(project)` | One autopilot step now: decide finished trials, then distill, review and apply at most one candidate; errors if the autopilot is off (LN-25/26) |
+| `GetHookRules(project)` | WS-03. The project's hook rules (newest first) with the effect of installed ones (steps and errors per run, before vs after); first decides trials that ran `HookRuleTrialRuns` runs. `Enabled=false` and no side effect unless `[optimization] hook_rules = true`. No MCP tool (see `ApplyHookRule`) |
+| `ProposeHookRules(project)` | WS-03. Stores as drafts the rules the history justifies (repeat_read / empty_search / oversized_read when the Waste report found them; failure_cmd for a Bash command that failed in ≥3 runs and was fixed by another form). Rows only, no files |
+| `PreviewHookRule(id)` | WS-03. The diff installing a draft would make in the project (`.claude/hooks/cm-waste-guard.py`, `.claude/settings.json`); writes nothing |
+| `ApplyHookRule(id)` | WS-03. After the user saw the diff: writes the files, rule → `trial`. One trial at a time. Excluded from MCP: installing writes into the user's repository only on approval in the UI |
+| `RemoveHookRule(id)` | WS-03. A draft → `dismissed`; an installed rule → `reverted`, files rewritten without it (the last rule out deletes both) |
 | `GetFailureRules(project)` | A project's failure rules (newest first) with the examples each was drafted from and, for accepted ones, the effect (hits of the error in the 20 runs before vs the runs after), plus `Pending` — recurring errors without a rule yet (LN-38) |
 | `DraftFailureRules(project, limit)` | Paid: one `claude -p` call per recurring error (first `limit`, ≤ 0 → 3) writes a one-line CLAUDE.md rule; stored as `draft`, or `dismissed` when CLAUDE.md already says it. Writes nothing into the project (LN-38) |
 | `AcceptFailureRule(id, ruleText)` | For a draft, or an applied `trial`/`kept` rule (which then leaves the system prompt, LN-41): appends the (user-edited) rule to the "Learned from failures" section of the project's CLAUDE.md and marks it `accepted`; the only write into the repository (LN-38) |

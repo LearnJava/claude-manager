@@ -23,6 +23,11 @@ import {
     GetSkills,
     GetTokenAttribution,
     GetWasteReport,
+    GetHookRules,
+    ProposeHookRules,
+    PreviewHookRule,
+    ApplyHookRule,
+    RemoveHookRule,
     GetTopActions,
     ImportProjectLogs,
     GetSkillAutopilot,
@@ -623,4 +628,60 @@ export function revertFailureRule(id: number): Promise<void> {
 
 export function restoreFailureRule(id: number): Promise<void> {
     return RestoreFailureRule(id);
+}
+
+// HookRule mirrors store.HookRule + app.HookRuleView (WASTE-TASKS.md WS-03):
+// a rule of the generated PreToolUse hook in the project's .claude/hooks/.
+export interface HookEffect {
+    runs_before: number;
+    runs_after: number;
+    steps_before: number;
+    steps_after: number;
+    errors_before: number;
+    errors_after: number;
+}
+
+export interface HookRule {
+    ID: number;
+    Kind: string;
+    Param: string;
+    Hint: string;
+    Status: string;
+    Effect: HookEffect;
+    Why: { code: string; effect: HookEffect } | null;
+}
+
+export interface HookRulesState {
+    Enabled: boolean;
+    Rules: HookRule[];
+    TrialRuns: number;
+}
+
+export interface HookFileChange {
+    Path: string;
+    Diff: string;
+    Delete: boolean;
+}
+
+export async function fetchHookRules(project: string): Promise<HookRulesState> {
+    const raw = (await GetHookRules(project)) as unknown as HookRulesState | null;
+    return { Enabled: !!raw?.Enabled, Rules: raw?.Rules ?? [], TrialRuns: raw?.TrialRuns ?? 10 };
+}
+
+export async function proposeHookRules(project: string): Promise<number> {
+    return ((await ProposeHookRules(project)) ?? []).length;
+}
+
+// previewHookRule returns the diff installing a draft would make — nothing is written.
+export async function previewHookRule(id: number): Promise<HookFileChange[]> {
+    const plan = (await PreviewHookRule(id)) as unknown as { Files: HookFileChange[] | null };
+    return plan?.Files ?? [];
+}
+
+export function applyHookRule(id: number): Promise<void> {
+    return ApplyHookRule(id);
+}
+
+export function removeHookRule(id: number): Promise<void> {
+    return RemoveHookRule(id);
 }

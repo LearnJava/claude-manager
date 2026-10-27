@@ -2949,7 +2949,55 @@ while `WastedCalls`/`WastedLifetimeTokens` count each call once, at its larger
 loss. `Categories` lists only kinds that occurred, so a clean window is an
 empty list, not a row of zeros. Surfaced as `App.GetWasteReport(project)`,
 the `get_waste_report` MCP tool and the "Waste" tab of the Experience panel.
-The report only reads; acting on it is WS-03.
+The report only reads; acting on it is WS-03 (next section).
+
+## Prohibitions instead of persuasion: hook rules (WS-03)
+
+A learned rule in the system prompt costs tokens on every step and wears off
+by the end of a long session. A `PreToolUse` hook costs nothing and works the
+same on step 1 and step 200 — the project's `guard-self-kill.py` already proved
+the mechanism. `[optimization] hook_rules` (default **off**) turns the Waste
+tab's "Hook rules" block on; with it off no row is written, no file is touched,
+and `GetHookRules` returns `Enabled=false`.
+
+Rule kinds (`hook_rules.kind`, table keyed `UNIQUE(project, kind, param)` so a
+refused or taken-out rule is never proposed again):
+
+| Kind | Stops | Source |
+|---|---|---|
+| `repeat_read` | a Read of the same path/offset/limit, or the same Grep/Glob, with no edit in between (an Edit/Write of that file re-allows the read; any edit re-allows searches — the detector's own definition) | Waste report found `repeat_read` |
+| `empty_search` | a Grep/Glob right after two searches whose results were under 100 chars (needs the PostToolUse half of the same script); it blocks once and resets, so it cannot lock the model out | `empty_search` |
+| `oversized_read` | a Read with no offset/limit of a file over `param` tokens (×4 chars, by `os.path.getsize`) | `oversized_read` |
+| `failure_cmd` | a Bash/PowerShell command containing `param` (whitespace-squashed); the refusal carries `hint`, the form that worked | a Bash command that failed in ≥`MinCandidateRuns` runs and was each time fixed by a different one |
+
+One script, `.claude/hooks/cm-waste-guard.py`, is rendered from the embedded
+template `internal/experience/hookguard.py` with the active rules as a JSON
+literal, and registered in `.claude/settings.json` (a PreToolUse entry, plus a
+PostToolUse one on `Grep|Glob`). Session state (what was read, the empty
+streak) lives in `<tmp>/cm-guard-<session_id>.json`. A refusal is exit code 2
+and states why, what to do instead and the escape hatch: create the empty file
+`<tmp>/cm-guard-<session_id>.allow` and repeat the call — the marker lets the
+next *blocked* call through once and is consumed. The hook fails open: any
+exception exits 0, because a false block on every call is worse than a miss.
+Known limit: after `/compact` the earlier reads are no longer in the model's
+context but the hook still remembers them — the marker covers that.
+
+Approval and trial. `ProposeHookRules` only inserts `draft` rows.
+`PreviewHookRule` returns `experience.PlanHook`'s result — the new text of each
+file and a line diff — and the UI shows it before "Install" even appears;
+`ApplyHookRule` writes it (invariant 2 of the block) and sets `trial`. The
+settings merge keeps every other key and its order, and returns the file
+untouched when the guard is already registered as wanted. A trial is measured
+like failure rules: the last 20 runs before the install against the runs
+after, as steps per run and errors per run. After `HookRuleTrialRuns` (10)
+runs `EvaluateHookTrials` keeps the rule, or — steps per run up more than 10%,
+or errors per run up more than 25% *and* by at least one — marks it `reverted`
+and rewrites the hook without it; the last rule out deletes the script, the
+registration and the folders the feature created. That removal only undoes
+what the user approved. It runs from `SkillPilot.Tick` (when autopilot is on
+for the project) and lazily from `GetHookRules`. One trial at a time, as for
+failure rules. The five `App` methods are in `parityExcluded`: an agent has no
+business approving a write into the user's repository.
 
 ## Billing mode: the limit window and time, not dollars (WS-02)
 

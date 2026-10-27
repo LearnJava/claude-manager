@@ -7,6 +7,7 @@
     import { formatWindowShare } from '../lib/billing';
     import SkillReview from './SkillReview.svelte';
     import FailureReview from './FailureReview.svelte';
+    import HookRules from './HookRules.svelte';
     import { PickDirectory } from '../../wailsjs/go/main/App';
     import { EventsOn } from '../../wailsjs/runtime/runtime';
     import {
@@ -811,6 +812,9 @@
                             </tbody>
                         </table>
                     </div>
+                {/if}
+                {#if project}
+                    <HookRules {project} />
                 {/if}
             {:else if tab === 'cost'}
                 {#if !project}

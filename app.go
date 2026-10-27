@@ -228,6 +228,7 @@ func (a *App) startup(ctx context.Context) {
 		a.manager.SetSkillAutopilot(func(project, projectPath string, gates []string, budget float64) (bool, error) {
 			rep, err := a.skillPilot.Tick(context.Background(), experience.SkillPilotParams{
 				Project: project, ProjectPath: projectPath, Gates: gates, DailyBudgetUSD: budget,
+				HookRules: a.cfg != nil && a.cfg.Optimization.HookRules,
 			})
 			if rep.Changed() || err != nil {
 				logger.L.Info("experience.skill_autopilot", "project", project,
@@ -1900,6 +1901,7 @@ func (a *App) RunSkillAutopilot(project string) (experience.SkillPilotReport, er
 	}
 	return a.skillPilot.Tick(context.Background(), experience.SkillPilotParams{
 		Project: project, ProjectPath: pcfg.Path, Gates: pcfg.Gates, DailyBudgetUSD: pcfg.AutoSkillsDailyBudgetUSD,
+		HookRules: a.cfg.Optimization.HookRules,
 	})
 }
 

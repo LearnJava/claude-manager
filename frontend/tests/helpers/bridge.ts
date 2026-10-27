@@ -202,6 +202,7 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         GetSkills: () => Promise.resolve([]),
         // Failure rules (LEARN-TASKS.md LN-39): same store, same empty stub.
         GetFailureRules: () => Promise.resolve({ Rules: [], Pending: 0 }),
+        GetHookRules: () => Promise.resolve({ Enabled: false, Rules: [], TrialRuns: 10 }),
         DraftFailureRules: () => Promise.resolve([]),
         AcceptFailureRule: () => Promise.resolve(undefined),
         DismissFailureRule: () => Promise.resolve(undefined),

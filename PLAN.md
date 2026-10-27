@@ -3028,6 +3028,7 @@ show_cache_efficiency = true         # Показывать cache efficiency в 
 experience_tracking = false
 # waste_empty_search_chars = 100       # WS-01: Grep/Glob result shorter than this is "empty" (0 = default)
 # waste_oversized_read_tokens = 8000   # WS-01: Read result above this is a whole-file read (0 = default)
+# hook_rules = false                    # WS-03: propose PreToolUse hook rules in the Waste tab; installed only on approval, on trial with auto-revert
 ```
 
 ### 20.5 Автоматические действия менеджера (без участия пользователя)

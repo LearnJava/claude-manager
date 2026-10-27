@@ -16,6 +16,7 @@ import permissionBanner from './en/permissionBanner';
 import permissionQueue from './en/permissionQueue';
 import questionBanner from './en/questionBanner';
 import resumePrompt from './en/resumePrompt';
+import hookRules from './en/hookRules';
 import modelPicker from './en/modelPicker';
 import logStream from './en/logStream';
 import roadmapTree from './en/roadmapTree';
@@ -47,6 +48,7 @@ export default {
     ...permissionQueue,
     ...questionBanner,
     ...resumePrompt,
+    ...hookRules,
     ...modelPicker,
     ...logStream,
     ...roadmapTree,

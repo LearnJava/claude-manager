@@ -45,6 +45,7 @@ rate_limit_alert_threshold = 0.80      # notify when rate-limit utilisation > 80
 # max_turns_auto_adjust = true          # --max-turns = 1.6 × longest recent run, after 5 finished runs (autonomous sessions only; Chat is uncapped)
 # max_turns_default = 50                # floor for that cap
 # experience_tracking = true            # record what agents did into the local DB for the Experience tab (set false to stop opening transcripts)
+# hook_rules = false                    # Waste tab: propose PreToolUse hook rules (forbid a repeated read, ...) as a diff for .claude/hooks/ + settings.json; installed only on approval, on trial with auto-revert (WS-03)
 # waste_empty_search_chars = 100        # Waste tab: a Grep/Glob result shorter than this counts as empty (0 = default)
 # waste_oversized_read_tokens = 8000    # Waste tab: a Read result above this many tokens counts as a whole-file read (0 = default)
 
