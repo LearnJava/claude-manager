@@ -3032,6 +3032,7 @@ experience_tracking = false
 # hook_rules = false                    # WS-03: propose PreToolUse hook rules in the Waste tab; installed only on approval, on trial with auto-revert
 # loop_memory = false                   # WS-04: loops outlive a window and a session (loop_events); a loop broken before is answered with what broke it
 # loop_far_threshold = 6                # WS-04: occurrences of one call in a run that count as a far repeat (0 = default)
+# reference_cases = false               # WS-06: a task that closed well is kept as a reference case (text, base commit, gates, cost); replay it with another model
 ```
 
 ### 20.5 Автоматические действия менеджера (без участия пользователя)

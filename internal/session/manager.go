@@ -372,6 +372,10 @@ type SessionManager struct {
 	loopMemoryFn  LoopMemoryFactory
 	loopResolveFn LoopResolveFunc
 
+	// refCaseFn is nil unless app.go has wired the reference-case recorder
+	// (WASTE-TASKS.md WS-06) — see SetReferenceCases.
+	refCaseFn ReferenceCaseFunc
+
 	// regressionFn is nil unless app.go has wired the cost-regression
 	// detector (LEARN-TASKS.md LN-16); even then, finishRun only calls it
 	// when cfg.Optimization.ExperienceTracking is on — see
@@ -1773,6 +1777,7 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 		ms.mu.Lock()
 		runID := ms.runID
 		ms.mu.Unlock()
+		refCase := m.referenceCaseInfo(ms, ev.RefCase)
 		if runID != 0 {
 			// ev.CLISessionID is the id of the run that just finished, captured
 			// by Session before it rotates s.CLISessionID for the next task
@@ -1781,6 +1786,7 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 			// id, since this handler runs synchronously off the same emit.
 			m.finishRun(ms, "completed", "", ev.CLISessionID)
 		}
+		m.recordReferenceCase(refCase)
 		m.emit(EventNameTaskDone, TaskDoneEvent{ID: id, TasksDone: ev.TasksDone})
 
 	case EvtRunEnd:

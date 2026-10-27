@@ -238,6 +238,48 @@ CREATE TABLE IF NOT EXISTS loop_events (
 
 	sqlIdxLoopEvents = `CREATE INDEX IF NOT EXISTS idx_loop_events_sig ON loop_events(project, sig)`
 
+	// reference_cases (WASTE-TASKS.md WS-06): a task that finished well, kept
+	// as a case with a known right answer — its text, the commit it started
+	// from, the gates it passed and what it cost. gate_cmds is a JSON array.
+	// invalid_reason is '' while the case is usable; set when its base_commit
+	// is gone from the repository. reference_replays holds the same task run
+	// again with another model or setting, next to the original.
+	sqlCreateReferenceCases = `
+CREATE TABLE IF NOT EXISTS reference_cases (
+    id             INTEGER PRIMARY KEY,
+    project        TEXT NOT NULL,
+    task_ptr       TEXT NOT NULL,
+    task_text      TEXT NOT NULL,
+    base_commit    TEXT NOT NULL,
+    gate_cmds      TEXT NOT NULL DEFAULT '[]',
+    result_commit  TEXT NOT NULL DEFAULT '',
+    rounds         INTEGER NOT NULL DEFAULT 0,
+    tokens         INTEGER NOT NULL DEFAULT 0,
+    duration_sec   INTEGER NOT NULL DEFAULT 0,
+    model          TEXT NOT NULL DEFAULT '',
+    effort         TEXT NOT NULL DEFAULT '',
+    created_at     DATETIME NOT NULL,
+    invalid_reason TEXT NOT NULL DEFAULT ''
+)`
+
+	sqlCreateReferenceReplays = `
+CREATE TABLE IF NOT EXISTS reference_replays (
+    id            INTEGER PRIMARY KEY,
+    case_id       INTEGER NOT NULL,
+    model         TEXT NOT NULL DEFAULT '',
+    effort        TEXT NOT NULL DEFAULT '',
+    passed        INTEGER NOT NULL DEFAULT 0,
+    rounds        INTEGER NOT NULL DEFAULT 0,
+    tokens        INTEGER NOT NULL DEFAULT 0,
+    duration_sec  INTEGER NOT NULL DEFAULT 0,
+    result_commit TEXT NOT NULL DEFAULT '',
+    note          TEXT NOT NULL DEFAULT '',
+    created_at    DATETIME NOT NULL
+)`
+
+	sqlIdxReferenceCases   = `CREATE INDEX IF NOT EXISTS idx_reference_cases_project ON reference_cases(project)`
+	sqlIdxReferenceReplays = `CREATE INDEX IF NOT EXISTS idx_reference_replays_case ON reference_replays(case_id)`
+
 	sqlCreateFailureRules = `
 CREATE TABLE IF NOT EXISTS failure_rules (
     id            INTEGER PRIMARY KEY,
@@ -280,6 +322,8 @@ func migrate(db *sql.DB) error {
 		sqlCreateFailureRules,
 		sqlCreateHookRules,
 		sqlCreateLoopEvents,
+		sqlCreateReferenceCases,
+		sqlCreateReferenceReplays,
 		sqlIdxLogsRun,
 		sqlIdxRunsProject,
 		sqlIdxBriefsProject,
@@ -288,6 +332,8 @@ func migrate(db *sql.DB) error {
 		sqlIdxPermEvtProject,
 		sqlIdxSkillsProject,
 		sqlIdxLoopEvents,
+		sqlIdxReferenceCases,
+		sqlIdxReferenceReplays,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {

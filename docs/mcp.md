@@ -447,6 +447,8 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `get_duration_profile` | read | только чтение, идемпотентное | Show how long each kind of tool call takes in a project: median, 90th percentile, maximum, total and failure rate. |
 | `get_token_attribution` | read | только чтение, идемпотентное | Estimate which tool calls fill a project's context: tokens per signature, per tool and per result length. |
 | `get_waste_report` | read | только чтение, идемпотентное | Find work in a project that succeeded and still bought nothing: reads repeated with no edit between, streaks of empty searches, whole-file reads, commands rerun unchanged. Per category: count, estimated tokens, share of the project's volume and examples. |
+| `get_reference_report` | read | только чтение, идемпотентное | List a project's reference cases - finished tasks kept with their text, starting commit, gates and cost - and, per task, every model/setting that has run it: whether the gates went green, in how many rework rounds, with how many tokens and how much time. |
+| `replay_reference_case` | operate | запускает модель | Run a stored reference case again with another model or effort: a detached worktree at the case's starting commit, the task text as the prompt, the same gates, up to two rework rounds on red gates. The outcome is stored next to the original. |
 | `get_model_advice` | read | только чтение, идемпотентное | Say whether automatic model routing is on and which model and effort it recommends for a configured session's prompt. |
 | `session_preflight` | operate | запускает модель | Run the preflight analysis the settings of a session call for (what the Start button does) and return the plan to review, or nothing when the session should simply start. |
 | `generate_roadmap` | operate | запускает модель | Split a whole project idea into a backlog of phases and tasks and save it as a draft roadmap plan. |
@@ -644,8 +646,8 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `GetModelRecommendation` | `get_model_advice` | read |
 | `GetPendingPermissions` | `get_pending` | read |
 | `GetPendingPermissions` | `get_pending_permissions` | read |
-| `GetPendingQuestions` | `get_pending` | read |
 | `GetPendingQuestions` | `get_pending_questions` | read |
+| `GetPendingQuestions` | `get_pending` | read |
 | `GetPermissionCandidates` | `get_permission_candidates` | read |
 | `GetPlan` | `get_plan` | read |
 | `GetProjectLogFiles` | `get_project_log_files` | read |
@@ -653,6 +655,7 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `GetProjectTokens` | `get_cost` | read |
 | `GetProjects` | `get_projects` | read |
 | `GetRateLimitStatus` | `get_rate_limit` | read |
+| `GetReferenceReport` | `get_reference_report` | read |
 | `GetRoadmapRowDetail` | `get_roadmap_row_detail` | read |
 | `GetRoadmapTaskDetail` | `get_roadmap_task_detail` | read |
 | `GetSessionLog` | `get_session_logs` | read |
@@ -676,6 +679,7 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `ListSlashCommands` | `list_slash_commands` | read |
 | `MirrorProject` | `mirror_project` | admin |
 | `RegisterMixedBrief` | `register_mixed_brief` | operate |
+| `ReplayReferenceCase` | `replay_reference_case` | operate |
 | `RespondPermission` | `deny_permission` | operate |
 | `RespondPermission` | `approve_permission` | admin |
 | `RestartSession` | `restart_session` | operate |
@@ -839,6 +843,8 @@ the wrong type». Правки идут под одним замком серв�
 | `get_duration_profile` | read | Медиана, p90, максимум, сумма и доля отказов по сигнатурам |
 | `get_token_attribution` | read | Оценка токенов контекста по сигнатурам, инструментам и длине результата; `top_n` самых дорогих |
 | `get_waste_report` | read | Бесполезная успешная работа: повторные чтения, серии пустых поисков, чтение файла целиком, повтор команд без правки — по категориям: число, токены, доля, примеры |
+| `get_reference_report` | read | Эталонные случаи проекта (законченные задачи с текстом, исходным коммитом, воротами и стоимостью): по каждой задаче оригинал и все перепрогоны — зелёные ли ворота, круги доработки, токены, секунды. Пусто, пока выключен `reference_cases` |
+| `replay_reference_case` | operate | Прогоняет эталон другой моделью/усилием в отдельной рабочей папке на исходном коммите, теми же воротами; платный, блокирующий (до 15 минут); ветки проекта не трогает |
 | `get_model_advice` | read | Включена ли авто-маршрутизация моделей и какую модель/усилие она советует для промпта сессии |
 
 **Новые RPC.** `GetDailyTokens`, `GetProjectTokens`, `SearchSessionLog`, `GetModelAdvice`

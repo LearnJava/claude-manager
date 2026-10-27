@@ -204,7 +204,7 @@ func withSince(body map[string]any, since *int64) map[string]any {
 // and bounds the model-running ones by LongToolTimeout.
 var longRunning = map[string]bool{
 	"wait_for_status": true, "wait_for_event": true, "wait_for_worker_status": true, "wait_for_any": true,
-	"run_preflight": true, "session_preflight": true, "generate_roadmap": true, "distill_skill": true, "draft_failure_rules": true,
+	"run_preflight": true, "session_preflight": true, "generate_roadmap": true, "distill_skill": true, "draft_failure_rules": true, "replay_reference_case": true,
 }
 
 // IsLongRunning reports whether tool name may block for minutes.
