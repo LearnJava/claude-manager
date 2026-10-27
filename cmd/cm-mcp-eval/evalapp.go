@@ -216,6 +216,14 @@ func (a *evalApp) ReplayReferenceCase(string, int64, string, string) (*store.Ref
 	return nil, nil
 }
 
+func (a *evalApp) RunBenchmark(string, experience.BenchmarkSpec) (experience.BenchmarkReport, error) {
+	return experience.BenchmarkReport{}, nil
+}
+
+func (a *evalApp) GetBenchmarkReport(string, int64) (experience.BenchmarkReport, error) {
+	return experience.BenchmarkReport{}, nil
+}
+
 func (a *evalApp) GetModelRecommendation(string, string) (*optimization.ModelRecommendation, error) {
 	return nil, nil
 }

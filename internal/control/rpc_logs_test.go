@@ -84,6 +84,14 @@ func (a logsApp) ReplayReferenceCase(p string, id int64, model, effort string) (
 	a.rec(fmt.Sprintf("ReplayReferenceCase %s %d %s %s", p, id, model, effort))
 	return &store.ReferenceReplay{ID: 1, CaseID: id, Passed: true}, nil
 }
+func (a logsApp) RunBenchmark(p string, spec experience.BenchmarkSpec) (experience.BenchmarkReport, error) {
+	a.rec(fmt.Sprintf("RunBenchmark %s %s %d", p, spec.Name, len(spec.Configs)))
+	return experience.BenchmarkReport{Project: p, RunID: 7, Status: "running"}, nil
+}
+func (a logsApp) GetBenchmarkReport(p string, id int64) (experience.BenchmarkReport, error) {
+	a.rec(fmt.Sprintf("GetBenchmarkReport %s %d", p, id))
+	return experience.BenchmarkReport{Project: p, RunID: id}, nil
+}
 func (a logsApp) GetModelRecommendation(p, n string) (*optimization.ModelRecommendation, error) {
 	return &optimization.ModelRecommendation{Model: "sonnet"}, nil
 }

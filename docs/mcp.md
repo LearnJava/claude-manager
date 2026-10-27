@@ -450,6 +450,8 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `get_task_labels` | read | только чтение, идемпотентное | List why a project's tasks that ended badly went wrong: each carries one label - tests_fitted_to_code, protocol_broken, garbage_left or wrong_task_done - with a reason, the judging model and the tokens the judgement cost; plus the count per label. |
 | `get_reference_report` | read | только чтение, идемпотентное | List a project's reference cases - finished tasks kept with their text, starting commit, gates and cost - and, per task, every model/setting that has run it: whether the gates went green, in how many rework rounds, with how many tokens and how much time. |
 | `replay_reference_case` | operate | запускает модель | Run a stored reference case again with another model or effort: a detached worktree at the case's starting commit, the task text as the prompt, the same gates, up to two rework rounds on red gates. The outcome is stored next to the original. |
+| `run_benchmark` | operate | запускает модель | Run a suite of tasks (reference cases or your own) under several configurations - model, effort, skills, bans, gate-driven rework - several times each, every trial in a throwaway worktree at the task's starting commit, judged by its gates. Inputs are frozen with the run. |
+| `get_benchmark_report` | read | только чтение, идемпотентное | Report a benchmark run metric by metric: per configuration the share of trials that passed, rounds to green, tokens and seconds, each with mean, range and standard deviation, plus the same per repeat; and each configuration against the first as differs, within_noise or indistinguishable. There is no single score - the weights are yours. |
 | `get_model_advice` | read | только чтение, идемпотентное | Say whether automatic model routing is on and which model and effort it recommends for a configured session's prompt. |
 | `session_preflight` | operate | запускает модель | Run the preflight analysis the settings of a session call for (what the Start button does) and return the plan to review, or nothing when the session should simply start. |
 | `generate_roadmap` | operate | запускает модель | Split a whole project idea into a backlog of phases and tasks and save it as a draft roadmap plan. |
@@ -636,6 +638,7 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `GetActionSamples` | `get_action_samples` | read |
 | `GetAllSessions` | `get_sessions` | read |
 | `GetAutoModelRouting` | `get_model_advice` | read |
+| `GetBenchmarkReport` | `get_benchmark_report` | read |
 | `GetDailyCost` | `get_cost` | read |
 | `GetDailyTokens` | `get_cost` | read |
 | `GetDurationProfile` | `get_duration_profile` | read |
@@ -645,10 +648,10 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `GetMixedQuality` | `get_mixed_quality` | read |
 | `GetMixedRounds` | `get_mixed_rounds` | read |
 | `GetModelRecommendation` | `get_model_advice` | read |
-| `GetPendingPermissions` | `get_pending` | read |
 | `GetPendingPermissions` | `get_pending_permissions` | read |
-| `GetPendingQuestions` | `get_pending_questions` | read |
+| `GetPendingPermissions` | `get_pending` | read |
 | `GetPendingQuestions` | `get_pending` | read |
+| `GetPendingQuestions` | `get_pending_questions` | read |
 | `GetPermissionCandidates` | `get_permission_candidates` | read |
 | `GetPlan` | `get_plan` | read |
 | `GetProjectLogFiles` | `get_project_log_files` | read |
@@ -689,6 +692,7 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `RestoreSkill` | `restore_skill` | admin |
 | `ResumeSession` | `restart_session` | operate |
 | `RevertFailureRule` | `revert_failure_rule` | operate |
+| `RunBenchmark` | `run_benchmark` | operate |
 | `RunPreflight` | `run_preflight` | operate |
 | `RunSkillAutopilot` | `run_skill_autopilot` | operate |
 | `SendMessage` | `send_message` | operate |
@@ -847,6 +851,8 @@ the wrong type». Правки идут под одним замком серв�
 | `get_waste_report` | read | Бесполезная успешная работа: повторные чтения, серии пустых поисков, чтение файла целиком, повтор команд без правки — по категориям: число, токены, доля, примеры |
 | `get_reference_report` | read | Эталонные случаи проекта (законченные задачи с текстом, исходным коммитом, воротами и стоимостью): по каждой задаче оригинал и все перепрогоны — зелёные ли ворота, круги доработки, токены, секунды. Пусто, пока выключен `reference_cases` |
 | `replay_reference_case` | operate | Прогоняет эталон другой моделью/усилием в отдельной рабочей папке на исходном коммите, теми же воротами; платный, блокирующий (до 15 минут); ветки проекта не трогает |
+| `run_benchmark` | operate | Прогоняет набор задач (эталоны или свои) × конфигурации (модель, усилие, навыки, запреты, строгость проверки) × повторы, каждая проба в отдельной рабочей папке на исходном коммите; входы замораживаются, плохой запрос отвергается до расхода; пробы идут в фоне, ответ — отчёт запущенного прогона. Платный; нужен `benchmark = true` |
+| `get_benchmark_report` | read | Отчёт прогона по метрикам: доля пройденных, круги до зелёного, токены, секунды с разбросом по повторам; каждая конфигурация против первой: `differs` / `within_noise` / `indistinguishable` (один повтор разброса не даёт). Единого балла нет; работает и при выключенной функции |
 | `get_model_advice` | read | Включена ли авто-маршрутизация моделей и какую модель/усилие она советует для промпта сессии |
 
 **Новые RPC.** `GetDailyTokens`, `GetProjectTokens`, `SearchSessionLog`, `GetModelAdvice`

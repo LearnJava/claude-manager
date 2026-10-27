@@ -339,6 +339,46 @@ CREATE TABLE IF NOT EXISTS reference_replays (
 	sqlIdxReferenceCases   = `CREATE INDEX IF NOT EXISTS idx_reference_cases_project ON reference_cases(project)`
 	sqlIdxReferenceReplays = `CREATE INDEX IF NOT EXISTS idx_reference_replays_case ON reference_replays(case_id)`
 
+	// benchmark_runs / benchmark_trials (WASTE-TASKS.md WS-12): a suite x
+	// configurations x repeats matrix. The run keeps its own frozen copy of the
+	// suite (JSON) and the configurations, so editing the source cases later
+	// changes no past result. A trial is one cell; errored = the model could
+	// not be run, which says nothing about the configuration.
+	sqlCreateBenchmarkRuns = `
+CREATE TABLE IF NOT EXISTS benchmark_runs (
+    id          INTEGER PRIMARY KEY,
+    project     TEXT NOT NULL,
+    name        TEXT NOT NULL DEFAULT '',
+    suite       TEXT NOT NULL DEFAULT '[]',
+    configs     TEXT NOT NULL DEFAULT '[]',
+    repeats     INTEGER NOT NULL DEFAULT 1,
+    rounds      INTEGER NOT NULL DEFAULT 0,
+    status      TEXT NOT NULL DEFAULT 'running',
+    note        TEXT NOT NULL DEFAULT '',
+    created_at  DATETIME NOT NULL,
+    finished_at DATETIME
+)`
+
+	sqlCreateBenchmarkTrials = `
+CREATE TABLE IF NOT EXISTS benchmark_trials (
+    id            INTEGER PRIMARY KEY,
+    run_id        INTEGER NOT NULL,
+    task_idx      INTEGER NOT NULL,
+    config_idx    INTEGER NOT NULL,
+    repeat        INTEGER NOT NULL,
+    passed        INTEGER NOT NULL DEFAULT 0,
+    errored       INTEGER NOT NULL DEFAULT 0,
+    rounds        INTEGER NOT NULL DEFAULT 0,
+    tokens        INTEGER NOT NULL DEFAULT 0,
+    duration_sec  INTEGER NOT NULL DEFAULT 0,
+    result_commit TEXT NOT NULL DEFAULT '',
+    note          TEXT NOT NULL DEFAULT '',
+    created_at    DATETIME NOT NULL
+)`
+
+	sqlIdxBenchmarkRuns   = `CREATE INDEX IF NOT EXISTS idx_benchmark_runs_project ON benchmark_runs(project)`
+	sqlIdxBenchmarkTrials = `CREATE INDEX IF NOT EXISTS idx_benchmark_trials_run ON benchmark_trials(run_id)`
+
 	sqlCreateFailureRules = `
 CREATE TABLE IF NOT EXISTS failure_rules (
     id            INTEGER PRIMARY KEY,
@@ -383,6 +423,8 @@ func migrate(db *sql.DB) error {
 		sqlCreateLoopEvents,
 		sqlCreateReferenceCases,
 		sqlCreateReferenceReplays,
+		sqlCreateBenchmarkRuns,
+		sqlCreateBenchmarkTrials,
 		sqlCreateGateRuns,
 		sqlCreateNightlyRuns,
 		sqlCreateLearnedSync,
@@ -397,6 +439,8 @@ func migrate(db *sql.DB) error {
 		sqlIdxLoopEvents,
 		sqlIdxReferenceCases,
 		sqlIdxReferenceReplays,
+		sqlIdxBenchmarkRuns,
+		sqlIdxBenchmarkTrials,
 		sqlIdxGateRuns,
 		sqlIdxTaskLabels,
 	}

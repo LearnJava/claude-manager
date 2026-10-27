@@ -82,6 +82,8 @@ var toolSamples = map[string]struct {
 	"get_reference_report":      {`{"project":"p"}`, `{"Project":"p","Cases":[]}`},
 	"get_task_labels":           {`{"project":"p"}`, `{"Project":"p","Total":0}`},
 	"replay_reference_case":     {`{"project":"p","case_id":3}`, `{"ID":1,"CaseID":3,"Passed":true}`},
+	"run_benchmark":             {`{"project":"p","configs":[{"name":"a"},{"name":"b","model":"opus"}]}`, `{"RunID":7,"Status":"running"}`},
+	"get_benchmark_report":      {`{"project":"p"}`, `{"RunID":7,"Configs":[]}`},
 	"get_model_advice":          {`{"session_id":"p/s"}`, `{"auto_routing":true,"recommendation":{"model":"sonnet"}}`},
 	"session_preflight":         {`{"session_id":"p/s"}`, `{"id":3}`},
 	"generate_roadmap":          {`{"project":"p","idea":"an app"}`, `{"id":9,"kind":"roadmap"}`},

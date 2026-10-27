@@ -55,6 +55,8 @@ rate_limit_alert_threshold = 0.80      # notify when rate-limit utilisation > 80
 # suggest_stale_days = 0                # repo_suggestions: age (days) of a TODO / branch / work folder to be suggested; 0 = 90 for a TODO, 7 for branches and folders
 # waiting_screen = false             # status-bar button "Waiting for you" with a count: one panel over every project, a row per session that needs a person (permission, question, stop reason, rate limit, gate rounds exhausted, queue empty, mixed task needs-human) with a jump to the session. A view only (WS-08)
 # learned_files = false              # Waste tab "Learned files": write the skills, rules and bans learned here as plain files into <project>/.claude-manager/learned/ (commit them, revert them with git, carry them to another machine) and offer files the database lacks or differs from for import. Writes into the project only on a tick; a version that differs on both sides is never overwritten silently (WS-09)
+# benchmark = false                   # run a suite of tasks (reference cases or an external set) x configurations (model, effort, skills, bans, rework on/off) x repeats in throwaway worktrees and compare them per metric, with the spread over repeats and no single score. Every trial is a paid model run (WS-12)
+# benchmark_max_trials = 0            # benchmark: cap on tasks x configurations x repeats of one run; 0 = 60
 # waste_empty_search_chars = 100        # Waste tab: a Grep/Glob result shorter than this counts as empty (0 = default)
 # waste_oversized_read_tokens = 8000    # Waste tab: a Read result above this many tokens counts as a whole-file read (0 = default)
 

@@ -103,6 +103,13 @@ func (a *App) startup(ctx context.Context) {
 		logger.L.Error("store.open", "error", err)
 	} else {
 		a.store = st
+		// No benchmark can be alive in a fresh process: close the ones a
+		// crash or quit left marked running (WASTE-TASKS.md WS-12).
+		if n, err := st.InterruptRunningBenchmarks(); err != nil {
+			logger.L.Error("store.benchmark_interrupt", "error", err)
+		} else if n > 0 {
+			logger.L.Info("store.benchmark_interrupt", "closed", n)
+		}
 		// Drop persisted logs whose runs are older than the retention window.
 		if days := cfg.Settings.LogRetentionDays; days > 0 {
 			if err := st.DeleteOldLogs(days); err != nil {
