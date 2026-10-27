@@ -31,6 +31,10 @@ permission_timeout_action = "deny"     # deny (auto-deny) | pause_session (stop 
 permission_native_notification = true  # Windows toast when minimised
 permission_sound = true                # audible alert on permission request
 
+# What a token costs you (WASTE-TASKS.md WS-02)
+billing = "subscription"               # subscription: the rate-limit window and time are what runs out, $ is only a comparison unit; api: $ is the real spend
+limit_window_tokens = 0                # size of the plan's limit window in tokens (input + cache write + cache read); 0 = unknown, the UI shows absolute tokens and "share unknown"
+
 # Budget alerts (0 = disabled)
 daily_budget_alert = 0                 # notify if daily spend exceeds this USD
 weekly_budget_alert = 0                # notify if weekly spend exceeds this USD

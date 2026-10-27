@@ -126,3 +126,36 @@ func TestGetProjectTokensUnknownProject(t *testing.T) {
 		t.Errorf("unknown project: got %+v want zeroes", got)
 	}
 }
+
+// WS-02: the day's time travels with its tokens, so the subscription readout
+// can lead with both from one call.
+func TestDailyAndProjectTokensCarryDuration(t *testing.T) {
+	m, st := newTestManagerWithStore(t)
+	today := time.Now().Format("2006-01-02")
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	for _, d := range []struct {
+		date string
+		ms   int64
+	}{{today, 90_000}, {today, 30_000}, {yesterday, 60_000}} {
+		err := st.AddDailyMetrics(&store.DailyMetrics{
+			Date: d.date, Project: "lumen", TotalInputTokens: 10, TotalRuns: 1, TotalDurationMs: d.ms,
+		})
+		if err != nil {
+			t.Fatalf("AddDailyMetrics: %v", err)
+		}
+	}
+	day, err := m.GetDailyTokens(today)
+	if err != nil {
+		t.Fatalf("GetDailyTokens: %v", err)
+	}
+	if day.DurationMs != 120_000 {
+		t.Errorf("day DurationMs = %d, want 120000 (upserts add up)", day.DurationMs)
+	}
+	proj, err := m.GetProjectTokens("lumen", 7)
+	if err != nil {
+		t.Fatalf("GetProjectTokens: %v", err)
+	}
+	if proj.DurationMs != 180_000 {
+		t.Errorf("project DurationMs = %d, want 180000", proj.DurationMs)
+	}
+}

@@ -109,6 +109,8 @@ export default {
     'experiencePanel.waste.emptyPre': 'No recorded tool calls for this project yet. Enable',
     'experiencePanel.waste.clean': 'No waste found in the recorded calls.',
     'experiencePanel.waste.headline': '{calls} of {total} calls wasted — {share} of the weighted token volume ({tokens})',
+    'experiencePanel.waste.windowShare': 'Waste ate {pct} of the limit window ({window} tokens)',
+    'experiencePanel.waste.windowUnknown': 'Waste took {tokens} tokens; share of the limit window unknown — set limit_window_tokens in Settings',
     'experiencePanel.waste.colCategory': 'Category',
     'experiencePanel.waste.colCalls': 'Calls',
     'experiencePanel.waste.colEstTokens': 'Est. tokens',

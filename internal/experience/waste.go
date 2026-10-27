@@ -101,6 +101,29 @@ type WasteReport struct {
 	// WastedShare is WastedLifetimeTokens / TotalLifetimeTokens.
 	WastedShare float64
 	Categories  []WasteCategory
+
+	// LimitWindowTokens is the plan's rate-limit window ([settings]
+	// limit_window_tokens), 0 = unknown. WindowShare is
+	// WastedLifetimeTokens / LimitWindowTokens — how much of one window the
+	// waste ate; it can exceed 1 because the report spans days, not one
+	// window. 0 when the window is unknown (WindowKnown tells the two zeros
+	// apart). Both are filled by ApplyWindow (WASTE-TASKS.md WS-02).
+	LimitWindowTokens int64
+	WindowKnown       bool
+	WindowShare       float64
+}
+
+// ApplyWindow records the limit window and derives the share of it the waste
+// ate. A window <= 0 means "unknown": the share stays 0 and WindowKnown false,
+// so the UI can say "share unknown" instead of printing 0%.
+func (r *WasteReport) ApplyWindow(windowTokens int64) {
+	if windowTokens <= 0 {
+		r.LimitWindowTokens, r.WindowKnown, r.WindowShare = 0, false, 0
+		return
+	}
+	r.LimitWindowTokens = windowTokens
+	r.WindowKnown = true
+	r.WindowShare = float64(r.WastedLifetimeTokens) / float64(windowTokens)
 }
 
 // wasteStep is one successful call with its position in its run.

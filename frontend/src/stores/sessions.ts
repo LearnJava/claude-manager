@@ -185,6 +185,8 @@ export interface DailyTokenTotals {
     cache_read: number;
     cache_creation: number;
     total: number;
+    // Wall-clock time of the day's finished runs (WS-02).
+    duration_ms: number;
 }
 
 export const todayTokens = writable<DailyTokenTotals>({
@@ -193,6 +195,7 @@ export const todayTokens = writable<DailyTokenTotals>({
     cache_read: 0,
     cache_creation: 0,
     total: 0,
+    duration_ms: 0,
 });
 
 // Track when the manager started (for uptime in the status bar)
@@ -703,6 +706,7 @@ async function refreshTodayCost() {
             cache_read: Number(t?.cache_read) || 0,
             cache_creation: Number(t?.cache_creation) || 0,
             total: Number(t?.total) || 0,
+            duration_ms: Number(t?.duration_ms) || 0,
         });
     } catch (e) {
         // ditto — a missing token total must not blank out the cost readout.

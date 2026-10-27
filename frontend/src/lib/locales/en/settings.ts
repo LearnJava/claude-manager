@@ -63,6 +63,12 @@ export default {
     'settings.experienceLayer.description': "After each run the manager reads the transcript and stores in a local database which tools and commands the agent called, how it ended, how long it took and what it cost. This feeds the Experience tab (permissions, timing, cost, actions), skill suggestions and rules learned from recurring errors. No external service, nothing leaves this machine. On by default; if switched off, no transcript is ever opened.",
 
     // Global tab — Budget alerts
+    'settings.billing.heading': 'Billing',
+    'settings.billing.mode': 'How tokens are paid for',
+    'settings.billing.subscription': 'Subscription — the limit window and time run out',
+    'settings.billing.api': 'API — dollars are the real spend',
+    'settings.billing.window': 'Limit window (tokens, 0 = unknown)',
+    'settings.billing.description': 'Subscription: cost readouts lead with tokens taken out of the limit window (input + cache write + cache read) and with time; dollars stay as a conventional unit for comparing runs. API: dollars are the real spend and the readouts keep their old order. With the window size unknown the share of the window is shown as «share unknown», never as 0%.',
     'settings.budgetAlerts.heading': 'Budget alerts',
     'settings.budgetAlerts.daily': 'Daily alert (USD, 0 = off)',
     'settings.budgetAlerts.weekly': 'Weekly alert (USD, 0 = off)',

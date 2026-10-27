@@ -331,6 +331,7 @@ func defaults() *AppConfig {
 			WeeklyBudgetAlert:            0,
 			RateLimitAlertThreshold:      0.80,
 			SessionStartDelay:            3,
+			Billing:                      BillingSubscription,
 			PythonUTF8:                   true,
 			CommandGuard:                 true,
 			EnvCard:                      true,
@@ -387,6 +388,9 @@ func applyDefaults(cfg *AppConfig) {
 	}
 	if s.Language == "" {
 		s.Language = "en"
+	}
+	if s.Billing == "" {
+		s.Billing = BillingSubscription
 	}
 	if s.PreflightModel == "" {
 		s.PreflightModel = "haiku"
@@ -533,6 +537,12 @@ func WorkerPresets() []WorkerConfig {
 }
 
 func validate(cfg *AppConfig) error {
+	if b := cfg.Settings.Billing; b != "" && b != BillingSubscription && b != BillingAPI {
+		return fmt.Errorf("config: invalid billing %q (want subscription|api)", b)
+	}
+	if cfg.Settings.LimitWindowTokens < 0 {
+		return fmt.Errorf("config: limit_window_tokens must not be negative")
+	}
 	for _, p := range cfg.Projects {
 		if p.Name == "" {
 			return fmt.Errorf("config: project missing name")

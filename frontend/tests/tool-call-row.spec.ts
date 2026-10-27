@@ -30,6 +30,12 @@ async function openFeed(page: Page, theme: 'dark' | 'light') {
 }
 
 async function pushCalls(page: Page) {
+    // An unanswered call only counts as running while the process is alive
+    // (4d46e7d closes it on idle/error/stopping), so the session must be working.
+    await page.evaluate((id) => {
+        const w = window as typeof window & { __dispatchWailsEvent: (n: string, d: unknown) => void };
+        w.__dispatchWailsEvent('session:status', { id, status: 'working' });
+    }, SESSION_ID);
     await pushLog(page, 'tool', 'Read: main.go', {
         tool_name: 'Read', tool_use_id: 'c1', tool_args: { file_path: '/a/main.go', offset: '10', limit: '40' },
     });

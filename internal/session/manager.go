@@ -1571,6 +1571,9 @@ type DailyTokens struct {
 	CacheCreation int64  `json:"cache_creation"`
 	Total         int64  `json:"total"`
 	CostUSD       float64 `json:"cost_usd"`
+	// DurationMs is the wall-clock time of the runs the figures cover
+	// (WASTE-TASKS.md WS-02: the subscription readout leads with tokens and time).
+	DurationMs int64 `json:"duration_ms"`
 }
 
 // GetDailyTokens returns the token volume across all projects for the given
@@ -1603,6 +1606,7 @@ func (m *SessionManager) GetDailyTokens(date string) (DailyTokens, error) {
 		out.CacheRead += dm.TotalCacheReadTokens
 		out.CacheCreation += dm.TotalCacheCreationTokens
 		out.CostUSD += dm.TotalCost
+		out.DurationMs += dm.TotalDurationMs
 	}
 	out.Total = out.InputTokens + out.OutputTokens + out.CacheRead + out.CacheCreation
 	return out, nil
@@ -1649,6 +1653,7 @@ func (m *SessionManager) GetProjectTokens(project string, days int) (DailyTokens
 		out.CacheRead += dm.TotalCacheReadTokens
 		out.CacheCreation += dm.TotalCacheCreationTokens
 		out.CostUSD += dm.TotalCost
+		out.DurationMs += dm.TotalDurationMs
 	}
 	out.Total = out.InputTokens + out.OutputTokens + out.CacheRead + out.CacheCreation
 	return out, nil
@@ -2047,6 +2052,10 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 	ms.runID = 0
 
 	now := time.Now()
+	var runWall time.Duration // wall-clock time of the run, for daily_metrics
+	if !ms.runStartedAt.IsZero() {
+		runWall = now.Sub(ms.runStartedAt)
+	}
 	run := &store.SessionRun{
 		ID:                  runID,
 		Project:             ms.project,
@@ -2161,6 +2170,7 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 			TotalCacheCreationTokens: cacheCreateTok,
 			TotalRuns:                1,
 			TotalTasks:               tasks,
+			TotalDurationMs:          runWall.Milliseconds(),
 		})
 		go func() {
 			defer logger.Recover("manager.budget_alerts", "id", ms.session.ID)

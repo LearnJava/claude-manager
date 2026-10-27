@@ -184,6 +184,10 @@ permission_timeout_action = "deny"        # deny | pause_session
 permission_native_notification = true     # Windows toast когда свёрнуто
 permission_sound = true                   # Звуковой сигнал
 
+# Единица расхода (WASTE-TASKS.md WS-02)
+billing = "subscription"                  # subscription: дефицит — окно лимита и время, $ только условная единица сравнения; api: $ — реальный расход, вывод как раньше
+limit_window_tokens = 0                   # размер окна лимита тарифа в токенах (вход + кэш-запись + кэш-чтение); 0 = неизвестно, UI покажет абсолют и «доля неизвестна»
+
 # Budget alerts (см. секцию 18)
 daily_budget_alert = 0                    # 0 = выкл. >0 = уведомление при превышении $/день
 weekly_budget_alert = 0                   # 0 = выкл. >0 = уведомление при превышении $/неделя

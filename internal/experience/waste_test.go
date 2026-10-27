@@ -377,3 +377,40 @@ func TestBuildWasteReportFromStore(t *testing.T) {
 		t.Fatalf("repeat = %+v", c)
 	}
 }
+
+func TestApplyWindowShare(t *testing.T) {
+	r := AnalyzeWaste(wasteRows(
+		wcall{tool: "Read", arg: "a.go", chars: 4000},
+		wcall{tool: "Read", arg: "a.go", chars: 4000},
+	), WasteThresholds{})
+	if r.WastedLifetimeTokens != 2000 {
+		t.Fatalf("WastedLifetimeTokens = %d, want 2000", r.WastedLifetimeTokens)
+	}
+	r.ApplyWindow(10000)
+	if !r.WindowKnown || r.LimitWindowTokens != 10000 || r.WindowShare != 0.2 {
+		t.Fatalf("window = %v/%d/%v, want known/10000/0.2", r.WindowKnown, r.LimitWindowTokens, r.WindowShare)
+	}
+	// The report spans days, one window is hours: a share above 1 is honest.
+	r.ApplyWindow(1000)
+	if r.WindowShare != 2 {
+		t.Fatalf("WindowShare = %v, want 2 (not capped)", r.WindowShare)
+	}
+}
+
+func TestApplyWindowUnknownIsNotZeroPercent(t *testing.T) {
+	r := AnalyzeWaste(wasteRows(
+		wcall{tool: "Read", arg: "a.go", chars: 4000},
+		wcall{tool: "Read", arg: "a.go", chars: 4000},
+	), WasteThresholds{})
+	for _, w := range []int64{0, -5} {
+		r.ApplyWindow(w) // must not divide by zero
+		if r.WindowKnown || r.WindowShare != 0 || r.LimitWindowTokens != 0 {
+			t.Fatalf("window %d: got %v/%d/%v, want unknown", w, r.WindowKnown, r.LimitWindowTokens, r.WindowShare)
+		}
+	}
+	var clean WasteReport
+	clean.ApplyWindow(5000)
+	if !clean.WindowKnown || clean.WindowShare != 0 {
+		t.Fatalf("clean report with a known window: %+v", clean)
+	}
+}

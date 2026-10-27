@@ -3,6 +3,8 @@
     import { projects } from '../stores/projects';
     import { formatCost, formatDuration, formatPercent, formatTime, formatTokens } from '../lib/formatters';
     import { t } from '../lib/i18n';
+    import { billing } from '../stores/billing';
+    import { formatWindowShare } from '../lib/billing';
     import SkillReview from './SkillReview.svelte';
     import FailureReview from './FailureReview.svelte';
     import { PickDirectory } from '../../wailsjs/go/main/App';
@@ -269,6 +271,7 @@
         loadPermissions();
         loadDurations();
         loadAttribution();
+        loadWaste();
     }
 
     function compareStats(a: SignatureStat, b: SignatureStat): number {
@@ -751,6 +754,19 @@
                                 tokens: formatTokens(waste.WastedLifetimeTokens),
                             })}
                         </h3>
+                        {#if $billing.mode === 'subscription'}
+                            <!-- WS-02: on a subscription the loss that matters is the slice of the limit window it ate. -->
+                            <p class="text-text-muted text-xs mb-3" data-testid="waste-window-share">
+                                {#if waste.WindowKnown}
+                                    {$t('experiencePanel.waste.windowShare', {
+                                        pct: formatWindowShare(waste.WindowShare, ''),
+                                        window: formatTokens(waste.LimitWindowTokens),
+                                    })}
+                                {:else}
+                                    {$t('experiencePanel.waste.windowUnknown', { tokens: formatTokens(waste.WastedLifetimeTokens) })}
+                                {/if}
+                            </p>
+                        {/if}
                         <table class="w-full text-sm border-collapse mb-4">
                             <thead class="bg-bg-elevated text-text-muted text-xs">
                                 <tr>

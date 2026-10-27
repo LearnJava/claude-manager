@@ -13,7 +13,9 @@
         regressionAlerts,
     } from '../stores/sessions';
     import { costUnit, toggleCostUnit } from '../stores/units';
-    import { formatTokens, tokenSplitLabel } from '../lib/formatters';
+    import { formatDuration, formatTokens, tokenSplitLabel } from '../lib/formatters';
+    import { billing } from '../stores/billing';
+    import { limitTokens, windowShare, formatWindowShare } from '../lib/billing';
     import { t } from '../lib/i18n';
 
     const dispatch = createEventDispatcher();
@@ -53,6 +55,11 @@
         return `${Math.round(u * 100)}%`;
     }
 
+    // Subscription mode: today's limit tokens (input + cache write + cache read),
+    // their share of the window and the time they took lead (WS-02).
+    $: subscription = $billing.mode === 'subscription';
+    $: todayLimit = limitTokens($todayTokens);
+    $: todayShare = windowShare(todayLimit, $billing.windowTokens);
     $: total = $sessionList.length;
     $: active = $activeSessions.length;
     $: waiting = $waitingSessions.length;
@@ -114,19 +121,35 @@
         available information. Tooltip carries the in/out/cache split — the
         total alone hides that a cache read is ~10x cheaper than fresh input.
     -->
-    <button
-        class="hover:underline focus:outline-none"
-        on:click={toggleCostUnit}
-        type="button"
-        title={$t('statusBar.todayTooltip', { split: tokenSplitLabel($todayTokens) })}>
-        {#if $costUnit === 'tokens'}
-            {$t('statusBar.todayLabel')} <span class="text-text">{formatTokens($todayTokens.total)}</span> {$t('statusBar.tokUnit')}
-            <span class="opacity-60">({fmtCost($todayCost)})</span>
-        {:else}
-            {$t('statusBar.todayLabel')} <span class="text-text">{fmtCost($todayCost)}</span>
-            <span class="opacity-60">({formatTokens($todayTokens.total)} {$t('statusBar.tokUnit')})</span>
-        {/if}
-    </button>
+    {#if subscription}
+        <span
+            data-testid="today-subscription"
+            title={$t('statusBar.todaySubscriptionTooltip', { split: tokenSplitLabel($todayTokens) })}>
+            {$t('statusBar.todayLabel')}
+            <span class="text-text">{formatTokens(todayLimit)}</span> {$t('statusBar.tokUnit')}
+            <span data-testid="today-share" class={todayShare === null ? 'opacity-70' : 'text-text'}>
+                ({todayShare === null
+                    ? $t('statusBar.windowUnknown')
+                    : $t('statusBar.windowShareOf', { pct: formatWindowShare(todayShare, '') })})
+            </span>
+            · <span class="text-text" data-testid="today-time">{formatDuration($todayTokens.duration_ms)}</span>
+            <span class="opacity-60">({$t('statusBar.costConventional', { cost: fmtCost($todayCost) })})</span>
+        </span>
+    {:else}
+        <button
+            class="hover:underline focus:outline-none"
+            on:click={toggleCostUnit}
+            type="button"
+            title={$t('statusBar.todayTooltip', { split: tokenSplitLabel($todayTokens) })}>
+            {#if $costUnit === 'tokens'}
+                {$t('statusBar.todayLabel')} <span class="text-text">{formatTokens($todayTokens.total)}</span> {$t('statusBar.tokUnit')}
+                <span class="opacity-60">({fmtCost($todayCost)})</span>
+            {:else}
+                {$t('statusBar.todayLabel')} <span class="text-text">{fmtCost($todayCost)}</span>
+                <span class="opacity-60">({formatTokens($todayTokens.total)} {$t('statusBar.tokUnit')})</span>
+            {/if}
+        </button>
+    {/if}
 
     {#if rlUtil !== undefined}
         <span title={$t('statusBar.rlTooltip')}>

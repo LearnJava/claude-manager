@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS daily_metrics (
     total_cache_creation_tokens INTEGER DEFAULT 0,
     total_runs                  INTEGER DEFAULT 0,
     total_tasks                 INTEGER DEFAULT 0,
+    total_duration_ms           INTEGER DEFAULT 0,
     PRIMARY KEY (date, project)
 )`
 
@@ -272,6 +273,9 @@ func migrate(db *sql.DB) error {
 	for _, col := range []string{
 		`ALTER TABLE daily_metrics ADD COLUMN total_cache_read_tokens INTEGER DEFAULT 0`,
 		`ALTER TABLE daily_metrics ADD COLUMN total_cache_creation_tokens INTEGER DEFAULT 0`,
+		// daily_metrics predates time as a unit (WASTE-TASKS.md WS-02): the
+		// wall-clock time of the day's runs. Same additive pattern.
+		`ALTER TABLE daily_metrics ADD COLUMN total_duration_ms INTEGER DEFAULT 0`,
 		// action_signatures predates the duration profile (LEARN-TASKS.md
 		// LN-18): same additive pattern as above.
 		`ALTER TABLE action_signatures ADD COLUMN dur_sec INTEGER DEFAULT 0`,

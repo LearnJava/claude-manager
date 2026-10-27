@@ -110,6 +110,8 @@ export default {
     'experiencePanel.waste.emptyPre': 'Для этого проекта пока нет записанных вызовов. Включите',
     'experiencePanel.waste.clean': 'В записанных вызовах потерь не найдено.',
     'experiencePanel.waste.headline': 'Потеряно {calls} вызовов из {total} — {share} взвешенного объёма токенов ({tokens})',
+    'experiencePanel.waste.windowShare': 'Потери съели {pct} окна лимита ({window} токенов)',
+    'experiencePanel.waste.windowUnknown': 'Потери — {tokens} токенов; доля окна лимита неизвестна — задайте limit_window_tokens в настройках',
     'experiencePanel.waste.colCategory': 'Категория',
     'experiencePanel.waste.colCalls': 'Вызовов',
     'experiencePanel.waste.colEstTokens': 'Оцен. токены',

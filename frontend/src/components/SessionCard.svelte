@@ -12,6 +12,8 @@
         tokenSplitLabel,
     } from '../lib/formatters';
     import { costUnit } from '../stores/units';
+    import { billing } from '../stores/billing';
+    import { limitTokens, windowShare, formatWindowShare } from '../lib/billing';
     import { t } from '../lib/i18n';
 
     export let session: SessionState;
@@ -83,6 +85,11 @@
     $: split = tokenSplit(session);
     $: util = Number(session.context_util) || 0;
     $: utilPct = Math.min(100, Math.max(0, Math.round(util * 100)));
+    // Subscription mode: the window the run took and the time it took lead;
+    // dollars stay as a conventional comparison unit (WASTE-TASKS.md WS-02).
+    $: subscription = $billing.mode === 'subscription';
+    $: limitTok = limitTokens(session);
+    $: share = windowShare(limitTok, $billing.windowTokens);
     $: blink = session.status === 'waiting_permission' || session.status === 'waiting_for_user';
 </script>
 
@@ -150,13 +157,31 @@
 
     <!-- Row 3: cost / cache hit / context bar -->
     <div class="mt-1 flex items-center gap-x-4 text-xs text-text-muted">
-        <!-- Dollars stay on screen but step back when tokens are the chosen unit. -->
-        <span>
-            {$t('sessionCard.costLabel')}
-            <span class={$costUnit === 'usd' ? 'text-text' : 'opacity-70'}>
-                {formatCost(session.total_cost_usd)}
+        {#if subscription}
+            <span data-testid="card-limit" title={$t('sessionCard.limitTooltip')}>
+                {$t('sessionCard.limitLabel')}
+                <span class="text-text">{formatTokens(limitTok)}</span>
+                <span data-testid="card-limit-share" class={share === null ? 'opacity-70' : 'text-text'}>
+                    ({share === null
+                        ? $t('sessionCard.windowUnknown')
+                        : $t('sessionCard.windowShareOf', { pct: formatWindowShare(share, '') })})
+                </span>
             </span>
-        </span>
+            <span data-testid="card-time">
+                {$t('sessionCard.timeLabel')} <span class="text-text">{runtime}</span>
+            </span>
+            <span class="opacity-70" data-testid="card-cost-conventional" title={$t('sessionCard.costConventionalTooltip')}>
+                {$t('sessionCard.costConventional', { cost: formatCost(session.total_cost_usd) })}
+            </span>
+        {:else}
+            <!-- Dollars stay on screen but step back when tokens are the chosen unit. -->
+            <span>
+                {$t('sessionCard.costLabel')}
+                <span class={$costUnit === 'usd' ? 'text-text' : 'opacity-70'}>
+                    {formatCost(session.total_cost_usd)}
+                </span>
+            </span>
+        {/if}
         <span>{$t('sessionCard.cacheHitLabel')} <span class="text-text">{formatPercent(hit)}</span></span>
 
         <div class="flex items-center gap-2 ml-auto min-w-[160px]">

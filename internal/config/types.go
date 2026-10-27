@@ -71,6 +71,12 @@ type OptimizationSettings struct {
 	WasteOversizedReadTokens int `toml:"waste_oversized_read_tokens"`
 }
 
+// Billing modes (GlobalSettings.Billing).
+const (
+	BillingSubscription = "subscription"
+	BillingAPI          = "api"
+)
+
 type GlobalSettings struct {
 	ClaudePath string `toml:"claude_path"`
 	// HermesPath is the `hermes` binary used by sessions with
@@ -84,6 +90,17 @@ type GlobalSettings struct {
 	// UI language: "en" or "ru". Frontend-only (no effect on prompts sent to
 	// Claude, which stay English) — see "UI Localization" in CLAUDE.md.
 	Language string `toml:"language"`
+
+	// Billing says what a spent token costs the user (WASTE-TASKS.md WS-02):
+	// BillingSubscription (default) — a flat plan whose rate-limit window and
+	// time are the scarce resources, dollars are only a comparison unit;
+	// BillingAPI — pay-per-token, dollars are the real spend and the readouts
+	// behave exactly as before this setting existed.
+	Billing string `toml:"billing"`
+	// LimitWindowTokens is the size of the plan's rate-limit window in tokens
+	// (input + cache write + cache read). 0 = unknown: the UI shows absolute
+	// tokens and "share unknown" rather than a percentage.
+	LimitWindowTokens int64 `toml:"limit_window_tokens"`
 
 	// Crash recovery: persist session_id to disk so interrupted sessions can be
 	// resumed with --resume after an app restart (mirrors orchestrator.py behaviour).
