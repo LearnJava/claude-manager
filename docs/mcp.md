@@ -447,6 +447,7 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `get_duration_profile` | read | только чтение, идемпотентное | Show how long each kind of tool call takes in a project: median, 90th percentile, maximum, total and failure rate. |
 | `get_token_attribution` | read | только чтение, идемпотентное | Estimate which tool calls fill a project's context: tokens per signature, per tool and per result length. |
 | `get_waste_report` | read | только чтение, идемпотентное | Find work in a project that succeeded and still bought nothing: reads repeated with no edit between, streaks of empty searches, whole-file reads, commands rerun unchanged. Per category: count, estimated tokens, share of the project's volume and examples. |
+| `get_task_labels` | read | только чтение, идемпотентное | List why a project's tasks that ended badly went wrong: each carries one label - tests_fitted_to_code, protocol_broken, garbage_left or wrong_task_done - with a reason, the judging model and the tokens the judgement cost; plus the count per label. |
 | `get_reference_report` | read | только чтение, идемпотентное | List a project's reference cases - finished tasks kept with their text, starting commit, gates and cost - and, per task, every model/setting that has run it: whether the gates went green, in how many rework rounds, with how many tokens and how much time. |
 | `replay_reference_case` | operate | запускает модель | Run a stored reference case again with another model or effort: a detached worktree at the case's starting commit, the task text as the prompt, the same gates, up to two rework rounds on red gates. The outcome is stored next to the original. |
 | `get_model_advice` | read | только чтение, идемпотентное | Say whether automatic model routing is on and which model and effort it recommends for a configured session's prompt. |
@@ -667,6 +668,7 @@ cursor="N"`. Страница дополнительно режется до `Ma
 | `GetSkillQuality` | `get_skill_quality` | read |
 | `GetSkillUsage` | `get_skill_usage` | read |
 | `GetSkills` | `get_skills` | read |
+| `GetTaskLabels` | `get_task_labels` | read |
 | `GetTokenAttribution` | `get_token_attribution` | read |
 | `GetTopActions` | `get_top_actions` | read |
 | `GetWasteReport` | `get_waste_report` | read |

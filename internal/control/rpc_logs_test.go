@@ -72,6 +72,10 @@ func (a logsApp) GetWasteReport(p string) (experience.WasteReport, error) {
 	a.rec("GetWasteReport " + p)
 	return experience.WasteReport{TotalCalls: 4}, nil
 }
+func (a logsApp) GetTaskLabels(p string) (experience.LabelReport, error) {
+	a.rec("GetTaskLabels " + p)
+	return experience.LabelReport{Project: p, Total: 1}, nil
+}
 func (a logsApp) GetReferenceReport(p string) (experience.ReferenceReport, error) {
 	a.rec("GetReferenceReport " + p)
 	return experience.ReferenceReport{Project: p, Cases: []experience.ReferencePair{{CaseID: 3}}}, nil

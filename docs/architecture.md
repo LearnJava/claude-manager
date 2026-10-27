@@ -73,6 +73,8 @@ claude-manager/
 │   │   ├── strict_gates.go          # WS-05: gate_rounds — gates after a closed task, red output sent back as a resumed turn
 │   │   ├── reference_case.go        # WS-06: notes a task's text + start commit, reports it as RefCaseRecord on task_done
 │   │   ├── reference_wiring.go      # WS-06: SetReferenceCases wiring, tokens/time/model snapshot before finishRun
+│   │   ├── quality_label.go         # WS-11: keeps a task's text + start commit across retries, builds LabelRecord (gates red at the limit / unfinished loop) with the work folder's changes
+│   │   ├── quality_wiring.go        # WS-11: SetQualityLabels wiring, snapshot before finishRun, background judge call after it
 │   │   ├── gate_record.go           # WS-07: SetGateRuns — strict-gates outcome (passed, commit, output tail) into gate_runs while repo_suggestions is on
 │   │   ├── launch_tuning.go         # [optimization] → launch flags: --exclude-dynamic-system-prompt-sections,
 │   │   │                            #   adaptive --max-turns (1.6 × longest recent run, ≥ max_turns_default)
@@ -101,6 +103,7 @@ claude-manager/
 │   │   │                            #   skills) from embedded per-project templates; never overwrites
 │   │   ├── brief.go                 # Mixed-programming brief generation (MP-06): self-contained
 │   │   │                            #   English ТЗ, verbatim excerpts, patch-format instructions
+│   │   ├── tasklabel.go             # WS-11: GenerateTaskLabel — one cheap call picks a quality label (enum from store.TaskLabelNames, or none) for a task that ended badly
 │   │   ├── journal.go               # LN-06: GenerateJournalEntry — haiku distillation of one
 │   │   │                            #   completed run (task pointer, files changed, result text)
 │   │   │                            #   into {done, surprises, avoid} for the project journal
@@ -222,6 +225,7 @@ claude-manager/
 │   │   ├── hookrules.go             # WS-03: HookRuleCandidates (waste kinds + commands that
 │   │   │                            #   kept failing), HookRuleEffect, EvaluateHookTrials
 │   │   │                            #   (keep, or take out when runs got longer/more erroneous).
+│   │   ├── labels.go                # WS-11: LabelTask (judge only tasks that ended badly, charge the judge's tokens to the run), BuildLabelReport
 │   │   ├── refcases.go              # WS-06: RecordReferenceCase (only good tasks), BuildReferenceReport
 │   │   │                            #   (pairs, invalid base commits), ReplayReferenceCase (detached worktree)
 │   │   ├── loopmemory.go            # WS-04: LoopMemory (loop_events record + hint from an earlier
@@ -255,6 +259,7 @@ claude-manager/
 │   │   ├── migrations.go            # CREATE TABLE statements, indexes
 │   │   ├── loopevents.go            # WS-04: loop_events (detected loops, resolved_by)
 │   │   ├── refcases.go              # WS-06: reference_cases + reference_replays
+│   │   ├── labels.go                # WS-11: task_labels — fixed label list (TaskLabelNames), InsertTaskLabel refuses others, AddRunUsage charges the judge to a run
 │   │   ├── gateruns.go              # WS-07: gate_runs — the latest gate run of a project and the commit it ran on
 │   │   ├── nightly.go               # WS-10: nightly_runs — when a project's scheduled gate run last happened
 │   │   ├── learned.go               # WS-09: learned_sync — hash of each lesson when the database and its file last agreed
@@ -475,6 +480,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetSkillAutopilot(project)` / `SetSkillAutopilot(project, enabled, dailyBudgetUSD)` | Read / persist the project's skill-autopilot switch and daily budget (private `config.local.toml`; turning it on also turns on `experience_tracking`) (LN-27) |
 | `RunSkillAutopilot(project)` | One autopilot step now: decide finished trials, then distill, review and apply at most one candidate; errors if the autopilot is off (LN-25/26) |
 | `GetReferenceReport(project)` | WS-06. The project's reference cases, one pair per task: the original run first, then every replay (model, effort, gates green?, rework rounds, tokens, seconds, pinned result commit). Cases whose `base_commit` vanished are marked `InvalidReason`, not dropped. MCP `get_reference_report` |
+| `GetTaskLabels(project)` | WS-11. Quality labels of the project's tasks that ended badly (gates red after the last rework round, or unfinished until the loop stopped): `Counts` per label (`tests_fitted_to_code`, `protocol_broken`, `garbage_left`, `wrong_task_done`), `Tokens` the judgements cost, `Recent` entries with reason, model, tokens. Read only; empty unless `[optimization] quality_labels`. MCP `get_task_labels` |
 | `ReplayReferenceCase(project, caseID, model, effort)` | WS-06. Blocking and paid: a detached worktree at the case's base commit, the task text as a one-shot `claude -p` prompt, the same gates, up to 2 rework rounds; the outcome is stored beside the original. No project branch is touched. MCP `replay_reference_case` |
 | `GetHookRules(project)` | WS-03. The project's hook rules (newest first) with the effect of installed ones (steps and errors per run, before vs after); first decides trials that ran `HookRuleTrialRuns` runs. `Enabled=false` and no side effect unless `[optimization] hook_rules = true`. No MCP tool (see `ApplyHookRule`) |
 | `GetSuggestions(project)` | WS-07. Scans the project (git + its own files, no model): stale TODO/FIXME (git blame), red gates (latest `gate_runs` row, no commit on top), code/doc drift (`doc_sync` rules), broken queue pointers, abandoned branches/work folders. Returns `Items`, the project's `QueueFiles` and the task file name. `Enabled=false`, nothing scanned unless `[optimization] repo_suggestions = true`. Excluded from MCP (see `AcceptSuggestions`) |
@@ -561,6 +567,7 @@ No DI frameworks, no ORMs. Standard library for everything else.
 - `mixed_briefs` — generated mixed-programming briefs (MP-06)
 - `action_signatures` — normalized tool-call signatures mined from CLI transcripts, per run (LN-02); `dur_sec` is the tool_use→tool_result gap, feeding the duration profile (LN-18); `err_text` is one meaningful error line of a failed call (`experience.ErrorLine`, LN-35) — the failure-cluster key
 - `failure_rules` — one row per recurring error (`UNIQUE(project, error_key)`), `status` draft | accepted | dismissed | trial | kept | reverted (the last three: autopilot rules, LN-40/41), `rule_text` is the one-line rule written into the project's CLAUDE.md under "Learned from failures" (`experience.AppendClaudeMdRule`), `decided_at` anchors the before/after measurement (`experience.FailureRuleEffect`) (LN-37)
+- `task_labels` — one label (`tests_fitted_to_code`, `protocol_broken`, `garbage_left`, `wrong_task_done`; any other value is refused by `InsertTaskLabel`) with a `reason` on a task that ended badly: `task_ptr`, `run_id` (the run whose spend carries the judgement), `model`, `tokens` (input+output of the judging call); only written with `[optimization] quality_labels` (WS-11)
 - `reference_cases` / `reference_replays` — a task that closed well kept as a case with a known right answer (`task_text`, `base_commit`, `gate_cmds` JSON, `result_commit`, `rounds`, `tokens` = input+output without cache, `duration_sec`, `model`, `effort`; `invalid_reason` set once the base commit is gone from the repository) and the same task run again with another model/setting (`passed`, `rounds`, `tokens`, `duration_sec`, `result_commit` pinned under `refs/cm-replay/`); only written with `[optimization] reference_cases` or by a replay (WS-06)
 - `gate_runs` — the outcome of strict-gate runs (`passed`, `head` commit, `summary` = failed command + output tail), last 50 per project; only written with `[optimization] repo_suggestions` (WS-07)
 - `learned_sync` — per (project, kind, key) the content hash of a lesson the last time the database and its `.claude-manager/learned/` file agreed, so a later difference is told from a change on one side vs both; only written with `[optimization] learned_files` (WS-09)

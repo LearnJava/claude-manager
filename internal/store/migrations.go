@@ -275,6 +275,24 @@ CREATE TABLE IF NOT EXISTS learned_sync (
     PRIMARY KEY (project, kind, key)
 )`
 
+	// task_labels (WASTE-TASKS.md WS-11): why a task that ended badly went
+	// wrong — one label from a fixed list, a reason, the model that judged and
+	// what the judgement cost. Only written with [optimization] quality_labels.
+	sqlCreateTaskLabels = `
+CREATE TABLE IF NOT EXISTS task_labels (
+    id         INTEGER PRIMARY KEY,
+    project    TEXT NOT NULL,
+    task_ptr   TEXT NOT NULL,
+    run_id     INTEGER NOT NULL DEFAULT 0,
+    label      TEXT NOT NULL,
+    reason     TEXT NOT NULL DEFAULT '',
+    model      TEXT NOT NULL DEFAULT '',
+    tokens     INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL
+)`
+
+	sqlIdxTaskLabels = `CREATE INDEX IF NOT EXISTS idx_task_labels_project ON task_labels(project, id)`
+
 	sqlIdxGateRuns = `CREATE INDEX IF NOT EXISTS idx_gate_runs_project ON gate_runs(project, id)`
 
 	sqlIdxLoopEvents = `CREATE INDEX IF NOT EXISTS idx_loop_events_sig ON loop_events(project, sig)`
@@ -368,6 +386,7 @@ func migrate(db *sql.DB) error {
 		sqlCreateGateRuns,
 		sqlCreateNightlyRuns,
 		sqlCreateLearnedSync,
+		sqlCreateTaskLabels,
 		sqlIdxLogsRun,
 		sqlIdxRunsProject,
 		sqlIdxBriefsProject,
@@ -379,6 +398,7 @@ func migrate(db *sql.DB) error {
 		sqlIdxReferenceCases,
 		sqlIdxReferenceReplays,
 		sqlIdxGateRuns,
+		sqlIdxTaskLabels,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {

@@ -92,6 +92,17 @@ type OptimizationSettings struct {
 	// `gates`. Default off: the session records nothing and runs no extra git.
 	ReferenceCases bool `toml:"reference_cases"`
 
+	// QualityLabels puts one label (tests fitted to the code, protocol broken,
+	// garbage left, wrong task done) with a reason on a task that ended
+	// badly — gates still red after the last rework round, or unfinished run
+	// after run until the loop stopped (WASTE-TASKS.md WS-11). A task that
+	// ended well is never looked at. The judge is the cheapest model and its
+	// tokens are added to the run it judged. Default off: no model call, no
+	// extra git.
+	QualityLabels bool `toml:"quality_labels"`
+	// QualityLabelModel is the judge; empty = haiku.
+	QualityLabelModel string `toml:"quality_label_model"`
+
 	// RepoSuggestions enables the repository scanner (WASTE-TASKS.md WS-07):
 	// stale TODO/FIXME, red gates, code/doc drift, broken queue pointers,
 	// abandoned branches and work folders become a checklist of suggested

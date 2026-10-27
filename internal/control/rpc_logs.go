@@ -30,6 +30,7 @@ type LogsApp interface {
 	GetTokenAttribution(project string, topN int) (experience.AttributionReport, error)
 	GetWasteReport(project string) (experience.WasteReport, error)
 	GetReferenceReport(project string) (experience.ReferenceReport, error)
+	GetTaskLabels(project string) (experience.LabelReport, error)
 	ReplayReferenceCase(project string, caseID int64, model, effort string) (*store.ReferenceReplay, error)
 	GetModelRecommendation(project, name string) (*optimization.ModelRecommendation, error)
 	GetAutoModelRouting() bool
@@ -320,6 +321,19 @@ func (s *Server) registerLogsRPCs(reg map[string]handler) {
 			return nil, needApp("the waste report")
 		}
 		return lapp.GetWasteReport(a.Project)
+	}
+
+	reg["GetTaskLabels"] = func(p json.RawMessage) (any, error) {
+		var a struct {
+			Project string `json:"project"`
+		}
+		if err := json.Unmarshal(p, &a); err != nil {
+			return nil, err
+		}
+		if lapp == nil {
+			return nil, needApp("the task labels")
+		}
+		return lapp.GetTaskLabels(a.Project)
 	}
 
 	reg["GetReferenceReport"] = func(p json.RawMessage) (any, error) {

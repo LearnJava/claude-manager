@@ -85,7 +85,7 @@ var rpcLevels = map[string]AccessLevel{
 	"GetPendingQuestions": LevelRead, "GetPending": LevelRead, "GetPermissionCandidates": LevelRead,
 	"GetDailyTokens": LevelRead, "GetProjectTokens": LevelRead, "SearchSessionLog": LevelRead,
 	"GetProjectLogFiles": LevelRead, "GetTopActions": LevelRead, "GetActionSamples": LevelRead,
-	"GetDurationProfile": LevelRead, "GetTokenAttribution": LevelRead, "GetWasteReport": LevelRead, "GetReferenceReport": LevelRead, "ReplayReferenceCase": LevelOperate, "GetAutoModelRouting": LevelRead,
+	"GetDurationProfile": LevelRead, "GetTokenAttribution": LevelRead, "GetWasteReport": LevelRead, "GetReferenceReport": LevelRead, "GetTaskLabels": LevelRead, "ReplayReferenceCase": LevelOperate, "GetAutoModelRouting": LevelRead,
 	"GetModelRecommendation": LevelRead, "GetModelAdvice": LevelRead,
 	"ExportLog": LevelOperate, "ImportProjectLogs": LevelOperate,
 	"ClearProjectLogs": LevelAdmin, "CleanOldLogs": LevelAdmin,
