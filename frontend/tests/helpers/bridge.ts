@@ -205,6 +205,8 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         GetHookRules: () => Promise.resolve({ Enabled: false, Rules: [], TrialRuns: 10 }),
         GetSuggestions: () => Promise.resolve({ Enabled: false, Items: [], QueueFiles: [], TaskFile: 'SUGGESTED-TASKS.md' }),
         AcceptSuggestions: () => Promise.resolve([]),
+        GetLearnedFiles: () => Promise.resolve({ Enabled: false, Dir: '.claude-manager/learned', Items: [], Problems: [] }),
+        ApplyLearnedFiles: () => Promise.resolve({ Done: [], Failed: [] }),
         DraftFailureRules: () => Promise.resolve([]),
         AcceptFailureRule: () => Promise.resolve(undefined),
         DismissFailureRule: () => Promise.resolve(undefined),

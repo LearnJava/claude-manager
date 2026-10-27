@@ -260,6 +260,21 @@ CREATE TABLE IF NOT EXISTS nightly_runs (
     note    TEXT NOT NULL DEFAULT ''
 )`
 
+	// learned_sync (WASTE-TASKS.md WS-09): the content hash of each lesson
+	// (skill, rule, ban) the last time the database and the project's
+	// .claude-manager/learned/ file agreed, so a later difference can be told
+	// from a change on either side. Only written with [optimization]
+	// learned_files.
+	sqlCreateLearnedSync = `
+CREATE TABLE IF NOT EXISTS learned_sync (
+    project   TEXT NOT NULL,
+    kind      TEXT NOT NULL,
+    key       TEXT NOT NULL,
+    hash      TEXT NOT NULL,
+    synced_at DATETIME NOT NULL,
+    PRIMARY KEY (project, kind, key)
+)`
+
 	sqlIdxGateRuns = `CREATE INDEX IF NOT EXISTS idx_gate_runs_project ON gate_runs(project, id)`
 
 	sqlIdxLoopEvents = `CREATE INDEX IF NOT EXISTS idx_loop_events_sig ON loop_events(project, sig)`
@@ -352,6 +367,7 @@ func migrate(db *sql.DB) error {
 		sqlCreateReferenceReplays,
 		sqlCreateGateRuns,
 		sqlCreateNightlyRuns,
+		sqlCreateLearnedSync,
 		sqlIdxLogsRun,
 		sqlIdxRunsProject,
 		sqlIdxBriefsProject,

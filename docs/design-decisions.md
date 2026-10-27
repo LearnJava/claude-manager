@@ -3188,6 +3188,55 @@ Gates are `gate_schedule_gates`, else the project's `gates`.
   task in the queue the Queue panel already shows. Hence nothing in the Wails
   table and no MCP tool.
 
+## Learned files (WS-09)
+
+Skills, rules and bans live in the database, so a bad lesson could not be undone
+the way everything else is — with git — nor travel with the project to another
+machine. `[optimization] learned_files = true` (default off) adds a block to the
+Waste tab and keeps them also as plain files in
+`<project>/.claude-manager/learned/`, one JSON file per lesson
+(`internal/learned`). The database stays the working source of truth; the files
+are history, transfer and a way to roll back by commit.
+
+- **What is a lesson.** Only what is in force: a skill that is approved or on
+  trial (by its newest row), a rule (`failure_rules`) or ban (`hook_rules`) that
+  is on trial or kept. Rejected, dismissed, reverted and archived ones are not
+  exported. A file holds the kind, key (skill name, error key, `<hook kind>|<param>`),
+  status, origin, body (SKILL.md / rule text / hint), the date it appeared and was
+  decided, and the **measured effect** (the stored decision reason, verbatim).
+  Provenance (draft, source signatures, error examples) is carried so an import can
+  rebuild the row, but is not compared. A file is deterministic — no export
+  timestamp — so a commit shows only real changes. The folder is not gitignored.
+- **A hash, not a timestamp, decides who is newer.** `Lesson.Hash` covers
+  everything but provenance and layout; `learned_sync` remembers the hash both
+  sides had when they last agreed. Then: only the file changed → `import_upd`
+  (this is also what a `git pull` or a reverted commit looks like); only the
+  database changed → `export_upd`; file gone and database unchanged → `retire`
+  (a reverted commit that *added* lessons takes them out of force: skill
+  archived, rule/ban reverted, so session behaviour returns to what it was); the
+  reverse → `remove_file`; **both changed, or never compared and different →
+  `conflict`**. A conflict is never settled by a default: `ApplyLearnedFiles`
+  refuses it without an explicit `file` or `db` resolution, and the UI keeps
+  "Apply" disabled until one is chosen.
+- **Imports keep the status as exported**, so the state after import equals the
+  state before export (`TestExportThenImportGivesTheSameState`). A rule on trial
+  is therefore on trial on the new machine too and is measured there by the same
+  rule autopilot; imported rules and bans reach a session only through the
+  existing paths (`InjectedFailureRules`, the hook the user installs with WS-03's
+  diff). A skill's `SKILL.md` is written only when missing, never over a copy that
+  is there (it normally arrives with the repository).
+- **Nothing is written into the project without a tick** (invariant 2).
+  `GetLearnedFiles` reads files and the database and records only the
+  agreement of equal pairs in `learned_sync`; `ApplyLearnedFiles` re-plans (the
+  picks name items, never content) and touches exactly the picked ones. With the
+  flag off neither is allowed to do anything: no folder is read or created.
+  Unreadable files (broken JSON, a newer `format`, an unknown kind, an invalid
+  skill name, a second file for the same key) are listed as problems and never
+  imported; file removal is confined to the lessons folder.
+- **Where it is offered.** The block opens with the Waste tab and, when files
+  carry lessons the database lacks, says so first. There is no MCP tool for the
+  same reason as WS-07's accept.
+
 ## The "waiting for you" screen (WS-08)
 
 With several sessions in several projects, finding the one that is stuck meant

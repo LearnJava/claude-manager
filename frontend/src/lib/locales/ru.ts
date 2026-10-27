@@ -17,6 +17,7 @@ import questionBanner from './ru/questionBanner';
 import resumePrompt from './ru/resumePrompt';
 import hookRules from './ru/hookRules';
 import suggestions from './ru/suggestions';
+import learned from './ru/learned';
 import waiting from './ru/waiting';
 import modelPicker from './ru/modelPicker';
 import logStream from './ru/logStream';
@@ -51,6 +52,7 @@ export default {
     ...resumePrompt,
     ...hookRules,
     ...suggestions,
+    ...learned,
     ...waiting,
     ...modelPicker,
     ...logStream,

@@ -308,6 +308,59 @@ test.describe('Experience panel', () => {
     await expect(block.getByTestId('suggestion-stale_todo')).toBeVisible();
   });
 
+  test('Waste tab: learned files are applied only when ticked, a conflict needs a choice (WS-09)', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Experience' }).click();
+    const modal = page.getByRole('dialog');
+    await modal.getByTestId('tab-waste').click();
+    await expect(modal.getByText(/No recorded tool calls/i)).toBeVisible({ timeout: 5_000 });
+    await expect(modal.getByTestId('learned-files')).toHaveCount(0); // feature off: no block
+
+    await page.evaluate(() => {
+      const App = (window as any).go.main.App;
+      const w = window as any;
+      w.__learned = [];
+      let items = [
+        { Kind: 'rule', Key: 'go-build', Title: 'Run go vet first', Action: 'import_new', DBStatus: '', FileStatus: 'kept', Detail: '' },
+        { Kind: 'skill', Key: 'run-gates', Title: 'run-gates', Action: 'conflict', DBStatus: 'approved', FileStatus: 'approved', Detail: 'both changed' },
+      ];
+      App.GetLearnedFiles = () =>
+        Promise.resolve({ Enabled: true, Dir: '.claude-manager/learned', Items: items, Problems: ['broken.json: not a lesson file'] });
+      App.ApplyLearnedFiles = (_p: string, picks: any[]) => {
+        w.__learned.push(picks);
+        items = items.filter((i) => !picks.some((x) => x.Key === i.Key));
+        return Promise.resolve({ Done: picks.map((x) => x.Key), Failed: [] });
+      };
+    });
+    await modal.getByRole('button', { name: '✕' }).click();
+    await page.getByRole('button', { name: 'Experience' }).click();
+    await modal.getByTestId('tab-waste').click();
+
+    const block = modal.getByTestId('learned-files');
+    await expect(block.getByTestId('learned-import_new')).toBeVisible({ timeout: 5_000 });
+    await expect(block.getByTestId('learned-offer')).toBeVisible();
+    await expect(block.getByTestId('learned-problem')).toContainText('broken.json');
+    await expect(block.getByTestId('learned-apply')).toBeDisabled(); // nothing ticked
+    expect(await page.evaluate(() => (window as any).__learned)).toEqual([]);
+
+    // a ticked conflict cannot be applied until a version is chosen
+    const conflict = block.getByTestId('learned-conflict');
+    await conflict.getByTestId('learned-check').check();
+    await expect(block.getByTestId('learned-apply')).toBeDisabled();
+    await conflict.getByTestId('learned-choice').selectOption('file');
+    await expect(block.getByTestId('learned-apply')).toBeEnabled();
+    await conflict.getByTestId('learned-check').uncheck();
+
+    await block.getByTestId('learned-import_new').getByTestId('learned-check').check();
+    await block.getByTestId('learned-apply').click();
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__learned))
+      .toEqual([[{ Kind: 'rule', Key: 'go-build', Resolution: '' }]]);
+    await expect(block.getByTestId('learned-note')).toBeVisible();
+    await expect(block.getByTestId('learned-import_new')).toHaveCount(0);
+    await expect(block.getByTestId('learned-conflict')).toBeVisible();
+  });
+
   test('Waste tab: clean window, then categories with examples (WS-01)', async ({ page }) => {
     await page.goto('/');
 

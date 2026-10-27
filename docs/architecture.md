@@ -130,6 +130,7 @@ claude-manager/
 │   │   └── reporter.go              # Reporter: aggregates ContextMonitor+CacheTracker+LoopDetector
 │   │                                #   into Snapshot(sessionID) and GlobalReport() for the UI
 │   ├── nightly/                     # WS-10: nightly gate run — Due/RunDue/Execute: run the gates at the project's gate_schedule, a red result becomes a SUGGESTED-TASKS.md section + queue pointer (deduplicated by failure)
+│   ├── learned/                     # WS-09: skills/rules/bans as plain files in <project>/.claude-manager/learned/ — Collect (database → Lesson), ReadFiles/WriteFile, Plan (three-way, pure), Apply (picks only)
 │   ├── suggest/                     # WS-07: repository scanner (stale TODO, red gates, doc drift, broken queue pointers, abandoned branches/folders) + Accept (SUGGESTED-TASKS.md + queue pointers)
 │   │   ├── scan.go
 │   │   └── accept.go
@@ -256,6 +257,7 @@ claude-manager/
 │   │   ├── refcases.go              # WS-06: reference_cases + reference_replays
 │   │   ├── gateruns.go              # WS-07: gate_runs — the latest gate run of a project and the commit it ran on
 │   │   ├── nightly.go               # WS-10: nightly_runs — when a project's scheduled gate run last happened
+│   │   ├── learned.go               # WS-09: learned_sync — hash of each lesson when the database and its file last agreed
 │   │   └── logfiles.go              # Auto-saved per-run log files in <project>/.claude-manager/logs/,
 │   │                                #   shared RenderExport (md/json/txt) for auto-save + manual export
 │   └── hooks/
@@ -318,6 +320,7 @@ claude-manager/
 │   │   ├── PermissionBanner.svelte  # Permission request inline overlay on log
 │   │   ├── PermissionQueue.svelte   # Global permission queue (all sessions)
 │   │   ├── WaitingScreen.svelte     # WS-08: "waiting for you" overlay body, one row per session that needs a person
+│   │   ├── LearnedFiles.svelte      # WS-09: Waste tab block — lessons to export/import/retire, conflicts need a choice, applied only for ticked rows
 │   │   ├── PlanReview.svelte        # Pre-flight analysis plan view/edit/approve
 │   │   ├── StatusBar.svelte         # Bottom bar: active count, waiting, cost, rate limit
 │   │   ├── History.svelte           # Past runs table with filter, sort, CSV export
@@ -476,6 +479,8 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetHookRules(project)` | WS-03. The project's hook rules (newest first) with the effect of installed ones (steps and errors per run, before vs after); first decides trials that ran `HookRuleTrialRuns` runs. `Enabled=false` and no side effect unless `[optimization] hook_rules = true`. No MCP tool (see `ApplyHookRule`) |
 | `GetSuggestions(project)` | WS-07. Scans the project (git + its own files, no model): stale TODO/FIXME (git blame), red gates (latest `gate_runs` row, no commit on top), code/doc drift (`doc_sync` rules), broken queue pointers, abandoned branches/work folders. Returns `Items`, the project's `QueueFiles` and the task file name. `Enabled=false`, nothing scanned unless `[optimization] repo_suggestions = true`. Excluded from MCP (see `AcceptSuggestions`) |
 | `AcceptSuggestions(project, queueFile, keys)` | WS-07. Re-scans and, for the ticked keys only, writes `## SG-NN:` sections to `SUGGESTED-TASKS.md` and appends their `SUGGESTED-TASKS.md:N` pointers to `queueFile` (must be one of the project's task sources). Excluded from MCP: writes into the user's repository only on a tick in the UI |
+| `GetLearnedFiles(project)` | WS-09. Compares the lessons in force in the database (skills on trial/approved, rules and bans on trial/kept) with the files in `<project>/.claude-manager/learned/`, three-way against `learned_sync`, and lists what differs: `export_new`/`export_upd` (write a file), `import_new`/`import_upd` (take a file over), `retire` (file removed → take out of force here), `remove_file`, `conflict`; plus `Problems` (files that cannot be read). Writes nothing into the project. `Enabled=false`, nothing read unless `[optimization] learned_files = true`. Excluded from MCP (see `ApplyLearnedFiles`) |
+| `ApplyLearnedFiles(project, picks)` | WS-09. Re-plans and carries out only the picked `{Kind, Key, Resolution}` items: writes/removes lesson files, imports lessons into the database (a skill's `SKILL.md` is written only if missing) or retires them (skill archived, rule/ban reverted). A conflict without `Resolution` `file`/`db` is reported in `Failed` and left untouched. Excluded from MCP: writes into the user's repository only on a tick in the UI |
 | `ProposeHookRules(project)` | WS-03. Stores as drafts the rules the history justifies (repeat_read / empty_search / oversized_read when the Waste report found them; failure_cmd for a Bash command that failed in ≥3 runs and was fixed by another form). Rows only, no files |
 | `PreviewHookRule(id)` | WS-03. The diff installing a draft would make in the project (`.claude/hooks/cm-waste-guard.py`, `.claude/settings.json`); writes nothing |
 | `ApplyHookRule(id)` | WS-03. After the user saw the diff: writes the files, rule → `trial`. One trial at a time. Excluded from MCP: installing writes into the user's repository only on approval in the UI |
@@ -558,6 +563,7 @@ No DI frameworks, no ORMs. Standard library for everything else.
 - `failure_rules` — one row per recurring error (`UNIQUE(project, error_key)`), `status` draft | accepted | dismissed | trial | kept | reverted (the last three: autopilot rules, LN-40/41), `rule_text` is the one-line rule written into the project's CLAUDE.md under "Learned from failures" (`experience.AppendClaudeMdRule`), `decided_at` anchors the before/after measurement (`experience.FailureRuleEffect`) (LN-37)
 - `reference_cases` / `reference_replays` — a task that closed well kept as a case with a known right answer (`task_text`, `base_commit`, `gate_cmds` JSON, `result_commit`, `rounds`, `tokens` = input+output without cache, `duration_sec`, `model`, `effort`; `invalid_reason` set once the base commit is gone from the repository) and the same task run again with another model/setting (`passed`, `rounds`, `tokens`, `duration_sec`, `result_commit` pinned under `refs/cm-replay/`); only written with `[optimization] reference_cases` or by a replay (WS-06)
 - `gate_runs` — the outcome of strict-gate runs (`passed`, `head` commit, `summary` = failed command + output tail), last 50 per project; only written with `[optimization] repo_suggestions` (WS-07)
+- `learned_sync` — per (project, kind, key) the content hash of a lesson the last time the database and its `.claude-manager/learned/` file agreed, so a later difference is told from a change on one side vs both; only written with `[optimization] learned_files` (WS-09)
 - `loop_events` — one row per detected tool-call loop (`sig` joins to `action_signatures`, `far` = found outside the ring buffer), `resolved_by` = the first different successful action after it, filled in once the run is indexed; only written with `[optimization] loop_memory` (WS-04)
 - `ingest_state` — per-CLI-session transcript byte offset, so re-indexing never re-inserts rows (LN-02)
 - `imported_logfiles` — bulk-import dedup for `IngestDir`, keyed by (project, name, size, mtime) (LN-17)

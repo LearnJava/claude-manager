@@ -3036,6 +3036,7 @@ experience_tracking = false
 # repo_suggestions = false             # WS-07: scan the repository for postponed work (stale TODO/FIXME, red gates, doc drift, broken queue pointers, abandoned branches/folders) as a checklist; per project `doc_sync = ["code_glob => doc"]`
 # gate_schedule = "03:00"               # WS-10 (per project, private layer): run the gates at this time and file a red result as a queue task, with the error; never starts a session. Also gate_schedule_gates, gate_schedule_queue
 # waiting_screen = false             # WS-08: status-bar button with a count opens one panel over every project: a row per session that needs a person (permission, question, stop reason, rate limit, gate rounds exhausted, queue empty, mixed task needs-human) and a jump to it
+# learned_files = false              # WS-09: Waste tab block writes learned skills/rules/bans as files into <project>/.claude-manager/learned/ and offers files found there for import; project writes only on a tick, diverged versions need a choice
 ```
 
 ### 20.5 Автоматические действия менеджера (без участия пользователя)
