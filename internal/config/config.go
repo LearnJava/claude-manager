@@ -86,6 +86,9 @@ func applyProjectOverlays(cfg *AppConfig) error {
 		if len(ov.Gates) > 0 {
 			p.Gates = ov.Gates
 		}
+		if len(ov.DocSync) > 0 {
+			p.DocSync = ov.DocSync
+		}
 		if ov.DefaultPermissionMode != "" {
 			p.DefaultPermissionMode = ov.DefaultPermissionMode
 		}
@@ -152,6 +155,9 @@ func mergeOverlay(dst *ProjectOverlay, src ProjectOverlay) {
 	}
 	if len(src.Gates) > 0 {
 		dst.Gates = src.Gates
+	}
+	if len(src.DocSync) > 0 {
+		dst.DocSync = src.DocSync
 	}
 	if src.DefaultPermissionMode != "" {
 		dst.DefaultPermissionMode = src.DefaultPermissionMode
@@ -230,8 +236,9 @@ func SaveProjectOverlay(projectPath string, p ProjectConfig, localWorkers []Work
 	shared := struct {
 		Sessions              []SessionConfig `toml:"session"`
 		Gates                 []string        `toml:"gates"`
+		DocSync               []string        `toml:"doc_sync,omitempty"`
 		DefaultPermissionMode string          `toml:"default_permission_mode"`
-	}{Sessions: p.Sessions, Gates: p.Gates, DefaultPermissionMode: p.DefaultPermissionMode}
+	}{Sessions: p.Sessions, Gates: p.Gates, DocSync: p.DocSync, DefaultPermissionMode: p.DefaultPermissionMode}
 	if err := encodeAtomic(ProjectConfigPath(projectPath), shared); err != nil {
 		return err
 	}

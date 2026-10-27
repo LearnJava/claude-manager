@@ -236,6 +236,22 @@ CREATE TABLE IF NOT EXISTS loop_events (
     resolved_by TEXT NOT NULL DEFAULT ''
 )`
 
+	// gate_runs (WASTE-TASKS.md WS-07): the outcome of the latest gate run of a
+	// project and the commit it ran on, so "the gates are red and nothing has
+	// been fixed since" can be told without running them again. Only written
+	// with [optimization] repo_suggestions.
+	sqlCreateGateRuns = `
+CREATE TABLE IF NOT EXISTS gate_runs (
+    id      INTEGER PRIMARY KEY,
+    project TEXT NOT NULL,
+    ts      DATETIME NOT NULL,
+    passed  INTEGER NOT NULL,
+    head    TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT ''
+)`
+
+	sqlIdxGateRuns = `CREATE INDEX IF NOT EXISTS idx_gate_runs_project ON gate_runs(project, id)`
+
 	sqlIdxLoopEvents = `CREATE INDEX IF NOT EXISTS idx_loop_events_sig ON loop_events(project, sig)`
 
 	// reference_cases (WASTE-TASKS.md WS-06): a task that finished well, kept
@@ -324,6 +340,7 @@ func migrate(db *sql.DB) error {
 		sqlCreateLoopEvents,
 		sqlCreateReferenceCases,
 		sqlCreateReferenceReplays,
+		sqlCreateGateRuns,
 		sqlIdxLogsRun,
 		sqlIdxRunsProject,
 		sqlIdxBriefsProject,
@@ -334,6 +351,7 @@ func migrate(db *sql.DB) error {
 		sqlIdxLoopEvents,
 		sqlIdxReferenceCases,
 		sqlIdxReferenceReplays,
+		sqlIdxGateRuns,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {

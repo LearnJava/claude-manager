@@ -16,6 +16,7 @@ import permissionQueue from './ru/permissionQueue';
 import questionBanner from './ru/questionBanner';
 import resumePrompt from './ru/resumePrompt';
 import hookRules from './ru/hookRules';
+import suggestions from './ru/suggestions';
 import modelPicker from './ru/modelPicker';
 import logStream from './ru/logStream';
 import roadmapTree from './ru/roadmapTree';
@@ -48,6 +49,7 @@ export default {
     ...questionBanner,
     ...resumePrompt,
     ...hookRules,
+    ...suggestions,
     ...modelPicker,
     ...logStream,
     ...roadmapTree,

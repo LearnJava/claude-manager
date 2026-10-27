@@ -24,6 +24,8 @@ import {
     GetTokenAttribution,
     GetWasteReport,
     GetHookRules,
+    GetSuggestions,
+    AcceptSuggestions,
     ProposeHookRules,
     PreviewHookRule,
     ApplyHookRule,
@@ -684,4 +686,37 @@ export function applyHookRule(id: number): Promise<void> {
 
 export function removeHookRule(id: number): Promise<void> {
     return RemoveHookRule(id);
+}
+
+export interface RepoSuggestion {
+    Kind: string;
+    Key: string;
+    Title: string;
+    Detail: string;
+    Done: string;
+}
+
+export interface SuggestionsState {
+    Enabled: boolean;
+    Items: RepoSuggestion[];
+    QueueFiles: string[];
+    TaskFile: string;
+}
+
+// fetchSuggestions scans the project (read only); Enabled=false while
+// [optimization] repo_suggestions is off.
+export async function fetchSuggestions(project: string): Promise<SuggestionsState> {
+    const raw = (await GetSuggestions(project)) as unknown as SuggestionsState | null;
+    return {
+        Enabled: !!raw?.Enabled,
+        Items: raw?.Items ?? [],
+        QueueFiles: raw?.QueueFiles ?? [],
+        TaskFile: raw?.TaskFile ?? 'SUGGESTED-TASKS.md',
+    };
+}
+
+// acceptSuggestions writes the ticked suggestions as tasks and appends their
+// pointers to the chosen queue; returns the pointers added.
+export async function acceptSuggestions(project: string, queueFile: string, keys: string[]): Promise<string[]> {
+    return (await AcceptSuggestions(project, queueFile, keys)) ?? [];
 }

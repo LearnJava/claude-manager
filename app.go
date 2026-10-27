@@ -162,6 +162,15 @@ func (a *App) startup(ctx context.Context) {
 		})
 	}
 
+	// Gate-run record for the repository scanner (WASTE-TASKS.md WS-07): given
+	// to a session only while [optimization] repo_suggestions is on.
+	if a.store != nil {
+		st := a.store
+		a.manager.SetGateRuns(func(project string, passed bool, head, summary string) error {
+			return st.InsertGateRun(&store.GateRun{Project: project, Passed: passed, Head: head, Summary: summary})
+		})
+	}
+
 	// Wire the context primer (LEARN-TASKS.md LN-05): only ever called for a
 	// session with ContextPrimer=true (checked in Session.initialPromptText),
 	// so this is safe to wire unconditionally even for projects that never

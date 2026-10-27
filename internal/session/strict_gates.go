@@ -57,6 +57,7 @@ func (s *Session) checkStrictGates(ctx context.Context, round *int) gateVerdict 
 	root := s.gateRoot()
 	s.emitManagerLog(fmt.Sprintf("Ворота после задачи: %s", strings.Join(s.gates, " && ")))
 	res := runGatesFn(ctx, root, s.gates)
+	s.recordGateRun(ctx, root, res)
 	if res.Passed {
 		s.emitManagerLog("Ворота зелёные — задача принята")
 		return gatesGreen

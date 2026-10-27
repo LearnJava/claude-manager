@@ -3111,6 +3111,46 @@ the flag off the session makes no git call and `task_done` carries nothing extra
   original and every replay - gates green or not, rework rounds, tokens, seconds.
   `replay_reference_case` is bounded by the MCP long-tool timeout (15 minutes).
 
+## Repository suggestions (WS-07)
+
+A queue is a text file, so adding a line costs nothing; what is missing is the
+list of things worth adding. `[optimization] repo_suggestions` (default **off**)
+enables a local scanner, `internal/suggest`, that needs no model: it reads git,
+the project's files and the recorded outcome of its last gate run. The Waste tab
+shows the result as a checklist ("Suggestions"); `GetSuggestions` only reads.
+
+- **Six kinds**, each with a key that does not contain a line number or a date
+  (`kind:` + a hash of what identifies the finding), so a rescan can tell what
+  was accepted. Stale `TODO`/`FIXME`: `git grep` outside markdown/testdata/vendor,
+  the line's `git blame` author time older than `suggest_stale_days` (90 by
+  default). Red gates: the latest `gate_runs` row is red, its commit still exists
+  and is still the tip of a local branch (nothing was committed on top since; a
+  later green run supersedes the row). Doc drift: `doc_sync = ["code_glob =>
+  doc"]` per project, commits that touched the code after the document's last
+  commit (`git log doc_commit..HEAD -- :(glob)code`). Broken queue pointers: a
+  `file:N` line of a session's `task_source` whose line N is not a heading (or the
+  file is gone). Abandoned branches: local, not merged into the main branch, last
+  commit older than the threshold (7 days). Abandoned folders: a linked worktree
+  with uncommitted changes none of which was touched within the threshold (a live
+  pool slot has fresh mtimes and is left alone).
+- **Gate runs are recorded, not rerun.** `checkStrictGates` writes the outcome and
+  `HEAD` of the gate root into `gate_runs`, only while `repo_suggestions` is on
+  (the session gets `GateRunFn` from `gateRunFnFor`, nil otherwise). A project
+  that never ran strict gates simply has no red-gates kind.
+- **Nothing reaches a queue without a tick.** `AcceptSuggestions(project,
+  queueFile, keys)` re-scans and takes the text from its own scan, never from the
+  caller; the queue must be one of the project's task sources. A pointer needs a
+  heading to point at, so each accepted suggestion becomes a self-contained
+  `## SG-NN: title` section (Depends on / What to do / Done when, plus an
+  `<!-- suggest:KEY -->` line) appended to `SUGGESTED-TASKS.md` in the project
+  root, and `SUGGESTED-TASKS.md:N` is appended to the queue. The key line is what
+  keeps a rescan from offering the same thing again. Both methods are excluded
+  from MCP parity (invariant 2 of the WASTE block: writes only on approval in
+  the UI).
+- **Failure of one detector is not a failure of the scan.** Not a git repository,
+  git missing, a rule on a path with no history: that kind yields nothing, and a
+  clean repository is an empty list, not an error.
+
 ## Billing mode: the limit window and time, not dollars (WS-02)
 
 On a subscription a dollar is a ruler, not a bill: what runs out is the
