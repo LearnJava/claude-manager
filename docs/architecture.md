@@ -70,6 +70,7 @@ claude-manager/
 │   │   ├── handoff_budget.go        # LN-28: mid-turn "context budget reached" note (handoff_context_tokens)
 │   │   ├── loop_guard.go            # loop_detection: feeds tool calls to optimization.LoopDetector; warn / send_hint / restart + alert:loop
 │   │   ├── loop_memory.go           # WS-04: SetLoopMemory wiring (factory + resolve) for [optimization] loop_memory
+│   │   ├── strict_gates.go          # WS-05: gate_rounds — gates after a closed task, red output sent back as a resumed turn
 │   │   ├── launch_tuning.go         # [optimization] → launch flags: --exclude-dynamic-system-prompt-sections,
 │   │   │                            #   adaptive --max-turns (1.6 × longest recent run, ≥ max_turns_default)
 │   │   ├── permission_timeout.go    # permission_timeout/_action auto-answer; notify/sound flags on session:permission
