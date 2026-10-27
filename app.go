@@ -160,6 +160,22 @@ func (a *App) startup(ctx context.Context) {
 			})
 			return err
 		})
+		// Quality labels (WASTE-TASKS.md WS-11): a task that ended badly for
+		// good is judged by the cheapest model; only fed when [optimization]
+		// quality_labels is on. The judge's tokens are charged to the run.
+		a.manager.SetQualityLabels(func(ctx context.Context, info session.QualityLabelInfo, judgeModel string) error {
+			acfg := analysis.AnalysisConfig{Model: judgeModel}
+			if a.cfg != nil {
+				acfg.ClaudePath = a.cfg.Settings.ClaudePath
+			}
+			_, err := experience.LabelTask(ctx, st, experience.LabelInput{
+				Project: info.Project, TaskPtr: info.TaskPtr, RunID: info.RunID, Outcome: info.Outcome,
+				TaskText: info.TaskText, Feedback: info.Feedback, Diff: info.Diff,
+			}, func(ctx context.Context, in analysis.TaskLabelInput) (*analysis.TaskLabelResult, error) {
+				return analysis.GenerateTaskLabel(ctx, info.ProjectPath, in, acfg)
+			})
+			return err
+		})
 	}
 
 	// Gate-run record for the repository scanner (WASTE-TASKS.md WS-07): given

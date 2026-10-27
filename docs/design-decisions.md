@@ -3111,6 +3111,37 @@ the flag off the session makes no git call and `task_done` carries nothing extra
   original and every replay - gates green or not, rework rounds, tokens, seconds.
   `replay_reference_case` is bounded by the MCP long-tool timeout (15 minutes).
 
+## Quality labels (WS-11)
+
+Gates and rounds say whether a task worked, not what went wrong. A label names
+the cause: `tests_fitted_to_code` (tests bent to pass instead of fixing the
+code), `protocol_broken`, `garbage_left`, `wrong_task_done`. A label, not a
+score: a number invents precision, a label points at a fix.
+`[optimization] quality_labels = true` (default off; Claude runtime) turns it
+on; with the flag off the session makes no git call and no model is called.
+
+- **Only bad endings.** Two events count, both final: gates still red after the
+  last rework round (WS-05), and `maxUnfinishedStreak` unfinished runs in a row
+  that stop the loop. One unfinished run that the next session retries is not a
+  verdict. A task that ends well is never looked at, so judging it costs nothing.
+- **Evidence.** The session keeps the task's text and the work folder's start
+  commit across its retries (unlike the reference-case capture, which drops a
+  task that spans runs). At the bad ending `EvtRunEnd` carries a `LabelRecord`:
+  task text, the last red gate output (else the agent's last words, filled by the
+  manager), `git status --short` - leftovers are untracked - and `git diff
+  <start commit>`, capped.
+- **Judge.** One `claude -p` call (`analysis.GenerateTaskLabel`), `haiku` and low
+  effort by default (`quality_label_model`), plan mode, structured output whose
+  `label` is an enum of the list plus `none`. `none` stores nothing: a guess would
+  be a false claim. A label outside the list is an error in `LabelTask` and
+  `Store.InsertTaskLabel` alike, never a quiet write. The call runs in a
+  goroutine after `finishRun` so the run row exists.
+- **Cost.** The judge's input+output tokens and cost are added to the judged
+  run (`AddRunUsage`) - also for `none` - and stored in `task_labels.tokens`; the
+  measurement does not hide from the spend it measures. A run is judged once.
+- **Report.** `GetTaskLabels` / MCP `get_task_labels`: counts per label, the
+  judgements' total tokens, the newest labels with reasons.
+
 ## Repository suggestions (WS-07)
 
 A queue is a text file, so adding a line costs nothing; what is missing is the

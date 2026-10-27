@@ -204,6 +204,10 @@ func (a *evalApp) GetWasteReport(string) (experience.WasteReport, error) {
 	return experience.WasteReport{}, nil
 }
 
+func (a *evalApp) GetTaskLabels(string) (experience.LabelReport, error) {
+	return experience.LabelReport{}, nil
+}
+
 func (a *evalApp) GetReferenceReport(string) (experience.ReferenceReport, error) {
 	return experience.ReferenceReport{}, nil
 }

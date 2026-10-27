@@ -73,6 +73,9 @@ type SessionEvent struct {
 	// RefCase is set on EvtTaskDone when the session records reference cases
 	// (WS-06) and the closed task qualifies for one.
 	RefCase *RefCaseRecord
+	// Label is set on EvtRunEnd when the session labels quality (WS-11) and
+	// the task just ended badly for good.
+	Label *LabelRecord
 	// CLISessionID is populated on EvtTaskDone with the CLI session id of the
 	// run that just finished (LEARN-TASKS.md LN-21) — captured before the
 	// next task's fresh id is rotated onto the Session, so a consumer never
@@ -385,6 +388,13 @@ type Session struct {
 	refCap       refCapture
 	refSpanned   string
 	refCasesFlag bool
+	// labelCap is the start of the task in flight for quality labels,
+	// qualityLabelsFlag is [optimization] quality_labels and lastGateFeedback
+	// the last red gate output of the task (WS-11; protected by mu; see
+	// quality_label.go).
+	labelCap          labelCapture
+	qualityLabelsFlag bool
+	lastGateFeedback  string
 	// endInput closes the live run's stdin (idempotent; protected by mu,
 	// nil between runs). It lets a context restart chosen later — from the
 	// "ask" question — end an interactive process idling between turns.
@@ -580,6 +590,7 @@ func New(p Params) *Session {
 		loopDetector:      optimization.NewLoopDetector(p.Optimization),
 		loopMemory:        p.LoopMemory,
 		refCasesFlag:      p.Optimization != nil && p.Optimization.ReferenceCases,
+		qualityLabelsFlag: p.Optimization != nil && p.Optimization.QualityLabels,
 		status:            config.StatusIdle,
 		stateStore:        p.StateStore,
 		crashRecovery:     p.CrashRecovery,
@@ -1169,6 +1180,7 @@ func (s *Session) Run(ctx context.Context) {
 		if s.Config.TaskSource != "" && !reworking {
 			pointerBefore = firstTaskPointer(readTaskQueue(ctx, s.ProjectPath, s.Config.TaskSource))
 			s.beginReferenceCase(ctx, pointerBefore)
+			s.beginLabelCapture(ctx, pointerBefore)
 		}
 		err := s.runOnce(ctx, false)
 		atTaskBoundary = false
@@ -1343,7 +1355,13 @@ func (s *Session) Run(ctx context.Context) {
 				s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
 					Time: time.Now(), Level: "system", Source: "manager", Message: msg,
 				}})
-				s.emit(SessionEvent{Type: EvtRunEnd, RunStatus: status, CLISessionID: finishedCLISessionID})
+				// Unfinished run after run until the loop stops is a bad ending
+				// for good (WS-11); a single retried run is not.
+				var label *LabelRecord
+				if outcome == OutcomeUnfinished && unfinishedStreak+1 >= maxUnfinishedStreak {
+					label = s.badEndingLabel(ctx, LabelOutcomeUnfinishedLoop, "")
+				}
+				s.emit(SessionEvent{Type: EvtRunEnd, RunStatus: status, CLISessionID: finishedCLISessionID, Label: label})
 				if outcome == OutcomeUnfinished {
 					unfinishedStreak++
 					if unfinishedStreak >= maxUnfinishedStreak {
@@ -1369,7 +1387,11 @@ func (s *Session) Run(ctx context.Context) {
 					reworking = true
 					continue
 				case gatesExhausted:
-					s.emit(SessionEvent{Type: EvtRunEnd, RunStatus: RunStatusUnfinished, CLISessionID: s.CLISessionID})
+					s.mu.Lock()
+					feedback := s.lastGateFeedback
+					s.mu.Unlock()
+					s.emit(SessionEvent{Type: EvtRunEnd, RunStatus: RunStatusUnfinished, CLISessionID: s.CLISessionID,
+						Label: s.badEndingLabel(ctx, LabelOutcomeGatesRed, feedback)})
 					s.setStatus(config.StatusError)
 					s.emitErr(fmt.Errorf("gates still red after %d rework rounds — stopped, the work folder is left as is for a person to look at",
 						s.Config.GateRounds))
@@ -1377,6 +1399,7 @@ func (s *Session) Run(ctx context.Context) {
 				}
 			}
 			refCase := s.finishReferenceCase(ctx, gateRound)
+			s.endLabelCapture()
 			reworking = false
 			gateRound = 0
 			unfinishedStreak = 0
@@ -1619,6 +1642,7 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	s.emitRunStartLog("Готовлю промпт…")
 	workDir, slot := s.prepareWorkDir(ctx)
 	s.captureRefBase(ctx, workDir)
+	s.captureLabelBase(ctx, workDir)
 	args := s.runtime.Args(s, autonomous, "", "")
 
 	logger.L.Debug("session.launch",

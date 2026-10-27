@@ -62,6 +62,11 @@ func (s *Session) checkStrictGates(ctx context.Context, round *int) gateVerdict 
 		s.emitManagerLog("Ворота зелёные — задача принята")
 		return gatesGreen
 	}
+	if s.qualityLabelsOn() {
+		s.mu.Lock()
+		s.lastGateFeedback = res.Feedback()
+		s.mu.Unlock()
+	}
 	if *round >= s.Config.GateRounds {
 		s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
 			Time: time.Now(), Level: "error", Source: "manager",

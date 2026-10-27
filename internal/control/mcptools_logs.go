@@ -88,6 +88,14 @@ type refReportIn struct {
 	Project string `json:"project" jsonschema:"Project name as in get_projects, e.g. lumen"`
 }
 
+type taskLabelsIn struct {
+	Project string `json:"project" jsonschema:"Project name as in get_projects, e.g. lumen"`
+}
+
+type taskLabelsOut struct {
+	Report any `json:"report" jsonschema:"Project, Total, Tokens (what all the judgements cost), Counts (every label with its Count) and Recent (newest first: Project, TaskPtr, RunID, Label, Reason, Model, Tokens, CreatedAt)"`
+}
+
 type replayCaseIn struct {
 	Project string `json:"project" jsonschema:"Project name as in get_projects, e.g. lumen"`
 	CaseID  int64  `json:"case_id" jsonschema:"Reference case ID, the CaseID of an item of get_reference_report, e.g. 3"`
@@ -634,6 +642,26 @@ func logsTools() []Tool {
 			},
 			Result:  func(_ wasteIn, raw any) wasteOut { return wasteOut{Report: raw} },
 			Summary: func(in wasteIn, _ wasteOut) string { return "Waste report of " + in.Project + "." },
+		}),
+		define(spec[taskLabelsIn, taskLabelsOut]{
+			Name: "get_task_labels", Title: "Get quality labels of failed tasks",
+			Doc: Doc{
+				What:    "List why a project's tasks that ended badly went wrong: each carries one label - tests_fitted_to_code, protocol_broken, garbage_left or wrong_task_done - with a reason, the judging model and the tokens the judgement cost; plus the count per label.",
+				UseWhen: "you ask what kind of mistake the failed tasks share, before tightening a rule or a gate.",
+				NotFor:  "whether a task succeeded (the gates and get_reference_report say that) or the spend of sessions (use get_cost).",
+				Returns: "report with Counts per label and the newest labels with reasons; empty until [optimization] quality_labels is on and a task ends badly (gates red after the last rework round, or unfinished until the loop stopped).",
+				Effects: "none.",
+				Example: `{"project":"lumen"}`,
+			},
+			Level: LevelRead, Annotations: ro, Covers: []string{"GetTaskLabels"},
+			Translate: func(in taskLabelsIn) (string, any, error) {
+				if err := needProject(in.Project); err != nil {
+					return "", nil, err
+				}
+				return "/rpc", rpcCallBody("GetTaskLabels", map[string]string{"project": in.Project}), nil
+			},
+			Result:  func(_ taskLabelsIn, raw any) taskLabelsOut { return taskLabelsOut{Report: raw} },
+			Summary: func(in taskLabelsIn, _ taskLabelsOut) string { return "Quality labels of " + in.Project + "." },
 		}),
 		define(spec[refReportIn, refReportOut]{
 			Name: "get_reference_report", Title: "Get reference cases report",

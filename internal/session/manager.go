@@ -375,6 +375,10 @@ type SessionManager struct {
 	// refCaseFn is nil unless app.go has wired the reference-case recorder
 	// (WASTE-TASKS.md WS-06) — see SetReferenceCases.
 	refCaseFn ReferenceCaseFunc
+
+	// labelFn is nil unless app.go has wired the quality labeller
+	// (WASTE-TASKS.md WS-11) — see SetQualityLabels.
+	labelFn QualityLabelFunc
 	// gateRunFn is nil unless app.go has wired the gate-run recorder (WS-07).
 	gateRunFn GateRunFunc
 
@@ -1800,9 +1804,11 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 		ms.mu.Lock()
 		runID := ms.runID
 		ms.mu.Unlock()
+		label := m.qualityLabelInfo(ms, ev.Label)
 		if runID != 0 {
 			m.finishRun(ms, ev.RunStatus, "", ev.CLISessionID)
 		}
+		m.judgeQualityLabel(label)
 	case EvtRateLimit:
 		if ev.RateLimit != nil {
 			until := time.Time{}

@@ -3284,6 +3284,46 @@
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Get quality labels of failed tasks"
+    },
+    "description": "List why a project's tasks that ended badly went wrong: each carries one label - tests_fitted_to_code, protocol_broken, garbage_left or wrong_task_done - with a reason, the judging model and the tokens the judgement cost; plus the count per label. Use when: you ask what kind of mistake the failed tasks share, before tightening a rule or a gate. Not for: whether a task succeeded (the gates and get_reference_report say that) or the spend of sessions (use get_cost). Returns: report with Counts per label and the newest labels with reasons; empty until [optimization] quality_labels is on and a task ends badly (gates red after the last rework round, or unfinished until the loop stopped). Side effects: none. Access: read. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_task_labels",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "report": {
+          "description": "Project, Total, Tokens (what all the judgements cost), Counts (every label with its Count) and Recent (newest first: Project, TaskPtr, RunID, Label, Reason, Model, Tokens, CreatedAt)"
+        }
+      },
+      "required": [
+        "report"
+      ],
+      "type": "object"
+    },
+    "title": "Get quality labels of failed tasks"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Get token cost by tool"
     },
     "description": "Estimate which tool calls fill a project's context: tokens per signature, per tool and per result length. Use when: you look for the calls that cost the most context, to trim or replace them. Not for: dollar cost (use get_cost) or timing (use get_duration_profile). Returns: report with the totals and the three tables; empty unless experience tracking was on. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\",\"top_n\":10}",

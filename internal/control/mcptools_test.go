@@ -80,6 +80,7 @@ var toolSamples = map[string]struct {
 	"get_token_attribution":     {`{"project":"p","top_n":5}`, `{"TotalEstTokens":10,"BySignature":[]}`},
 	"get_waste_report":          {`{"project":"p"}`, `{"TotalCalls":4,"Categories":[]}`},
 	"get_reference_report":      {`{"project":"p"}`, `{"Project":"p","Cases":[]}`},
+	"get_task_labels":           {`{"project":"p"}`, `{"Project":"p","Total":0}`},
 	"replay_reference_case":     {`{"project":"p","case_id":3}`, `{"ID":1,"CaseID":3,"Passed":true}`},
 	"get_model_advice":          {`{"session_id":"p/s"}`, `{"auto_routing":true,"recommendation":{"model":"sonnet"}}`},
 	"session_preflight":         {`{"session_id":"p/s"}`, `{"id":3}`},
