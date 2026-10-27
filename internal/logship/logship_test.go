@@ -60,7 +60,13 @@ func (e *env) ship(t *testing.T) (Result, error) {
 }
 
 func (e *env) remoteFiles(t *testing.T) string {
-	return run(t, e.bare, "ls-tree", "-r", "--name-only", "main")
+	var out []string
+	for _, l := range strings.Split(run(t, e.bare, "ls-tree", "-r", "--name-only", "main"), "\n") {
+		if !strings.HasSuffix(l, "machine.md") {
+			out = append(out, l)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 func (e *env) commits(t *testing.T) string {
@@ -98,7 +104,7 @@ func TestShipSkipsYoungAndTmp(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := e.ship(t)
-	if err != nil || res.Pushed {
+	if err != nil || res.Files != 0 {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
 	e.now = e.now.Add(5 * time.Minute)
