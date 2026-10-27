@@ -4,6 +4,7 @@
     import StatusBar from './components/StatusBar.svelte';
     import SessionView from './components/SessionView.svelte';
     import PermissionQueue from './components/PermissionQueue.svelte';
+    import WaitingScreen from './components/WaitingScreen.svelte';
     import Settings from './components/Settings.svelte';
     import History from './components/History.svelte';
     import CostDashboard from './components/CostDashboard.svelte';
@@ -19,8 +20,10 @@
     import './stores/theme';
     import { logSearch } from './stores/logSearch';
     import { t } from './lib/i18n';
+    import { applyWaitingFromConfig, initWaiting, refreshHumanTasks, waitingItems, waitingScreenEnabled } from './stores/waiting';
 
     let showPermissionQueue = false;
+    let showWaiting = false;
     let showSettings = false;
     let settingsInitialTab: 'global' | 'projects' | 'sessions' = 'global';
     let settingsInitialAction: 'add' | undefined = undefined;
@@ -70,13 +73,22 @@
         await Promise.all([initProjects(), initSessions()]);
         // Billing mode decides which unit the cost readouts lead with. The
         // persisted value paints first; the config is the source of truth.
-        GetConfig().then((c: any) => applyBillingFromSettings(c?.Settings)).catch(() => { /* keep the persisted value */ });
+        GetConfig().then((c: any) => {
+            applyBillingFromSettings(c?.Settings);
+            applyWaitingFromConfig(c);
+            if ($waitingScreenEnabled) void refreshHumanTasks();
+        }).catch(() => { /* keep the persisted value */ });
+        initWaiting();
     });
 
     // ---- Global keyboard shortcuts (PLAN.md section 10 stage 8) ----
     // Ctrl+1..4 — switch between the first four sessions in the sidebar order.
     // Ctrl+F    — focus the log search box (LogStream listens for this).
     function onKeyDown(e: KeyboardEvent) {
+        if (e.key === 'Escape' && showWaiting) {
+            closeWaiting();
+            return;
+        }
         if (!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
         const k = e.key;
         if (k === 'f' || k === 'F') {
@@ -106,6 +118,27 @@
     }
     function closeQueue() {
         showPermissionQueue = false;
+    }
+
+    // "Waiting for you" (WS-08): a second overlay beside the permission queue.
+    function openWaiting() {
+        void refreshHumanTasks();
+        showWaiting = true;
+    }
+    function closeWaiting() {
+        showWaiting = false;
+    }
+    function waitingGoto(e: CustomEvent<{ sessionId: string }>) {
+        selectedSessionId.set(e.detail.sessionId);
+        closeWaiting();
+    }
+    function waitingOpenPermissions() {
+        closeWaiting();
+        openQueue();
+    }
+    function waitingOpenMixed() {
+        closeWaiting();
+        showMixedRun = true;
     }
 
     function openSettings() {
@@ -183,7 +216,7 @@
         </main>
     </div>
 
-    <StatusBar on:openQueue={openQueue} on:openDashboard={() => (showDashboard = true)} />
+    <StatusBar on:openQueue={openQueue} on:openWaiting={openWaiting} on:openDashboard={() => (showDashboard = true)} />
 
     {#if showPermissionQueue}
         <div
@@ -210,6 +243,40 @@
                         type="button">✕</button>
                 </div>
                 <PermissionQueue />
+            </div>
+        </div>
+    {/if}
+
+    {#if showWaiting}
+        <div
+            class="absolute inset-0 bg-black/40 flex items-center justify-center z-50"
+            data-testid="waiting-overlay"
+            on:click={closeWaiting}
+            on:keydown={(e) => e.key === 'Escape' && closeWaiting()}
+            role="dialog"
+            tabindex="-1">
+            <div
+                class="bg-bg-panel border border-bg-border rounded p-4 min-w-[520px] max-w-[80%] max-h-[80%] flex flex-col"
+                role="document"
+                on:click|stopPropagation
+                on:keydown|stopPropagation>
+                <div class="flex items-center justify-between mb-3 shrink-0">
+                    <h3 class="text-text font-semibold">
+                        {$t('waiting.title')}
+                        <span class="text-text-muted text-xs font-normal ml-1">
+                            {$t('waiting.count', { count: $waitingItems.length })}
+                        </span>
+                    </h3>
+                    <button
+                        class="text-text-muted hover:text-text text-sm px-2 py-0.5"
+                        data-testid="waiting-close"
+                        on:click={closeWaiting}
+                        type="button">✕</button>
+                </div>
+                <WaitingScreen
+                    on:goto={waitingGoto}
+                    on:openPermissions={waitingOpenPermissions}
+                    on:openMixed={waitingOpenMixed} />
             </div>
         </div>
     {/if}

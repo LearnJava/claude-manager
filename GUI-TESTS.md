@@ -440,6 +440,7 @@ a no-op success), so every case below overrides the stubs via `page.evaluate`
 | STB-01 | Active session count updates | Start a session | "Active: 1/N" count shown | ○ |
 | STB-02 | Waiting count shown | Session waits for permission | "Waiting: 1" colored entry visible | ○ |
 | STB-03 | Click Waiting opens queue modal | Click "Waiting: N" | PermissionQueue modal appears | ○ |
+| STB-03b | "Waiting for you" button (`[optimization] waiting_screen`) | Enable the flag; sessions waiting for permission/answer, errored, rate limited, stopped, with a drained queue | Button shows the count; its overlay lists a row per session with the reason; flag off → no button (`waiting.spec.ts`) | ✓ |
 | STB-04 | Error count shown | Session errors | "Errors: 1" colored entry visible | ○ |
 | STB-05 | Today's usage shown | Complete session with cost | "Today: <N> tok ($X.XX)" shown, tokens leading | ○ |
 | STB-05b | Clicking the total switches units | Click the "Today:" readout | Dollars become the headline, tokens move to parentheses; choice persists | ○ |

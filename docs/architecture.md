@@ -266,6 +266,8 @@ claude-manager/
 │   │   ├── queues.ts                # Per-session queue snapshot (one GetSessionRoadmap call feeds
 │   │   │                            #   the mini-bar, Queue tab and board); syncQueue() re-reads on
 │   │   │                            #   task_source_description / tasks_done change
+│   │   ├── waiting.ts               # WS-08: waiting_screen flag (from GetConfig), last session:error
+│   │   │                            #   text per session, needs_human mixed tasks, derived waitingItems
 │   │   ├── theme.ts                 # Dark/light theme toggle, localStorage persistence
 │   │   ├── logSearch.ts             # Log filter store, Ctrl+F focus
 │   │   ├── logView.ts               # Log rendering mode: markdown vs raw + layout: feed vs
@@ -313,6 +315,7 @@ claude-manager/
 │   │   ├── SessionInput.svelte      # Message input for bidirectional streaming
 │   │   ├── PermissionBanner.svelte  # Permission request inline overlay on log
 │   │   ├── PermissionQueue.svelte   # Global permission queue (all sessions)
+│   │   ├── WaitingScreen.svelte     # WS-08: "waiting for you" overlay body, one row per session that needs a person
 │   │   ├── PlanReview.svelte        # Pre-flight analysis plan view/edit/approve
 │   │   ├── StatusBar.svelte         # Bottom bar: active count, waiting, cost, rate limit
 │   │   ├── History.svelte           # Past runs table with filter, sort, CSV export

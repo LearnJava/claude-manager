@@ -17,6 +17,7 @@
     import { billing } from '../stores/billing';
     import { limitTokens, windowShare, formatWindowShare } from '../lib/billing';
     import { t } from '../lib/i18n';
+    import { waitingItems, waitingScreenEnabled } from '../stores/waiting';
 
     const dispatch = createEventDispatcher();
 
@@ -69,9 +70,16 @@
     $: rlInfo = $rateLimitStatus;
     $: rlUtil = rlInfo ? (rlInfo.utilization ?? rlInfo.Utilization) : undefined;
     $: regressions = $regressionAlerts.length;
+    // The button exists only with [optimization] waiting_screen on; at zero it
+    // still opens the screen (an empty list reads as "all clear").
+    $: waitingForYou = $waitingItems.length;
 
     function openQueue() {
         dispatch('openQueue');
+    }
+
+    function openWaiting() {
+        dispatch('openWaiting');
     }
 
     function openRegressions() {
@@ -93,6 +101,18 @@
             type="button">
             <span>⚠</span>
             <span>{$t('statusBar.waitingLabel', { count: waiting })}</span>
+        </button>
+    {/if}
+
+    {#if $waitingScreenEnabled}
+        <button
+            class="{waitingForYou > 0 ? 'text-status-waiting' : ''} hover:underline focus:outline-none flex items-center gap-1"
+            data-testid="open-waiting"
+            on:click={openWaiting}
+            title={$t('waiting.statusTooltip')}
+            type="button">
+            <span>🙋</span>
+            <span>{$t('waiting.statusLabel', { count: waitingForYou })}</span>
         </button>
     {/if}
 

@@ -3151,6 +3151,36 @@ shows the result as a checklist ("Suggestions"); `GetSuggestions` only reads.
   git missing, a rule on a path with no history: that kind yields nothing, and a
   clean repository is an empty list, not an error.
 
+## The "waiting for you" screen (WS-08)
+
+With several sessions in several projects, finding the one that is stuck meant
+opening each. `[optimization] waiting_screen = true` (default off) adds a
+status-bar button "Waiting for you: N"; it opens one overlay over the main area
+with a row per session that needs a person, the reason, how long, and a jump.
+With the flag off the button is absent and the status bar is unchanged.
+
+- **A view over existing state, no backend method.** The flag reaches the UI
+  through `GetConfig` (`Optimization.WaitingScreen`), so there is no new Wails
+  binding and no MCP tool. `lib/waiting.ts:buildWaiting` is a pure function of
+  the session list, the queue snapshots (`stores/queues.ts`), the last
+  `session:error` text per session and the `needs_human` mixed tasks.
+- **Kinds, most urgent first:** `permission` (status `waiting_permission` /
+  pending request), `question` (`waiting_for_user`), `gates_exhausted` (status
+  `error` whose message is the strict-gates stop, WS-05 — matched by
+  `GATES_EXHAUSTED_RE`), `error`, `needs_human` (a mixed task that ended
+  `needs_human`, listed per project via `GetMixedRounds`), `rate_limit`,
+  `stopped` (idle with `stopped_after_task_at`), `queue_empty` (idle, tasks done,
+  the roadmap has finished rows and nothing queued ahead). Within a kind the
+  longest wait is first. A session is at most one row; a stop beats an empty queue.
+- **The permission queue stays.** It keeps its own "Waiting: N" button and its
+  modal; the permission rows of the new screen have an "Answer…" button that
+  opens that modal, so the answer path is the same one.
+- **Overlay mechanics** are the permission queue's: a modal layer in
+  `App.svelte`, closed by the backdrop, ✕ and Escape (a window-level handler,
+  since the dialog div is rarely focused). The left session panel is untouched.
+- **A `needs_human` mixed task stays listed** until it is resolved in the mixed
+  run panel; the screen does not dismiss anything itself.
+
 ## Billing mode: the limit window and time, not dollars (WS-02)
 
 On a subscription a dollar is a ruler, not a bill: what runs out is the
