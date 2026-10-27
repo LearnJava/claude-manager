@@ -129,6 +129,7 @@ claude-manager/
 │   │   ├── loopmemory.go            # WS-04: LoopMemory interface + PastLoopHint text
 │   │   └── reporter.go              # Reporter: aggregates ContextMonitor+CacheTracker+LoopDetector
 │   │                                #   into Snapshot(sessionID) and GlobalReport() for the UI
+│   ├── nightly/                     # WS-10: nightly gate run — Due/RunDue/Execute: run the gates at the project's gate_schedule, a red result becomes a SUGGESTED-TASKS.md section + queue pointer (deduplicated by failure)
 │   ├── suggest/                     # WS-07: repository scanner (stale TODO, red gates, doc drift, broken queue pointers, abandoned branches/folders) + Accept (SUGGESTED-TASKS.md + queue pointers)
 │   │   ├── scan.go
 │   │   └── accept.go
@@ -254,6 +255,7 @@ claude-manager/
 │   │   ├── loopevents.go            # WS-04: loop_events (detected loops, resolved_by)
 │   │   ├── refcases.go              # WS-06: reference_cases + reference_replays
 │   │   ├── gateruns.go              # WS-07: gate_runs — the latest gate run of a project and the commit it ran on
+│   │   ├── nightly.go               # WS-10: nightly_runs — when a project's scheduled gate run last happened
 │   │   └── logfiles.go              # Auto-saved per-run log files in <project>/.claude-manager/logs/,
 │   │                                #   shared RenderExport (md/json/txt) for auto-save + manual export
 │   └── hooks/

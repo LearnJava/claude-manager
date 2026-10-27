@@ -248,6 +248,18 @@ type ProjectOverlay struct {
 	// AutoSkillsDailyBudgetUSD caps the autopilot's distill+review spend per
 	// day in this project; 0 = no cap.
 	AutoSkillsDailyBudgetUSD float64 `toml:"auto_skills_daily_budget_usd"`
+	// GateSchedule / GateScheduleGates / GateScheduleQueue — the nightly gate
+	// run (WASTE-TASKS.md WS-10). GateSchedule is a local time of day "HH:MM";
+	// at that time the manager runs the gates in the project folder and, when
+	// one is red, files a task with the error into the queue. It never starts a
+	// session. Empty = off. Private layer: a teammate cloning the repo should
+	// not inherit a job that runs commands on their machine at night.
+	GateSchedule string `toml:"gate_schedule"`
+	// GateScheduleGates are the commands to run; empty = the project's `gates`.
+	GateScheduleGates []string `toml:"gate_schedule_gates"`
+	// GateScheduleQueue is the queue file (relative to the project) the task
+	// pointer is appended to; empty = the first session's task_source.
+	GateScheduleQueue string `toml:"gate_schedule_queue"`
 }
 
 type ProjectConfig struct {
@@ -287,6 +299,12 @@ type ProjectConfig struct {
 	// the same name (LEARN-TASKS.md LN-25..27). Private-layer opt-in, off.
 	AutoSkills               bool    `toml:"auto_skills"`
 	AutoSkillsDailyBudgetUSD float64 `toml:"auto_skills_daily_budget_usd"`
+
+	// GateSchedule / GateScheduleGates / GateScheduleQueue — see
+	// ProjectOverlay's fields of the same name (WS-10). Private-layer, off.
+	GateSchedule      string   `toml:"gate_schedule"`
+	GateScheduleGates []string `toml:"gate_schedule_gates"`
+	GateScheduleQueue string   `toml:"gate_schedule_queue"`
 
 	// Mirror keeps a local copy of this project's settings and saved logs in
 	// the manager's mirror folder (GlobalSettings.MirrorDir), re-synced

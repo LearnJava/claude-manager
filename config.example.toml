@@ -131,6 +131,12 @@ path = 'D:\RustProjects\lumen-browser'
 # gates = ["cargo check", "cargo clippy --all-targets -- -D warnings", "cargo test"]
 # doc_sync = ["src/**/*.rs => docs/architecture.md"]   # WS-07 repo_suggestions: "code_glob => doc_path"; code that changed since the doc was last touched becomes a suggestion
 # mixed_max_rounds = 3                   # feedback rounds before needs-human
+# Nightly gate run (WASTE-TASKS.md WS-10): at this local time the manager runs the gates in the project folder
+# and, if one is red, files a task with the error into the queue. It never starts a session. Private layer
+# (config.local.toml); empty = off.
+# gate_schedule = "03:00"                # HH:MM, local time
+# gate_schedule_gates = ["go test ./..."]  # empty = the project's `gates`
+# gate_schedule_queue = "STATUS-P1.md"   # empty = the first session's task_source
 
 # Project journal (LEARN-TASKS.md LN-06): episodic memory between sessions —
 # one short distilled entry per completed task, appended to

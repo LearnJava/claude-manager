@@ -110,6 +110,15 @@ func applyProjectOverlays(cfg *AppConfig) error {
 		if ov.AutoSkillsDailyBudgetUSD != 0 {
 			p.AutoSkillsDailyBudgetUSD = ov.AutoSkillsDailyBudgetUSD
 		}
+		if ov.GateSchedule != "" {
+			p.GateSchedule = ov.GateSchedule
+		}
+		if len(ov.GateScheduleGates) > 0 {
+			p.GateScheduleGates = ov.GateScheduleGates
+		}
+		if ov.GateScheduleQueue != "" {
+			p.GateScheduleQueue = ov.GateScheduleQueue
+		}
 		if len(ov.Workers) > 0 {
 			cfg.Workers = mergeWorkers(cfg.Workers, ov.Workers)
 		}
@@ -179,6 +188,15 @@ func mergeOverlay(dst *ProjectOverlay, src ProjectOverlay) {
 	}
 	if src.AutoSkillsDailyBudgetUSD != 0 {
 		dst.AutoSkillsDailyBudgetUSD = src.AutoSkillsDailyBudgetUSD
+	}
+	if src.GateSchedule != "" {
+		dst.GateSchedule = src.GateSchedule
+	}
+	if len(src.GateScheduleGates) > 0 {
+		dst.GateScheduleGates = src.GateScheduleGates
+	}
+	if src.GateScheduleQueue != "" {
+		dst.GateScheduleQueue = src.GateScheduleQueue
 	}
 	if len(src.Workers) > 0 {
 		dst.Workers = mergeWorkers(dst.Workers, src.Workers)
@@ -251,6 +269,9 @@ func SaveProjectOverlay(projectPath string, p ProjectConfig, localWorkers []Work
 		JournalCommit    bool           `toml:"journal_commit"`
 		AutoSkills       bool           `toml:"auto_skills"`
 		AutoSkillsBudget float64        `toml:"auto_skills_daily_budget_usd"`
+		GateSchedule     string         `toml:"gate_schedule,omitempty"`
+		GateSchedGates   []string       `toml:"gate_schedule_gates,omitempty"`
+		GateSchedQueue   string         `toml:"gate_schedule_queue,omitempty"`
 		Workers          []WorkerConfig `toml:"worker"`
 	}{
 		MixedProgramming: p.MixedProgramming,
@@ -259,6 +280,9 @@ func SaveProjectOverlay(projectPath string, p ProjectConfig, localWorkers []Work
 		JournalCommit:    p.JournalCommit,
 		AutoSkills:       p.AutoSkills,
 		AutoSkillsBudget: p.AutoSkillsDailyBudgetUSD,
+		GateSchedule:     p.GateSchedule,
+		GateSchedGates:   p.GateScheduleGates,
+		GateSchedQueue:   p.GateScheduleQueue,
 		Workers:          localWorkers,
 	}
 	if err := encodeAtomic(ProjectLocalConfigPath(projectPath), local); err != nil {
@@ -569,6 +593,11 @@ func validate(cfg *AppConfig) error {
 				return fmt.Errorf("config: project %q session %q has invalid runtime %q (want claude|hermes)", p.Name, s.Name, s.Runtime)
 			}
 			names[s.Name] = true
+		}
+		if p.GateSchedule != "" {
+			if _, err := ParseGateSchedule(p.GateSchedule); err != nil {
+				return fmt.Errorf("config: project %q: %w", p.Name, err)
+			}
 		}
 		if p.MixedProgramming {
 			// Gates are the ground truth of mixed programming — a project must
