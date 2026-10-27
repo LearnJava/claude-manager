@@ -26,6 +26,8 @@ import {
     GetHookRules,
     GetSuggestions,
     AcceptSuggestions,
+    GetLearnedFiles,
+    ApplyLearnedFiles,
     ProposeHookRules,
     PreviewHookRule,
     ApplyHookRule,
@@ -719,4 +721,56 @@ export async function fetchSuggestions(project: string): Promise<SuggestionsStat
 // pointers to the chosen queue; returns the pointers added.
 export async function acceptSuggestions(project: string, queueFile: string, keys: string[]): Promise<string[]> {
     return (await AcceptSuggestions(project, queueFile, keys)) ?? [];
+}
+
+// Learned files (WASTE-TASKS.md WS-09).
+
+/** One lesson that differs between the database and the project's lesson files. */
+export interface LearnedItem {
+    Kind: 'skill' | 'rule' | 'ban';
+    Key: string;
+    Title: string;
+    /** export_new | export_upd | import_new | import_upd | retire | remove_file | conflict */
+    Action: string;
+    DBStatus: string;
+    FileStatus: string;
+    Detail: string;
+}
+
+export interface LearnedState {
+    Enabled: boolean;
+    Dir: string;
+    Items: LearnedItem[];
+    Problems: string[];
+}
+
+export interface LearnedPick {
+    Kind: string;
+    Key: string;
+    /** 'file' | 'db' — only for a conflict. */
+    Resolution: string;
+}
+
+export interface LearnedResult {
+    Done: string[];
+    Failed: string[];
+}
+
+// fetchLearnedFiles compares the database with the lesson files (read only);
+// Enabled=false while [optimization] learned_files is off.
+export async function fetchLearnedFiles(project: string): Promise<LearnedState> {
+    const raw = (await GetLearnedFiles(project)) as unknown as LearnedState | null;
+    return {
+        Enabled: !!raw?.Enabled,
+        Dir: raw?.Dir ?? '.claude-manager/learned',
+        Items: raw?.Items ?? [],
+        Problems: raw?.Problems ?? [],
+    };
+}
+
+// applyLearnedFiles carries out the ticked items; files in the project are
+// written or removed only for those.
+export async function applyLearnedFiles(project: string, picks: LearnedPick[]): Promise<LearnedResult> {
+    const raw = (await ApplyLearnedFiles(project, picks as any)) as unknown as LearnedResult | null;
+    return { Done: raw?.Done ?? [], Failed: raw?.Failed ?? [] };
 }

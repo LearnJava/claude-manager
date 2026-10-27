@@ -110,6 +110,16 @@ type OptimizationSettings struct {
 	// reason, rate limit, exhausted gate rounds, empty queue, a mixed task that
 	// needs a human). Purely a view; default off: the status bar is unchanged.
 	WaitingScreen bool `toml:"waiting_screen"`
+
+	// LearnedFiles enables the "Learned files" block (WASTE-TASKS.md WS-09):
+	// the skills, rules and bans kept in the database can be written as plain
+	// files into <project>/.claude-manager/learned/ (to commit, revert with git
+	// and carry to another machine), and files found there that the database
+	// lacks or has a different version of are offered for import. Every write
+	// into the project waits for a tick in the UI; a version that differs on
+	// both sides is never overwritten without a choice. Default off: no folder is
+	// read or created.
+	LearnedFiles bool `toml:"learned_files"`
 }
 
 // Billing modes (GlobalSettings.Billing).
