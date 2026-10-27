@@ -127,6 +127,25 @@ test.describe('summarizeShellCommand', () => {
     test('only setup segments: falls back to the raw command', () => {
         expect(summarizeShellCommand('cd x')).toBe('cd x');
     });
+
+    test('heredoc body is data, the write goes last, programs by name', () => {
+        const cmd = [
+            "cd C:/p/wt && cat > .tmp/edit7.py <<'EOF'",
+            "p='crates/shell/src/a.rs'",
+            "s = s.replace('a | b', 'c'); print(s)",
+            'EOF',
+            'C:/Py/python.exe .tmp/edit7.py && (cargo test -p shell > .tmp/t.log 2>&1; grep -E "^error|FAILED" .tmp/t.log | head -n 30)',
+        ].join('\n');
+        expect(summarizeShellCommand(cmd)).toBe('python.exe .tmp/edit7.py + 3');
+    });
+
+    test('heredoc cut off by the length cap: the rest is body', () => {
+        expect(summarizeShellCommand("cat > a.py <<'EOF'\nimport re\nx = 1 && y")).toBe('cat > a.py');
+    });
+
+    test('separators inside quotes do not split', () => {
+        expect(summarizeShellCommand("sed -i 's|a;b|c|' f.rs && cargo build")).toBe("sed -i 's|a;b|c|' f.rs + 1");
+    });
 });
 
 test.describe('shortenPath', () => {
