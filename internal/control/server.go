@@ -160,7 +160,7 @@ func (s *Server) tokenAuth(next http.Handler) http.Handler {
 		// Allow cross-origin requests from local dev / test origins.
 		if origin := r.Header.Get("Origin"); origin != "" {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CM-Token")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CM-Token, X-CM-Level")
 			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
 		}
 		if r.Method == http.MethodOptions {
