@@ -367,6 +367,11 @@ type SessionManager struct {
 	// ContextHandoff flag is on — see SetHandoffBuilder.
 	handoffFn HandoffFunc
 
+	// loopMemoryFn / loopResolveFn are nil unless app.go has wired the loop
+	// history (WASTE-TASKS.md WS-04) — see SetLoopMemory.
+	loopMemoryFn  LoopMemoryFactory
+	loopResolveFn LoopResolveFunc
+
 	// regressionFn is nil unless app.go has wired the cost-regression
 	// detector (LEARN-TASKS.md LN-16); even then, finishRun only calls it
 	// when cfg.Optimization.ExperienceTracking is on — see
@@ -710,6 +715,7 @@ func (m *SessionManager) StartSession(project, name string) error {
 		MaxTurns:          m.adaptiveMaxTurns(project, name),
 		ExcludeDynamic:    m.excludeDynamicSystemPrompt(),
 		HandoffFn:         handoffFn,
+		LoopMemory:        m.loopMemoryFor(ms, project, name, proj.Path),
 		OnEvent: func(sid string, ev SessionEvent) {
 			m.onSessionEvent(sid, ev)
 		},
@@ -797,6 +803,7 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 		MaxTurns:          m.adaptiveMaxTurns(project, name),
 		ExcludeDynamic:    m.excludeDynamicSystemPrompt(),
 		HandoffFn:         handoffFn,
+		LoopMemory:        m.loopMemoryFor(ms, project, name, proj.Path),
 		OnEvent:           func(sid string, ev SessionEvent) { m.onSessionEvent(sid, ev) },
 	})
 	ms.session = sess
@@ -1111,6 +1118,7 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 		MaxTurns:          m.adaptiveMaxTurns(project, name),
 		ExcludeDynamic:    m.excludeDynamicSystemPrompt(),
 		HandoffFn:         handoffFn,
+		LoopMemory:        m.loopMemoryFor(ms, project, name, proj.Path),
 		ResumeSessionID:   resumeID,
 		OnEvent:           func(sid string, ev SessionEvent) { m.onSessionEvent(sid, ev) },
 	})
@@ -2147,6 +2155,7 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 					"rows", res.Rows,
 					"reason", res.Reason,
 				)
+				m.resolveLoops(sessID, runID)
 				m.runSkillAutopilot(project, projectPath)
 			}
 		}()

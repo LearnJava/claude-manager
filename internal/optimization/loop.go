@@ -25,6 +25,9 @@ type LoopDetected struct {
 	Action     string // one of LoopAction* constants
 	Hint       string // text to send to stdin when Action == LoopActionSendHint
 	WindowSize int    // size of the ring buffer at detection time
+	// Far marks a repeat found by the per-run tally, outside the ring buffer
+	// (loop_memory only); Count is then the occurrences in the whole run.
+	Far bool
 }
 
 // toolCall is one slot in the LoopDetector ring buffer.
@@ -50,6 +53,9 @@ type LoopDetector struct {
 	buf         []toolCall
 	head        int // next write position
 	lastEditKey string
+	// tally counts every call of the run by key; used only with loop_memory,
+	// to see a repeat the ring buffer has already forgotten.
+	tally map[string]int
 }
 
 // NewLoopDetector returns a detector sized from cfg.LoopWindow. If cfg is nil
@@ -125,7 +131,11 @@ func (d *LoopDetector) Observe(tool, normalizedInput string) *LoopDetected {
 		threshold = 3
 	}
 	if count < threshold {
-		return nil
+		return d.observeFar(tool, normalizedInput)
+	}
+	if d.cfg.LoopMemory {
+		// The window caught it; start the run tally of this key over.
+		delete(d.tally, tool+"|"+normalizedInput)
 	}
 
 	action := d.cfg.LoopAction
@@ -141,6 +151,50 @@ func (d *LoopDetector) Observe(tool, normalizedInput string) *LoopDetected {
 		Hint:       d.cfg.LoopHint,
 		WindowSize: len(d.buf),
 	}
+}
+
+// observeFar counts the call in the run tally and reports a repeat the ring
+// buffer no longer sees. Off (nil) unless loop_memory is on. Caller holds mu.
+func (d *LoopDetector) observeFar(tool, input string) *LoopDetected {
+	if !d.cfg.LoopMemory {
+		return nil
+	}
+	if d.tally == nil {
+		d.tally = make(map[string]int)
+	}
+	key := tool + "|" + input
+	d.tally[key]++
+	far := d.cfg.LoopFarThreshold
+	if far <= 0 {
+		far = DefaultLoopFarThreshold
+	}
+	if d.tally[key] < far {
+		return nil
+	}
+	n := d.tally[key]
+	delete(d.tally, key)
+	action := d.cfg.LoopAction
+	if action == "" || action == LoopActionRestart {
+		// A repeat spread over the whole run is a weaker sign than a tight
+		// circle: never worth a restart.
+		action = LoopActionWarn
+	}
+	return &LoopDetected{
+		Tool: tool, Input: input, Count: n, Action: action,
+		Hint: d.cfg.LoopHint, WindowSize: len(d.buf), Far: true,
+	}
+}
+
+// DefaultLoopFarThreshold is the run-wide count of one call that makes a far
+// repeat when [optimization] loop_far_threshold is 0.
+const DefaultLoopFarThreshold = 6
+
+// NewRun is Reset plus a fresh run tally: what a run starts clean on.
+func (d *LoopDetector) NewRun() {
+	d.Reset()
+	d.mu.Lock()
+	d.tally = nil
+	d.mu.Unlock()
 }
 
 // Reset clears the ring buffer. Useful after a successful intervention

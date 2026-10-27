@@ -2999,6 +2999,38 @@ for the project) and lazily from `GetHookRules`. One trial at a time, as for
 failure rules. The five `App` methods are in `parityExcluded`: an agent has no
 business approving a write into the user's repository.
 
+## Loops that are remembered beyond one session (WS-04)
+
+`LoopDetector` looks at a ring buffer of the last `loop_window` calls and lives
+inside one run: a read repeated every fifty steps, or a loop that happened
+yesterday, passes it. `[optimization] loop_memory` (default **off** — with it
+off no tally is kept, no row is written and the hint is byte-identical to
+before) adds three things:
+
+- **Far repeats.** The detector keeps a per-run tally of every call and fires
+  when one reaches `loop_far_threshold` (6) occurrences although the window
+  never held `loop_threshold` of them. Such a hit is flagged `Far`, and a
+  configured `restart` is lowered to `warn`: a repeat spread over a whole run
+  is a weaker sign than a tight circle. The spec asks for this check to read
+  `action_signatures`, but those rows are written when a run *finishes* (the
+  indexer reads the transcript then), so mid-run the tally stands in for them;
+  the finished run's rows are what resolution uses.
+- **`loop_events`.** Every detection (in-window or far) is stored with the
+  signature of the call (`experience.LoopSig` — the same `Signature` the
+  indexer applies, minus a Read's range and an Edit's old text). After the run
+  is indexed `ResolveRunLoops` sets `resolved_by` to `<tool> <arg>` of the
+  first *successful* action after the loop whose signature differs from the
+  loop's. A loop the run never got out of stays unresolved and is never offered.
+- **The hint.** When a loop is detected, the session asks for the latest
+  *resolved* event of the project with the same signature *before* storing the
+  new one (a loop never answers itself) and adds "You have been stuck on this
+  exact step before (… ago). What got past it last time: …" to what the loop
+  action already says: the manager log line and toast, the `send_hint` stdin
+  message, or the `restart` note. An empty history adds nothing.
+
+The session package cannot import `experience`, so `app.go` supplies a
+`LoopMemoryFactory` and a `LoopResolveFunc` (`SessionManager.SetLoopMemory`).
+
 ## Billing mode: the limit window and time, not dollars (WS-02)
 
 On a subscription a dollar is a ruler, not a bill: what runs out is the

@@ -3029,6 +3029,8 @@ experience_tracking = false
 # waste_empty_search_chars = 100       # WS-01: Grep/Glob result shorter than this is "empty" (0 = default)
 # waste_oversized_read_tokens = 8000   # WS-01: Read result above this is a whole-file read (0 = default)
 # hook_rules = false                    # WS-03: propose PreToolUse hook rules in the Waste tab; installed only on approval, on trial with auto-revert
+# loop_memory = false                   # WS-04: loops outlive a window and a session (loop_events); a loop broken before is answered with what broke it
+# loop_far_threshold = 6                # WS-04: occurrences of one call in a run that count as a far repeat (0 = default)
 ```
 
 ### 20.5 Автоматические действия менеджера (без участия пользователя)

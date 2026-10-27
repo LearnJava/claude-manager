@@ -216,6 +216,28 @@ CREATE TABLE IF NOT EXISTS hook_rules (
     UNIQUE(project, kind, param)
 )`
 
+	// loop_events (WASTE-TASKS.md WS-04): one row per detected tool-call loop,
+	// kept across runs so a loop that was already broken once can be answered
+	// with what broke it. resolved_by is "<tool> <arg>" of the first different
+	// successful action after the loop, filled in when the run is indexed;
+	// '' while unknown.
+	sqlCreateLoopEvents = `
+CREATE TABLE IF NOT EXISTS loop_events (
+    id          INTEGER PRIMARY KEY,
+    project     TEXT NOT NULL,
+    session     TEXT NOT NULL,
+    run_id      INTEGER NOT NULL DEFAULT 0,
+    sig         TEXT NOT NULL,
+    tool        TEXT NOT NULL,
+    arg         TEXT NOT NULL DEFAULT '',
+    count       INTEGER NOT NULL DEFAULT 0,
+    far         INTEGER NOT NULL DEFAULT 0,
+    ts          DATETIME NOT NULL,
+    resolved_by TEXT NOT NULL DEFAULT ''
+)`
+
+	sqlIdxLoopEvents = `CREATE INDEX IF NOT EXISTS idx_loop_events_sig ON loop_events(project, sig)`
+
 	sqlCreateFailureRules = `
 CREATE TABLE IF NOT EXISTS failure_rules (
     id            INTEGER PRIMARY KEY,
@@ -257,6 +279,7 @@ func migrate(db *sql.DB) error {
 		sqlCreateSkills,
 		sqlCreateFailureRules,
 		sqlCreateHookRules,
+		sqlCreateLoopEvents,
 		sqlIdxLogsRun,
 		sqlIdxRunsProject,
 		sqlIdxBriefsProject,
@@ -264,6 +287,7 @@ func migrate(db *sql.DB) error {
 		sqlIdxSigRun,
 		sqlIdxPermEvtProject,
 		sqlIdxSkillsProject,
+		sqlIdxLoopEvents,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {

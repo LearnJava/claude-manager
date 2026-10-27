@@ -69,6 +69,7 @@ claude-manager/
 │   │   ├── task_outcome.go          # Hermes turn → completed/slice/unfinished; 429 behind a 401 via agent.log
 │   │   ├── handoff_budget.go        # LN-28: mid-turn "context budget reached" note (handoff_context_tokens)
 │   │   ├── loop_guard.go            # loop_detection: feeds tool calls to optimization.LoopDetector; warn / send_hint / restart + alert:loop
+│   │   ├── loop_memory.go           # WS-04: SetLoopMemory wiring (factory + resolve) for [optimization] loop_memory
 │   │   ├── launch_tuning.go         # [optimization] → launch flags: --exclude-dynamic-system-prompt-sections,
 │   │   │                            #   adaptive --max-turns (1.6 × longest recent run, ≥ max_turns_default)
 │   │   ├── permission_timeout.go    # permission_timeout/_action auto-answer; notify/sound flags on session:permission
@@ -119,7 +120,9 @@ claude-manager/
 │   │   ├── context.go               # Context utilization monitor, auto-restart at threshold;
 │   │   │                            #   wired into internal/session's run loop by LN-15
 │   │   ├── cache.go                 # Cache efficiency tracking, warming delay between session starts
-│   │   ├── loop.go                  # Loop detection (repeated tool calls, ring buffer)
+│   │   ├── loop.go                  # Loop detection (repeated tool calls, ring buffer;
+│   │   │                            #   WS-04: per-run tally for repeats outside the window)
+│   │   ├── loopmemory.go            # WS-04: LoopMemory interface + PastLoopHint text
 │   │   └── reporter.go              # Reporter: aggregates ContextMonitor+CacheTracker+LoopDetector
 │   │                                #   into Snapshot(sessionID) and GlobalReport() for the UI
 │   ├── worker/                      # Mixed programming (MIXED-TASKS.md MP-02..06,08)
@@ -210,6 +213,9 @@ claude-manager/
 │   │   ├── hookrules.go             # WS-03: HookRuleCandidates (waste kinds + commands that
 │   │   │                            #   kept failing), HookRuleEffect, EvaluateHookTrials
 │   │   │                            #   (keep, or take out when runs got longer/more erroneous).
+│   │   ├── loopmemory.go            # WS-04: LoopMemory (loop_events record + hint from an earlier
+│   │   │                            #   resolved loop), ResolveRunLoops (resolved_by from the
+│   │   │                            #   indexed run's action_signatures)
 │   │   ├── duration.go              # LN-18: DurationProfile — median/p90/max/fail-rate per
 │   │   │                            #   signature from action_signatures.dur_sec (n>=10 only);
 │   │   │                            #   durationSection renders the primer's "Command timing"
@@ -236,6 +242,7 @@ claude-manager/
 │   ├── store/
 │   │   ├── store.go                 # SQLite: init, CRUD for runs/logs/plans/metrics/briefs/skills
 │   │   ├── migrations.go            # CREATE TABLE statements, indexes
+│   │   ├── loopevents.go            # WS-04: loop_events (detected loops, resolved_by)
 │   │   └── logfiles.go              # Auto-saved per-run log files in <project>/.claude-manager/logs/,
 │   │                                #   shared RenderExport (md/json/txt) for auto-save + manual export
 │   └── hooks/
@@ -529,6 +536,7 @@ No DI frameworks, no ORMs. Standard library for everything else.
 - `mixed_briefs` — generated mixed-programming briefs (MP-06)
 - `action_signatures` — normalized tool-call signatures mined from CLI transcripts, per run (LN-02); `dur_sec` is the tool_use→tool_result gap, feeding the duration profile (LN-18); `err_text` is one meaningful error line of a failed call (`experience.ErrorLine`, LN-35) — the failure-cluster key
 - `failure_rules` — one row per recurring error (`UNIQUE(project, error_key)`), `status` draft | accepted | dismissed | trial | kept | reverted (the last three: autopilot rules, LN-40/41), `rule_text` is the one-line rule written into the project's CLAUDE.md under "Learned from failures" (`experience.AppendClaudeMdRule`), `decided_at` anchors the before/after measurement (`experience.FailureRuleEffect`) (LN-37)
+- `loop_events` — one row per detected tool-call loop (`sig` joins to `action_signatures`, `far` = found outside the ring buffer), `resolved_by` = the first different successful action after it, filled in once the run is indexed; only written with `[optimization] loop_memory` (WS-04)
 - `ingest_state` — per-CLI-session transcript byte offset, so re-indexing never re-inserts rows (LN-02)
 - `imported_logfiles` — bulk-import dedup for `IngestDir`, keyed by (project, name, size, mtime) (LN-17)
 - `permission_events` — one row per resolved permission_request (auto-decided or human), source for the Permissions tab's rule suggestions (LN-04)

@@ -75,6 +75,16 @@ type OptimizationSettings struct {
 	// project's .claude/ files and installs one only on the user's approval.
 	// Default off: nothing is proposed, written or measured.
 	HookRules bool `toml:"hook_rules"`
+
+	// LoopMemory makes loops outlive one window and one session (WASTE-TASKS.md
+	// WS-04): a repeat outside the ring buffer is caught by a per-run tally,
+	// every loop is stored in loop_events with what broke it, and a repeat of
+	// a loop that was already broken once gets that as a hint. Default off:
+	// the detector and its prompts behave exactly as without it.
+	LoopMemory bool `toml:"loop_memory"`
+	// LoopFarThreshold is how many times one call must occur in a run, window
+	// or not, to count as a far repeat. 0 = built-in default (6).
+	LoopFarThreshold int `toml:"loop_far_threshold"`
 }
 
 // Billing modes (GlobalSettings.Billing).

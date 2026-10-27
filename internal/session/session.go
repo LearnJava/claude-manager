@@ -250,6 +250,11 @@ type Params struct {
 	// without a SessionManager behind it (e.g. in unit tests).
 	Optimization *config.OptimizationSettings
 
+	// LoopMemory remembers detected loops across runs and answers a repeated
+	// one with what broke it last time ([optimization] loop_memory, WASTE-TASKS.md
+	// WS-04). nil = off: the loop guard behaves as without it.
+	LoopMemory optimization.LoopMemory
+
 	// HandoffFn distills a compact recap of an in-flight task interrupted by
 	// a context restart (LEARN-TASKS.md LN-15); nil disables the handoff
 	// restart path regardless of Config.ContextHandoff (e.g. before app.go
@@ -313,6 +318,7 @@ type Session struct {
 	handoffFn         HandoffFunc
 	contextMonitor    *optimization.ContextMonitor
 	loopDetector      *optimization.LoopDetector
+	loopMemory        optimization.LoopMemory
 
 	mu              sync.Mutex
 	status          config.SessionStatus
@@ -553,6 +559,7 @@ func New(p Params) *Session {
 		handoffFn:         p.HandoffFn,
 		contextMonitor:    optimization.NewContextMonitor(p.Optimization, 0),
 		loopDetector:      optimization.NewLoopDetector(p.Optimization),
+		loopMemory:        p.LoopMemory,
 		status:            config.StatusIdle,
 		stateStore:        p.StateStore,
 		crashRecovery:     p.CrashRecovery,
@@ -2459,7 +2466,7 @@ func (s *Session) resetRunAtomics() {
 	s.transientAPIHit.Store(false)
 	s.afterLoopRestart.Store(s.loopRestartHit.Swap(false))
 	if s.loopDetector != nil {
-		s.loopDetector.Reset()
+		s.loopDetector.NewRun()
 	}
 	s.continueMarkerHit.Store(false)
 	s.stepLimitHit.Store(false)
