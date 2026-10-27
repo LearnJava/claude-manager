@@ -189,6 +189,11 @@ export interface WasteReport {
     WastedLifetimeTokens: number;
     WastedShare: number;
     Categories: WasteCategory[];
+    // WS-02: the plan's limit window and the share of it the waste ate;
+    // WindowKnown tells "window not configured" from a real 0%.
+    LimitWindowTokens: number;
+    WindowKnown: boolean;
+    WindowShare: number;
 }
 
 export const emptyWasteReport = (): WasteReport => ({
@@ -198,6 +203,9 @@ export const emptyWasteReport = (): WasteReport => ({
     WastedLifetimeTokens: 0,
     WastedShare: 0,
     Categories: [],
+    LimitWindowTokens: 0,
+    WindowKnown: false,
+    WindowShare: 0,
 });
 
 // fetchWasteReport mines a project's action_signatures for repeated reads,

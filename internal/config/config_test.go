@@ -634,3 +634,42 @@ func TestLoad_MigratesStopWhenNoTasks(t *testing.T) {
 		t.Errorf("saved config still has stop_when_no_tasks:\n%s", out)
 	}
 }
+
+// ---- Billing (WS-02) ----
+
+func TestBillingDefaultsToSubscription(t *testing.T) {
+	cfg, err := Load(filepath.Join(t.TempDir(), "no-such.toml"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Settings.Billing != BillingSubscription || cfg.Settings.LimitWindowTokens != 0 {
+		t.Errorf("defaults = %q / %d, want subscription / 0", cfg.Settings.Billing, cfg.Settings.LimitWindowTokens)
+	}
+	// A config file that predates the key keeps the default too.
+	cfg, err = Load(writeTOML(t, "[settings]\ntheme = \"light\"\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Settings.Billing != BillingSubscription {
+		t.Errorf("Billing = %q, want subscription when the key is absent", cfg.Settings.Billing)
+	}
+}
+
+func TestBillingAPIAndWindowRoundTrip(t *testing.T) {
+	cfg, err := Load(writeTOML(t, "[settings]\nbilling = \"api\"\nlimit_window_tokens = 5000000\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Settings.Billing != BillingAPI || cfg.Settings.LimitWindowTokens != 5_000_000 {
+		t.Errorf("got %q / %d", cfg.Settings.Billing, cfg.Settings.LimitWindowTokens)
+	}
+}
+
+func TestBillingValidation(t *testing.T) {
+	if _, err := Load(writeTOML(t, "[settings]\nbilling = \"free\"\n")); err == nil || !strings.Contains(err.Error(), "billing") {
+		t.Errorf("unknown billing: err = %v, want a billing error", err)
+	}
+	if _, err := Load(writeTOML(t, "[settings]\nlimit_window_tokens = -1\n")); err == nil || !strings.Contains(err.Error(), "limit_window_tokens") {
+		t.Errorf("negative window: err = %v, want a limit_window_tokens error", err)
+	}
+}

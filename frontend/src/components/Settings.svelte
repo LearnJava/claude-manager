@@ -20,6 +20,7 @@
     import { refreshSessions } from '../stores/sessions';
     import { setTheme, type Theme } from '../stores/theme';
     import { setLocale, t, type Locale } from '../lib/i18n';
+    import { applyBillingFromSettings } from '../stores/billing';
     import { formatBytes } from '../lib/formatters';
     import { MODELS, EFFORTS, isKnownModel } from '../lib/models';
     import PlanReview from './PlanReview.svelte';
@@ -120,6 +121,8 @@
         LogRetentionDays: number;
         Theme: string;
         Language: string;
+        Billing?: string;
+        LimitWindowTokens?: number;
         CrashRecovery: boolean;
         PreflightAnalysis: boolean;
         PreflightModel: string;
@@ -280,6 +283,8 @@
             LogRetentionDays: 30,
             Theme: 'dark',
             Language: 'en',
+            Billing: 'subscription',
+            LimitWindowTokens: 0,
             CrashRecovery: true,
             PreflightAnalysis: true,
             PreflightModel: 'haiku',
@@ -342,6 +347,8 @@
             const themeVal = cfg.Settings.Theme === 'light' ? 'light' : 'dark';
             setTheme(themeVal as Theme);
             setLocale(cfg.Settings.Language === 'ru' ? 'ru' : 'en');
+            // Which unit the cost readouts lead with (WASTE-TASKS.md WS-02).
+            applyBillingFromSettings(cfg.Settings);
             clampSelections();
             if (initialAction === 'add') {
                 addProject();
@@ -1044,6 +1051,33 @@
                         <p class="text-text-dim text-xs mt-1">
                             {$t('settings.experienceLayer.description')}
                         </p>
+                    </section>
+
+                    <section data-testid="billing-section">
+                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.billing.heading')}</h3>
+                        <div class="grid grid-cols-2 gap-3">
+                            <label class="flex flex-col text-xs text-text-muted gap-1">
+                                {$t('settings.billing.mode')}
+                                <select
+                                    data-testid="billing-mode"
+                                    bind:value={gs.Billing}
+                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
+                                    <option value="subscription">{$t('settings.billing.subscription')}</option>
+                                    <option value="api">{$t('settings.billing.api')}</option>
+                                </select>
+                            </label>
+                            <label class="flex flex-col text-xs text-text-muted gap-1">
+                                {$t('settings.billing.window')}
+                                <input
+                                    data-testid="billing-window"
+                                    type="number"
+                                    step="1"
+                                    min="0"
+                                    bind:value={gs.LimitWindowTokens}
+                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                            </label>
+                        </div>
+                        <p class="text-text-dim text-xs mt-1">{$t('settings.billing.description')}</p>
                     </section>
 
                     <section>

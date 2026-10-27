@@ -421,14 +421,14 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `GetSessionMetrics(id)` | Token/cost metrics for one session |
 | `GetHistory(project, limit)` | Past session runs from SQLite |
 | `GetDailyCost(date)` | Cost aggregate for a date |
-| `GetDailyTokens(date)` | Token volume for a date (input/output/cache split + total), from the same `daily_metrics` rows as `GetDailyCost` |
+| `GetDailyTokens(date)` | Token volume for a date (input/output/cache split + total + `duration_ms`, the wall-clock time of the day's runs, WS-02), from the same `daily_metrics` rows as `GetDailyCost` |
 | `GetProjectCost(project, days)` | Cost aggregate for a project over N days |
 | `GetProjectTokens(project, days)` | Token volume for a project over N days — the token twin of `GetProjectCost` |
 | `GetTopActions(project, days)` | Aggregated tool-call signatures for the "Actions" tab (LEARN-TASKS.md LN-03) |
 | `GetActionSamples(project, sig, limit)` | Concrete example rows for one signature — the "Actions" tab's click-through |
 | `GetDurationProfile(project)` | Median/p90/max/fail-rate duration profile per signature — the "Timing" tab (LEARN-TASKS.md LN-18) |
 | `GetTokenAttribution(project, topN)` | Estimated-token attribution by signature (top-N) and by tool, priced with re-reads (`LifetimeTokens`), plus cost by session length (`ByLength`) — the "Cost by tool" tab (LEARN-TASKS.md LN-12, LN-29) |
-| `GetWasteReport(project)` | Successful but useless work over the last 90 days — repeated reads, empty-search streaks, whole-file reads, commands rerun without an edit — per category: calls, est. tokens, share, 5 examples — the "Waste" tab (WASTE-TASKS.md WS-01). Cut-offs: `[optimization] waste_empty_search_chars` / `waste_oversized_read_tokens` |
+| `GetWasteReport(project)` | Successful but useless work over the last 90 days — repeated reads, empty-search streaks, whole-file reads, commands rerun without an edit — per category: calls, est. tokens, share, 5 examples, plus the share of `[settings] limit_window_tokens` the waste ate (`WindowKnown`/`WindowShare`, WS-02) — the "Waste" tab (WASTE-TASKS.md WS-01). Cut-offs: `[optimization] waste_empty_search_chars` / `waste_oversized_read_tokens` |
 | `GetPermissionCandidates(project, days)` | Suggested auto-allow permission rules, split into safe/needs-review — the "Permissions" tab (LEARN-TASKS.md LN-04) |
 | `AddPermissionRule(project, session, tool, pattern, decision)` | Append a `PermissionRule` to one session's config — the Permissions tab's "Add rule" button |
 | `GetSkillCandidates(project)` | Mine a project's recent `action_signatures` into ranked skill candidates — the Skills tab's "Candidates" list, and the only source of an `experience.SkillCandidate` to pass to `DistillSkill` below (LEARN-TASKS.md LN-08) |

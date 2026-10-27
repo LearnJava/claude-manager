@@ -1538,7 +1538,14 @@ func (a *App) GetWasteReport(project string) (experience.WasteReport, error) {
 		th.EmptySearchChars = a.cfg.Optimization.WasteEmptySearchChars
 		th.OversizedReadTokens = a.cfg.Optimization.WasteOversizedReadTokens
 	}
-	return experience.BuildWasteReport(a.store, project, th)
+	report, err := experience.BuildWasteReport(a.store, project, th)
+	if err != nil {
+		return report, err
+	}
+	if a.cfg != nil {
+		report.ApplyWindow(a.cfg.Settings.LimitWindowTokens)
+	}
+	return report, nil
 }
 
 // GetPermissionCandidates aggregates permission_events for a project into

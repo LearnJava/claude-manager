@@ -2951,6 +2951,41 @@ empty list, not a row of zeros. Surfaced as `App.GetWasteReport(project)`,
 the `get_waste_report` MCP tool and the "Waste" tab of the Experience panel.
 The report only reads; acting on it is WS-03.
 
+## Billing mode: the limit window and time, not dollars (WS-02)
+
+On a subscription a dollar is a ruler, not a bill: what runs out is the
+rate-limit window, and then the work stops. `[settings] billing =
+"subscription" | "api"` (default `subscription`) says which unit the
+readouts lead with; `limit_window_tokens` is the size of the plan's window
+(`0` = unknown). Both are editable in Settings → Global → Billing and through
+`update_config`; `GlobalSettings.Billing` is validated on load (unknown value
+or a negative window is refused).
+
+What a run took out of the window is `limitTokens` = input + cache write +
+cache read (`frontend/src/lib/billing.ts`). Output is left out on purpose: the
+window is metered on what is sent to the model. The share of the window is
+`tokens / window`, and an unknown window is `null`, never 0 — the UI says
+"share unknown" instead of printing `0%`, and nothing divides by zero.
+
+In `subscription` mode the session card (row 3), the status bar's "Today",
+the Dashboard's KPI row and the Waste tab put tokens-to-limit, share of the
+window and time first; the dollar figure stays, labelled "conv. units"
+(conventional units: a list-price estimate for comparing runs, not money
+spent). The old tokens/USD switch keeps working in the Dashboard's charts and
+by-model bars, where the USD button reads "Conv. units". In `api` mode none
+of it renders and every readout is exactly what it was before the setting.
+
+The frontend learns the mode from `GetConfig` at boot (`App.svelte` →
+`stores/billing.ts`, persisted in `localStorage` like the language so the
+first paint is already right) and again whenever Settings loads or saves.
+Time of the day comes from a new `daily_metrics.total_duration_ms` column
+(additive migration), filled with the wall-clock time of each finished run and
+exposed as `DailyTokens.duration_ms`; days recorded before the column existed
+read as 0 time. `WasteReport` gained `LimitWindowTokens`, `WindowKnown` and
+`WindowShare` (`ApplyWindow`; waste lifetime tokens / window — it can exceed
+1 because the report spans days while a window is hours), shown as a line
+under the Waste headline in subscription mode.
+
 ## Session work folder (slot)
 
 `use_worktree` no longer passes `--worktree` to the CLI. Both runtimes launch the

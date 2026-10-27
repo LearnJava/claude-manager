@@ -11,11 +11,14 @@
     import { projects } from '../stores/projects';
     import {
         formatCost,
+        formatDuration,
         formatPercent,
         formatTokens,
         tokenSplit,
     } from '../lib/formatters';
     import { costUnit, setCostUnit } from '../stores/units';
+    import { billing } from '../stores/billing';
+    import { limitTokens, windowShare, formatWindowShare } from '../lib/billing';
     import { regressionAlerts, dismissRegression } from '../stores/sessions';
     import { t } from '../lib/i18n';
 
@@ -67,8 +70,16 @@
         tokens: number;
     }
 
+    // Subscription mode (WASTE-TASKS.md WS-02) adds the day's limit tokens and
+    // time to each daily row; the headline row leads with them.
+    interface DailyRow extends Amount {
+        date: string;
+        limit: number;
+        durationMs: number;
+    }
+
     let runs: SessionRun[] = [];
-    let dailyByDate: ({ date: string } & Amount)[] = [];
+    let dailyByDate: DailyRow[] = [];
     let projectCosts: ({ project: string; cacheRatio: number } & Amount)[] = [];
     let rateLimit: RateLimit | null = null;
 
@@ -81,7 +92,11 @@
         return $costUnit === 'tokens' ? `${formatTokens(v)} ${$t('costDashboard.tokUnit')}` : formatCost(v);
     }
 
-    $: unitLabel = $costUnit === 'tokens' ? $t('costDashboard.unitWordTokens') : $t('costDashboard.unitWordCost');
+    $: subscription = $billing.mode === 'subscription';
+    // On a subscription a dollar is a unit for comparing runs, not money spent.
+    $: unitLabel = $costUnit === 'tokens'
+        ? $t('costDashboard.unitWordTokens')
+        : subscription ? $t('costDashboard.unitWordConventional') : $t('costDashboard.unitWordCost');
 
     let loading = true;
     let error = '';
@@ -137,24 +152,29 @@
             const days = periodDays(period);
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-            const daily: ({ date: string } & Amount)[] = [];
+            const daily: DailyRow[] = [];
             for (let i = days - 1; i >= 0; i--) {
                 const d = new Date(today);
                 d.setDate(d.getDate() - i);
                 const iso = isoDate(d);
                 let cost = 0;
                 let tokens = 0;
+                let limit = 0;
+                let durationMs = 0;
                 try {
                     cost = Number(await GetDailyCost(iso)) || 0;
                 } catch {
                     /* keep 0 */
                 }
                 try {
-                    tokens = Number(((await GetDailyTokens(iso)) as any)?.total) || 0;
+                    const dt = (await GetDailyTokens(iso)) as any;
+                    tokens = Number(dt?.total) || 0;
+                    limit = limitTokens(dt);
+                    durationMs = Number(dt?.duration_ms) || 0;
                 } catch {
                     /* keep 0 */
                 }
-                daily.push({ date: iso, cost, tokens });
+                daily.push({ date: iso, cost, tokens, limit, durationMs });
             }
             dailyByDate = daily;
 
@@ -219,6 +239,13 @@
     // Total from the daily aggregates (authoritative since daily_metrics is
     // what the manager increments on each completed run).
     $: dailyTotal = dailyByDate.reduce((sum, d) => sum + amountOf(d), 0);
+
+    // Subscription headline: tokens taken out of the limit window, the time
+    // they took, and the dollar figure as a conventional comparison unit.
+    $: periodLimit = dailyByDate.reduce((s, d) => s + d.limit, 0);
+    $: periodDurationMs = dailyByDate.reduce((s, d) => s + d.durationMs, 0);
+    $: periodCost = dailyByDate.reduce((s, d) => s + d.cost, 0);
+    $: periodShare = windowShare(periodLimit, $billing.windowTokens);
 
     // By model — derived from session_runs in the period, in both units.
     $: byModel = (() => {
@@ -339,12 +366,12 @@
                     <button
                         type="button"
                         on:click={() => setCostUnit('usd')}
-                        title={$t('costDashboard.unitUsdTooltip')}
+                        title={subscription ? $t('costDashboard.unitConventionalTooltip') : $t('costDashboard.unitUsdTooltip')}
                         class="px-2 py-1 rounded border
                             {$costUnit === 'usd'
                                 ? 'bg-bg-elevated border-blue-500 text-text'
                                 : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
-                        {$t('costDashboard.unitUsd')}
+                        {subscription ? $t('costDashboard.unitConventional') : $t('costDashboard.unitUsd')}
                     </button>
                 </div>
                 <div class="flex items-center gap-1 text-xs">
@@ -413,14 +440,36 @@
                 {/if}
 
                 <!-- Total + KPI row -->
-                <section class="mb-6 grid grid-cols-4 gap-3">
-                    <div class="bg-bg-elevated border border-bg-border rounded p-3">
-                        <div class="text-text-muted text-xs">{$t('costDashboard.totalAmount', { unit: unitLabel })}</div>
-                        <div class="text-text text-2xl font-semibold mt-1">{fmtAmount(dailyTotal)}</div>
-                        <div class="text-text-dim text-xs mt-1">
-                            {period === 'today' ? $t('costDashboard.rangeToday') : period === 'week' ? $t('costDashboard.rangeWeek') : $t('costDashboard.rangeMonth')}
+                <section class="mb-6 grid {subscription ? 'grid-cols-5' : 'grid-cols-4'} gap-3">
+                    {#if subscription}
+                        <div class="bg-bg-elevated border border-bg-border rounded p-3" data-testid="dash-limit">
+                            <div class="text-text-muted text-xs">{$t('costDashboard.limitTokens')}</div>
+                            <div class="text-text text-2xl font-semibold mt-1" data-testid="dash-limit-tokens">
+                                {formatTokens(periodLimit)} {$t('costDashboard.tokUnit')}
+                            </div>
+                            <div class="text-text-dim text-xs mt-1" data-testid="dash-limit-share">
+                                {periodShare === null
+                                    ? $t('costDashboard.windowUnknown')
+                                    : $t('costDashboard.windowShareOf', { pct: formatWindowShare(periodShare, '') })}
+                                · {$t('costDashboard.costConventional', { cost: formatCost(periodCost) })}
+                            </div>
                         </div>
-                    </div>
+                        <div class="bg-bg-elevated border border-bg-border rounded p-3" data-testid="dash-time">
+                            <div class="text-text-muted text-xs">{$t('costDashboard.time')}</div>
+                            <div class="text-text text-2xl font-semibold mt-1">{formatDuration(periodDurationMs)}</div>
+                            <div class="text-text-dim text-xs mt-1">
+                                {period === 'today' ? $t('costDashboard.rangeToday') : period === 'week' ? $t('costDashboard.rangeWeek') : $t('costDashboard.rangeMonth')}
+                            </div>
+                        </div>
+                    {:else}
+                        <div class="bg-bg-elevated border border-bg-border rounded p-3">
+                            <div class="text-text-muted text-xs">{$t('costDashboard.totalAmount', { unit: unitLabel })}</div>
+                            <div class="text-text text-2xl font-semibold mt-1">{fmtAmount(dailyTotal)}</div>
+                            <div class="text-text-dim text-xs mt-1">
+                                {period === 'today' ? $t('costDashboard.rangeToday') : period === 'week' ? $t('costDashboard.rangeWeek') : $t('costDashboard.rangeMonth')}
+                            </div>
+                        </div>
+                    {/if}
                     <div class="bg-bg-elevated border border-bg-border rounded p-3">
                         <div class="text-text-muted text-xs">{$t('costDashboard.cacheEfficiency')}</div>
                         <div class="text-text text-2xl font-semibold mt-1">

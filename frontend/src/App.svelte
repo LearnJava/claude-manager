@@ -12,6 +12,8 @@
     import ContextMenu from './components/ContextMenu.svelte';
     import { initSessions, selectedSessionId, sessions, sessionList, waitingSessions } from './stores/sessions';
     import { initProjects } from './stores/projects';
+    import { applyBillingFromSettings } from './stores/billing';
+    import { GetConfig } from '../wailsjs/go/main/App';
     // Importing the store has the side effect of subscribing to localStorage
     // and applying the persisted theme to <html> on app boot.
     import './stores/theme';
@@ -66,6 +68,9 @@
         // The theme store subscribes during import and applies the `dark`
         // class to <html> — no manual classList work needed here.
         await Promise.all([initProjects(), initSessions()]);
+        // Billing mode decides which unit the cost readouts lead with. The
+        // persisted value paints first; the config is the source of truth.
+        GetConfig().then((c: any) => applyBillingFromSettings(c?.Settings)).catch(() => { /* keep the persisted value */ });
     });
 
     // ---- Global keyboard shortcuts (PLAN.md section 10 stage 8) ----

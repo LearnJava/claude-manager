@@ -245,6 +245,9 @@ test.describe('Experience panel', () => {
           WastedCalls: 4,
           WastedLifetimeTokens: 2500,
           WastedShare: 0.25,
+          LimitWindowTokens: 6250,
+          WindowKnown: true,
+          WindowShare: 0.4,
           Categories: [
             {
               Category: 'repeat_read',
@@ -266,7 +269,28 @@ test.describe('Experience panel', () => {
     await expect(modal.getByTestId('waste-headline')).toContainText('25%');
     await expect(modal.getByTestId('waste-cat-repeat_read')).toContainText('Repeated reads');
     await expect(modal.getByTestId('waste-cat-rerun_cmd')).toBeVisible();
-    await expect(modal.getByText(/Read a\.go — P1 · run 7 · step 12/)).toBeVisible();
+    await expect(modal.getByTestId('waste-report')).toContainText('Read a.go — P1 · run 7 · step 12');
+    // WS-02: on a subscription the loss is shown as a slice of the limit window.
+    await expect(modal.getByTestId('waste-window-share')).toContainText('40% of the limit window');
+
+    // Window size not configured: say so instead of printing 0%.
+    await page.evaluate(() => {
+      (window as any).go.main.App.GetWasteReport = () =>
+        Promise.resolve({
+          TotalCalls: 50,
+          TotalLifetimeTokens: 10000,
+          WastedCalls: 1,
+          WastedLifetimeTokens: 500,
+          WastedShare: 0.05,
+          LimitWindowTokens: 0,
+          WindowKnown: false,
+          WindowShare: 0,
+          Categories: [{ Category: 'rerun_cmd', Count: 1, EstTokens: 100, LifetimeTokens: 500, Share: 0.05, Examples: [] }],
+        });
+    });
+    await modal.getByRole('button', { name: 'Refresh' }).click();
+    await expect(modal.getByTestId('waste-window-share')).toContainText('limit window unknown');
+    await expect(modal.getByTestId('waste-window-share')).not.toContainText('0%');
 
     // No category occurred: a clean message, not a table of zeros.
     await page.evaluate(() => {
@@ -336,7 +360,7 @@ test.describe('Experience panel', () => {
     await expect(modal).toBeVisible({ timeout: 3_000 });
 
     const checkbox = modal
-        .getByText('Index finished runs into the Actions tab')
+        .getByText('Remember what agents did in finished runs')
         .locator('input[type="checkbox"]');
     const wasChecked = await checkbox.isChecked();
     await checkbox.click();

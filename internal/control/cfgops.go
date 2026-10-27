@@ -37,7 +37,7 @@ type FieldChange struct {
 // where it copies files, and change only through update_config.
 var globalSettingsAllowed = map[string]bool{
 	"default_retry_delay": true, "rate_limit_pause": true, "log_retention_days": true,
-	"theme": true, "language": true, "crash_recovery": true,
+	"theme": true, "language": true, "billing": true, "limit_window_tokens": true, "crash_recovery": true,
 	"preflight_analysis": true, "preflight_model": true, "preflight_max_budget": true,
 	"preflight_auto_approve_single": true,
 	"permission_notify_after":       true, "permission_timeout": true, "permission_timeout_action": true,
