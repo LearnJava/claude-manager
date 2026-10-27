@@ -8,6 +8,7 @@
     import SkillReview from './SkillReview.svelte';
     import FailureReview from './FailureReview.svelte';
     import HookRules from './HookRules.svelte';
+    import QualityPanel from './QualityPanel.svelte';
     import Suggestions from './Suggestions.svelte';
     import LearnedFiles from './LearnedFiles.svelte';
     import { PickDirectory } from '../../wailsjs/go/main/App';
@@ -35,10 +36,11 @@
 
     // This modal gains more tabs as later LN items land — one modal, not a
     // new one per tab (see LEARN-TASKS.md LN-03 "UI").
-    type Tab = 'actions' | 'permissions' | 'timing' | 'cost' | 'waste' | 'skills' | 'failures';
+    type Tab = 'actions' | 'permissions' | 'timing' | 'cost' | 'waste' | 'skills' | 'failures' | 'quality';
     let tab: Tab = 'actions';
     let skillReview: SkillReview;
     let failureReview: FailureReview;
+    let qualityPanel: QualityPanel;
 
     type SortKey = 'sig' | 'count' | 'runs' | 'errors' | 'tokens' | 'last';
 
@@ -435,6 +437,16 @@
                                 : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
                         {$t('experiencePanel.tabs.failures')}
                     </button>
+                    <button
+                        type="button"
+                        on:click={() => (tab = 'quality')}
+                        data-testid="tab-quality"
+                        class="px-2 py-1 rounded border
+                            {tab === 'quality'
+                                ? 'bg-bg-elevated border-blue-500 text-text'
+                                : 'border-bg-border text-text-muted hover:text-text hover:bg-bg-elevated/60'}">
+                        {$t('experiencePanel.tabs.quality')}
+                    </button>
                 </div>
             </div>
             <div class="flex items-center gap-2">
@@ -472,6 +484,7 @@
                         else if (tab === 'cost') loadAttribution();
                         else if (tab === 'waste') loadWaste();
                         else if (tab === 'failures') failureReview?.load();
+                        else if (tab === 'quality') qualityPanel?.load();
                         else skillReview?.load();
                     }}
                     class="px-2 py-1 text-xs rounded bg-bg-elevated border border-bg-border text-text hover:bg-bg">
@@ -544,6 +557,8 @@
                 <SkillReview bind:this={skillReview} {project} />
             {:else if tab === 'failures'}
                 <FailureReview bind:this={failureReview} {project} />
+            {:else if tab === 'quality'}
+                <QualityPanel bind:this={qualityPanel} {project} />
             {:else if tab === 'permissions'}
                 {#if !project}
                     <div class="text-text-muted text-sm italic py-10 text-center">
@@ -1108,6 +1123,8 @@
                 {$t('experiencePanel.footer.skills')}
             {:else if tab === 'failures'}
                 {$t('experiencePanel.footer.failures')}
+            {:else if tab === 'quality'}
+                {$t('experiencePanel.footer.quality')}
             {/if}
         </div>
     </div>
