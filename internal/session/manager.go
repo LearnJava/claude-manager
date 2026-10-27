@@ -1465,7 +1465,39 @@ func (m *SessionManager) GetSessionLog(id string, offset, limit int) ([]*store.L
 	if limit <= 0 {
 		limit = 500
 	}
+	// The run in flight keeps its entries in memory until it ends, so the
+	// store has none for it yet.
+	ms.mu.Lock()
+	if ms.runID != 0 && ms.runID == runs[0].ID {
+		live := liveLogSlice(ms.pendingLogs, runs[0].ID, offset, limit)
+		ms.mu.Unlock()
+		return live, nil
+	}
+	ms.mu.Unlock()
 	return m.store.GetLogs(runs[0].ID, offset, limit)
+}
+
+// liveLogSlice copies the [offset, offset+limit) window of the in-memory log
+// of a run in progress. Caller holds ms.mu.
+func liveLogSlice(pending []store.LogEntry, runID int64, offset, limit int) []*store.LogEntry {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(pending) {
+		return nil
+	}
+	end := offset + limit
+	if end > len(pending) {
+		end = len(pending)
+	}
+	out := make([]*store.LogEntry, 0, end-offset)
+	for i := offset; i < end; i++ {
+		e := pending[i]
+		e.RunID = runID
+		e.ID = int64(i + 1)
+		out = append(out, &e)
+	}
+	return out
 }
 
 // PreviousRunLog is the saved log of a session's last finished run, in the
