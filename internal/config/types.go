@@ -131,6 +131,17 @@ type OptimizationSettings struct {
 	// both sides is never overwritten without a choice. Default off: no folder is
 	// read or created.
 	LearnedFiles bool `toml:"learned_files"`
+
+	// Benchmark enables running a suite of tasks (reference cases, or an
+	// external set) under several configurations several times and comparing
+	// them (WASTE-TASKS.md WS-12): model, effort, skills, bans and gate-driven
+	// rework on or off. Every trial is a paid model run in a throwaway
+	// worktree; no project branch is touched. Default off: run_benchmark is
+	// refused, the report stays readable.
+	Benchmark bool `toml:"benchmark"`
+	// BenchmarkMaxTrials caps tasks x configurations x repeats of one run;
+	// 0 = 60.
+	BenchmarkMaxTrials int `toml:"benchmark_max_trials"`
 }
 
 // Billing modes (GlobalSettings.Billing).

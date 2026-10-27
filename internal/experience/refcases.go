@@ -237,60 +237,27 @@ func ReplayReferenceCase(ctx context.Context, st *store.Store, o ReplayOptions) 
 		return nil, fmt.Errorf("reference case %d is not usable: %s", c.ID, InvalidBaseReason)
 	}
 
-	dir, err := os.MkdirTemp("", "cm-replay-*")
-	if err != nil {
-		return nil, err
-	}
-	if _, err := gitRun(ctx, o.ProjectPath, nil, "worktree", "add", "--detach", dir, c.BaseCommit); err != nil {
-		_ = os.RemoveAll(dir)
-		return nil, fmt.Errorf("create replay worktree: %w", err)
-	}
-	defer func() {
-		_, _ = gitRun(context.Background(), o.ProjectPath, nil, "worktree", "remove", "--force", dir)
-		_ = os.RemoveAll(dir)
-		_, _ = gitRun(context.Background(), o.ProjectPath, nil, "worktree", "prune")
-	}()
-
-	runGates := o.RunGates
-	if runGates == nil {
-		runGates = worker.RunGates
-	}
 	maxRounds := o.Rounds
 	if maxRounds <= 0 {
 		maxRounds = DefaultReplayRounds
 	}
-	sub := analysis.PlannedSubtask{ID: fmt.Sprintf("replay-%d", c.ID), Name: "replay", Model: o.Model, Effort: o.Effort}
-
 	rep := &store.ReferenceReplay{CaseID: c.ID, Model: o.Model, Effort: o.Effort}
-	prompt := replayPrompt(c.TaskText)
-	var spent time.Duration
-	for attempt := 0; ; attempt++ {
-		sub.Prompt = prompt
-		began := time.Now()
-		res, execErr := o.Exec.Execute(ctx, dir, sub, "")
-		spent += time.Since(began)
-		if execErr != nil {
-			if attempt == 0 {
-				return nil, fmt.Errorf("replay attempt failed to run: %w", execErr)
-			}
-			rep.Note = "attempt " + fmt.Sprint(attempt+1) + " failed to run: " + execErr.Error()
-			break
+	err = withDetachedWorktree(ctx, o.ProjectPath, c.BaseCommit, func(dir string) error {
+		out, err := runInFolder(ctx, dir, folderRun{
+			Name: fmt.Sprintf("replay-%d", c.ID), PinTag: fmt.Sprintf("case-%d", c.ID),
+			TaskText: c.TaskText, Gates: c.GateCmds, Model: o.Model, Effort: o.Effort,
+			MaxRounds: maxRounds, Exec: o.Exec, RunGates: o.RunGates,
+		})
+		if err != nil {
+			return err
 		}
-		rep.Tokens += res.InputTokens + res.OutputTokens
-		gr := runGates(ctx, dir, c.GateCmds)
-		if gr.Passed {
-			rep.Passed = true
-			break
-		}
-		if attempt >= maxRounds {
-			rep.Note = fmt.Sprintf("gates still red after %d rework rounds", maxRounds)
-			break
-		}
-		rep.Rounds++
-		prompt = replayReworkPrompt(c.TaskText, rep.Rounds, maxRounds, gr)
+		rep.Passed, rep.Rounds, rep.Tokens, rep.DurationSec = out.Passed, out.Rounds, out.Tokens, out.DurationSec
+		rep.ResultCommit, rep.Note = out.ResultCommit, out.Note
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	rep.DurationSec = int(spent.Seconds())
-	rep.ResultCommit = pinReplayResult(ctx, dir, c.ID, &rep.Note)
 
 	if err := st.InsertReferenceReplay(rep); err != nil {
 		return nil, err
@@ -298,10 +265,102 @@ func ReplayReferenceCase(ctx context.Context, st *store.Store, o ReplayOptions) 
 	return rep, nil
 }
 
+// withDetachedWorktree checks commit out into a throwaway detached worktree of
+// the repository at projectPath, calls fn with its folder and removes it again.
+// No project branch is created, moved or checked out.
+func withDetachedWorktree(ctx context.Context, projectPath, commit string, fn func(dir string) error) error {
+	dir, err := os.MkdirTemp("", "cm-replay-*")
+	if err != nil {
+		return err
+	}
+	if _, err := gitRun(ctx, projectPath, nil, "worktree", "add", "--detach", dir, commit); err != nil {
+		_ = os.RemoveAll(dir)
+		return fmt.Errorf("create replay worktree: %w", err)
+	}
+	defer func() {
+		_, _ = gitRun(context.Background(), projectPath, nil, "worktree", "remove", "--force", dir)
+		_ = os.RemoveAll(dir)
+		_, _ = gitRun(context.Background(), projectPath, nil, "worktree", "prune")
+	}()
+	return fn(dir)
+}
+
+// folderRun is one task attempted in a prepared folder: the first attempt, then
+// up to MaxRounds rework rounds while the gates stay red (0 = a single attempt).
+// PinTag names the result under refs/cm-replay/.
+type folderRun struct {
+	Name      string
+	PinTag    string
+	TaskText  string
+	Gates     []string
+	Model     string
+	Effort    string
+	MaxRounds int
+	// ContextAppend travels to the model as --append-system-prompt.
+	ContextAppend string
+	Exec          analysis.SubtaskExecutor
+	// RunGates defaults to worker.RunGates.
+	RunGates func(ctx context.Context, root string, gates []string) worker.GateResult
+}
+
+type folderOutcome struct {
+	Passed       bool
+	Rounds       int
+	Tokens       int64
+	DurationSec  int
+	ResultCommit string
+	Note         string
+}
+
+// runInFolder runs the attempt/rework loop of a replay in dir and pins the
+// result. It fails only when the very first attempt could not run at all.
+func runInFolder(ctx context.Context, dir string, r folderRun) (*folderOutcome, error) {
+	runGates := r.RunGates
+	if runGates == nil {
+		runGates = worker.RunGates
+	}
+	sub := analysis.PlannedSubtask{ID: r.Name, Name: "replay", Model: r.Model, Effort: r.Effort}
+	out := &folderOutcome{}
+	prompt := replayPrompt(r.TaskText)
+	var spent time.Duration
+	for attempt := 0; ; attempt++ {
+		sub.Prompt = prompt
+		began := time.Now()
+		res, execErr := r.Exec.Execute(ctx, dir, sub, r.ContextAppend)
+		spent += time.Since(began)
+		if execErr != nil {
+			if attempt == 0 {
+				return nil, fmt.Errorf("replay attempt failed to run: %w", execErr)
+			}
+			out.Note = "attempt " + fmt.Sprint(attempt+1) + " failed to run: " + execErr.Error()
+			break
+		}
+		out.Tokens += res.InputTokens + res.OutputTokens
+		gr := runGates(ctx, dir, r.Gates)
+		if gr.Passed {
+			out.Passed = true
+			break
+		}
+		if attempt >= r.MaxRounds {
+			if r.MaxRounds == 0 {
+				out.Note = "gates red; rework is off for this run"
+			} else {
+				out.Note = fmt.Sprintf("gates still red after %d rework rounds", r.MaxRounds)
+			}
+			break
+		}
+		out.Rounds++
+		prompt = replayReworkPrompt(r.TaskText, out.Rounds, r.MaxRounds, gr)
+	}
+	out.DurationSec = int(spent.Seconds())
+	out.ResultCommit = pinReplayResult(ctx, dir, r.PinTag, &out.Note)
+	return out, nil
+}
+
 // pinReplayResult snapshots the replay folder's tree as a commit on top of
 // HEAD and keeps it alive under refs/cm-replay/ — plumbing only (no hooks, no
 // config, no branch). Returns "" when the agent changed nothing.
-func pinReplayResult(ctx context.Context, dir string, caseID int64, note *string) string {
+func pinReplayResult(ctx context.Context, dir, tag string, note *string) string {
 	fail := func(step string, err error) string {
 		appendNote(note, "result not pinned: "+step+": "+err.Error())
 		return ""
@@ -329,11 +388,11 @@ func pinReplayResult(ctx context.Context, dir string, caseID int64, note *string
 		"GIT_AUTHOR_NAME=cm-replay", "GIT_AUTHOR_EMAIL=cm-replay@localhost",
 		"GIT_COMMITTER_NAME=cm-replay", "GIT_COMMITTER_EMAIL=cm-replay@localhost",
 	}
-	sha, err := gitRun(ctx, dir, env, "commit-tree", tree, "-p", head, "-m", fmt.Sprintf("replay of reference case %d", caseID))
+	sha, err := gitRun(ctx, dir, env, "commit-tree", tree, "-p", head, "-m", "replay "+tag)
 	if err != nil {
 		return fail("commit-tree", err)
 	}
-	ref := fmt.Sprintf("refs/cm-replay/case-%d-%d", caseID, time.Now().Unix())
+	ref := fmt.Sprintf("refs/cm-replay/%s-%d", tag, time.Now().UnixNano())
 	if _, err := gitRun(ctx, dir, nil, "update-ref", ref, sha); err != nil {
 		return fail("update-ref", err)
 	}

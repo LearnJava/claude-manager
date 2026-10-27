@@ -1398,6 +1398,50 @@
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Get a benchmark report"
+    },
+    "description": "Report a benchmark run metric by metric: per configuration the share of trials that passed, rounds to green, tokens and seconds, each with mean, range and standard deviation, plus the same per repeat; and each configuration against the first as differs, within_noise or indistinguishable. There is no single score - the weights are yours. Use when: you wait for a run_benchmark to finish or compare what its configurations did. Not for: starting a run (use run_benchmark) or one case's replays (use get_reference_report). Returns: report; Status running or interrupted means the figures are partial (Warnings says so); a single repeat marks every comparison indistinguishable; an empty report (RunID 0) means the project has no runs. Trials that could not be run at all are counted in Errors and left out of every figure. Side effects: none. Works with the feature off. Access: read. Example: {\"project\":\"lumen\"}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        },
+        "run_id": {
+          "description": "Benchmark run, the RunID run_benchmark returned; 0 or omitted = the project's latest run",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_benchmark_report",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "report": {
+          "description": "RunID, Status (running, done, interrupted), Note, Repeats, PlannedTrials, StoredTrials, Tasks, Baseline (the first configuration), Warnings, Configs (per configuration: Trials, Errors, Passed, PassRate, and Rounds (to green), Tokens, DurationSec each as N, Mean, Min, Max, StdDev; Repeats with the same figures per repeat), Comparisons (each metric of each configuration against the baseline: Verdict differs, within_noise or indistinguishable, Direction, Note) and Trials (every cell). There is no overall score"
+        }
+      },
+      "required": [
+        "report"
+      ],
+      "type": "object"
+    },
+    "title": "Get a benchmark report"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Get effective config"
     },
     "description": "Return the effective application config (global settings, optimization, projects with sessions, workers) in config.toml shape, without secrets, with its version. Use when: you need a setting's value, or before update_config, which needs the version. Not for: listing projects (use get_projects) or changing one setting (use update_session, update_project or update_global_settings). Returns: version and config; pass section to get one part, the full config can be large. Side effects: none, read only. Access: read. Example: {\"section\":\"settings\"}",
@@ -4230,6 +4274,148 @@
       "type": "object"
     },
     "title": "Revert failure rule"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Run a benchmark"
+    },
+    "description": "Run a suite of tasks (reference cases or your own) under several configurations - model, effort, skills, bans, gate-driven rework - several times each, every trial in a throwaway worktree at the task's starting commit, judged by its gates. Inputs are frozen with the run. Use when: you ask whether a setting, ban, skill or stricter check changes the outcome on the same work, with repeats to tell it from noise. Not for: one case under one model (use replay_reference_case) or work on the project itself. Returns: the report of the just-started run (RunID, PlannedTrials); trials run in the background, poll get_benchmark_report until Status is done. A bad request (empty suite, vanished commit, duplicate name, too many trials) is refused with nothing spent. Side effects: runs a model tasks x configurations x repeats times, spending the usage window; makes and removes temporary worktrees, adds refs under refs/cm-replay/; one run at a time; needs [optimization] benchmark = true. Access: operate. Example: {\"project\":\"lumen\",\"configs\":[{\"name\":\"on\"},{\"name\":\"off\",\"no_bans\":true}]}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "case_ids": {
+          "description": "Reference cases to run, the CaseID of items of get_reference_report. Empty with no tasks = every usable case of the project",
+          "items": {
+            "type": "integer"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "configs": {
+          "description": "Configurations to compare; the first is the baseline the others are compared with. At least one, usually two or more",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "effort": {
+                "description": "Effort to run with: low, medium, high (default: medium)",
+                "type": "string"
+              },
+              "model": {
+                "description": "Model to run with, e.g. sonnet (default: the one-shot runner default)",
+                "type": "string"
+              },
+              "name": {
+                "description": "Label of the configuration in the report, e.g. opus-high; derived from the fields when empty. Must be unique in the run",
+                "type": "string"
+              },
+              "no_bans": {
+                "description": "Run without the PreToolUse ban hook (bans off); by default the project's active hook rules are installed",
+                "type": "boolean"
+              },
+              "no_gates": {
+                "description": "One attempt, no rework rounds on red gates (strict check off); the gates still decide passed or not",
+                "type": "boolean"
+              },
+              "no_skills": {
+                "description": "Remove .claude/skills from the run folder (skills off)",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "name": {
+          "description": "Label of this run, e.g. bans-on-vs-off",
+          "type": "string"
+        },
+        "project": {
+          "description": "Project name as in get_projects, e.g. lumen",
+          "type": "string"
+        },
+        "repeats": {
+          "default": 3,
+          "description": "Runs of every task under every configuration (default 3). One repeat has no spread, so every difference is reported as indistinguishable",
+          "type": "integer"
+        },
+        "rounds": {
+          "default": 2,
+          "description": "Rework rounds allowed after the first attempt for a configuration with gates on (default 2)",
+          "type": "integer"
+        },
+        "tasks": {
+          "description": "An external suite instead of reference cases",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "base_commit": {
+                "description": "Commit of the project's repository to start from; must exist",
+                "type": "string"
+              },
+              "gates": {
+                "description": "Shell commands, in order, that must all pass for the result to count, e.g. go test ./...",
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              },
+              "id": {
+                "description": "Label of the task in the report; task-N when empty. Must be unique in the run",
+                "type": "string"
+              },
+              "text": {
+                "description": "The task text given to the model as the prompt",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "base_commit",
+              "gates"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "project",
+        "configs"
+      ],
+      "type": "object"
+    },
+    "name": "run_benchmark",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "report": {
+          "description": "RunID, Status (running, done, interrupted), Note, Repeats, PlannedTrials, StoredTrials, Tasks, Baseline (the first configuration), Warnings, Configs (per configuration: Trials, Errors, Passed, PassRate, and Rounds (to green), Tokens, DurationSec each as N, Mean, Min, Max, StdDev; Repeats with the same figures per repeat), Comparisons (each metric of each configuration against the baseline: Verdict differs, within_noise or indistinguishable, Direction, Note) and Trials (every cell). There is no overall score"
+        }
+      },
+      "required": [
+        "report"
+      ],
+      "type": "object"
+    },
+    "title": "Run a benchmark"
   },
   {
     "_meta": {

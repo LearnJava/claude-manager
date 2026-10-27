@@ -3111,6 +3111,62 @@ the flag off the session makes no git call and `task_done` carries nothing extra
   original and every replay - gates green or not, rework rounds, tokens, seconds.
   `replay_reference_case` is bounded by the MCP long-tool timeout (15 minutes).
 
+## Benchmark runs (WS-12)
+
+What surrounds the model - effort, skills, bans, how strict the check is - moves
+a result more than swapping the model, and only models get measured.
+`[optimization] benchmark = true` (default off; `run_benchmark` is refused with
+it off, the report stays readable) lets a project run a **suite x configurations
+x repeats** matrix and compare the cells.
+
+- **Suite.** The reference cases of WS-06 (all usable ones, or `case_ids`) or an
+  external list of tasks (`id`, text, `base_commit`, gates). A task needs text, a
+  commit that still exists and gates; anything else - or an empty suite, no
+  configuration, a duplicate name, more than `benchmark_max_trials` (60) trials -
+  is refused by `PrepareBenchmark` **before** anything is stored or spent.
+- **Configuration axes.** `model`, `effort`, `no_skills` (the replay folder loses
+  `.claude/skills`), `no_bans` (the PreToolUse ban hook of WS-03 is removed;
+  otherwise the project's active hook rules are installed), `no_gates` (one
+  attempt, no rework rounds - the gates still decide passed or not). The zero
+  value is the project as it is. The setup is applied to the throwaway
+  worktree and committed into *its* detached HEAD with plumbing, so the pinned
+  result shows only what the agent did and "the agent changed nothing" stays
+  detectable. Nothing is written into the user's repository (invariant 2).
+- **Trials** use the same machinery as a WS-06 replay (`withDetachedWorktree` +
+  `runInFolder`, one code path): detached worktree at the task's base commit, the
+  task text behind the replay framing line, the task's gates, up to `rounds`
+  (2) rework rounds, tree pinned under `refs/cm-replay/bench-<run>-<ts>`. No
+  project branch is touched. Order is repeat -> task -> configuration, so an
+  interrupted run leaves whole repeats. A trial whose model could not be run at
+  all is stored `errored`: counted per configuration (`Errors`) and left out of
+  every figure - it says nothing about the configuration.
+- **Repeats are mandatory.** Default 3. The unit of spread is a *repeat*: per
+  configuration and repeat, the pass rate and the mean rounds-to-green, tokens
+  and seconds over the suite. A configuration is compared with the baseline
+  (the first) metric by metric: `differs` when the per-repeat ranges
+  (min..max) do not touch, `within_noise` when they overlap, `indistinguishable`
+  when either side has fewer than two repeats with a value - a one-repeat run
+  carries a warning and no difference is ever claimed. A deliberately plain rule,
+  not a significance test: with 2-3 repeats nothing finer is honest.
+- **No single score.** `BenchmarkReport` has per-configuration `Trials, Errors,
+  Passed, PassRate` and `Rounds` (to green, over passed trials), `Tokens`,
+  `DurationSec` each as `N/Mean/Min/Max/StdDev`, plus the per-repeat rows and the
+  raw trials. How much a round, a token or a failed gate weighs depends on the
+  task; that is the reader's choice.
+- **Frozen inputs.** `benchmark_runs` keeps its own JSON copy of the suite and the
+  configurations; the report is built only from `benchmark_runs` +
+  `benchmark_trials`, never from the live `reference_cases`. Editing, invalidating
+  or deleting a case changes no past run.
+- **Running.** `RunBenchmark` validates and freezes synchronously, then runs the
+  trials in a background goroutine and returns the just-started run's report;
+  `GetBenchmarkReport` (poll until `Status` is `done`) reads partial figures
+  meanwhile and says so in `Warnings`. One benchmark at a time (`TryLock`). A run
+  still `running` at the next start-up (crash, quit) is closed as `interrupted`
+  by `InterruptRunningBenchmarks`; trials already stored are kept.
+- **Cost.** Every trial is a paid model run and spends the limit window; that is
+  why the cap and the explicit flag exist. MCP: `run_benchmark` (operate),
+  `get_benchmark_report` (read). There is no GUI panel yet.
+
 ## Quality labels (WS-11)
 
 Gates and rounds say whether a task worked, not what went wrong. A label names

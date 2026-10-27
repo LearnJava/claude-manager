@@ -32,6 +32,8 @@ type LogsApp interface {
 	GetReferenceReport(project string) (experience.ReferenceReport, error)
 	GetTaskLabels(project string) (experience.LabelReport, error)
 	ReplayReferenceCase(project string, caseID int64, model, effort string) (*store.ReferenceReplay, error)
+	RunBenchmark(project string, spec experience.BenchmarkSpec) (experience.BenchmarkReport, error)
+	GetBenchmarkReport(project string, runID int64) (experience.BenchmarkReport, error)
 	GetModelRecommendation(project, name string) (*optimization.ModelRecommendation, error)
 	GetAutoModelRouting() bool
 }
@@ -363,6 +365,34 @@ func (s *Server) registerLogsRPCs(reg map[string]handler) {
 			return nil, needApp("reference case replay")
 		}
 		return lapp.ReplayReferenceCase(a.Project, a.CaseID, a.Model, a.Effort)
+	}
+
+	reg["RunBenchmark"] = func(p json.RawMessage) (any, error) {
+		var a struct {
+			Project string                    `json:"project"`
+			Spec    experience.BenchmarkSpec `json:"spec"`
+		}
+		if err := json.Unmarshal(p, &a); err != nil {
+			return nil, err
+		}
+		if lapp == nil {
+			return nil, needApp("the benchmark")
+		}
+		return lapp.RunBenchmark(a.Project, a.Spec)
+	}
+
+	reg["GetBenchmarkReport"] = func(p json.RawMessage) (any, error) {
+		var a struct {
+			Project string `json:"project"`
+			RunID   int64  `json:"run_id"`
+		}
+		if err := json.Unmarshal(p, &a); err != nil {
+			return nil, err
+		}
+		if lapp == nil {
+			return nil, needApp("the benchmark report")
+		}
+		return lapp.GetBenchmarkReport(a.Project, a.RunID)
 	}
 
 	reg["GetAutoModelRouting"] = func(_ json.RawMessage) (any, error) {

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"claude-manager/internal/experience"
+	"claude-manager/internal/store"
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
@@ -101,6 +103,41 @@ type replayCaseIn struct {
 	CaseID  int64  `json:"case_id" jsonschema:"Reference case ID, the CaseID of an item of get_reference_report, e.g. 3"`
 	Model   string `json:"model,omitempty" jsonschema:"Model to replay with, e.g. sonnet (default: the one-shot runner default)"`
 	Effort  string `json:"effort,omitempty" jsonschema:"Effort to replay with: low, medium, high (default: medium)"`
+}
+
+type benchConfigIn struct {
+	Name     string `json:"name,omitempty" jsonschema:"Label of the configuration in the report, e.g. opus-high; derived from the fields when empty. Must be unique in the run"`
+	Model    string `json:"model,omitempty" jsonschema:"Model to run with, e.g. sonnet (default: the one-shot runner default)"`
+	Effort   string `json:"effort,omitempty" jsonschema:"Effort to run with: low, medium, high (default: medium)"`
+	NoSkills bool   `json:"no_skills,omitempty" jsonschema:"Remove .claude/skills from the run folder (skills off)"`
+	NoBans   bool   `json:"no_bans,omitempty" jsonschema:"Run without the PreToolUse ban hook (bans off); by default the project's active hook rules are installed"`
+	NoGates  bool   `json:"no_gates,omitempty" jsonschema:"One attempt, no rework rounds on red gates (strict check off); the gates still decide passed or not"`
+}
+
+type benchTaskIn struct {
+	ID         string   `json:"id,omitempty" jsonschema:"Label of the task in the report; task-N when empty. Must be unique in the run"`
+	Text       string   `json:"text" jsonschema:"The task text given to the model as the prompt"`
+	BaseCommit string   `json:"base_commit" jsonschema:"Commit of the project's repository to start from; must exist"`
+	Gates      []string `json:"gates" jsonschema:"Shell commands, in order, that must all pass for the result to count, e.g. go test ./..."`
+}
+
+type runBenchmarkIn struct {
+	Project string          `json:"project" jsonschema:"Project name as in get_projects, e.g. lumen"`
+	Name    string          `json:"name,omitempty" jsonschema:"Label of this run, e.g. bans-on-vs-off"`
+	Configs []benchConfigIn `json:"configs" jsonschema:"Configurations to compare; the first is the baseline the others are compared with. At least one, usually two or more"`
+	CaseIDs []int64         `json:"case_ids,omitempty" jsonschema:"Reference cases to run, the CaseID of items of get_reference_report. Empty with no tasks = every usable case of the project"`
+	Tasks   []benchTaskIn   `json:"tasks,omitempty" jsonschema:"An external suite instead of reference cases"`
+	Repeats int             `json:"repeats,omitempty" jsonschema:"Runs of every task under every configuration (default 3). One repeat has no spread, so every difference is reported as indistinguishable"`
+	Rounds  int             `json:"rounds,omitempty" jsonschema:"Rework rounds allowed after the first attempt for a configuration with gates on (default 2)"`
+}
+
+type benchReportIn struct {
+	Project string `json:"project" jsonschema:"Project name as in get_projects, e.g. lumen"`
+	RunID   int64  `json:"run_id,omitempty" jsonschema:"Benchmark run, the RunID run_benchmark returned; 0 or omitted = the project's latest run"`
+}
+
+type benchReportOut struct {
+	Report any `json:"report" jsonschema:"RunID, Status (running, done, interrupted), Note, Repeats, PlannedTrials, StoredTrials, Tasks, Baseline (the first configuration), Warnings, Configs (per configuration: Trials, Errors, Passed, PassRate, and Rounds (to green), Tokens, DurationSec each as N, Mean, Min, Max, StdDev; Repeats with the same figures per repeat), Comparisons (each metric of each configuration against the baseline: Verdict differs, within_noise or indistinguishable, Direction, Note) and Trials (every cell). There is no overall score"`
 }
 
 type adviceIn struct {
@@ -708,6 +745,69 @@ func logsTools() []Tool {
 			Result: func(_ replayCaseIn, raw any) replayCaseOut { return replayCaseOut{Replay: raw} },
 			Summary: func(in replayCaseIn, _ replayCaseOut) string {
 				return fmt.Sprintf("Case %d of %s replayed; compare with get_reference_report.", in.CaseID, in.Project)
+			},
+		}),
+		define(spec[runBenchmarkIn, benchReportOut]{
+			Name: "run_benchmark", Title: "Run a benchmark",
+			Doc: Doc{
+				What:    "Run a suite of tasks (reference cases or your own) under several configurations - model, effort, skills, bans, gate-driven rework - several times each, every trial in a throwaway worktree at the task's starting commit, judged by its gates. Inputs are frozen with the run.",
+				UseWhen: "you ask whether a setting, ban, skill or stricter check changes the outcome on the same work, with repeats to tell it from noise.",
+				NotFor:  "one case under one model (use replay_reference_case) or work on the project itself.",
+				Returns: "the report of the just-started run (RunID, PlannedTrials); trials run in the background, poll get_benchmark_report until Status is done. A bad request (empty suite, vanished commit, duplicate name, too many trials) is refused with nothing spent.",
+				Effects: "runs a model tasks x configurations x repeats times, spending the usage window; makes and removes temporary worktrees, adds refs under refs/cm-replay/; one run at a time; needs [optimization] benchmark = true.",
+				Example: `{"project":"lumen","configs":[{"name":"on"},{"name":"off","no_bans":true}]}`,
+			},
+			Level: LevelOperate, Annotations: ToolAnnotations{OpenWorld: true}, Covers: []string{"RunBenchmark"},
+			Input: func(props map[string]*jsonschema.Schema) {
+				props["repeats"].Default = json.RawMessage("3")
+				props["rounds"].Default = json.RawMessage("2")
+			},
+			Translate: func(in runBenchmarkIn) (string, any, error) {
+				if err := needProject(in.Project); err != nil {
+					return "", nil, err
+				}
+				if len(in.Configs) == 0 {
+					return "", nil, fmt.Errorf("configs is required: at least one configuration, the first is the baseline")
+				}
+				configs := make([]store.BenchConfig, 0, len(in.Configs))
+				for _, c := range in.Configs {
+					configs = append(configs, store.BenchConfig(c))
+				}
+				tasks := make([]store.BenchTask, 0, len(in.Tasks))
+				for _, t := range in.Tasks {
+					tasks = append(tasks, store.BenchTask{ID: t.ID, Text: t.Text, BaseCommit: t.BaseCommit, Gates: t.Gates})
+				}
+				return "/rpc", rpcCallBody("RunBenchmark", map[string]any{
+					"project": in.Project,
+					"spec": experience.BenchmarkSpec{Name: in.Name, CaseIDs: in.CaseIDs, Tasks: tasks,
+						Configs: configs, Repeats: in.Repeats, Rounds: in.Rounds},
+				}), nil
+			},
+			Result: func(_ runBenchmarkIn, raw any) benchReportOut { return benchReportOut{Report: raw} },
+			Summary: func(in runBenchmarkIn, _ benchReportOut) string {
+				return "Benchmark of " + in.Project + " started; poll get_benchmark_report."
+			},
+		}),
+		define(spec[benchReportIn, benchReportOut]{
+			Name: "get_benchmark_report", Title: "Get a benchmark report",
+			Doc: Doc{
+				What:    "Report a benchmark run metric by metric: per configuration the share of trials that passed, rounds to green, tokens and seconds, each with mean, range and standard deviation, plus the same per repeat; and each configuration against the first as differs, within_noise or indistinguishable. There is no single score - the weights are yours.",
+				UseWhen: "you wait for a run_benchmark to finish or compare what its configurations did.",
+				NotFor:  "starting a run (use run_benchmark) or one case's replays (use get_reference_report).",
+				Returns: "report; Status running or interrupted means the figures are partial (Warnings says so); a single repeat marks every comparison indistinguishable; an empty report (RunID 0) means the project has no runs. Trials that could not be run at all are counted in Errors and left out of every figure.",
+				Effects: "none. Works with the feature off.",
+				Example: `{"project":"lumen"}`,
+			},
+			Level: LevelRead, Annotations: ro, Covers: []string{"GetBenchmarkReport"},
+			Translate: func(in benchReportIn) (string, any, error) {
+				if err := needProject(in.Project); err != nil {
+					return "", nil, err
+				}
+				return "/rpc", rpcCallBody("GetBenchmarkReport", map[string]any{"project": in.Project, "run_id": in.RunID}), nil
+			},
+			Result: func(_ benchReportIn, raw any) benchReportOut { return benchReportOut{Report: raw} },
+			Summary: func(in benchReportIn, _ benchReportOut) string {
+				return "Benchmark report of " + in.Project + "."
 			},
 		}),
 		define(spec[adviceIn, adviceOut]{
