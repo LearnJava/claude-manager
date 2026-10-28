@@ -9,7 +9,14 @@ import sys
 sys.stdout.reconfigure(encoding="utf-8")
 HOME = os.path.expanduser("~")
 PROJ = os.path.join(HOME, ".claude", "projects")
-BENCH = r"C:\kostja\GoProjects\cm-bench"
+import argparse
+
+_ap = argparse.ArgumentParser()
+_ap.add_argument("--bench-dir", default=r"C:\kostja\GoProjects\cm-bench", help="stand folder with _logs/")
+_ap.add_argument("--project", default="bench-cm", help="manager project name of the stand")
+_args = _ap.parse_args()
+BENCH = _args.bench_dir
+SESSION_TAG = _args.project + "/Developer 1"
 LOG = os.path.join(HOME, ".claude-manager", "logs", "app.log")
 
 
@@ -83,7 +90,7 @@ for t in ("T1", "T2", "T3", "T4", "T5"):
                 break
 b_sids = []
 for line in open(LOG, encoding="utf-8", errors="replace"):
-    if "bench-cm/Developer 1" in line and "msg=session.init" in line:
+    if SESSION_TAG in line and "msg=session.init" in line:
         m = re.search(r"cli_session_id=([0-9a-f-]+)", line)
         if m:
             b_sids.append(m.group(1))

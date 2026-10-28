@@ -1,8 +1,9 @@
 """Dollars by category (cache write / cache read / output) and calls by tool, arm A against arm B.
 
 Reads bench.json (the output of cm-bench/_kit/bench_measure.py --json); the default is the pilot's copy.
-Usage: python -I cost.py [path/to/bench.json]
+Usage: python -I cost.py [--bench-json path/to/bench.json]
 """
+import argparse
 import collections
 import json
 import sys
@@ -13,7 +14,11 @@ LAB = Path(__file__).resolve().parents[1]  # docs/Science_lab
 sys.path.insert(0, str(LAB / "claude-code-setup" / "tools" / "measure"))
 import cost_attribution as ca  # noqa: E402
 
-bench = Path(sys.argv[1]) if len(sys.argv) > 1 else LAB / "measurements" / "2026-10-28-ab-pilot" / "bench.json"
+_ap = argparse.ArgumentParser()
+_ap.add_argument("bench_json_pos", nargs="?", help="same as --bench-json")
+_ap.add_argument("--bench-json", default=None, help="bench_measure.py --json output")
+_args = _ap.parse_args()
+bench = Path(_args.bench_json or _args.bench_json_pos or LAB / "measurements" / "2026-10-28-ab-pilot" / "bench.json")
 d = json.load(open(bench, encoding="utf-8"))
 print("PRICES:", {k: v for k, v in ca.PRICES.items() if "sonnet" in k or "opus" in k})
 
