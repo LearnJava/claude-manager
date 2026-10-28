@@ -26,6 +26,7 @@ Desktop app (Windows) to launch, monitor, and control parallel Claude Code CLI s
 | [WASTE-TASKS.md](./WASTE-TASKS.md) | Waste: useless *successful* work mined from `action_signatures` (repeat reads, empty searches, whole-file reads, needless reruns), the limit window and time as the unit instead of dollars, learned rules enforced as a `PreToolUse` hook instead of prompt text, loops remembered across sessions, blocking gates for Claude sessions; then reference cases mined from finished tasks so configurations can be compared on the same work, repo-scanned task suggestions, one "waiting for you" screen across projects, learned lessons exported as files, scheduled gate runs that file a task, quality labels and multi-configuration benchmark runs (WS-01..12); queue in [STATUS-P1.md](./STATUS-P1.md) |
 | [FIX-TASKS.md](./FIX-TASKS.md) | Bugs found while reviewing a Lumen session: empty `cm-mcp` log of a running session, Playwright setup hijacked by the manager's own `CM_CONTROL_TOKEN`, missing test-bridge stubs (FIX-01..03); queue in [STATUS-P1.md](./STATUS-P1.md) |
 | [LOGS-TASKS.md](./LOGS-TASKS.md) | Logs of every machine in one private GitHub repo (`cm-logs`): host and manager build in each log, `internal/logship` pushes run logs and manager logs into `logs/<host>/`, secret masking, settings/Settings/MCP (LG-01..04); the review skill is done separately in Chat; queue in [STATUS-P1.md](./STATUS-P1.md) |
+| [LAB-TASKS.md](./LAB-TASKS.md) | Token and speed research on already recorded data, no paid runs: cache-write split (start vs growth), the Opus-1M vs Sonnet-handoff cost model (H8), a weekly passive report, the feature cost inventory with the R0 "all off" profile, pilot tools parametrized by clone (LAB-01..05); queue in [STATUS-P2.md](./STATUS-P2.md) |
 | [GUI-TESTS.md](./GUI-TESTS.md) | ~100 Playwright test-case descriptions across all Svelte components (✓ exists / ○ missing) |
 | [config.example.toml](./config.example.toml) | Annotated config reference |
 | [docs/Science_lab/README.md](./docs/Science_lab/README.md) | Index of the cost and speed research: which document answers which question, what lives only on this machine, how to search, how to add results |
@@ -77,6 +78,7 @@ prompt, which is why the prompt is one line.
 | Session | Queue (`task_source`) | Task specs | Branch prefix | Pool slot |
 |---|---|---|---|---|
 | `Developer 1` | `STATUS-P1.md` | `VIEW-TASKS.md` (UI-01..13 done, UI-14), `RUNTIME-TASKS.md` (RT-01..08, done), `WT-TASKS.md` (WT-01..03), `QUEUE-TASKS.md` (QV-01..03), `CTX-TASKS.md` (CTX-01), `COST-TASKS.md` (COST-01..04), `MCP-TASKS.md` (MCP-01..18 done, MCP-19..23), `LEARN-TASKS.md` (LN-30..41), `WASTE-TASKS.md` (WS-01..12), `FIX-TASKS.md` (FIX-01..03), `LOGS-TASKS.md` (LG-01..04) | `p1-` | `p1-work` |
+| `Developer 2` | `STATUS-P2.md` | `LAB-TASKS.md` (LAB-01..05) | `p2-` | `p2-work` |
 
 Read the task file's own rules before starting — each breakdown carries
 invariants that are not repeated here (`LEARN-TASKS.md` §Инварианты: everything
