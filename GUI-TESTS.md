@@ -451,19 +451,6 @@ a no-op success), so every case below overrides the stubs via `page.evaluate`
 
 ---
 
-## AlienCrew.svelte — Animated Status Display
-
-| ID | Title | Steps | Assert | Status |
-|----|-------|-------|--------|--------|
-| AC-01 | Demo cycles all states | Click demo button | States cycle every ~1.8s; all 10 activities shown | ○ |
-| AC-02 | Error state on session error | Session reaches error status | Error prop animation plays; characters look alarmed | ○ |
-| AC-03 | Waiting state on permission | Session waiting_permission | Hourglass animation plays | ○ |
-| AC-04 | Sleeping state on rate limit | Session rate_limited | Lantern/sleeping animation; Z's shown | ○ |
-| AC-05 | Working state on active session | Session working | Appropriate tool animation based on active tool | ○ |
-| AC-06 | Idle state with no sessions | All sessions idle | Spinning wheel animation (default idle prop) | ○ |
-
----
-
 ## Cross-Cutting & Edge Cases
 
 | ID | Title | Steps | Assert | Status |

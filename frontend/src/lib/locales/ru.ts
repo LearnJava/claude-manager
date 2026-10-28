@@ -31,7 +31,6 @@ import skillReview from './ru/skillReview';
 import experiencePanel from './ru/experiencePanel';
 import mixedRun from './ru/mixedRun';
 import settings from './ru/settings';
-import alienCrew from './ru/alienCrew';
 import contextMenu from './ru/contextMenu';
 import sessionFeatures from './ru/sessionFeatures';
 import featureHelp from './ru/featureHelp';
@@ -67,7 +66,6 @@ export default {
     ...experiencePanel,
     ...mixedRun,
     ...settings,
-    ...alienCrew,
     ...contextMenu,
     ...sessionFeatures,
     ...featureHelp,
