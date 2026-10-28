@@ -1,0 +1,574 @@
+{
+ "A": {
+  "T1": {
+   "calls": 17,
+   "usd": 0.42610260000000005,
+   "in": 36,
+   "w5": 0,
+   "w1h": 49931,
+   "cread": 746333,
+   "out": 7704,
+   "ctx_peak": 62032,
+   "ctx_sum": 796300,
+   "tools": {
+    "Bash": 11,
+    "Grep": 3,
+    "Bash:heredoc": 3,
+    "Read": 2,
+    "Edit": 1
+   },
+   "tool_errors": {},
+   "runs": {
+    "go test": 5,
+    "other": 3,
+    "git": 2,
+    "go vet": 1
+   },
+   "red": {
+    "go test": 1
+   },
+   "compile": {},
+   "test_fails": {
+    "TestLogsOfNotStartedSession": 1
+   },
+   "err_keys": {
+    "test:TestLogsOfNotStartedSession": 1
+   },
+   "empty_search": 1,
+   "compactions": 0,
+   "start": "2026-10-28T14:35:53.829Z",
+   "end": "2026-10-28T15:04:37.933Z",
+   "models": {
+    "claude-sonnet-5-5": 17
+   },
+   "files": 1,
+   "sessions": 1,
+   "repeat_errors": 0,
+   "reread": 0,
+   "reedit_files": 0
+  },
+  "T2": {
+   "calls": 13,
+   "usd": 0.30282880000000006,
+   "in": 26,
+   "w5": 0,
+   "w1h": 34825,
+   "cread": 506984,
+   "out": 6208,
+   "ctx_peak": 48411,
+   "ctx_sum": 541835,
+   "tools": {
+    "Grep": 7,
+    "Read": 5,
+    "Edit": 5,
+    "Bash": 4,
+    "Bash:heredoc": 1
+   },
+   "tool_errors": {
+    "edit": 1
+   },
+   "runs": {
+    "git": 2,
+    "other": 1,
+    "go test": 1
+   },
+   "red": {},
+   "compile": {},
+   "test_fails": {},
+   "err_keys": {
+    "edit:<tool_use_error>string to replace not found in file.": 1
+   },
+   "empty_search": 0,
+   "compactions": 0,
+   "start": "2026-10-28T15:05:27.738Z",
+   "end": "2026-10-28T15:08:27.651Z",
+   "models": {
+    "claude-sonnet-5-5": 13
+   },
+   "files": 1,
+   "sessions": 1,
+   "repeat_errors": 0,
+   "reread": 0,
+   "reedit_files": 1
+  },
+  "T3": {
+   "calls": 14,
+   "usd": 0.43687399999999993,
+   "in": 30,
+   "w5": 0,
+   "w1h": 47451,
+   "cread": 638350,
+   "out": 11934,
+   "ctx_peak": 61039,
+   "ctx_sum": 685831,
+   "tools": {
+    "Bash": 13,
+    "Bash:heredoc": 5
+   },
+   "tool_errors": {},
+   "runs": {
+    "other": 7,
+    "go build": 3,
+    "go test": 2,
+    "git": 1
+   },
+   "red": {},
+   "compile": {},
+   "test_fails": {},
+   "err_keys": {},
+   "empty_search": 0,
+   "compactions": 0,
+   "start": "2026-10-28T15:08:46.903Z",
+   "end": "2026-10-28T15:21:41.319Z",
+   "models": {
+    "claude-sonnet-5-5": 14
+   },
+   "files": 1,
+   "sessions": 1,
+   "repeat_errors": 0,
+   "reread": 0,
+   "reedit_files": 0
+  },
+  "T4": {
+   "calls": 58,
+   "usd": 1.6324447999999996,
+   "in": 116,
+   "w5": 0,
+   "w1h": 98307,
+   "cread": 4789424,
+   "out": 28110,
+   "ctx_peak": 115091,
+   "ctx_sum": 4887847,
+   "tools": {
+    "Bash": 53,
+    "Bash:heredoc": 8,
+    "Write": 3,
+    "TaskStop": 2
+   },
+   "tool_errors": {
+    "bash:go test": 1
+   },
+   "runs": {
+    "other": 35,
+    "go test": 8,
+    "git": 5,
+    "go vet": 3,
+    "go build": 1,
+    "svelte-check": 1
+   },
+   "red": {
+    "go test": 2,
+    "go vet": 1
+   },
+   "compile": {
+    "vet": 1
+   },
+   "test_fails": {
+    "TestDocsInSync": 1
+   },
+   "err_keys": {
+    "vet:rpc_logs.go: undefined: analysis": 1,
+    "bash:exit code n": 1,
+    "test:TestDocsInSync": 1
+   },
+   "empty_search": 0,
+   "compactions": 0,
+   "start": "2026-10-28T15:22:05.372Z",
+   "end": "2026-10-28T15:51:53.347Z",
+   "models": {
+    "claude-sonnet-5-5": 58
+   },
+   "files": 1,
+   "sessions": 1,
+   "repeat_errors": 0,
+   "reread": 0,
+   "reedit_files": 0
+  },
+  "T5": {
+   "calls": 49,
+   "usd": 1.6028008,
+   "in": 98,
+   "w5": 0,
+   "w1h": 100946,
+   "cread": 3998004,
+   "out": 39922,
+   "ctx_peak": 114532,
+   "ctx_sum": 4099048,
+   "tools": {
+    "Bash": 47,
+    "Bash:heredoc": 7,
+    "Write": 7
+   },
+   "tool_errors": {
+    "bash:go build": 1,
+    "bash:svelte-check": 1
+   },
+   "runs": {
+    "other": 28,
+    "git": 6,
+    "go test": 6,
+    "svelte-check": 4,
+    "go build": 2,
+    "go vet": 1
+   },
+   "red": {
+    "go build": 1,
+    "svelte-check": 1,
+    "go test": 1
+   },
+   "compile": {},
+   "test_fails": {
+    "TestMCPTools_StructuredContentMatchesOutputSchema": 1
+   },
+   "err_keys": {
+    "bash:exit code n": 2,
+    "test:TestMCPTools_StructuredContentMatchesOutputSchema": 1
+   },
+   "empty_search": 0,
+   "compactions": 0,
+   "start": "2026-10-28T15:52:08.601Z",
+   "end": "2026-10-28T16:12:23.626Z",
+   "models": {
+    "claude-sonnet-5-5": 49
+   },
+   "files": 1,
+   "sessions": 1,
+   "repeat_errors": 1,
+   "reread": 0,
+   "reedit_files": 0
+  }
+ },
+ "B": {
+  "T1": {
+   "calls": 17,
+   "usd": 0.4946304,
+   "in": 34,
+   "w5": 0,
+   "w1h": 62246,
+   "cread": 810692,
+   "out": 8344,
+   "ctx_peak": 62248,
+   "ctx_sum": 872972,
+   "tools": {
+    "Bash": 15,
+    "Skill": 2,
+    "Bash:heredoc": 1,
+    "Write": 1
+   },
+   "tool_errors": {},
+   "runs": {
+    "other": 6,
+    "git": 5,
+    "go test": 3,
+    "go build": 1
+   },
+   "red": {
+    "go test": 2
+   },
+   "compile": {
+    "other": 2
+   },
+   "test_fails": {},
+   "err_keys": {
+    "go:main.go: pattern all:frontend<path>: no matching files found": 2
+   },
+   "empty_search": 0,
+   "compactions": 0,
+   "start": "2026-10-28T14:57:45.832Z",
+   "end": "2026-10-28T15:12:45.435Z",
+   "models": {
+    "claude-sonnet-5-5": 17
+   },
+   "files": 1,
+   "sessions": 1,
+   "repeat_errors": 1,
+   "reread": 0,
+   "reedit_files": 0
+  },
+  "T2": {
+   "calls": 20,
+   "usd": 0.4939612,
+   "in": 40,
+   "w5": 0,
+   "w1h": 54369,
+   "cread": 996276,
+   "out": 7715,
+   "ctx_peak": 67903,
+   "ctx_sum": 1050685,
+   "tools": {
+    "Bash": 18,
+    "Skill": 2,
+    "Bash:heredoc": 2
+   },
+   "tool_errors": {},
+   "runs": {
+    "other": 9,
+    "git": 7,
+    "go test": 2
+   },
+   "red": {},
+   "compile": {},
+   "test_fails": {},
+   "err_keys": {},
+   "empty_search": 0,
+   "compactions": 0,
+   "start": "2026-10-28T15:22:25.663Z",
+   "end": "2026-10-28T15:34:17.717Z",
+   "models": {
+    "claude-sonnet-5-5": 20
+   },
+   "files": 1,
+   "sessions": 1,
+   "repeat_errors": 0,
+   "reread": 0,
+   "reedit_files": 0
+  },
+  "T3": {
+   "calls": 37,
+   "usd": 0.9764924000000004,
+   "in": 74,
+   "w5": 0,
+   "w1h": 102299,
+   "cread": 1840142,
+   "out": 19912,
+   "ctx_peak": 65210,
+   "ctx_sum": 1942515,
+   "tools": {
+    "Bash": 33,
+    "Bash:heredoc": 5,
+    "Write": 3,
+    "Skill": 2
+   },
+   "tool_errors": {
+    "bash:go build": 1
+   },
+   "runs": {
+    "git": 13,
+    "other": 10,
+    "go test": 6,
+    "go build": 3,
+    "go vet": 1
+   },
+   "red": {
+    "go test": 2,
+    "go build": 1
+   },
+   "compile": {},
+   "test_fails": {
+    "TestValidateRejectsBadGateSchedule": 1,
+    "TestSaveAtomicWithBackup": 1
+   },
+   "err_keys": {
+    "bash:exit code n": 1,
+    "test:TestValidateRejectsBadGateSchedule": 1,
+    "test:TestSaveAtomicWithBackup": 1
+   },
+   "empty_search": 0,
+   "compactions": 0,
+   "start": "2026-10-28T15:40:25.974Z",
+   "end": "2026-10-28T16:03:25.758Z",
+   "models": {
+    "claude-sonnet-5-5": 37
+   },
+   "files": 2,
+   "sessions": 2,
+   "repeat_errors": 0,
+   "reread": 0,
+   "reedit_files": 0
+  },
+  "T4": {
+   "calls": 73,
+   "usd": 2.0026342,
+   "in": 146,
+   "w5": 0,
+   "w1h": 195191,
+   "cread": 4261441,
+   "out": 36929,
+   "ctx_peak": 92132,
+   "ctx_sum": 4456778,
+   "tools": {
+    "Bash": 66,
+    "Edit": 8,
+    "Bash:heredoc": 5,
+    "Write": 4,
+    "Read": 4,
+    "Skill": 3
+   },
+   "tool_errors": {
+    "bash:other": 1
+   },
+   "runs": {
+    "other": 37,
+    "git": 16,
+    "go test": 11,
+    "npm test": 2
+   },
+   "red": {
+    "go test": 2
+   },
+   "compile": {},
+   "test_fails": {
+    "TestListCompletedRuns": 2
+   },
+   "err_keys": {
+    "test:TestListCompletedRuns": 2,
+    "bash:exit code n": 1
+   },
+   "empty_search": 0,
+   "compactions": 0,
+   "start": "2026-10-28T16:11:42.131Z",
+   "end": "2026-10-28T16:47:10.809Z",
+   "models": {
+    "claude-sonnet-5-5": 73
+   },
+   "files": 3,
+   "sessions": 3,
+   "repeat_errors": 1,
+   "reread": 0,
+   "reedit_files": 1
+  },
+  "T5": {
+   "calls": 96,
+   "usd": 2.482223800000001,
+   "in": 192,
+   "w5": 0,
+   "w1h": 234500,
+   "cread": 5356699,
+   "out": 47250,
+   "ctx_peak": 80155,
+   "ctx_sum": 5591391,
+   "tools": {
+    "Bash": 85,
+    "Write": 12,
+    "Skill": 6,
+    "Bash:heredoc": 5,
+    "Read": 1,
+    "Edit": 1
+   },
+   "tool_errors": {},
+   "runs": {
+    "other": 41,
+    "git": 29,
+    "go test": 7,
+    "go build": 4,
+    "npm test": 3,
+    "svelte-check": 1
+   },
+   "red": {},
+   "compile": {},
+   "test_fails": {},
+   "err_keys": {},
+   "empty_search": 0,
+   "compactions": 0,
+   "start": "2026-10-28T16:53:12.486Z",
+   "end": "2026-10-28T18:03:00.785Z",
+   "models": {
+    "claude-sonnet-5-5": 96
+   },
+   "files": 4,
+   "sessions": 4,
+   "repeat_errors": 0,
+   "reread": 0,
+   "reedit_files": 0
+  },
+  "background": {
+   "calls": 4,
+   "usd": 0.907606,
+   "in": 8,
+   "w5": 0,
+   "w1h": 145614,
+   "cread": 0,
+   "out": 3940,
+   "ctx_peak": 38458,
+   "ctx_sum": 145622,
+   "tools": {
+    "StructuredOutput": 4
+   },
+   "tool_errors": {},
+   "runs": {},
+   "red": {},
+   "compile": {},
+   "test_fails": {},
+   "err_keys": {},
+   "empty_search": 0,
+   "compactions": 0,
+   "start": "2026-10-28T15:54:04.781Z",
+   "end": "2026-10-28T18:13:01.317Z",
+   "models": {
+    "claude-opus-5-5": 2,
+    "claude-sonnet-5-5": 2
+   },
+   "files": 4,
+   "sessions": 4,
+   "repeat_errors": 0,
+   "reread": 0,
+   "reedit_files": 0
+  },
+  "other": {
+   "calls": 1,
+   "usd": 0.08855360000000001,
+   "in": 2,
+   "w5": 0,
+   "w1h": 21452,
+   "cread": 12108,
+   "out": 32,
+   "ctx_peak": 33562,
+   "ctx_sum": 33562,
+   "tools": {},
+   "tool_errors": {},
+   "runs": {},
+   "red": {},
+   "compile": {},
+   "test_fails": {},
+   "err_keys": {},
+   "empty_search": 0,
+   "compactions": 0,
+   "start": "2026-10-28T18:12:29.440Z",
+   "end": "2026-10-28T18:12:33.471Z",
+   "models": {
+    "claude-sonnet-5-5": 1
+   },
+   "files": 1,
+   "sessions": 1,
+   "repeat_errors": 0,
+   "reread": 0,
+   "reedit_files": 0
+  },
+  "plan": {
+   "calls": 10,
+   "usd": 1.1674456000000002,
+   "in": 20,
+   "w5": 0,
+   "w1h": 62383,
+   "cread": 532904,
+   "out": 22757,
+   "ctx_peak": 74368,
+   "ctx_sum": 595307,
+   "tools": {
+    "Bash": 8,
+    "Write": 1
+   },
+   "tool_errors": {},
+   "runs": {
+    "git": 4,
+    "other": 4
+   },
+   "red": {},
+   "compile": {},
+   "test_fails": {},
+   "err_keys": {},
+   "empty_search": 0,
+   "compactions": 0,
+   "start": "2026-10-28T14:39:01.343Z",
+   "end": "2026-10-28T14:42:30.523Z",
+   "models": {
+    "claude-opus-5-5": 10
+   },
+   "files": 1,
+   "sessions": 1,
+   "repeat_errors": 0,
+   "reread": 0,
+   "reedit_files": 0
+  }
+ }
+}

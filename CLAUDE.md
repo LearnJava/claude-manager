@@ -10,6 +10,7 @@ Desktop app (Windows) to launch, monitor, and control parallel Claude Code CLI s
 | [docs/design-decisions.md](./docs/design-decisions.md) | The *why* behind every non-obvious choice: config layering, bidirectional streaming, permissions, crash recovery, context handoff, the mixed-programming and experience-layer subsystems, and everything else under "Key Design Decisions" |
 | [docs/testing-harness.md](./docs/testing-harness.md) | fakeclaude/fakeworker, the control-plane, `cm-mcp` — how to test without spending API tokens, and how Claude itself drives the running app for GUI testing |
 | [docs/git-workflow.md](./docs/git-workflow.md) | Full developer-session protocol: branches, worktree pool, merge cadence, completion invariant |
+| [docs/change-acceptance.md](./docs/change-acceptance.md) | How a change affecting speed, tokens or quality of sessions is accepted: the A/B stand, baseline (n≥3 runs of T5), acceptance card and threshold, hypothesis queue H1–H7, decision log |
 | [PLAN.md](./PLAN.md) | Full specification — §14-21 cover CLI flags, bidirectional streaming, permissions, pre-flight analysis, token metrics, optimization, and the test/control harness |
 | [TASKS.md](./TASKS.md) | App task breakdown (TASK-01..15) |
 | [HARNESS-TASKS.md](./HARNESS-TASKS.md) | Test/control harness task breakdown (H1..H6) |
@@ -28,6 +29,8 @@ Desktop app (Windows) to launch, monitor, and control parallel Claude Code CLI s
 | [GUI-TESTS.md](./GUI-TESTS.md) | ~100 Playwright test-case descriptions across all Svelte components (✓ exists / ○ missing) |
 | [config.example.toml](./config.example.toml) | Annotated config reference |
 | [docs/Science_lab/MEASURE.md](./docs/Science_lab/MEASURE.md) | Runtime and cost study of Claude Code on this Windows machine (Lumen and claude-manager sessions), the `claude-code-setup` kit installed in `~/.claude`, and the before/after measurement procedure with the 2026-10-13 baseline |
+| [docs/Science_lab/AB-PILOT-2026-10-28.md](./docs/Science_lab/AB-PILOT-2026-10-28.md) | A/B pilot of plain Claude Code against the manager (5 tasks): where time and dollars went, feature audit, test-suite growth; analysis scripts in `ab-pilot-tools/`, data in `measurements/2026-10-28-ab-pilot/` |
+| [docs/Science_lab/NEXT-SESSION.md](./docs/Science_lab/NEXT-SESSION.md) | Handoff to the session that plans research on cutting token spend and speeding up tasks: what is known, what is decided, what to decide, how to verify, constraints |
 
 ## Mirrored projects
 
