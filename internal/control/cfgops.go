@@ -45,6 +45,7 @@ var globalSettingsAllowed = map[string]bool{
 	"daily_budget_alert": true, "weekly_budget_alert": true, "rate_limit_alert_threshold": true,
 	"session_start_delay": true, "python_utf8": true, "command_guard": true,
 	"env_card": true, "manager_card": true, "mirror_interval_min": true,
+	"logs_repo": true, "logs_interval_min": true,
 }
 
 // tomlKeys lists the toml field names of struct type t.

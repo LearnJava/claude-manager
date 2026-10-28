@@ -1,6 +1,9 @@
 package experience
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 const (
 	fixtureBasic     = "../../testdata/logfiles/basic.md"
@@ -156,5 +159,24 @@ func TestParseLogFile_Broken(t *testing.T) {
 func TestParseLogFile_MissingFile(t *testing.T) {
 	if _, err := ParseLogFile("../../testdata/logfiles/does-not-exist.md"); err == nil {
 		t.Fatal("expected an error for a missing file")
+	}
+}
+
+func TestParseLogFile_MachineLine(t *testing.T) {
+	p := t.TempDir() + "/m.md"
+	body := "# Session log — proj/S1\n\n_Saved 2026-10-27T10:00:00Z, 1 entries._\n_Machine PC-1 · build abc1234-dirty_\n\n- `10:00:01` **text** hello\n"
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	traj, err := ParseLogFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if traj.Skipped != 0 || traj.Machine != "PC-1" || traj.Build != "abc1234-dirty" || len(traj.Steps) != 1 {
+		t.Errorf("got %+v", traj)
+	}
+	old, _ := ParseLogFile(fixtureBasic)
+	if old.Machine != "" || old.Build != "" || old.Skipped != 0 {
+		t.Errorf("old log: %+v", old)
 	}
 }

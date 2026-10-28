@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"claude-manager/internal/analysis"
+	"claude-manager/internal/buildinfo"
 	"claude-manager/internal/config"
 	"claude-manager/internal/control"
 	"claude-manager/internal/envcheck"
@@ -69,7 +70,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.closeLog = closeLog
 
-	logger.L.Info("startup", "cfg", a.cfgPath)
+	logger.L.Info("startup", "cfg", a.cfgPath, "host", buildinfo.Host(), "build", buildinfo.Revision())
 
 	// Clear last run's clean-exit marker: from here on, the marker's absence
 	// means this process did not get to shut down properly (see
@@ -342,6 +343,7 @@ func (a *App) startup(ctx context.Context) {
 	runtime.EventsEmit(ctx, "app:ready")
 
 	a.startMirrorLoop(ctx)
+	a.startLogShipLoop(ctx)
 	a.startNightlyLoop(ctx)
 
 	go func() {
@@ -1265,6 +1267,7 @@ func (a *App) UpdateConfig(cfg config.AppConfig) error {
 		a.manager.SetConfig(reloaded)
 	}
 	kickMirror()
+	kickLogShip()
 	return nil
 }
 

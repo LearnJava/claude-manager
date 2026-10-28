@@ -52,6 +52,8 @@ var toolSamples = map[string]struct {
 	"mirror_project":            {`{"project":"p"}`, `{"enabled":true,"dir":"/m","files":3}`},
 	"unmirror_project":          {`{"project":"p"}`, `null`},
 	"sync_project_mirrors":      {`{}`, `[{"project":"p","files":3}]`},
+	"ship_logs_now":             {`{}`, `{"Files":3,"Pushed":true}`},
+	"get_log_ship_status":       {`{}`, `{"enabled":true,"files":3}`},
 	"approve_plan":              {`{"plan":{"id":7}}`, `{"id":7}`},
 	"approve_permission":        {`{"session_id":"p/s","request_id":"r1","scope":"once"}`, `null`},
 	"deny_permission":           {`{"session_id":"p/s","request_id":"r1"}`, `null`},

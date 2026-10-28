@@ -1848,6 +1848,42 @@
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Get log shipping status"
+    },
+    "description": "Report whether log shipping is on, the repository, this machine's host name, and the last pass. Use when: before ship_logs_now, or to check that logs reach the repository. Not for: pushing logs (use ship_logs_now). Returns: enabled, repo, host, lastRun (empty before the first pass this run), files, error. Side effects: none, read only. Access: read. Example: {}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "name": "get_log_ship_status",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "log_ship": {
+          "description": "Log shipping: the pass result (at, files, bytes, pushed, error) or the state (enabled, repo, host, lastRun, files, error)"
+        },
+        "ok": {
+          "description": "True when the call finished",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok",
+        "log_ship"
+      ],
+      "type": "object"
+    },
+    "title": "Get log shipping status"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "read"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Compare worker quality"
     },
     "description": "Compare the worker models of the mixed-programming tasks of a project: tasks done, rounds to green, clean patch rate and failures per worker. Use when: you choose which worker model gets the next brief. Not for: the rounds of one task (use get_mixed_rounds). Returns: workers, with next_cursor and truncated when more exist. Side effects: none, read only. Access: read. Example: {\"project\":\"lumen\"}",
@@ -4940,6 +4976,42 @@
       "type": "object"
     },
     "title": "Set skill autopilot"
+  },
+  {
+    "_meta": {
+      "cm/accessLevel": "operate"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Ship logs now"
+    },
+    "description": "Push run logs of every project and the manager's own logs into logs/\u003chost\u003e/ of the logs repository (logs_repo) now. Use when: logs should reach the shared repository before they are reviewed. Not for: setting the repository (use update_config with logs_repo) or reading the state (use get_log_ship_status). Returns: the pass result: at, files, bytes, pushed, error. Fails when logs_repo is empty. Side effects: clones the logs repository into the manager's data folder and pushes a commit to it; secrets are masked first; projects are not changed. Access: operate. Example: {}",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "name": "ship_logs_now",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "log_ship": {
+          "description": "Log shipping: the pass result (at, files, bytes, pushed, error) or the state (enabled, repo, host, lastRun, files, error)"
+        },
+        "ok": {
+          "description": "True when the call finished",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok",
+        "log_ship"
+      ],
+      "type": "object"
+    },
+    "title": "Ship logs now"
   },
   {
     "_meta": {

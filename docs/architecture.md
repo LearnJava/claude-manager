@@ -22,6 +22,10 @@ claude-manager/
 │   │                                #   Bash commands that cannot work (cd into a dir only under the project root,
 │   │                                #   Windows paths bash mangles); hook.go reads the payload, logs to cmdguard.log;
 │   │                                #   protect.go denies edits of the manager's own .claude-manager/config*.toml
+│   ├── buildinfo/                   # Host name and VCS revision stamped into run logs and the app.log startup line
+│   ├── logship/                     # One pass (Ship) pushing run logs into logs/<host>/ of the private cm-logs repo:
+│   │                                #   clone in <data dir>/cm-logs, marks in logship.json outside the clone, 3 push attempts
+│   │                                #   LG-03: manager logs appended by byte offset, machine.md, mask.go (Mask) on everything written
 │   ├── envcheck/                    # Finds claude/git/Git Bash/Python/gh/go/node/wails and their versions, and the
 │   │                                #   install command for this OS + package manager (Settings → Environment);
 │   │                                #   NewestPython picks the newest off-PATH Windows Python (also env card)
@@ -511,6 +515,8 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `MirrorProject(project)` | "Mirror into Claude Manager": set the project's `mirror` flag and sync it now → `ProjectMirrorStatus` |
 | `UnmirrorProject(project)` | Clear the `mirror` flag; the copy and its history stay |
 | `SyncProjectMirrors()` | Re-sync every mirrored project now → `[]mirror.Result` |
+| `ShipLogsNow()` | One log-shipping pass now (`logs_repo` must be set; `app_logship.go`) → `logship.Result` |
+| `GetLogShipStatus()` | `LogShipStatus`: `enabled`, `repo`, `host`, `lastRun`, `files`, `error` of the last pass this run |
 | `GetProjectMirror(project)` | `{enabled, dir, lastSync, files, error}` for Settings |
 | `ClearSessionState(project, name)` | Delete crash-recovery state file (equivalent to --new) |
 | `GetSessionState(project, name)` | Return persisted state (session_id + started_at) or nil |

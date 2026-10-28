@@ -133,6 +133,53 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         GetSessionState: (project: string, name: string) =>
           rpc('GetSessionState', { project, session: name }),
         GetModelRecommendation: () => Promise.resolve(null),
+        GetSessionRoadmap: (project: string, session: string) =>
+          rpc('GetSessionRoadmap', { project, session }),
+        GetRoadmapTaskDetail: (project: string, relPath: string) =>
+          rpc('GetRoadmapTaskDetail', { project, rel_path: relPath }),
+        GetRoadmapRowDetail: (project: string, roadmapFile: string, line: number) =>
+          rpc('GetRoadmapRowDetail', { project, roadmap_file: roadmapFile, line }),
+        GenerateRoadmap: (project: string, idea: string, model: string) =>
+          rpc('GenerateRoadmap', { project, idea, model }),
+        ApproveRoadmap: (planId: number, overwrite: boolean) =>
+          rpc('ApproveRoadmap', { plan_id: planId, overwrite }),
+        ApprovePlan: (plan: unknown) => rpc('ApprovePlan', { plan }),
+        ExecutePlan: (planId: number) => rpc('ExecutePlan', { plan_id: planId }),
+        AnswerQuestion: (id: string, questionId: string, answer: string) =>
+          rpc('AnswerQuestion', { id, question_id: questionId, answer }),
+        SendMessageWithImages: (id: string, message: string, images: unknown[]) =>
+          rpc('SendMessageWithImages', { id, message, images }),
+        StartAdHocChatSession: (project: string) => rpc('StartAdHocChatSession', { project }),
+        GetDailyTokens: (date: string) => rpc('GetDailyTokens', { date }),
+        GetProjectTokens: (project: string, days: number) =>
+          rpc('GetProjectTokens', { project, days }),
+        GetProjectLogFiles: (project: string) => rpc('GetProjectLogFiles', { project }),
+        ClearProjectLogs: (project: string) => rpc('ClearProjectLogs', { project }),
+        GetProjectMirror: (project: string) => rpc('GetProjectMirror', { project }),
+        MirrorProject: (project: string) => rpc('MirrorProject', { project }),
+        UnmirrorProject: (project: string) => rpc('UnmirrorProject', { project }),
+        SyncProjectMirrors: () => rpc('SyncProjectMirrors', {}),
+        GetLogShipStatus: () => rpc('GetLogShipStatus', {}),
+        ShipLogsNow: () => rpc('ShipLogsNow', {}),
+        HasSessionProtocol: (project: string) =>
+          rpc<{ installed?: boolean }>('HasSessionProtocol', { project }).then(
+            (r) => (r as { installed?: boolean })?.installed ?? false,
+          ),
+        InstallSessionProtocol: (project: string) => rpc('InstallSessionProtocol', { project }),
+        GenerateClaudeMdSession: (project: string) => rpc('GenerateClaudeMdSession', { project }),
+        // The app takes a folder path here, the RPC a project name — no
+        // faithful mapping, so these are inert ("absent" / no-op).
+        InitGitRepo: (_projectPath: string) => Promise.resolve(null),
+        HasClaudeMd: (_projectPath: string) => Promise.resolve(false),
+        // No control-plane RPC for the `fresh` variant; plain restart is closest.
+        RestartSessionMode: (id: string, _fresh: boolean) => rpc('RestartSession', { id }),
+        // No control-plane RPC for the hook-rule methods (GUI-only): inert stubs.
+        RevertFailureRule: (id: number) => rpc('RevertFailureRule', { id }),
+        RestoreFailureRule: (id: number) => rpc('RestoreFailureRule', { id }),
+        ProposeHookRules: (_project: string) => Promise.resolve([]),
+        PreviewHookRule: (_id: number) => Promise.resolve(null),
+        ApplyHookRule: (_id: number) => Promise.resolve(null),
+        RemoveHookRule: (_id: number) => Promise.resolve(null),
         // The control plane has no dedicated RPC for these; both are a
         // config round-trip in the real app too (App.SetSessionRuntime /
         // rememberSessionModel → UpdateConfig), so do the same here.

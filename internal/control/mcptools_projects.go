@@ -106,6 +106,11 @@ type mirrorOut struct {
 	Mirror any  `json:"mirror" jsonschema:"Mirror state: enabled, dir, last_sync, files, error; or the per-project sync results"`
 }
 
+type logShipOut struct {
+	OK      bool `json:"ok" jsonschema:"True when the call finished"`
+	LogShip any  `json:"log_ship" jsonschema:"Log shipping: the pass result (at, files, bytes, pushed, error) or the state (enabled, repo, host, lastRun, files, error)"`
+}
+
 func editResult(raw any) editOut {
 	m, _ := raw.(map[string]any)
 	out := editOut{OK: true, Changes: map[string]any{}}
@@ -543,6 +548,40 @@ func projectsTools() []Tool {
 			},
 			Result:  func(in pathOptIn, _ any) projectAck { return projectAck{OK: true, Project: in.Project} },
 			Summary: func(in pathOptIn, _ projectAck) string { return "Project " + in.Project + " no longer mirrored." },
+		}),
+		define(spec[noIn, logShipOut]{
+			Name: "ship_logs_now", Title: "Ship logs now",
+			Doc: Doc{
+				What:    "Push run logs of every project and the manager's own logs into logs/<host>/ of the logs repository (logs_repo) now.",
+				UseWhen: "logs should reach the shared repository before they are reviewed.",
+				NotFor:  "setting the repository (use update_config with logs_repo) or reading the state (use get_log_ship_status).",
+				Returns: "the pass result: at, files, bytes, pushed, error. Fails when logs_repo is empty.",
+				Effects: "clones the logs repository into the manager's data folder and pushes a commit to it; secrets are masked first; projects are not changed.",
+				Example: `{}`,
+			},
+			Level: LevelOperate, Annotations: ToolAnnotations{Idempotent: true}, Covers: []string{"ShipLogsNow"},
+			Translate: func(noIn) (string, any, error) {
+				return "/rpc", rpcCallBody("ShipLogsNow", map[string]string{}), nil
+			},
+			Result:  func(_ noIn, raw any) logShipOut { return logShipOut{OK: true, LogShip: raw} },
+			Summary: func(noIn, logShipOut) string { return "Logs shipped." },
+		}),
+		define(spec[noIn, logShipOut]{
+			Name: "get_log_ship_status", Title: "Get log shipping status",
+			Doc: Doc{
+				What:    "Report whether log shipping is on, the repository, this machine's host name, and the last pass.",
+				UseWhen: "before ship_logs_now, or to check that logs reach the repository.",
+				NotFor:  "pushing logs (use ship_logs_now).",
+				Returns: "enabled, repo, host, lastRun (empty before the first pass this run), files, error.",
+				Effects: "none, read only.",
+				Example: `{}`,
+			},
+			Level: LevelRead, Annotations: ro, Covers: []string{"GetLogShipStatus"},
+			Translate: func(noIn) (string, any, error) {
+				return "/rpc", rpcCallBody("GetLogShipStatus", map[string]string{}), nil
+			},
+			Result:  func(_ noIn, raw any) logShipOut { return logShipOut{OK: true, LogShip: raw} },
+			Summary: func(noIn, logShipOut) string { return "Log shipping status." },
 		}),
 		define(spec[noIn, mirrorOut]{
 			Name: "sync_project_mirrors", Title: "Sync project mirrors",

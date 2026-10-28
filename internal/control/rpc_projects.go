@@ -25,6 +25,8 @@ type ProjectsApp interface {
 	UnmirrorProject(project string) error
 	SyncProjectMirrorsResults() (any, error)
 	MirrorStatusOf(project string) any
+	ShipLogsNowResult() (any, error)
+	LogShipStatusOf() any
 }
 
 type editArgs struct {
@@ -361,6 +363,18 @@ func (s *Server) registerProjectRPCs(reg map[string]handler) {
 	reg["UnmirrorProject"] = projectAction("unmirroring", func(a editArgs) (any, error) {
 		return nil, papp.UnmirrorProject(a.Project)
 	})
+	reg["ShipLogsNow"] = func(_ json.RawMessage) (any, error) {
+		if papp == nil {
+			return nil, needApp("log shipping")
+		}
+		return papp.ShipLogsNowResult()
+	}
+	reg["GetLogShipStatus"] = func(_ json.RawMessage) (any, error) {
+		if papp == nil {
+			return nil, needApp("the log shipping status")
+		}
+		return papp.LogShipStatusOf(), nil
+	}
 	reg["SyncProjectMirrors"] = func(_ json.RawMessage) (any, error) {
 		if papp == nil {
 			return nil, needApp("mirror sync")

@@ -57,6 +57,11 @@ func ParseLogFile(path string) (Trajectory, error) {
 			pendingTool = false
 			continue
 		}
+		if m := mdMachineRe.FindStringSubmatch(line); m != nil {
+			traj.Machine, traj.Build = m[1], m[2]
+			pendingTool = false
+			continue
+		}
 		if m := mdSavedRe.FindStringSubmatch(line); m != nil {
 			if t, err := time.Parse(time.RFC3339, m[1]); err == nil {
 				day = t
@@ -139,10 +144,11 @@ func ParseLogFile(path string) (Trajectory, error) {
 }
 
 var (
-	mdHeaderRe = regexp.MustCompile(`^# Session log — (.+)$`)
-	mdSavedRe  = regexp.MustCompile(`^_Saved ([^,]+), \d+ entries\._$`)
-	mdEntryRe  = regexp.MustCompile("^- `(\\d{2}:\\d{2}:\\d{2})` \\*\\*(\\w+)\\*\\* (.*)$")
-	mdToolRe   = regexp.MustCompile("^  - tool: `([^`]*)` (.*)$")
+	mdHeaderRe  = regexp.MustCompile(`^# Session log — (.+)$`)
+	mdMachineRe = regexp.MustCompile(`^_Machine (.+) · build (.+)_$`)
+	mdSavedRe   = regexp.MustCompile(`^_Saved ([^,]+), \d+ entries\._$`)
+	mdEntryRe   = regexp.MustCompile("^- `(\\d{2}:\\d{2}:\\d{2})` \\*\\*(\\w+)\\*\\* (.*)$")
+	mdToolRe    = regexp.MustCompile("^  - tool: `([^`]*)` (.*)$")
 )
 
 // combineTime folds an HH:MM:SS entry time onto the calendar date of the

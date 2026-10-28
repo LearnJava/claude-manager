@@ -235,6 +235,15 @@ type GlobalSettings struct {
 	// minutes. 0 disables the timer (sync then runs only on start, on
 	// settings save and from the button). Default 15.
 	MirrorIntervalMin int `toml:"mirror_interval_min"`
+
+	// LogsRepo is the git URL (or path) of the private repository every
+	// machine ships its run logs and manager logs to (internal/logship).
+	// Empty = shipping is off.
+	LogsRepo string `toml:"logs_repo"`
+	// LogsIntervalMin is how often logs are shipped, in minutes. 0 disables
+	// the timer (shipping then runs only from the button and on settings
+	// save). Default 60.
+	LogsIntervalMin int `toml:"logs_interval_min"`
 }
 
 // ProjectOverlay is the per-project configuration stored inside the project
