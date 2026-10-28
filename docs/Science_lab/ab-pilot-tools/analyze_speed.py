@@ -9,7 +9,15 @@ import sys
 sys.stdout.reconfigure(encoding="utf-8")
 HOME = os.path.expanduser("~")
 PROJ = os.path.join(HOME, ".claude", "projects")
-BENCH = r"C:\kostja\GoProjects\cm-bench"
+import argparse
+
+_ap = argparse.ArgumentParser()
+_ap.add_argument("--bench-dir", default=r"C:\kostja\GoProjects\cm-bench", help="stand folder with _logs/")
+_ap.add_argument("--project", default="bench-cm", help="manager project name of the stand")
+_ap.add_argument("windows", nargs="*", help="e.g. A:T5 B:T5.3 (default A:T2 B:T2)")
+_args = _ap.parse_args()
+BENCH = _args.bench_dir
+SESSION_TAG = _args.project + "/Developer 1"
 LOG = os.path.join(HOME, ".claude-manager", "logs", "app.log")
 B_TASKS = ["T1", "T2", "T3.1", "T3.2", "T4.1", "T4.2", "T4.3", "T5.1", "T5.2", "T5.3", "T5.4"]
 HEAVY = 60.0  # seconds: a tool call longer than this is a build/test/wait
@@ -103,7 +111,7 @@ runs, cur, last_exit = [], None, None
 inits = []
 with open(LOG, encoding="utf-8", errors="replace") as f:
     for line in f:
-        if "bench-cm/Developer 1" not in line:
+        if SESSION_TAG not in line:
             continue
         m = re.match(r"time=(\S+) level=\S+ msg=(\S+)", line)
         if not m:
@@ -152,7 +160,7 @@ for g, subs in groups.items():
           f"{mins(bsp)} {mins(btl)} {mins(bhv)} {btn:5d} {mins(bgt)} {mins(bsp + bgt)}    | {(bsp + bgt) / a['span']:.1f}x{part}")
 
 # longest tool calls: `python -I analyze_speed.py A:T5 B:T5.1 B:T5.3` (default: A:T2 B:T2)
-for w in sys.argv[1:] or ["A:T2", "B:T2"]:
+for w in _args.windows or ["A:T2", "B:T2"]:
     arm, _, name = w.partition(":")
     x = a_by_task.get(name) if arm.upper() == "A" else (b_by_task.get(name) or (None,))[0]
     if x:
