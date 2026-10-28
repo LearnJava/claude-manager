@@ -1,6 +1,6 @@
 # LAB: исследования расхода токенов и скорости (LAB-01..05)
 
-Исполнитель: `Developer 2`, очередь [STATUS-P2.md](./STATUS-P2.md), префикс веток `p2-`, слот `p2-work`.
+Исполнитель: `Developer 1`, очередь [STATUS-P1.md](./STATUS-P1.md), префикс веток `p1-`, слот `p1-work`.
 Контекст: [docs/Science_lab/README.md](./docs/Science_lab/README.md) → `NEXT-SESSION.md` →
 [docs/change-acceptance.md](./docs/change-acceptance.md). Задачи этого блока исследовательские: они считают по уже
 записанным данным и не меняют поведение менеджера.
