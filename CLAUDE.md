@@ -28,9 +28,19 @@ Desktop app (Windows) to launch, monitor, and control parallel Claude Code CLI s
 | [LOGS-TASKS.md](./LOGS-TASKS.md) | Logs of every machine in one private GitHub repo (`cm-logs`): host and manager build in each log, `internal/logship` pushes run logs and manager logs into `logs/<host>/`, secret masking, settings/Settings/MCP (LG-01..04); the review skill is done separately in Chat; queue in [STATUS-P1.md](./STATUS-P1.md) |
 | [GUI-TESTS.md](./GUI-TESTS.md) | ~100 Playwright test-case descriptions across all Svelte components (✓ exists / ○ missing) |
 | [config.example.toml](./config.example.toml) | Annotated config reference |
+| [docs/Science_lab/README.md](./docs/Science_lab/README.md) | Index of the cost and speed research: which document answers which question, what lives only on this machine, how to search, how to add results |
 | [docs/Science_lab/MEASURE.md](./docs/Science_lab/MEASURE.md) | Runtime and cost study of Claude Code on this Windows machine (Lumen and claude-manager sessions), the `claude-code-setup` kit installed in `~/.claude`, and the before/after measurement procedure with the 2026-10-13 baseline |
 | [docs/Science_lab/AB-PILOT-2026-10-28.md](./docs/Science_lab/AB-PILOT-2026-10-28.md) | A/B pilot of plain Claude Code against the manager (5 tasks): where time and dollars went, feature audit, test-suite growth; analysis scripts in `ab-pilot-tools/`, data in `measurements/2026-10-28-ab-pilot/` |
 | [docs/Science_lab/NEXT-SESSION.md](./docs/Science_lab/NEXT-SESSION.md) | Handoff to the session that plans research on cutting token spend and speeding up tasks: what is known, what is decided, what to decide, how to verify, constraints |
+
+## Research in progress: tokens and speed
+
+The A/B pilot of 2026-10-28 found the manager about twice as slow and twice as expensive as plain Claude Code on five
+tasks at equal quality (gates after the merge, 11 sessions instead of 5, manager overhead, a test suite that grew 4x in
+a month). Start at [docs/Science_lab/README.md](./docs/Science_lab/README.md), then
+[NEXT-SESSION.md](./docs/Science_lab/NEXT-SESSION.md). A change meant to cut token spend or speed up tasks is accepted
+only with a closed acceptance card ([docs/change-acceptance.md](./docs/change-acceptance.md)): the effect must be
+confirmed on the stand, and hidden tests, their paths and thresholds never go into this repository.
 
 ## Mirrored projects
 
