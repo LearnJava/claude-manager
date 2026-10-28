@@ -87,7 +87,8 @@ def scan_file(path, sub):
                         bucket = "c" if edited else "b"
                 call = {"b": bucket, "t": t, "ctx": cr + w5 + w1h + it,
                         "w": (w5 * W5 + w1h * W1H) * pin / 1e6, "w1h": w1h, "w5": w5,
-                        "r": cr * READ * pin / 1e6, "o": ot * pout / 1e6, "i": it * pin / 1e6}
+                        "r": cr * READ * pin / 1e6, "o": ot * pout / 1e6, "i": it * pin / 1e6,
+                        "ot": ot, "mdl": msg.get("model")}
                 calls.append(call)
                 prev = call
             for b in content if isinstance(content, list) else []:
