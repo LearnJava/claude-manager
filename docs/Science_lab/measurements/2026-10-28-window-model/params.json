@@ -1,0 +1,154 @@
+{
+ "handoffs": [
+  {
+   "run": 259,
+   "session": "ARB/Developer 1",
+   "model": "claude-opus-5-5",
+   "summary_chars": 2940,
+   "summary_tokens": 735.0,
+   "ctx0_new": 26479,
+   "ctx0_prev": 25262,
+   "prev_calls": 108,
+   "prev_last_ctx": 203287,
+   "reopen_reads": 0,
+   "reopen_chars": 0,
+   "tool_calls_before_first_write": null,
+   "tool_calls_total": 30
+  },
+  {
+   "run": 268,
+   "session": "ARB/Developer 1",
+   "model": "claude-opus-5-5",
+   "summary_chars": 2244,
+   "summary_tokens": 561.0,
+   "ctx0_new": 30568,
+   "ctx0_prev": 28767,
+   "prev_calls": 42,
+   "prev_last_ctx": 104238,
+   "reopen_reads": 0,
+   "reopen_chars": 0,
+   "tool_calls_before_first_write": null,
+   "tool_calls_total": 1
+  },
+  {
+   "run": 573,
+   "session": "Lumen browser/Chat",
+   "model": "claude-opus-5-5",
+   "summary_chars": 1878,
+   "summary_tokens": 469.5,
+   "ctx0_new": 30424,
+   "ctx0_prev": 33637,
+   "prev_calls": 55,
+   "prev_last_ctx": 110172,
+   "reopen_reads": 0,
+   "reopen_chars": 0,
+   "tool_calls_before_first_write": null,
+   "tool_calls_total": 2
+  },
+  {
+   "run": 574,
+   "session": "Lumen browser/Chat",
+   "model": "claude-opus-5-5",
+   "summary_chars": 2077,
+   "summary_tokens": 519.25,
+   "ctx0_new": 30537,
+   "ctx0_prev": 30424,
+   "prev_calls": 4,
+   "prev_last_ctx": 35748,
+   "reopen_reads": 0,
+   "reopen_chars": 0,
+   "tool_calls_before_first_write": 15,
+   "tool_calls_total": 45
+  },
+  {
+   "run": 214,
+   "session": "Lumen browser/S6",
+   "model": "claude-sonnet-5-5",
+   "summary_chars": 2076,
+   "summary_tokens": 519.0,
+   "ctx0_new": 29263,
+   "ctx0_prev": 29019,
+   "prev_calls": 80,
+   "prev_last_ctx": 134523,
+   "reopen_reads": 0,
+   "reopen_chars": 0,
+   "tool_calls_before_first_write": 21,
+   "tool_calls_total": 95
+  }
+ ],
+ "handoffs_skipped_no_prev_transcript": 2,
+ "growth": {
+  "opus": {
+   "sessions": 85,
+   "calls": 5601,
+   "ctx0_median": 30625,
+   "new_per_call_median": 1043.0,
+   "new_per_call_mean": 2193.6376785714288,
+   "out_per_call_median": 345,
+   "out_per_call_mean": 675.6827352258525,
+   "w1h_share": 1.0,
+   "ctx_at_call": {
+    "1": {
+     "n": 85,
+     "median": 30625
+    },
+    "10": {
+     "n": 85,
+     "median": 50797
+    },
+    "25": {
+     "n": 85,
+     "median": 81377
+    },
+    "50": {
+     "n": 52,
+     "median": 117886.5
+    },
+    "100": {
+     "n": 13,
+     "median": 178921
+    }
+   },
+   "calls_median": 53
+  },
+  "sonnet": {
+   "sessions": 223,
+   "calls": 13801,
+   "ctx0_median": 30629,
+   "new_per_call_median": 1074.0,
+   "new_per_call_mean": 1909.582536231884,
+   "out_per_call_median": 300,
+   "out_per_call_mean": 572.4133758423303,
+   "w1h_share": 1.0,
+   "ctx_at_call": {
+    "1": {
+     "n": 223,
+     "median": 30629
+    },
+    "10": {
+     "n": 223,
+     "median": 50253
+    },
+    "25": {
+     "n": 223,
+     "median": 76677
+    },
+    "50": {
+     "n": 146,
+     "median": 113890.0
+    },
+    "100": {
+     "n": 15,
+     "median": 153854
+    }
+   },
+   "calls_median": 58
+  }
+ },
+ "summary_tokens_median": 519.25,
+ "reopen_reads_median": 0,
+ "reopen_tokens_median": 0.0,
+ "calls_before_first_write_median": 18.0,
+ "chars_per_token_assumed": 4.0,
+ "H": 150000
+}

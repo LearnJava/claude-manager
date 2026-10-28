@@ -14,6 +14,7 @@
 | Что делать следующей сессии и как проверить утверждения пилота | `NEXT-SESSION.md` |
 | Как пересчитать цифры пилота | `ab-pilot-tools/README.md` |
 | На что уходит запись в кэш: старт сессии или рост разговора (A/B и 30 дней по ролям), LAB-01 | `measurements/2026-10-28-cache-write/RESULTS.md`, скрипт `lab-tools/cache_write_split.py` |
+| Opus с окном 1M против Sonnet с передачей на 150K: расчётная модель и точка безубыточности (H8, шаг 1), LAB-02 | `measurements/2026-10-28-window-model/RESULTS.md`, скрипт `lab-tools/window_model.py` |
 
 ## Что лежит только на этой машине (в git нет)
 
