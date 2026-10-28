@@ -3,7 +3,6 @@
 export default {
     'sidebar.projectsHeading': 'Проекты',
     'sidebar.addProjectTooltip': 'Добавить проект',
-    'sidebar.chatTooltip': 'Просто чат: запустить обычную сессию без задач, дать Claude инструкции напрямую',
     'sidebar.startAllTooltip': 'Запустить все',
     'sidebar.stopAllTooltip': 'Остановить все',
     'sidebar.confirmDeleteTooltip': 'Нажмите ещё раз для подтверждения удаления',

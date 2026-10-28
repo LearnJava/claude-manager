@@ -5,7 +5,6 @@
     import ResumePrompt from './ResumePrompt.svelte';
     import SessionFeatures from './SessionFeatures.svelte';
     import PlanReview from './PlanReview.svelte';
-    import AlienCrew from './AlienCrew.svelte';
     import QueueMiniBar from './QueueMiniBar.svelte';
     import { syncQueue } from '../stores/queues';
     import { MODELS, normalizeModel } from '../lib/models';
@@ -26,7 +25,6 @@
         SetSessionRuntime,
         HasClaudeMd,
         GenerateClaudeMdSession,
-        StartAdHocChatSession,
         GetSessionState,
         ClearSessionState,
         SessionPreflight,
@@ -129,30 +127,6 @@
     function onToggleProjectHeader(group: { name: string; path: string }) {
         toggleProject(group.name);
         checkClaudeMd(group.path, group.name);
-    }
-
-    // "just chat" button on the project header: bootstraps (or reuses) a
-    // plain interactive "Chat" session with no task_source/auto_restart, so
-    // the user can hand Claude ad-hoc instructions without configuring a
-    // session or a ROADMAP/task file first (see StartAdHocChatSession).
-    let chatBusy: Record<string, boolean> = {};
-
-    async function onStartChat(e: Event, name: string) {
-        e.stopPropagation();
-        chatBusy = { ...chatBusy, [name]: true };
-        try {
-            await StartAdHocChatSession(name);
-        } catch (err: any) {
-            // Already running isn't an error from the user's point of view —
-            // the session is right there; just select it below either way.
-            const msg = String(err?.message ?? err ?? '');
-            if (!msg.includes('already running')) {
-                console.warn('start chat session failed:', err);
-            }
-        } finally {
-            chatBusy = { ...chatBusy, [name]: false };
-            selectedSessionId.set(`${name}/Chat`);
-        }
     }
 
     async function onGenerateClaudeMd(e: Event, name: string) {
@@ -427,12 +401,6 @@
                     <span class="text-text font-medium ml-1 flex-1 truncate" style="font-size: 17px" title={group.path}>{group.name}</span>
                     <button
                         class="opacity-0 group-hover:opacity-100 text-text-muted hover:text-status-working px-1 text-xs"
-                        title={$t('sidebar.chatTooltip')}
-                        disabled={chatBusy[group.name]}
-                        on:click={(e) => onStartChat(e, group.name)}
-                        type="button">{chatBusy[group.name] ? '…' : '💬'}</button>
-                    <button
-                        class="opacity-0 group-hover:opacity-100 text-text-muted hover:text-status-working px-1 text-xs"
                         title={$t('sidebar.startAllTooltip')}
                         on:click={(e) => onStartProject(e, group.name)}
                         type="button">▶</button>
@@ -593,8 +561,6 @@
         {/if}
     </div>
 
-    <!-- Comic-book alien crew panel -->
-    <AlienCrew />
 </aside>
 
 {#if pickerFor}

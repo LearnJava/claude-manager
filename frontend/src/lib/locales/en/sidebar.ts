@@ -3,7 +3,6 @@
 export default {
     'sidebar.projectsHeading': 'Projects',
     'sidebar.addProjectTooltip': 'Add project',
-    'sidebar.chatTooltip': 'Just chat: start a plain session with no tasks, give Claude ad-hoc instructions',
     'sidebar.startAllTooltip': 'Start all',
     'sidebar.stopAllTooltip': 'Stop all',
     'sidebar.confirmDeleteTooltip': 'Click again to confirm delete',

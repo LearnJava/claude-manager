@@ -36,6 +36,51 @@ auto_restart = true
 	}
 }
 
+// A newly added project gets a "Chat" session: an empty folder gets just
+// Chat, a folder whose overlay has other sessions keeps them and gains Chat,
+// and a later save of a known project without Chat does not bring it back.
+func TestUpdateConfigNewProjectGetsChat(t *testing.T) {
+	empty := t.TempDir()
+	withDev := t.TempDir()
+	if err := os.MkdirAll(config.ProjectConfigDir(withDev), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dev := "[[session]]\nname = \"Developer 1\"\ntask_source = \"STATUS-P1.md\"\n"
+	if err := os.WriteFile(config.ProjectConfigPath(withDev), []byte(dev), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := &App{cfg: &config.AppConfig{}, cfgPath: filepath.Join(t.TempDir(), "config.toml")}
+	incoming := config.AppConfig{Projects: []config.ProjectConfig{
+		{Name: "empty", Path: empty},
+		{Name: "dev", Path: withDev},
+	}}
+	if err := a.UpdateConfig(incoming); err != nil {
+		t.Fatalf("UpdateConfig: %v", err)
+	}
+	names := func(p config.ProjectConfig) []string {
+		var out []string
+		for _, s := range p.Sessions {
+			out = append(out, s.Name)
+		}
+		return out
+	}
+	if got := names(a.cfg.Projects[0]); len(got) != 1 || got[0] != "Chat" {
+		t.Errorf("empty project sessions = %v, want [Chat]", got)
+	}
+	if got := names(a.cfg.Projects[1]); len(got) != 2 || got[0] != "Developer 1" || got[1] != "Chat" {
+		t.Errorf("dev project sessions = %v, want [Developer 1 Chat]", got)
+	}
+
+	known := config.AppConfig{Projects: []config.ProjectConfig{{Name: "empty", Path: empty}}}
+	if err := a.UpdateConfig(known); err != nil {
+		t.Fatalf("UpdateConfig known: %v", err)
+	}
+	if n := len(a.cfg.Projects[0].Sessions); n != 0 {
+		t.Errorf("known project re-gained Chat: %v", names(a.cfg.Projects[0]))
+	}
+}
+
 // Regression: "Add project" in Settings builds the entry with Sessions: [] and
 // saving it used to overwrite the folder's committed config.toml with
 // `session = []`, silently deleting every session defined in the repo.
@@ -104,8 +149,8 @@ func TestUpdateConfigAddProjectExplicitSessionsWin(t *testing.T) {
 		t.Fatalf("UpdateConfig: %v", err)
 	}
 	s := a.cfg.Projects[0].Sessions
-	if len(s) != 1 || s[0].Name != "Solo" {
-		t.Errorf("sessions = %+v, want only the explicit Solo", s)
+	if len(s) != 2 || s[0].Name != "Solo" || s[1].Name != "Chat" {
+		t.Errorf("sessions = %+v, want the explicit Solo plus Chat", s)
 	}
 }
 

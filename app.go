@@ -1262,13 +1262,49 @@ func (a *App) UpdateConfig(cfg config.AppConfig) error {
 	if err != nil {
 		return err
 	}
+	prev := a.cfg
 	a.cfg = reloaded
 	if a.manager != nil {
 		a.manager.SetConfig(reloaded)
 	}
+	// Every project added just now gets its interactive "Chat" session. Done
+	// on the reloaded config so a folder with its own overlay keeps its
+	// sessions and only gains Chat; the second save sees the project as
+	// known, so this runs once per new project.
+	if prev != nil {
+		next := *reloaded
+		next.Projects = append([]config.ProjectConfig(nil), reloaded.Projects...)
+		added := false
+		for _, p := range reloaded.Projects {
+			if !hasProjectNamed(prev, p.Name) && !hasSessionNamed(p, "Chat") {
+				added = upsertChatSession(&next, p.Name) || added
+			}
+		}
+		if added {
+			return a.UpdateConfig(next)
+		}
+	}
 	kickMirror()
 	kickLogShip()
 	return nil
+}
+
+func hasProjectNamed(cfg *config.AppConfig, name string) bool {
+	for _, p := range cfg.Projects {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func hasSessionNamed(p config.ProjectConfig, name string) bool {
+	for _, sc := range p.Sessions {
+		if sc.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // knowsProjectPath reports whether the currently loaded config already has a

@@ -860,10 +860,14 @@ above — Wails-only, not control-plane-dispatched); its config-mutation logic
 
 ### Ad-Hoc Chat Session
 
-The sidebar's per-project header has a 💬 button (`StartAdHocChatSession` →
-`onStartChat` in `Sidebar.svelte`) for when the user just wants to talk to
-Claude in a project and hand it instructions directly — no `task_source` file,
-no pre-configured session, no canned prompt. Same bootstrap-a-named-session
+Every project has a `"Chat"` session — the one the user talks to and hands
+tasks through — so it is created, not offered: when `UpdateConfig` registers
+a project that was not in the config before (Settings → Add project, either an
+empty folder or one with its own overlay), it appends Chat via
+`upsertChatSession` and saves once more. Only new projects get it: a Chat the
+user deleted from a known project stays deleted. The former 💬 button on the
+sidebar's project header is gone; `StartAdHocChatSession` stays for `cm-mcp`
+(`start_ad_hoc_chat`) — no `task_source` file, no canned prompt. Same bootstrap-a-named-session
 pattern as `GenerateClaudeMdSession`/`upsertInitSession` above, but simpler:
 `upsertChatSession` creates a bare `"Chat"` `SessionConfig` (no `Prompt`, no
 `TaskSource`, no `AutoRestart` — `Model`/`Effort`/`PermissionMode` fall back to

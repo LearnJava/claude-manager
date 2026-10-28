@@ -1276,7 +1276,8 @@ func TestUpdateConfig_AddingAlreadyConfiguredProjectPreservesOverlay(t *testing.
 	if err != nil {
 		t.Fatalf("LoadProjectOverlay: %v", err)
 	}
-	if ov == nil || len(ov.Sessions) != 1 || ov.Sessions[0].Name != "S1" {
+	// Chat is appended to every newly added project.
+	if ov == nil || len(ov.Sessions) != 2 || ov.Sessions[0].Name != "S1" || ov.Sessions[1].Name != "Chat" {
 		t.Fatalf("sessions were wiped: %+v", ov)
 	}
 	if len(ov.Gates) != 1 || ov.Gates[0] != "go build ./..." {
@@ -1288,7 +1289,7 @@ func TestUpdateConfig_AddingAlreadyConfiguredProjectPreservesOverlay(t *testing.
 
 	// The reloaded in-memory config must also reflect the preserved overlay,
 	// not a blank project.
-	if len(a.cfg.Projects) != 1 || len(a.cfg.Projects[0].Sessions) != 1 {
+	if len(a.cfg.Projects) != 1 || len(a.cfg.Projects[0].Sessions) != 2 {
 		t.Fatalf("reloaded config missing sessions: %+v", a.cfg.Projects)
 	}
 }
