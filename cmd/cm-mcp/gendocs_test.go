@@ -18,11 +18,13 @@ func TestDocsInSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := control.SyncDocs(string(b))
+	// A core.autocrlf checkout turns the generator's LF into CRLF; compare content.
+	got := strings.ReplaceAll(string(b), "\r\n", "\n")
+	want, err := control.SyncDocs(got)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want != string(b) {
+	if want != got {
 		t.Fatal("docs/mcp.md is out of date with the tool registry: run `go run ./cmd/cm-mcp -gen-docs`")
 	}
 }
