@@ -293,3 +293,30 @@ func TestKimiACP_ThinkingAndAssistantEvents(t *testing.T) {
 		t.Fatal("no agent_message_chunk reached the session log")
 	}
 }
+
+func TestKimiACP_CoalescesDeltas(t *testing.T) {
+	var entries []config.LogEntry
+	c := &acpClient{onEvent: func(evs []ParsedEvent) {
+		for _, ev := range evs {
+			entries = append(entries, ev.Entries...)
+		}
+	}}
+	c.onUpdate([]byte(`{"sessionId":"s","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"think "}}}`))
+	c.onUpdate([]byte(`{"sessionId":"s","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"more"}}}`))
+	c.onUpdate([]byte(`{"sessionId":"s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"cm"}}}`))
+	c.onUpdate([]byte(`{"sessionId":"s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"-marker-731"}}}`))
+	c.flush()
+
+	if len(entries) != 2 {
+		t.Fatalf("entries = %d, want one thinking and one text entry", len(entries))
+	}
+	if entries[0].Message != "think more" || entries[0].Level != "thinking" {
+		t.Errorf("thinking entry = %+v", entries[0])
+	}
+	if entries[1].Message != "cm-marker-731" || entries[1].Level != "text" {
+		t.Errorf("text entry = %+v", entries[1])
+	}
+	if c.resultText != "cm-marker-731" {
+		t.Errorf("resultText = %q", c.resultText)
+	}
+}

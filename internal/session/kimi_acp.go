@@ -33,11 +33,13 @@ type acpRPCMessage struct {
 }
 
 type acpClient struct {
-	enc        *json.Encoder
-	dec        *json.Decoder
-	nextID     int
-	resultText string
-	onEvent    func([]ParsedEvent)
+	enc         *json.Encoder
+	dec         *json.Decoder
+	nextID      int
+	thoughtText string
+	pendingText string
+	resultText  string
+	onEvent     func([]ParsedEvent)
 }
 
 func (c *acpClient) call(method string, params, result any) error {
@@ -107,6 +109,31 @@ func (c *acpClient) onRequest(msg acpRPCMessage) {
 	})
 }
 
+func (c *acpClient) flushThought() {
+	if c.thoughtText == "" {
+		return
+	}
+	c.onEvent([]ParsedEvent{{EventType: EventLog, Entries: []config.LogEntry{{
+		Time: time.Now(), Level: "thinking", Source: "kimi", Message: c.thoughtText,
+	}}, Activity: &Activity{Kind: ActivityThinking}}})
+	c.thoughtText = ""
+}
+
+func (c *acpClient) flushText() {
+	if c.pendingText == "" {
+		return
+	}
+	c.onEvent([]ParsedEvent{{EventType: EventLog, Entries: []config.LogEntry{{
+		Time: time.Now(), Level: "text", Source: "kimi", Message: c.pendingText,
+	}}, Activity: &Activity{Kind: ActivityWriting}}})
+	c.pendingText = ""
+}
+
+func (c *acpClient) flush() {
+	c.flushThought()
+	c.flushText()
+}
+
 func (c *acpClient) onUpdate(raw json.RawMessage) {
 	var p struct {
 		SessionID string `json:"sessionId"`
@@ -130,19 +157,14 @@ func (c *acpClient) onUpdate(raw json.RawMessage) {
 	now := time.Now()
 	switch u.SessionUpdate {
 	case "agent_thought_chunk":
-		if text := u.Content.text(); text != "" {
-			c.onEvent([]ParsedEvent{{EventType: EventLog, Entries: []config.LogEntry{{
-				Time: now, Level: "thinking", Source: "kimi", Message: text,
-			}}, Activity: &Activity{Kind: ActivityThinking}}})
-		}
+		c.flushText()
+		c.thoughtText += u.Content.text()
 	case "agent_message_chunk":
-		if text := u.Content.text(); text != "" {
-			c.resultText += text
-			c.onEvent([]ParsedEvent{{EventType: EventLog, Entries: []config.LogEntry{{
-				Time: now, Level: "text", Source: "kimi", Message: text,
-			}}, Activity: &Activity{Kind: ActivityWriting}}})
-		}
+		text := u.Content.text()
+		c.pendingText += text
+		c.resultText += text
 	case "tool_call":
+		c.flush()
 		name := u.Name
 		if name == "" {
 			name = u.Kind
@@ -267,6 +289,7 @@ func (s *Session) runKimiACPTurn(ctx context.Context, prompt string, images []Im
 	s.setActivity(Activity{Kind: ActivityThinking})
 
 	fail := func(err error) (hermesTurn, error) {
+		client.flush()
 		cancelTurn()
 		_ = stdin.Close()
 		<-stderrDone
@@ -356,6 +379,7 @@ func (s *Session) runKimiACPTurn(ctx context.Context, prompt string, images []Im
 	if stop == "" || stop == "end_turn" {
 		stop = "success"
 	}
+	client.flush()
 	resultEvent := ParsedEvent{
 		EventType: EventResult,
 		Result:    &SessionResult{StopReason: stop, ResultText: client.resultText},

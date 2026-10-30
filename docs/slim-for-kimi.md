@@ -80,9 +80,9 @@ MCP/control-plane, mirror/logship, cmdguard, рантайм Hermes.
 - `go build ./...`, `go vet ./...` — чисто.
 - `go test ./...` — все пакеты зелёные (session, control, cm-mcp, main, store, optimization, …).
 - Контрактный сьют `runtime_contract_test.go` — зелёный на **трёх** рантаймах.
-- Прежний реальный smoke `TestKimiRuntime_RealKimi` через `kimi -p`: полный цикл с resume зелёный.
-  Для ACP на Kimi 2.4.0 подтверждены `initialize`, `session/new`, `set_mode` и `set_model`;
-  полный ход с ответом модели пока не проверен из-за повторяющихся API timeout.
+- **Реальный ACP smoke** `TestKimiRuntime_RealKimi` (Kimi 2.4.0): `initialize`, `session/new`,
+  thinking/text deltas склеиваются в полные сообщения, второе сообщение, stop и resume по session id —
+  полный цикл зелёный (20,6 секунды).
 - `go test ./internal/session -run TestKimi -count=1`: transient timeout → backoff → повтор того
   же prompt с тем же session id даже при `auto_restart=false`; Restart → Continue для configured
   idle-сессии вне памяти менеджера использует сохранённый id; `system.version` и
