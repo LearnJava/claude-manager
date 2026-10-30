@@ -82,6 +82,15 @@
     $: entries = filter
         ? allEntries.filter((e) => entryMatches(e, filter))
         : allEntries;
+
+    function isKimiTechnical(e: LogEntry): boolean {
+        if (runtime !== 'kimi' || (e.level ?? '').toLowerCase() !== 'system') return false;
+        const msg = e.message ?? '';
+        return msg.startsWith('Kimi Code ') || msg.includes(' — retry ') || msg.startsWith('CLI ещё инициализируется');
+    }
+
+    $: technicalEntries = $logLayout === 'feed' ? entries.filter(isKimiTechnical) : [];
+    $: mainEntries = $logLayout === 'feed' ? entries.filter((e) => !isKimiTechnical(e)) : entries;
     // Feed view groups the *filtered* entries, same as the classic view
     // filters rows — a group whose only surviving member matched the search
     // still shows correctly grouped instead of leaking raw entries around it.
@@ -89,7 +98,7 @@
     // tool calls and a trailing "Thinking…" must not keep spinning.
     const ENDED_STATUSES = ['idle', 'error', 'stopping'];
     $: processEnded = !liveSession || ENDED_STATUSES.includes(liveSession.status);
-    $: blocks = groupEntries(entries, processEnded);
+    $: blocks = groupEntries(mainEntries, processEnded);
 
     // Live status line (UI-12): only for a running session, never over the
     // permission/question banners (those statuses are not in this list).
@@ -244,7 +253,7 @@
         on:scroll={onScroll}
         class="flex-1 min-h-0 overflow-y-auto font-mono text-[12px] leading-5
                bg-bg px-3 py-2 select-text">
-        {#if entries.length === 0}
+        {#if entries.length === 0 && technicalEntries.length === 0}
             <div class="text-text-dim italic py-2">
                 {#if filter}
                     {$t('logStream.noEntriesMatch')} <code>{filter}</code>.
@@ -449,6 +458,20 @@
             {/each}
         {/if}
         {#if $logLayout === 'feed'}
+            {#if technicalEntries.length > 0}
+                <details data-testid="kimi-technical-details" class="py-1 text-text-dim" open={!!filter}>
+                    <summary class="cursor-pointer select-none text-xs hover:text-text">
+                        {$t('logStream.technicalDetails', { count: technicalEntries.length })}
+                    </summary>
+                    <div class="pl-4 border-l border-bg-border ml-1">
+                        {#each technicalEntries as e, i (entryKey(e, i))}
+                            <div class:opacity-60={isHistory(e)}>
+                                <LogEntryRow runtime={runtime} entry={e} entryKey={entryKey(e, i)} showTime={false} />
+                            </div>
+                        {/each}
+                    </div>
+                </details>
+            {/if}
             <LiveStatus activity={liveActivity} {openCall} {interruptId} />
         {/if}
     </div>

@@ -195,7 +195,13 @@ func (s *Session) runOncePerTurn(ctx context.Context, forceInteractive bool) err
 		}
 
 		turnPrompt, turnImages := prompt, images
-		turn, err := s.hermesRunTurn(runCtx, prompt, images, convID, autonomous)
+		var turn hermesTurn
+		var err error
+		if runner, ok := s.runtime.(TurnRunner); ok {
+			turn, err = runner.RunTurn(s, runCtx, prompt, images, convID, autonomous)
+		} else {
+			turn, err = s.hermesRunTurn(runCtx, prompt, images, convID, autonomous)
+		}
 		prompt, images = "", nil
 		if turn.sessionID != "" {
 			convID = turn.sessionID

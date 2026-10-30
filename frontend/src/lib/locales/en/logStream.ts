@@ -38,4 +38,5 @@ export default {
     'logStream.previousRun': 'Saved log · started {start} · {status}',
     'logStream.previousRunOmitted': '(last entries only, {count} earlier omitted)',
     'logStream.previousRunLabel': 'Previous run',
+    'logStream.technicalDetails': 'Technical details ({count})',
 } as Record<string, string>;

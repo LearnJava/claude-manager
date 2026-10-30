@@ -38,4 +38,5 @@ export default {
     'logStream.previousRun': 'Сохранённый лог · начат {start} · {status}',
     'logStream.previousRunOmitted': '(только последние записи, ещё {count} раньше не показаны)',
     'logStream.previousRunLabel': 'Предыдущий запуск',
+    'logStream.technicalDetails': 'Технические детали ({count})',
 } as Record<string, string>;

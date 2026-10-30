@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"time"
 
 	"claude-manager/internal/config"
@@ -106,6 +107,12 @@ type Runtime interface {
 // launch and may add CLI args (Hermes: a leading "/skill" becomes `-s`).
 type TurnExpander interface {
 	ExpandPrompt(s *Session, prompt string) (newPrompt string, extraArgs []string)
+}
+
+// TurnRunner is an optional Runtime hook for protocols that need bidirectional
+// JSON-RPC rather than a one-shot CLI stdout stream (Kimi ACP).
+type TurnRunner interface {
+	RunTurn(s *Session, ctx context.Context, prompt string, images []ImageAttachment, convID string, autonomous bool) (hermesTurn, error)
 }
 
 // TurnFinisher is an optional Runtime hook running after one turn's process

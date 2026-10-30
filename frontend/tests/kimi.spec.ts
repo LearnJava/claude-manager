@@ -38,6 +38,25 @@ test('Kimi feed shows assistant text with a bullet, no cost and no permission qu
         });
         await expect(page.getByText('• kimi wire text', { exact: true })).toBeVisible();
 
+        await page.evaluate(() => {
+            for (const entry of [
+                { level: 'system', source: 'kimi', message: 'Kimi Code 2.4.0' },
+                { level: 'system', source: 'kimi', message: 'Request timed out. — retry 8/10 in 36s' },
+            ]) {
+                (window as any).__dispatchWailsEvent('session:log', {
+                    id: 'test/S1',
+                    entry: { time: new Date().toISOString(), ...entry },
+                });
+            }
+        });
+        const details = page.getByTestId('kimi-technical-details');
+        await expect(details.locator('summary')).toHaveText('Technical details (2)');
+        await expect(page.getByText('Request timed out. — retry 8/10 in 36s', { exact: true })).not.toBeVisible();
+        await details.locator('summary').click();
+        await expect(page.getByText('Kimi Code 2.4.0', { exact: true })).toBeVisible();
+        await expect(page.getByText('Request timed out. — retry 8/10 in 36s', { exact: true })).toBeVisible();
+        await expect(page.getByText('• kimi wire text', { exact: true })).toBeVisible();
+
         await page.getByRole('button', { name: 'Settings' }).click();
         const modal = page.getByRole('dialog');
         await modal.getByRole('button', { name: 'Sessions' }).click();

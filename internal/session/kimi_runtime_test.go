@@ -249,3 +249,47 @@ func TestKimiRuntime_RestartContinueWithoutManagedSession(t *testing.T) {
 		})
 	}
 }
+
+func TestKimiACP_ThinkingAndAssistantEvents(t *testing.T) {
+	thoughts := make(chan string, 2)
+	texts := make(chan string, 2)
+	s := New(Params{
+		ID: "kimi/acp", ProjectName: "kimi", ProjectPath: t.TempDir(),
+		KimiPath: buildFakekimi(t), RetryDelay: 1,
+		Config: config.SessionConfig{
+			Name: "acp", Runtime: config.RuntimeKimi, Prompt: "hello there",
+			AutoRestart: true, MaxTasks: 1,
+		},
+		OnEvent: func(_ string, ev SessionEvent) {
+			if ev.Type != EvtLog || ev.Entry == nil {
+				return
+			}
+			switch ev.Entry.Level {
+			case "thinking":
+				thoughts <- ev.Entry.Message
+			case "text":
+				texts <- ev.Entry.Message
+			}
+		},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	s.Run(ctx)
+
+	select {
+	case got := <-thoughts:
+		if got != "thinking about the request" {
+			t.Fatalf("thinking = %q", got)
+		}
+	default:
+		t.Fatal("no agent_thought_chunk reached the session log")
+	}
+	select {
+	case got := <-texts:
+		if got == "" {
+			t.Fatal("empty assistant text")
+		}
+	default:
+		t.Fatal("no agent_message_chunk reached the session log")
+	}
+}

@@ -41,53 +41,48 @@ MCP/control-plane, mirror/logship, cmdguard, рантайм Hermes.
 `runOncePerTurn` (бывший `runOnceHermes`) теперь рантайм-независим: Hermes и Kimi работают через
 него без изменений. Модель процессов Kimi = Hermes: **один процесс на ход, resume по id**.
 
-### Реальный wire Kimi 2.4.0 (проверено пробами)
+### ACP wire
 
-- `{"role":"meta","type":"system.version"}` — баннер, системная запись в лог.
-- `{"role":"assistant","content":"..."}` — текст агента.
-- `{"role":"assistant","tool_calls":[{"type":"function","id":"tool_...",
-  "function":{"name":"Read","arguments":"{...}"}}]}` — вызов инструмента (name/arguments вложены
-  в `function`).
-- `{"role":"tool","tool_call_id":"...","content":"..."}` — результат.
-- `{"role":"meta","type":"session.resume_hint","session_id":"session_..."}` — id разговора,
-  мапится в `EventInit` (бывает и в stderr — обрабатывается через `StderrIniter` + `wireInitID`).
-- **Нет init и result событий.** `kimiStream.Flush` синтезирует `EventResult` (success/error),
-  чтобы per-turn цикл узнал окончание хода. Токенов и стоимости нет — UI показывает «нет данных».
+- `initialize` + `session/new` / `session/resume` — создание разговора и resume по id без replay.
+- `session/set_mode(auto)` и `session/set_model` — прежняя автономная политика и выбранная модель.
+- `session/prompt` — один ход; `agent_thought_chunk` → `thinking`, `agent_message_chunk` → `text`,
+  `tool_call` / `tool_call_update` → существующие карточки инструментов.
+- `session/close` — завершение live-объекта после ответа. Файлы `~/.kimi-code/sessions/` менеджер
+  напрямую не читает и не изменяет.
+- Известные служебные события сворачиваются в «Технические детали»; основная лента остаётся с
+  рассуждениями, ответами и инструментами.
 
 ### Файлы
 
-- `internal/session/kimi_runtime.go` — `buildKimiArgs` (`-p <prompt> --output-format stream-json
-  [--session id] [-m model]`), capabilities, `ClassifyStderr` (429/403/session-not-found/Desktop
-  conflict), `Preamble`, `WarnOptions` (effort/permission_mode/budget/fallback/tools/add_dirs).
-- `internal/session/kimi_parser.go` — толерантный парсер stream-json → `ParsedEvent`.
-- `cmd/fakekimi` — скриптовый двойник CLI для тестов.
-- `internal/session/kimi_runtime_test.go` (парсер + `buildFakekimi`),
+- `internal/session/kimi_acp.go` — per-turn JSON-RPC client ACP, resume, ошибки и маппинг событий.
+- `internal/session/kimi_runtime.go` — capabilities, `ClassifyStderr`, `Preamble`, `WarnOptions`.
+- `internal/session/kimi_parser.go` — прежний толерантный парсер stream-json для совместимости.
+- `cmd/fakekimi` — скриптовый двойник CLI и ACP для тестов.
+- `internal/session/kimi_runtime_test.go` (парсер + `buildFakekimi` + ACP),
   `internal/session/kimi_real_test.go` (реальный smoke, `CM_REAL_KIMI=1`).
 - UI: `lib/models.ts` (`RUNTIME_CAPABILITIES`, `modelsFor`, `KIMI_MODELS`), Sidebar/SessionCard/
   Settings пикер и бейдж, ModelPicker (effort по capabilities), `lib/interrupt.ts` (per-turn нельзя
   прервать), SessionInput (картинки только при `Images`), SessionCard (cost → «нет данных»),
-  LogEntryRow + LogStream (текст Kimi с маркером `• `).
+  LogEntryRow + LogStream (текст Kimi с маркером `• `, collapsible technical details).
 - `config.example.toml` (`kimi_path`), `internal/config` (RuntimeKimi, KimiPath, валидация),
   `Session.Params.KimiPath` + 3 места в manager, `SetSessionRuntime` принимает `kimi`.
 
 ### Ограничения by design
 
-- `kimi -p` = политика `auto`: **никаких вопросов разрешений** (сессии полностью автономные).
-  Permission Queue для Kimi не имитируется.
-- Нет effort-флага, стоимости, usage, картинок. Всё это скрыто/«нет данных», не $0.
-- Промпт идёт аргументом `-p`: лимит командной строки Windows (~32К). Длинные автономные
-  промпты (preamble + task) пока принимаем как есть; если упёрлись — смотреть ACP или укорачивать.
+- `session/set_mode(auto)` = прежняя автономная политика: Permission Queue не имитируется.
+- Нет effort-флага, стоимости, usage, картинок в текущем MVP. Всё это скрыто/«нет данных», не $0.
 - Менеджер владеет только своими сессиями: не подключается к сессиям Kimi Desktop; конфликт
   «in use by another Kimi Code Desktop instance» → понятное сообщение + fresh conversation
   (kind `session_not_found`). Файлы `~/.kimi-code/sessions/` напрямую не трогаем.
 
-## Проверка (всё зелёное)
+## Проверка
 
 - `go build ./...`, `go vet ./...` — чисто.
 - `go test ./...` — все пакеты зелёные (session, control, cm-mcp, main, store, optimization, …).
 - Контрактный сьют `runtime_contract_test.go` — зелёный на **трёх** рантаймах.
-- **Реальный smoke** `TestKimiRuntime_RealKimi` (Kimi 2.4.0): запуск → поток событий → второе
-  сообщение → stop → resume по session id; второй ход и resume помнят первый, процессы не остаются.
+- Прежний реальный smoke `TestKimiRuntime_RealKimi` через `kimi -p`: полный цикл с resume зелёный.
+  Для ACP на Kimi 2.4.0 подтверждены `initialize`, `session/new`, `set_mode` и `set_model`;
+  полный ход с ответом модели пока не проверен из-за повторяющихся API timeout.
 - `go test ./internal/session -run TestKimi -count=1`: transient timeout → backoff → повтор того
   же prompt с тем же session id даже при `auto_restart=false`; Restart → Continue для configured
   idle-сессии вне памяти менеджера использует сохранённый id; `system.version` и
@@ -117,8 +112,7 @@ MCP/control-plane, mirror/logship, cmdguard, рантайм Hermes.
   EnvCard, ManagerCard, ContextPrimer, HandoffContextTokens, GateRounds, AutoSkills, Journal,
   GateSchedule*, MaxTurns*, ExcludeDynamic, Waste*) + `config.example.toml` + `config.local` overlay.
 - Полная синхронизация `docs/architecture.md` и `docs/design-decisions.md` (сейчас аддендумы).
-- `kimi acp` для полноценного интерактивного режима: prompt/cancel/resume/model switching и
-  запросы разрешений ([ACP docs](https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp.html)).
+- Полноценный интерактивный `session/request_permission` / `elicitation` вместо текущего `auto`.
 - Каталог slash-команд Kimi для автокомплита (сейчас честно отключён).
 - `envcheck`: детект бинаря `kimi` и версии в Settings → Environment.
 - Опциональный e2e `CM_REAL_KIMI=1` сценарий Desktop-конфликта.

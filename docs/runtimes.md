@@ -342,38 +342,27 @@ there, not a substitute for passing it.
 
 ## 12. Kimi runtime (added on `slim-for-kimi`)
 
-The third `Runtime` implementation: `kimiRuntime` (`internal/session/kimi_runtime.go`)
-drives `kimi -p <prompt> --output-format stream-json`, one process per turn,
-resumed by `--session <id>` — Hermes' process model (§4), so the shared
-`runOncePerTurn` loop runs it unchanged. `buildKimiArgs` inlines the prompt as
-the `-p` value (`Capabilities.PromptArg`), never over stdin. `Capabilities`:
-`Resume`, `PromptArg` true; `Effort`, `PermissionProtocol`, `Cost`,
-`TokenUsage`, `Images` false (kimi -p runs under the `auto` policy with no
-approval round-trip, and reports no usage/cost — the UI shows "no data", not $0).
+The third `Runtime` implementation uses `kimi acp`, one JSON-RPC process per
+turn, through the optional `TurnRunner` hook (`internal/session/kimi_acp.go`).
+A turn is `initialize` → `session/new` or `session/resume` (no history replay)
+→ `session/set_mode(auto)` / `session/set_model` → `session/prompt` →
+`session/close`. The shared `runOncePerTurn` loop and its resume/backoff logic
+stay unchanged.
 
-The real Kimi 2.x wire (probed on 2.4.0) differs from Claude's and from what
-an adapter would guess from the docs alone:
+`session/update` maps onto the common event model:
 
-- `{"role":"meta","type":"system.version",...}` — a banner, kept as a system
-  log entry.
-- `{"role":"assistant","content":"..."}` — agent text.
-- `{"role":"assistant","tool_calls":[{"type":"function","id":"tool_...",
-  "function":{"name":"Read","arguments":"{...}"}}]}` — tool call; name and
-  arguments are nested under `function`, the id links the result.
-- `{"role":"tool","tool_call_id":"tool_...","content":"..."}` — the result.
-- `{"role":"meta","type":"session.resume_hint","session_id":"session_..."}`
-  — the conversation id, mapped to `EventInit` (this is what later turns
-  resume by). There is **no init event**.
-- There is **no result event**: the process just exits. `kimiStream.Flush`
-  synthesizes the turn's `EventResult` (`success`, or `error` when a result
-  line carried an error), which is what makes `turn.finished` true and lets
-  the manager close the run — with no usage/cost on the wire.
+- `agent_thought_chunk` → `thinking` entries, collapsed like Kimi Code's own
+  transcript;
+- `agent_message_chunk` → `text` entries with the `• ` marker;
+- `tool_call` / `tool_call_update` → the existing tool cards;
+- `usage_update` (when present) → `EvtUsage`; real usage/cost is otherwise
+  reported as "no data", not $0.
 
-`cmd/fakekimi` plays these shapes (plus a `result` line with usage, so the
-shared `_TurnEndsWithTokenUsage` contract case also exercises a result that
-carries tokens). `TestKimiRuntime_RealKimi` (`CM_REAL_KIMI=1`) is the real-CLI
-MVP smoke: start → stream → second message → stop → resume by id, asserting
-the second and resumed turns remember the first.
+Network errors preserve the failed prompt and conversation id and retry with
+backoff even when `auto_restart=false`. `cmd/fakekimi` implements both the old
+stream-json fixture and ACP for the runtime contract. `TestKimiRuntime_RealKimi`
+(`CM_REAL_KIMI=1`) covers start → thinking/text → second message → stop →
+resume by id.
 
 ## 8. `AskUserQuestion` у Claude Code (RT-02, checked on v2.1.280)
 
