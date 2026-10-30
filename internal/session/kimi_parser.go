@@ -31,25 +31,32 @@ func newKimiStream() *kimiStream {
 }
 
 type kimiRawEvent struct {
-	Type       string          `json:"type"`
-	Role       string          `json:"role"`
-	Subtype    string          `json:"subtype"`
-	SessionID  string          `json:"session_id"`
-	ID         string          `json:"id"`
-	Model      string          `json:"model"`
-	Text       string          `json:"text"`
-	Content    json.RawMessage `json:"content"`
-	ToolCalls  []kimiToolCall  `json:"tool_calls"`
-	ToolCallID string          `json:"tool_call_id"`
-	ToolUseID  string          `json:"tool_use_id"`
-	Name       string          `json:"name"`
-	Usage      *TokenUsage     `json:"usage"`
-	Tokens     *TokenUsage     `json:"tokens"`
-	Error      string          `json:"error"`
-	StopReason string          `json:"stop_reason"`
-	Result     string          `json:"result"`
-	IsError    bool            `json:"is_error"`
-	ExitCode   int             `json:"exit_code"`
+	Type          string          `json:"type"`
+	Role          string          `json:"role"`
+	Subtype       string          `json:"subtype"`
+	SessionID     string          `json:"session_id"`
+	ID            string          `json:"id"`
+	Model         string          `json:"model"`
+	Version       string          `json:"version"`
+	Text          string          `json:"text"`
+	Content       json.RawMessage `json:"content"`
+	ToolCalls     []kimiToolCall  `json:"tool_calls"`
+	ToolCallID    string          `json:"tool_call_id"`
+	ToolUseID     string          `json:"tool_use_id"`
+	Name          string          `json:"name"`
+	Usage         *TokenUsage     `json:"usage"`
+	Tokens        *TokenUsage     `json:"tokens"`
+	Error         string          `json:"error"`
+	StopReason    string          `json:"stop_reason"`
+	Result        string          `json:"result"`
+	IsError       bool            `json:"is_error"`
+	ExitCode      int             `json:"exit_code"`
+	FailedAttempt int             `json:"failed_attempt"`
+	NextAttempt   int             `json:"next_attempt"`
+	MaxAttempts   int             `json:"max_attempts"`
+	DelayMS       float64         `json:"delay_ms"`
+	ErrorName     string          `json:"error_name"`
+	ErrorMessage  string          `json:"error_message"`
 }
 
 type kimiToolCall struct {
@@ -89,6 +96,37 @@ func (c kimiToolCall) argsText() string {
 	return ""
 }
 
+func kimiMetaMessage(ev kimiRawEvent, raw string) string {
+	switch ev.Type {
+	case "system.version":
+		if ev.Version != "" {
+			return "Kimi Code " + ev.Version
+		}
+	case "turn.step.retrying":
+		reason := strings.TrimSpace(ev.ErrorMessage)
+		if reason == "" {
+			reason = ev.ErrorName
+		}
+		if reason == "" {
+			reason = "request failed"
+		}
+		attempt := ev.NextAttempt
+		if attempt == 0 {
+			attempt = ev.FailedAttempt + 1
+		}
+		msg := fmt.Sprintf("%s — retry %d", reason, attempt)
+		if ev.MaxAttempts > 0 {
+			msg += fmt.Sprintf("/%d", ev.MaxAttempts)
+		}
+		if ev.DelayMS > 0 {
+			delay := time.Duration(ev.DelayMS * float64(time.Millisecond)).Round(time.Second)
+			msg += " in " + delay.String()
+		}
+		return msg
+	}
+	return raw
+}
+
 // Parse implements Parser.Parse for one stream-json line.
 func (k *kimiStream) Parse(line string) []ParsedEvent {
 	var ev kimiRawEvent
@@ -108,8 +146,8 @@ func (k *kimiStream) Parse(line string) []ParsedEvent {
 	switch typ {
 	case "meta":
 		// The real Kimi 2.x wire has no init/result events: the conversation
-		// id arrives as a trailing session.resume_hint; version/banner meta
-		// is preserved as a system entry.
+		// id arrives as a trailing session.resume_hint. Known meta events get
+		// readable text; unknown ones are preserved verbatim.
 		if ev.Type == "session.resume_hint" {
 			return []ParsedEvent{{
 				EventType: EventInit,
@@ -117,7 +155,7 @@ func (k *kimiStream) Parse(line string) []ParsedEvent {
 			}}
 		}
 		return []ParsedEvent{{EventType: EventLog, Entries: []config.LogEntry{{
-			Time: time.Now(), Level: "system", Source: "kimi", Message: line,
+			Time: time.Now(), Level: "system", Source: "kimi", Message: kimiMetaMessage(ev, line),
 		}}}}
 
 	case "system", "init":

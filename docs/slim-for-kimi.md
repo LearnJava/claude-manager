@@ -88,6 +88,9 @@ MCP/control-plane, mirror/logship, cmdguard, рантайм Hermes.
 - Контрактный сьют `runtime_contract_test.go` — зелёный на **трёх** рантаймах.
 - **Реальный smoke** `TestKimiRuntime_RealKimi` (Kimi 2.4.0): запуск → поток событий → второе
   сообщение → stop → resume по session id; второй ход и resume помнят первый, процессы не остаются.
+- `go test ./internal/session -run TestKimi -count=1`: transient timeout → backoff → повтор того
+  же prompt с тем же session id даже при `auto_restart=false`; `system.version` и
+  `turn.step.retrying` отображаются понятным текстом, не сырым JSON.
 - `npm run build` — зелёный; `npm run check` — 0 ошибок (остались прежние warning/hints).
 - Полный `npx playwright test` до добавления Kimi-спека — **278/278** зелёные (3,5 минуты).
 - `npx playwright test tests/kimi.spec.ts` — **2/2**: шесть моделей Kimi Desktop с проверенными

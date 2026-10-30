@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -171,6 +172,12 @@ func (s *Session) runOncePerTurn(ctx context.Context, forceInteractive bool) err
 			prompt = pre + "\n\n---\n\n" + prompt
 		}
 	}
+	s.mu.Lock()
+	if s.retryPrompt != "" || len(s.retryImages) > 0 {
+		prompt, images = s.retryPrompt, s.retryImages
+		s.retryPrompt, s.retryImages = "", nil
+	}
+	s.mu.Unlock()
 	s.runtime.WarnOptions(s)
 
 	s.setStatus(config.StatusWorking)
@@ -187,6 +194,7 @@ func (s *Session) runOncePerTurn(ctx context.Context, forceInteractive bool) err
 			}
 		}
 
+		turnPrompt, turnImages := prompt, images
 		turn, err := s.hermesRunTurn(runCtx, prompt, images, convID, autonomous)
 		prompt, images = "", nil
 		if turn.sessionID != "" {
@@ -196,6 +204,11 @@ func (s *Session) runOncePerTurn(ctx context.Context, forceInteractive bool) err
 			return nil
 		}
 		if sentinel := s.classifySentinelError(); sentinel != nil {
+			if errors.Is(sentinel, errTransientAPI) {
+				s.mu.Lock()
+				s.retryPrompt, s.retryImages = turnPrompt, turnImages
+				s.mu.Unlock()
+			}
 			return sentinel
 		}
 		if err != nil {
@@ -389,7 +402,7 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 	}
 	if waitErr != nil && turn.failed == "" && ctx.Err() == nil {
 		logger.L.Error("session.process_exit", "id", s.ID, "error", waitErr)
-		return turn, fmt.Errorf("hermes exited: %w", waitErr)
+		return turn, fmt.Errorf("%s exited: %w", s.runtime.Name(), waitErr)
 	}
 	if scanErr != nil {
 		return turn, fmt.Errorf("stdout scan: %w", scanErr)

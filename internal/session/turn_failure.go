@@ -64,22 +64,23 @@ var transientAPIMarkers = []string{
 	"api error: 500", "api error: 502", "api error: 503", "api error: 504", "api error: 529",
 }
 
-// isTransientAPIError reports whether a Claude result's own text is the CLI's
-// "API Error: ..." for a network failure or a 5xx/overloaded API response.
-// Requires the "API Error" prefix so a normal final answer that merely
-// mentions ECONNREFUSED (e.g. while debugging a server) never matches.
-func isTransientAPIError(text string) bool {
-	t := strings.TrimSpace(text)
-	if !strings.HasPrefix(t, "API Error") {
-		return false
-	}
-	lower := strings.ToLower(t)
+func hasTransientAPIMarker(text string) bool {
+	lower := strings.ToLower(text)
 	for _, m := range transientAPIMarkers {
 		if strings.Contains(lower, m) {
 			return true
 		}
 	}
 	return false
+}
+
+// isTransientAPIError reports whether a Claude result's own text is the CLI's
+// "API Error: ..." for a network failure or a 5xx/overloaded API response.
+// Requires the "API Error" prefix so a normal final answer that merely
+// mentions ECONNREFUSED (e.g. while debugging a server) never matches.
+func isTransientAPIError(text string) bool {
+	t := strings.TrimSpace(text)
+	return strings.HasPrefix(t, "API Error") && hasTransientAPIMarker(t)
 }
 
 // isSessionNotFoundError reports whether a Hermes stderr line is its

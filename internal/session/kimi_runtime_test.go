@@ -1,10 +1,16 @@
 package session
 
 import (
+	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
+
+	"claude-manager/internal/config"
 )
 
 func buildFakekimi(t *testing.T) string {
@@ -122,5 +128,65 @@ func TestKimiParser_MetaHintAndFlushResult(t *testing.T) {
 	}
 	if again := p.Flush(); again != nil {
 		t.Fatalf("second flush must be empty: %+v", again)
+	}
+}
+
+func TestKimiParser_MetaMessagesAreReadable(t *testing.T) {
+	p := newKimiStream()
+	version := p.Parse(`{"role":"meta","type":"system.version","version":"2.4.0"}`)
+	if got := version[0].Entries[0].Message; got != "Kimi Code 2.4.0" {
+		t.Fatalf("version message = %q", got)
+	}
+
+	retry := p.Parse(`{"role":"meta","type":"turn.step.retrying","failed_attempt":7,"next_attempt":8,"max_attempts":10,"delay_ms":35819.225,"error_name":"APITimeoutError","error_message":"Request timed out."}`)
+	got := retry[0].Entries[0].Message
+	if !strings.Contains(got, "Request timed out") || !strings.Contains(got, "retry 8/10") || !strings.Contains(got, "36s") {
+		t.Fatalf("retry message = %q", got)
+	}
+	if strings.Contains(got, `"role"`) {
+		t.Fatalf("retry still shows raw JSON: %q", got)
+	}
+}
+
+func TestKimiRuntime_TransientTimeoutRetriesAndResumes(t *testing.T) {
+	bin := buildFakekimi(t)
+	state := filepath.Join(t.TempDir(), "kimi-retry-state")
+	t.Setenv("FAKEKIMI_STATE_FILE", state)
+
+	texts := make(chan string, 4)
+	s := New(Params{
+		ID: "kimi/retry", ProjectName: "kimi", ProjectPath: t.TempDir(),
+		KimiPath: bin, RetryDelay: 1,
+		Config: config.SessionConfig{
+			Name: "retry", Runtime: config.RuntimeKimi,
+			Prompt: "FAIL_TRANSIENT_ONCE", AutoRestart: false,
+		},
+		OnEvent: func(_ string, ev SessionEvent) {
+			if ev.Type == EvtLog && ev.Entry != nil && ev.Entry.Level == "text" {
+				texts <- ev.Entry.Message
+			}
+		},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	s.Run(ctx)
+
+	select {
+	case text := <-texts:
+		if !strings.Contains(text, "echo: FAIL_TRANSIENT_ONCE") {
+			t.Fatalf("recovered text = %q", text)
+		}
+	default:
+		t.Fatal("no successful turn after the transient timeout")
+	}
+	data, err := os.ReadFile(state)
+	if err != nil {
+		t.Fatalf("read retry state: %v", err)
+	}
+	if got := string(data); got != "resumed:kimi-fake-transient-id" {
+		t.Fatalf("retry state = %q, want the same Kimi session id", got)
+	}
+	if status := s.Status(); status != config.StatusIdle {
+		t.Fatalf("status after recovery = %q, want idle", status)
 	}
 }

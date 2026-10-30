@@ -315,10 +315,15 @@ type Session struct {
 	continueMarkerHit atomic.Bool
 	stepLimitHit      atomic.Bool
 
-	// lastHermesConv is the Hermes conversation the last runOnceHermes left
-	// off in (protected by mu). A run that dies on a rate limit or an API
-	// error resumes it instead of starting the task over in a fresh one.
+	// lastHermesConv is the per-turn conversation the last run left off in
+	// (protected by mu). A run that dies on a rate limit or an API error
+	// resumes it instead of starting the task over in a fresh one.
 	lastHermesConv string
+	// retryPrompt/retryImages preserve the failed turn across Run's transient
+	// backoff, so the next per-turn process repeats the request, not just the
+	// conversation it belongs to (protected by mu).
+	retryPrompt string
+	retryImages []ImageAttachment
 	// wireInitID is a conversation id captured from a stderr resume_hint
 	// (Kimi sometimes prints it there instead of stdout); hermesRunTurn falls
 	// back to it when stdout carried no init event. Guarded by mu.
@@ -1072,10 +1077,10 @@ func (s *Session) Run(ctx context.Context) {
 		switch {
 		case errors.Is(err, errTransientAPI):
 			// The API/network dropped mid-task. Resume the same conversation
-			// (Claude only — the run's CLISessionID is its on-disk
-			// transcript) so the agent keeps its context, and leave
-			// unfinishedStreak and atTaskBoundary alone: the task neither
-			// failed nor reached a boundary a soft stop could honour.
+			// (CLISessionID for Claude, lastHermesConv for per-turn runtimes)
+			// so the agent keeps its context, and leave unfinishedStreak and
+			// atTaskBoundary alone: the task neither failed nor reached a
+			// boundary a soft stop could honour.
 			transientStreak++
 			delay := transientAPIDelay(s.retryDelay, transientStreak)
 			logger.L.Warn("session.run.transient_api_error", "id", s.ID,
@@ -1086,7 +1091,7 @@ func (s *Session) Run(ctx context.Context) {
 				Message: fmt.Sprintf("API unreachable (attempt %d) — resuming the same conversation in %s",
 					transientStreak, delay.Round(time.Second)),
 			}})
-			if s.Config.IsHermes() {
+			if s.runtime.PerTurnProcess() {
 				s.resumeHermesAfterFailure()
 			} else {
 				s.mu.Lock()
@@ -1097,6 +1102,7 @@ func (s *Session) Run(ctx context.Context) {
 				s.setStatus(config.StatusIdle)
 				return
 			}
+			continue
 		case errors.Is(err, errRateLimited):
 			logger.L.Warn("session.run.rate_limited", "id", s.ID, "using_fallback", s.usingFallback)
 			s.setStatus(config.StatusRateLimited)

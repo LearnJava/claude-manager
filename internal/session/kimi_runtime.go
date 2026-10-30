@@ -47,6 +47,9 @@ func (kimiRuntime) ClassifyStderr(line string) *TurnFailure {
 	if strings.Contains(line, "Session not found:") || strings.Contains(line, "in use by another Kimi Code Desktop instance") {
 		return &TurnFailure{Kind: KindSessionNotFound, Message: line}
 	}
+	if hasTransientAPIMarker(line) {
+		return &TurnFailure{Kind: KindTransientAPI, Message: line}
+	}
 	return ClassifyStderrLine(line)
 }
 

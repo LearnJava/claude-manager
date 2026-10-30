@@ -205,13 +205,12 @@ func (s *Session) hermesStateDB() string {
 	return filepath.Join(hermesHome(s.Config.HermesProfile), "state.db")
 }
 
-// resumeHermesAfterFailure makes the next run of a Hermes session continue
-// the conversation the failed run was in (via resumeSessionID, which
-// runOnceHermes passes as --resume), rather than starting the task over in a
-// fresh conversation that has to re-read everything. Claude sessions keep
-// their existing behaviour.
+// resumeHermesAfterFailure makes the next run of a per-turn session continue
+// the conversation the failed run was in (via resumeSessionID), rather than
+// starting the task over in a fresh conversation that has to re-read
+// everything. Claude sessions keep their existing behaviour.
 func (s *Session) resumeHermesAfterFailure() {
-	if !s.Config.IsHermes() {
+	if !s.runtime.PerTurnProcess() {
 		return
 	}
 	s.mu.Lock()

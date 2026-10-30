@@ -9,6 +9,8 @@
 //   - "ask-user-marker": a result carrying an ```ask-user fenced question;
 //     the next turn's reply contains "proceeding with the chosen budget".
 //   - "resume-demo turn 2": reply contains "step 2".
+//   - FAIL_TRANSIENT_ONCE: fail once with a timeout, then succeed on --session;
+//     FAKEKIMI_STATE_FILE records the recovered conversation id.
 //   - FAIL_429 / FAIL_403 / FAIL_SESSION_NOT_FOUND / FAIL_DESKTOP: the
 //     matching stderr line and exit code 1.
 package main
@@ -57,6 +59,17 @@ func main() {
 		os.Exit(1)
 	}
 	switch {
+	case strings.Contains(prompt, "FAIL_TRANSIENT_ONCE"):
+		state := os.Getenv("FAKEKIMI_STATE_FILE")
+		if state != "" {
+			if _, err := os.Stat(state); os.IsNotExist(err) {
+				id = "kimi-fake-transient-id"
+				emit(map[string]any{"type": "system", "subtype": "init", "session_id": id, "model": model})
+				_ = os.WriteFile(state, []byte("failed"), 0o644)
+				fail("error: failed to run prompt: provider.connection_error: Request timed out.")
+			}
+			_ = os.WriteFile(state, []byte("resumed:"+convID), 0o644)
+		}
 	case strings.Contains(prompt, "FAIL_429"):
 		fail("Error: rate limit exceeded — usage quota is spent, resets soon")
 	case strings.Contains(prompt, "FAIL_403"):
