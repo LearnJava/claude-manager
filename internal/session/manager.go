@@ -686,10 +686,20 @@ func (m *SessionManager) RestartSession(id string) error {
 // RestartSessionMode is RestartSession with an explicit choice: fresh=true
 // drops the saved crash-recovery state after the stop so the new process opens
 // a new conversation; fresh=false leaves it so the old conversation resumes.
+// A configured session not started since the app launch has no managedSession
+// yet, so it goes straight to StartSession with the same state choice.
 func (m *SessionManager) RestartSessionMode(id string, fresh bool) error {
 	ms := m.get(id)
 	if ms == nil {
-		return fmt.Errorf("session %q not found", id)
+		parts := strings.SplitN(id, "/", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("session %q not found", id)
+		}
+		project, name := parts[0], parts[1]
+		if fresh {
+			m.ClearSessionState(project, name)
+		}
+		return m.StartSession(project, name)
 	}
 	project, name := ms.project, ms.name
 	if err := m.StopSession(id, false); err != nil {
@@ -708,14 +718,17 @@ func (m *SessionManager) RestartSessionMode(id string, fresh bool) error {
 	return m.StartSession(project, name)
 }
 
-// ResumeSession re-launches a stopped session, reusing the prior CLI session
-// id implicitly (Session.Run preserves CLISessionID across restarts within
-// its lifetime, but once we recreate the Session this is a fresh CLI session).
-// A full resume across process restarts is deferred to a later task.
+// ResumeSession re-launches a stopped session, reusing its saved CLI session
+// id through crash recovery. A configured session not started since the app
+// launch goes through the same StartSession path as a previously managed one.
 func (m *SessionManager) ResumeSession(id string) error {
 	ms := m.get(id)
 	if ms == nil {
-		return fmt.Errorf("session %q not found", id)
+		parts := strings.SplitN(id, "/", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("session %q not found", id)
+		}
+		return m.StartSession(parts[0], parts[1])
 	}
 	return m.StartSession(ms.project, ms.name)
 }

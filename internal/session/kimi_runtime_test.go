@@ -190,3 +190,62 @@ func TestKimiRuntime_TransientTimeoutRetriesAndResumes(t *testing.T) {
 		t.Fatalf("status after recovery = %q, want idle", status)
 	}
 }
+
+func TestKimiRuntime_RestartContinueWithoutManagedSession(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		resume bool
+	}{{"restart_mode", false}, {"resume_session", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newTestManager(t)
+			m.cfg.Settings.KimiPath = buildFakekimi(t)
+			m.cfg.Settings.CrashRecovery = true
+			sc := &m.cfg.Projects[0].Sessions[0]
+			sc.Runtime = config.RuntimeKimi
+			sc.Prompt = "FAIL_TRANSIENT_ONCE"
+			sc.AutoRestart = false
+
+			state := filepath.Join(t.TempDir(), "restart-state")
+			t.Setenv("FAKEKIMI_STATE_FILE", state)
+			if err := os.WriteFile(state, []byte("seed"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.stateStore.Save("lumen", "P1", &PersistedState{
+				SessionID: "session_restart", StartedAt: time.Now(),
+			}); err != nil {
+				t.Fatalf("save crash state: %v", err)
+			}
+			t.Cleanup(func() { _ = m.StopSession("lumen/P1", false) })
+
+			var err error
+			if tc.resume {
+				err = m.ResumeSession("lumen/P1")
+			} else {
+				err = m.RestartSessionMode("lumen/P1", false)
+			}
+			if err != nil {
+				t.Fatalf("restart an unstarted configured session: %v", err)
+			}
+			for i := 0; i < 100; i++ {
+				if st, ok := m.GetSession("lumen/P1"); ok && st.Status == config.StatusWorking.String() {
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			if err := m.SendMessage("lumen/P1", "FAIL_TRANSIENT_ONCE"); err != nil {
+				t.Fatalf("send after restart: %v", err)
+			}
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				data, err := os.ReadFile(state)
+				if err == nil && string(data) == "resumed:session_restart" {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("saved Kimi session was not resumed: %q", data)
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+		})
+	}
+}
