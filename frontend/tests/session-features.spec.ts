@@ -16,7 +16,7 @@ const ID = (name: string) => `${PROJECT}/${name}`;
 async function primerOf(ctrl: any, session: string): Promise<boolean> {
   const cfg = await ctrl.rpc('GetConfig', {});
   const p = cfg.Projects.find((x: any) => x.Name === PROJECT);
-  return !!p.Sessions.find((x: any) => x.Name === session).ContextPrimer;
+  return !!p.Sessions.find((x: any) => x.Name === session).AskUserMarker;
 }
 
 test.describe('Session features popup', () => {
@@ -30,11 +30,10 @@ test.describe('Session features popup', () => {
     await expect(dialog.locator('[data-testid="features-summary"]')).toHaveText(/\d+ of \d+ on/);
 
     // An off-by-default opt-in shows OFF with its description and editor.
-    const primer = dialog.locator('[data-testid="feature-contextPrimer"]');
+    const primer = dialog.locator('[data-testid="feature-askUserMarker"]');
     await expect(primer).toHaveAttribute('data-enabled', 'false');
     await expect(primer.locator('[data-testid="feature-state"]')).toHaveText('OFF');
-    await expect(primer.locator('[data-testid="field-context_primer"]')).not.toBeChecked();
-    await expect(primer).toContainText('applies on session start');
+    await expect(primer.locator('[data-testid="field-ask_user_marker"]')).not.toBeChecked();
 
     // Every catalogued setting is wired: no "not wired" marker anywhere,
     // and manager-side ones say they apply at once.
@@ -55,10 +54,10 @@ test.describe('Session features popup', () => {
     const dialog = page.locator('[data-testid="session-features"]');
     await expect(dialog).toBeVisible({ timeout: 5_000 });
 
-    await dialog.locator('[data-testid="feature-contextPrimer"] [data-testid="feature-help"]').click();
+    await dialog.locator('[data-testid="feature-askUserMarker"] [data-testid="feature-help"]').click();
     const help = page.locator('[data-testid="feature-help-dialog"]');
     await expect(help).toBeVisible();
-    await expect(help).toContainText('context_primer');
+    await expect(help).toContainText('ask_user_marker');
     await expect(help.locator('[data-testid="feature-help-body"] p').first()).not.toBeEmpty();
     await expect(help.locator('[data-testid="feature-help-example"]')).toContainText('Example');
 
@@ -105,9 +104,9 @@ test.describe('Session features popup', () => {
     await page.goto('/');
     await page.locator(`[data-testid="session-features-button-${ID('S2')}"]`).click();
     const dialog = page.locator('[data-testid="session-features"]');
-    const primer = dialog.locator('[data-testid="feature-contextPrimer"]');
+    const primer = dialog.locator('[data-testid="feature-askUserMarker"]');
 
-    await primer.locator('[data-testid="field-context_primer"]').check();
+    await primer.locator('[data-testid="field-ask_user_marker"]').check();
     await expect(primer.locator('[data-testid="feature-saved"]')).toBeVisible({ timeout: 5_000 });
     await expect(primer.locator('[data-testid="feature-state"]')).toHaveText('ON');
     expect(await primerOf(ctrl, 'S2')).toBe(true);
@@ -115,7 +114,7 @@ test.describe('Session features popup', () => {
     await expect(dialog.locator('[data-testid="features-needs-restart"]')).toHaveCount(0);
 
     // Restore so other specs see the default.
-    await primer.locator('[data-testid="field-context_primer"]').uncheck();
+    await primer.locator('[data-testid="field-ask_user_marker"]').uncheck();
     await expect.poll(() => primerOf(ctrl, 'S2'), { timeout: 5_000 }).toBe(false);
 
     await page.keyboard.press('Escape');
@@ -130,13 +129,13 @@ test.describe('Session features popup', () => {
 
     await page.locator(`[data-testid="session-features-button-${ID('S1')}"]`).click();
     const dialog = page.locator('[data-testid="session-features"]');
-    const primer = dialog.locator('[data-testid="feature-contextPrimer"]');
+    const primer = dialog.locator('[data-testid="feature-askUserMarker"]');
 
-    await primer.locator('[data-testid="field-context_primer"]').check();
+    await primer.locator('[data-testid="field-ask_user_marker"]').check();
     await expect(dialog.locator('[data-testid="features-needs-restart"]')).toBeVisible({ timeout: 5_000 });
     await expect(dialog.locator('[data-testid="features-restart"]')).toBeEnabled();
 
-    await primer.locator('[data-testid="field-context_primer"]').uncheck();
+    await primer.locator('[data-testid="field-ask_user_marker"]').uncheck();
     await expect.poll(() => primerOf(ctrl, 'S1'), { timeout: 5_000 }).toBe(false);
     await page.keyboard.press('Escape');
     await ctrl.rpc('StopSession', { id: ID('S1'), soft: false }).catch(() => {});

@@ -4,13 +4,14 @@
 
     export let project: string;
     export let sessionName: string;
+    export let runtime = '';
 
     const dispatch = createEventDispatcher<{
         confirm: { model: string; effort: string };
         cancel: void;
     }>();
 
-    import { MODELS, EFFORTS, modelLabel, normalizeModel } from '../lib/models';
+    import { MODELS, EFFORTS, modelLabel, normalizeModel, modelsFor, capabilitiesOf } from '../lib/models';
 
     // Recommendation loaded from backend (null = not yet loaded)
     type Rec = { model: string; effort: string; complexity: string; reason: string } | null;
@@ -173,11 +174,12 @@
                         <select
                             bind:value={chosenModel}
                             class="bg-bg border border-bg-border rounded px-2 py-1 text-text">
-                            {#each MODELS as m}
+                            {#each modelsFor(runtime) as m}
                                 <option value={m.value}>{m.label}</option>
                             {/each}
                         </select>
                     </label>
+                    {#if capabilitiesOf(runtime).effort}
                     <label class="flex flex-col gap-1" style="font-size:13px">
                         <span class="text-text-muted">{$t('modelPicker.effortField')}</span>
                         <select
@@ -188,6 +190,7 @@
                             {/each}
                         </select>
                     </label>
+                    {/if}
                 </div>
             {/if}
         {/if}

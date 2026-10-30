@@ -79,12 +79,8 @@
         HermesProvider: string;
         HermesProfile: string;
         HermesSkills: string[];
-        ContextPrimer?: boolean;
         ContextHandoff?: boolean;
         AskUserMarker?: boolean;
-        HandoffContextTokens?: number;
-        // WASTE-TASKS.md WS-05: rework rounds on red gates; 0 = off.
-        GateRounds?: number;
     }
 
     interface ProjectConfig {
@@ -102,10 +98,6 @@
         MixedMaxRounds: number;
         // Manager-side: keep a local copy of the project in the mirror folder.
         Mirror?: boolean;
-        AutoSkills?: boolean;
-        // WASTE-TASKS.md WS-10: nightly gate run "HH:MM" (private layer); '' = off.
-        GateSchedule?: string;
-        GateScheduleQueue?: string;
     }
 
     interface WorkerConfig {
@@ -151,28 +143,12 @@
 
     interface OptimizationSettings {
         AutoModelRouting: boolean;
-        ExperienceTracking: boolean;
-        // WASTE-TASKS.md WS-03..WS-12; all off by default.
-        HookRules?: boolean;
-        LoopMemory?: boolean;
-        ReferenceCases?: boolean;
-        QualityLabels?: boolean;
-        RepoSuggestions?: boolean;
         WaitingScreen?: boolean;
-        LearnedFiles?: boolean;
-        Benchmark?: boolean;
     }
 
-    // Order and locale keys of the WS feature switches on the Global tab.
+    // Order and locale keys of the feature switches on the Global tab.
     const wasteFlags: { key: keyof OptimizationSettings; name: string }[] = [
         { key: 'WaitingScreen', name: 'waitingScreen' },
-        { key: 'RepoSuggestions', name: 'repoSuggestions' },
-        { key: 'HookRules', name: 'hookRules' },
-        { key: 'LoopMemory', name: 'loopMemory' },
-        { key: 'LearnedFiles', name: 'learnedFiles' },
-        { key: 'ReferenceCases', name: 'referenceCases' },
-        { key: 'QualityLabels', name: 'qualityLabels' },
-        { key: 'Benchmark', name: 'benchmark' },
     ];
 
     interface AppConfig {
@@ -220,11 +196,8 @@
             HermesProvider: '',
             HermesProfile: '',
             HermesSkills: [],
-            // Defaults match the reference session (Lumen browser S1).
-            ContextPrimer: true,
             ContextHandoff: true,
             AskUserMarker: true,
-            HandoffContextTokens: 150000,
         };
     }
 
@@ -237,7 +210,6 @@
             MixedProgramming: false,
             Gates: [],
             MixedMaxRounds: 3,
-            AutoSkills: true,
         };
     }
 
@@ -363,7 +335,6 @@
         }));
         const optimization: OptimizationSettings = {
             AutoModelRouting: false,
-            ExperienceTracking: true,
             ...(raw?.Optimization ?? {}),
         };
         return { Settings: settings, Optimization: optimization, Projects: projects, Workers: workers };
@@ -1155,17 +1126,6 @@
                         </label>
                     </section>
 
-                    <section>
-                        <h3 class="text-text font-semibold text-sm mb-2">{$t('settings.experienceLayer.heading')}</h3>
-                        <label class="flex items-center gap-2 text-sm text-text">
-                            <input type="checkbox" bind:checked={cfg.Optimization.ExperienceTracking} />
-                            {$t('settings.experienceLayer.enable')}
-                        </label>
-                        <p class="text-text-dim text-xs mt-1">
-                            {$t('settings.experienceLayer.description')}
-                        </p>
-                    </section>
-
                     <section data-testid="waste-flags-section">
                         <h3 class="text-text font-semibold text-sm mb-1">{$t('settings.waste.heading')}</h3>
                         <p class="text-text-dim text-xs mb-2">{$t('settings.waste.description')}</p>
@@ -1369,30 +1329,6 @@
                                             ></textarea>
                                             <span class="text-[11px] text-text-muted/70 leading-snug">{$t('settings.gates.hint')}</span>
                                         </label>
-                                        <div class="grid grid-cols-2 gap-3">
-                                            <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                {$t('settings.gates.schedule')}
-                                                <input
-                                                    type="text"
-                                                    data-testid={`gate-schedule-${i}`}
-                                                    placeholder="03:00"
-                                                    bind:value={p.GateSchedule}
-                                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text font-mono" />
-                                            </label>
-                                            <label class="flex flex-col text-xs text-text-muted gap-1">
-                                                {$t('settings.gates.scheduleQueue')}
-                                                <select
-                                                    data-testid={`gate-schedule-queue-${i}`}
-                                                    bind:value={p.GateScheduleQueue}
-                                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
-                                                    <option value="">{$t('settings.gates.scheduleQueueDefault')}</option>
-                                                    {#each [...new Set(p.Sessions.map((s) => s.TaskSource).filter(Boolean))] as q}
-                                                        <option value={q}>{q}</option>
-                                                    {/each}
-                                                </select>
-                                            </label>
-                                        </div>
-                                        <span class="block text-[11px] text-text-muted/70 leading-snug">{$t('settings.gates.scheduleHint')}</span>
                                     </div>
 
                                     <!-- Mixed programming (MIXED-TASKS.md) -->
@@ -1730,6 +1666,7 @@
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
                                                     <option value="">Claude Code CLI</option>
                                                     <option value="hermes">Hermes CLI</option>
+                                                    <option value="kimi">Kimi Code CLI</option>
                                                 </select>
                                             </label>
                                             {#if sess.Runtime === 'hermes'}
@@ -1909,20 +1846,6 @@
                                                     min="0"
                                                     bind:value={sess.MaxTasks}
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
-                                            </label>
-                                            <label class="flex flex-col text-xs text-text-muted gap-1 col-span-2">
-                                                {$t('settings.sessions.gateRounds')}
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    data-testid="session-gate-rounds"
-                                                    bind:value={sess.GateRounds}
-                                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text w-40" />
-                                                <span class="text-[11px] text-text-muted/70 leading-snug">
-                                                    {proj && (proj.Gates ?? []).length === 0
-                                                        ? $t('settings.sessions.gateRoundsNoGates')
-                                                        : $t('settings.sessions.gateRoundsHint')}
-                                                </span>
                                             </label>
                                             <div class="flex flex-col gap-2">
                                                 <label class="flex items-center gap-2 text-sm text-text">

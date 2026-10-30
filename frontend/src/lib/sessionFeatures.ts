@@ -57,16 +57,9 @@ const FIELDS: Record<string, FeatureField[]> = {
     contextRestart: [f('session', 'ContextHandoff', 'context_handoff', 'bool'),
                      f('optimization', 'ContextRestartMode', 'context_restart_mode', 'select', { options: ['resume', 'fresh', 'ask', 'off'] }),
                      f('optimization', 'ContextRestartThreshold', 'context_restart_threshold', 'number', { step: 0.05 })],
-    handoffContextTokens: [f('session', 'HandoffContextTokens', 'handoff_context_tokens', 'number', { step: 1000 })],
-    contextPrimer: [f('session', 'ContextPrimer', 'context_primer', 'bool')],
     askUserMarker: [f('session', 'AskUserMarker', 'ask_user_marker', 'bool')],
     systemPromptAppend: [f('session', 'SystemPromptAppend', 'system_prompt_append', 'textarea')],
     addDirs: [f('session', 'AddDirs', 'add_dirs', 'list')],
-    experienceTracking: [f('optimization', 'ExperienceTracking', 'experience_tracking', 'bool')],
-    journal: [f('project', 'Journal', 'journal', 'bool')],
-    journalCommit: [f('project', 'JournalCommit', 'journal_commit', 'bool')],
-    autoSkills: [f('project', 'AutoSkills', 'auto_skills', 'bool'),
-                 f('project', 'AutoSkillsDailyBudgetUSD', 'auto_skills_daily_budget_usd', 'number', { step: 0.5 })],
     mixedProgramming: [f('project', 'MixedProgramming', 'mixed_programming', 'bool'), f('project', 'Gates', 'gates', 'list')],
     permissionMode: [f('session', 'PermissionMode', 'permission_mode', 'select',
                        { options: ['bypassPermissions', 'acceptEdits', 'default', 'auto', 'plan', 'dontAsk'] })],
@@ -74,17 +67,10 @@ const FIELDS: Record<string, FeatureField[]> = {
     maxBudget: [f('session', 'MaxBudgetUSD', 'max_budget_usd', 'number', { step: 0.5 })],
     fallbackModel: [f('session', 'FallbackModelOnRateLimit', 'fallback_model_on_rate_limit', 'bool'),
                     f('session', 'FallbackModel', 'fallback_model', 'text')],
-    loopDetection: [f('optimization', 'LoopDetection', 'loop_detection', 'bool'),
-                    f('optimization', 'LoopAction', 'loop_action', 'select', { options: ['warn', 'send_hint', 'restart'] })],
     autoModelRouting: [f('optimization', 'AutoModelRouting', 'auto_model_routing', 'bool')],
-    maxTurnsAutoAdjust: [f('optimization', 'MaxTurnsAutoAdjust', 'max_turns_auto_adjust', 'bool'),
-                         f('optimization', 'MaxTurnsDefault', 'max_turns_default', 'number')],
-    excludeDynamicSystemPrompt: [f('optimization', 'ExcludeDynamicSystemPrompt', 'exclude_dynamic_system_prompt', 'bool')],
     sessionStartDelay: [f('settings', 'SessionStartDelay', 'session_start_delay', 'number')],
     pythonUtf8: [f('settings', 'PythonUTF8', 'python_utf8', 'bool')],
     commandGuard: [f('settings', 'CommandGuard', 'command_guard', 'bool')],
-    envCard: [f('settings', 'EnvCard', 'env_card', 'bool')],
-    managerCard: [f('settings', 'ManagerCard', 'manager_card', 'bool')],
     permissionNotify: [f('settings', 'PermissionNativeNotification', 'permission_native_notification', 'bool')],
     permissionSound: [f('settings', 'PermissionSound', 'permission_sound', 'bool')],
     permissionTimeout: [f('settings', 'PermissionTimeout', 'permission_timeout', 'number'),
@@ -109,10 +95,6 @@ export function fieldTarget(cfg: any, project: string, sessionName: string, targ
 // pick it up; the popup offers one.
 export const LIVE = new Set([
     'crashRecovery',
-    'experienceTracking',
-    'journal',
-    'journalCommit',
-    'autoSkills',
     'sessionStartDelay',
     'permissionNotify',
     'permissionSound',
@@ -176,11 +158,6 @@ export function describeSessionFeatures(cfg: any, project: string, sessionName: 
         enabled: restartOn,
         value: restartOn ? `${restartMode}, ${Math.round(num(o.ContextRestartThreshold) * 100)}%` : undefined,
         warning: s.ContextHandoff && restartMode === 'off' ? 'handoffNoRestart' : undefined });
-    const handoffTokens = num(s.HandoffContextTokens);
-    add({ key: 'handoffContextTokens', tomlKey: 'handoff_context_tokens', scope: 'session', group: 'context',
-        enabled: handoffTokens > 0, value: handoffTokens > 0 ? handoffTokens.toLocaleString('en-US') : undefined });
-    add({ key: 'contextPrimer', tomlKey: 'context_primer', scope: 'session', group: 'context',
-        enabled: !!s.ContextPrimer });
     add({ key: 'askUserMarker', tomlKey: 'ask_user_marker', scope: 'session', group: 'context',
         enabled: !!s.AskUserMarker });
     add({ key: 'systemPromptAppend', tomlKey: 'system_prompt_append', scope: 'session', group: 'context',
@@ -189,18 +166,7 @@ export function describeSessionFeatures(cfg: any, project: string, sessionName: 
     add({ key: 'addDirs', tomlKey: 'add_dirs', scope: 'session', group: 'context',
         enabled: dirs.length > 0, value: dirs.length > 0 ? dirs.join(', ') : undefined });
 
-    // --- Learning / experience layer --------------------------------------
-    add({ key: 'experienceTracking', tomlKey: 'experience_tracking', scope: 'global', group: 'learning',
-        enabled: !!o.ExperienceTracking });
-    add({ key: 'journal', tomlKey: 'journal', scope: 'project', group: 'learning',
-        enabled: !!p.Journal });
-    add({ key: 'journalCommit', tomlKey: 'journal_commit', scope: 'project', group: 'learning',
-        enabled: !!p.JournalCommit,
-        warning: p.JournalCommit && !p.Journal ? 'journalCommitNoJournal' : undefined });
-    add({ key: 'autoSkills', tomlKey: 'auto_skills', scope: 'project', group: 'learning',
-        enabled: !!p.AutoSkills,
-        value: p.AutoSkills && num(p.AutoSkillsDailyBudgetUSD) > 0 ? `$${num(p.AutoSkillsDailyBudgetUSD)}/day` : undefined,
-        warning: p.AutoSkills && !o.ExperienceTracking ? 'autoSkillsNoTracking' : undefined });
+    // --- Learning / shared project state ----------------------------------
     const gates = list(p.Gates);
     add({ key: 'mixedProgramming', tomlKey: 'mixed_programming', scope: 'project', group: 'learning',
         enabled: !!p.MixedProgramming,
@@ -222,17 +188,9 @@ export function describeSessionFeatures(cfg: any, project: string, sessionName: 
         enabled: !!s.FallbackModelOnRateLimit && str(s.FallbackModel) !== '',
         value: str(s.FallbackModel) || undefined,
         warning: s.FallbackModelOnRateLimit && str(s.FallbackModel) === '' ? 'fallbackNoModel' : undefined });
-    const loopOn = !!o.LoopDetection;
-    add({ key: 'loopDetection', tomlKey: 'loop_detection', scope: 'global', group: 'safety',
-        enabled: loopOn, value: loopOn ? str(o.LoopAction) || undefined : undefined });
-
     // --- Performance and cost ---------------------------------------------
     add({ key: 'autoModelRouting', tomlKey: 'auto_model_routing', scope: 'global', group: 'performance',
         enabled: !!o.AutoModelRouting });
-    add({ key: 'maxTurnsAutoAdjust', tomlKey: 'max_turns_auto_adjust', scope: 'global', group: 'performance',
-        enabled: !!o.MaxTurnsAutoAdjust });
-    add({ key: 'excludeDynamicSystemPrompt', tomlKey: 'exclude_dynamic_system_prompt', scope: 'global', group: 'performance',
-        enabled: !!o.ExcludeDynamicSystemPrompt });
     const startDelay = num(g.SessionStartDelay) || num(o.SessionStartDelay);
     add({ key: 'sessionStartDelay', tomlKey: 'session_start_delay', scope: 'global', group: 'performance',
         enabled: startDelay > 0, value: startDelay > 0 ? `${startDelay}s` : undefined });
@@ -240,10 +198,6 @@ export function describeSessionFeatures(cfg: any, project: string, sessionName: 
         enabled: !!g.PythonUTF8 });
     add({ key: 'commandGuard', tomlKey: 'command_guard', scope: 'global', group: 'performance',
         enabled: !!g.CommandGuard });
-    add({ key: 'envCard', tomlKey: 'env_card', scope: 'global', group: 'performance',
-        enabled: !!g.EnvCard });
-    add({ key: 'managerCard', tomlKey: 'manager_card', scope: 'global', group: 'performance',
-        enabled: !!g.ManagerCard });
 
     // --- Notifications -----------------------------------------------------
     add({ key: 'permissionNotify', tomlKey: 'permission_native_notification', scope: 'global', group: 'notifications',

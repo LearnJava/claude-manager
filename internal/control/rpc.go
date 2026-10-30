@@ -514,8 +514,6 @@ func (s *Server) buildRegistry() map[string]handler {
 	s.registerInteractionRPCs(reg)
 	s.registerLogsRPCs(reg)
 	s.registerPlanningRPCs(reg)
-	s.registerSkillsRPCs(reg)
-	s.registerFailuresRPCs(reg)
 	s.registerProjectRPCs(reg)
 
 	return reg

@@ -11,15 +11,11 @@ func testOptCfg() *config.OptimizationSettings {
 		ContextWarnThreshold:    0.6,
 		ContextRestartThreshold: 0.75,
 		ContextRestartMode:      "resume",
-		LoopDetection:           true,
-		LoopThreshold:           3,
-		LoopWindow:              10,
-		LoopAction:              LoopActionWarn,
 	}
 }
 
 func TestReporterSnapshotEmpty(t *testing.T) {
-	r := NewReporter(nil, nil, nil)
+	r := NewReporter(nil, nil)
 	s := r.Snapshot("proj/S1")
 	if s.ContextUtilization != 0 {
 		t.Errorf("expected 0 utilization, got %f", s.ContextUtilization)
@@ -27,15 +23,12 @@ func TestReporterSnapshotEmpty(t *testing.T) {
 	if s.CacheEfficiency != 0 {
 		t.Errorf("expected 0 cache efficiency, got %f", s.CacheEfficiency)
 	}
-	if s.LastLoop != nil {
-		t.Errorf("expected nil LastLoop")
-	}
 }
 
 func TestReporterContextUtilization(t *testing.T) {
 	cfg := testOptCfg()
 	ctx := NewContextMonitor(cfg, 100_000)
-	r := NewReporter(ctx, nil, nil)
+	r := NewReporter(ctx, nil)
 
 	ctx.Observe(TokenUsageAdapter{InputTokens: 70_000})
 	s := r.Snapshot("x")
@@ -55,7 +48,7 @@ func TestReporterCacheStats(t *testing.T) {
 	cache.Record("proj/S1", 1000, 500, 200, 300)
 	cache.Record("proj/S1", 500, 400, 100, 150)
 
-	r := NewReporter(nil, cache, nil)
+	r := NewReporter(nil, cache)
 	s := r.Snapshot("proj/S1")
 
 	if s.Turns != 2 {
@@ -76,46 +69,10 @@ func TestReporterCacheStats(t *testing.T) {
 
 func TestReporterUnknownSessionCacheStats(t *testing.T) {
 	cache := NewCacheTracker(nil)
-	r := NewReporter(nil, cache, nil)
+	r := NewReporter(nil, cache)
 	s := r.Snapshot("nobody/S99")
 	if s.Turns != 0 || s.CacheEfficiency != 0 {
 		t.Errorf("expected zero cache stats for unknown session: %+v", s)
-	}
-}
-
-func TestReporterLoopRecordClear(t *testing.T) {
-	r := NewReporter(nil, nil, nil)
-	sessionID := "proj/S1"
-
-	loop := &LoopDetected{Tool: "Bash", Input: "ls", Count: 3, Action: LoopActionWarn}
-	r.RecordLoop(sessionID, loop)
-
-	s := r.Snapshot(sessionID)
-	if s.LastLoop == nil {
-		t.Fatal("expected LastLoop != nil after RecordLoop")
-	}
-	if s.LastLoop.Tool != "Bash" {
-		t.Errorf("LastLoop.Tool: got %q", s.LastLoop.Tool)
-	}
-
-	r.ClearLoop(sessionID)
-	s2 := r.Snapshot(sessionID)
-	if s2.LastLoop != nil {
-		t.Errorf("expected nil LastLoop after ClearLoop")
-	}
-}
-
-func TestReporterLoopIsolatedBetweenSessions(t *testing.T) {
-	r := NewReporter(nil, nil, nil)
-	r.RecordLoop("a/S1", &LoopDetected{Tool: "Read", Input: "x.go", Count: 3})
-
-	s1 := r.Snapshot("a/S1")
-	s2 := r.Snapshot("b/S2")
-	if s1.LastLoop == nil {
-		t.Error("a/S1: expected loop")
-	}
-	if s2.LastLoop != nil {
-		t.Error("b/S2: expected no loop bleed")
 	}
 }
 
@@ -124,7 +81,7 @@ func TestReporterGlobalReport(t *testing.T) {
 	cache.Record("a/S1", 1000, 500, 200, 300)
 	cache.Record("b/S2", 2000, 1000, 100, 400)
 
-	r := NewReporter(nil, cache, nil)
+	r := NewReporter(nil, cache)
 	g := r.GlobalReport()
 
 	if g.InputTokens != 3000 {
@@ -142,7 +99,7 @@ func TestReporterGlobalReport(t *testing.T) {
 }
 
 func TestReporterGlobalReportNilCache(t *testing.T) {
-	r := NewReporter(nil, nil, nil)
+	r := NewReporter(nil, nil)
 	g := r.GlobalReport()
 	if g.Turns != 0 || g.CacheEfficiency != 0 {
 		t.Errorf("nil cache should return zero GlobalReport: %+v", g)

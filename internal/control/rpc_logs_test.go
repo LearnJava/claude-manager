@@ -8,9 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"claude-manager/internal/experience"
 	"claude-manager/internal/optimization"
-	"claude-manager/internal/session"
 	"claude-manager/internal/store"
 )
 
@@ -51,47 +49,6 @@ func (a logsApp) GetProjectLogFiles(p string) ([]store.LogFileInfo, error) {
 }
 func (a logsApp) ClearProjectLogs(p string) error { a.rec("ClearProjectLogs " + p); return nil }
 func (a logsApp) CleanOldLogs(d int) error        { a.rec(fmt.Sprintf("CleanOldLogs %d", d)); return nil }
-func (a logsApp) ImportProjectLogs(p, d string) (session.ImportStats, error) {
-	a.rec("ImportProjectLogs " + p + " " + d)
-	return session.ImportStats{Files: 2, Actions: 9}, nil
-}
-func (a logsApp) GetTopActions(p string, d int) ([]store.SignatureStat, error) {
-	a.rec(fmt.Sprintf("GetTopActions %s %d", p, d))
-	return []store.SignatureStat{{Sig: "Bash:ls", Count: 3}}, nil
-}
-func (a logsApp) GetActionSamples(p, sig string, n int) ([]store.ActionRow, error) {
-	a.rec(fmt.Sprintf("GetActionSamples %s %s %d", p, sig, n))
-	return nil, nil
-}
-func (a logsApp) GetDurationProfile(string) ([]experience.SignatureDuration, error) { return nil, nil }
-func (a logsApp) GetTokenAttribution(p string, n int) (experience.AttributionReport, error) {
-	a.rec(fmt.Sprintf("GetTokenAttribution %s %d", p, n))
-	return experience.AttributionReport{TotalEstTokens: 10}, nil
-}
-func (a logsApp) GetWasteReport(p string) (experience.WasteReport, error) {
-	a.rec("GetWasteReport " + p)
-	return experience.WasteReport{TotalCalls: 4}, nil
-}
-func (a logsApp) GetTaskLabels(p string) (experience.LabelReport, error) {
-	a.rec("GetTaskLabels " + p)
-	return experience.LabelReport{Project: p, Total: 1}, nil
-}
-func (a logsApp) GetReferenceReport(p string) (experience.ReferenceReport, error) {
-	a.rec("GetReferenceReport " + p)
-	return experience.ReferenceReport{Project: p, Cases: []experience.ReferencePair{{CaseID: 3}}}, nil
-}
-func (a logsApp) ReplayReferenceCase(p string, id int64, model, effort string) (*store.ReferenceReplay, error) {
-	a.rec(fmt.Sprintf("ReplayReferenceCase %s %d %s %s", p, id, model, effort))
-	return &store.ReferenceReplay{ID: 1, CaseID: id, Passed: true}, nil
-}
-func (a logsApp) RunBenchmark(p string, spec experience.BenchmarkSpec) (experience.BenchmarkReport, error) {
-	a.rec(fmt.Sprintf("RunBenchmark %s %s %d", p, spec.Name, len(spec.Configs)))
-	return experience.BenchmarkReport{Project: p, RunID: 7, Status: "running"}, nil
-}
-func (a logsApp) GetBenchmarkReport(p string, id int64) (experience.BenchmarkReport, error) {
-	a.rec(fmt.Sprintf("GetBenchmarkReport %s %d", p, id))
-	return experience.BenchmarkReport{Project: p, RunID: id}, nil
-}
 func (a logsApp) GetModelRecommendation(p, n string) (*optimization.ModelRecommendation, error) {
 	return &optimization.ModelRecommendation{Model: "sonnet"}, nil
 }
@@ -155,24 +112,16 @@ func TestRPC_LogsAppMethods(t *testing.T) {
 	call(t, ts, token, "GetDailyTokens", `{"date":"2026-10-15"}`)
 	call(t, ts, token, "ClearProjectLogs", `{"project":"p"}`)
 	call(t, ts, token, "CleanOldLogs", `{"retention_days":30}`)
-	call(t, ts, token, "GetTopActions", `{"project":"p","days":7}`)
-	r := call(t, ts, token, "ImportProjectLogs", `{"project":"p"}`)
-	if r["actions"] != float64(9) {
-		t.Errorf("import: %+v", r)
-	}
-	r = call(t, ts, token, "GetModelAdvice", `{"project":"p","session":"s"}`)
+	r := call(t, ts, token, "GetModelAdvice", `{"project":"p","session":"s"}`)
 	if r["auto_routing"] != true || r["recommendation"] == nil {
 		t.Errorf("advice: %+v", r)
 	}
-	want := "ClearProjectLogs p|CleanOldLogs 30|GetTopActions p 7|ImportProjectLogs p "
+	want := "ClearProjectLogs p|CleanOldLogs 30"
 	if got := strings.Join(*calls, "|"); got != want {
 		t.Errorf("app calls %q, want %q", got, want)
 	}
 	if msg := callErr(t, ts, token, "CleanOldLogs", `{"retention_days":0}`); !strings.Contains(msg, "at least 1") {
 		t.Errorf("retention: %s", msg)
-	}
-	if msg := callErr(t, ts, token, "ImportProjectLogs", `{"project":"p","dir":"/no/such/dir"}`); !strings.Contains(msg, "does not exist") {
-		t.Errorf("dir: %s", msg)
 	}
 }
 
@@ -180,7 +129,7 @@ func TestRPC_LogsNeedApp(t *testing.T) {
 	srv, token := newTestServer(t, &mockManager{})
 	ts := httptest.NewServer(srv.srv.Handler)
 	defer ts.Close()
-	for _, m := range []string{"GetProjectLogFiles", "ClearProjectLogs", "GetTopActions", "GetDurationProfile", "GetModelAdvice"} {
+	for _, m := range []string{"GetProjectLogFiles", "ClearProjectLogs", "GetModelAdvice"} {
 		out := planRPC(t, ts, token, rpcBody(m, `{"project":"p"}`))
 		if out.Error == nil || !strings.Contains(out.Error.Message, "needs the Claude Manager app") {
 			t.Errorf("%s without app: %+v", m, out.Error)

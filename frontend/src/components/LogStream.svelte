@@ -15,6 +15,7 @@
     import { canInterrupt } from '../lib/interrupt';
 
     export let sessionId: string;
+    $: runtime = $sessions[sessionId]?.runtime ?? '';
     // Threshold (px) — if the user has scrolled further than this from the
     // bottom, we freeze autoscroll until they return.
     const FREEZE_THRESHOLD_PX = 60;
@@ -257,7 +258,7 @@
                     {#if e.run_start}
                         <RunBoundary entry={e} />
                     {/if}
-                    <LogEntryRow entry={e} entryKey={entryKey(e, i)} />
+                    <LogEntryRow runtime={runtime} entry={e} entryKey={entryKey(e, i)} />
                 </div>
             {/each}
         {:else}
@@ -313,7 +314,7 @@
                                                 (entryMatches(tc.call, filter) ||
                                                     (!!tc.result && entryMatches(tc.result, filter)))} />
                                     {:else if !results.has(e)}
-                                        <LogEntryRow entry={e} entryKey={entryKey(e, i)} />
+                                        <LogEntryRow runtime={runtime} entry={e} entryKey={entryKey(e, i)} />
                                     {/if}
                                 {/each}
                             </div>
@@ -364,7 +365,7 @@
                                     {/if}
                                 </div>
                                 {#each block.entries.slice(1) as e, i (entryKey(e, i + 1))}
-                                    <LogEntryRow entry={e} entryKey={entryKey(e, i + 1)} />
+                                    <LogEntryRow runtime={runtime} entry={e} entryKey={entryKey(e, i + 1)} />
                                 {/each}
                             </div>
                         {/if}
@@ -372,7 +373,7 @@
                 {:else if block.kind === 'user'}
                     <div class="flex justify-end py-1">
                         <div class="max-w-[80%] bg-bg-elevated rounded px-3 py-1.5">
-                            <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />
+                            <LogEntryRow runtime={runtime} entry={block.entries[0]} entryKey={block.seq} showTime={false} />
                         </div>
                     </div>
                 {:else if block.kind === 'thinking'}
@@ -404,7 +405,7 @@
                         </button>
                         {#if isOpen}
                             <div class="pl-6 border-l border-bg-border ml-2">
-                                <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />
+                                <LogEntryRow runtime={runtime} entry={block.entries[0]} entryKey={block.seq} showTime={false} />
                             </div>
                         {/if}
                     </div>
@@ -412,7 +413,7 @@
                     <div
                         class="font-sans text-[13px] leading-[1.5] max-w-[80ch] py-1"
                         title={formatTime(block.entries[0].time)}>
-                        <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />
+                        <LogEntryRow runtime={runtime} entry={block.entries[0]} entryKey={block.seq} showTime={false} />
                     </div>
                     {@const turn = turnSummaryData(block.entries[0].turn)}
                     {#if turn}
@@ -437,11 +438,11 @@
                 {:else if block.kind === 'run'}
                     <RunBoundary entry={block.entries[0]} />
                     <div title={formatTime(block.entries[0].time)}>
-                        <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />
+                        <LogEntryRow runtime={runtime} entry={block.entries[0]} entryKey={block.seq} showTime={false} />
                     </div>
                 {:else}
                     <div title={formatTime(block.entries[0].time)}>
-                        <LogEntryRow entry={block.entries[0]} entryKey={block.seq} showTime={false} />
+                        <LogEntryRow runtime={runtime} entry={block.entries[0]} entryKey={block.seq} showTime={false} />
                     </div>
                 {/if}
                 </div>

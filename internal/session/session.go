@@ -70,21 +70,14 @@ type SessionEvent struct {
 	Activity       *ActivityInfo
 	TaskSourceDesc string
 	Err            error
-	// RefCase is set on EvtTaskDone when the session records reference cases
-	// (WS-06) and the closed task qualifies for one.
-	RefCase *RefCaseRecord
-	// Label is set on EvtRunEnd when the session labels quality (WS-11) and
-	// the task just ended badly for good.
-	Label *LabelRecord
 	// CLISessionID is populated on EvtTaskDone with the CLI session id of the
-	// run that just finished (LEARN-TASKS.md LN-21) — captured before the
-	// next task's fresh id is rotated onto the Session, so a consumer never
-	// races that rotation by reading Session.CLISessionID back off the
-	// (long-lived, mutated-in-place) Session after the fact.
+	// run that just finished — captured before the next task's fresh id is
+	// rotated onto the Session, so a consumer never races that rotation by
+	// reading Session.CLISessionID back off the (long-lived, mutated-in-place)
+	// Session after the fact.
 	CLISessionID string
 	// RunStatus is set on EvtRunEnd: the session_runs status to record.
 	RunStatus string
-	Loop      *LoopAlert
 }
 
 // ActivityInfo is an Activity stamped with when it began (EvtActivity payload).
@@ -198,7 +191,10 @@ type Params struct {
 	ClaudePath  string
 	// HermesPath is the `hermes` binary for Config.Runtime == "hermes"
 	// (HERMES-TASKS.md HR-04); default "hermes".
-	HermesPath        string
+	HermesPath string
+	// KimiPath is the `kimi` binary for Config.Runtime == "kimi";
+	// default "kimi".
+	KimiPath          string
 	RetryDelay        int // seconds, fallback for non-rate-limit errors
 	RateLimitPauseSec int // seconds, fallback when no resetsAt is provided
 	OnEvent           EventCallback
@@ -221,15 +217,6 @@ type Params struct {
 	// CommandGuard mirrors GlobalSettings.CommandGuard: the CLI gets the
 	// manager's cmdguard PreToolUse hook via --settings.
 	CommandGuard bool
-	// EnvCard mirrors GlobalSettings.EnvCard: the environment card (envCard)
-	// is appended to the system prompt.
-	EnvCard bool
-	// ManagerCard is the Claude Manager card (managerCard) appended to the
-	// system prompt; empty when GlobalSettings.ManagerCard is off.
-	ManagerCard string
-	// LearnedRules is the "Learned from failures" block (LN-40) appended to
-	// the system prompt of a Claude session; empty = nothing appended.
-	LearnedRules string
 
 	// ResumeSessionID pre-seeds resumeSessionID for one immediate --resume on
 	// the first launch (see SessionManager.SetSessionModel: an interactive
@@ -240,63 +227,16 @@ type Params struct {
 	// value.
 	ResumeSessionID string
 
-	// Gates are the project's blocking check commands (ProjectConfig.Gates),
-	// passed through to PrimerFn — Session has no other access to project-level
-	// config beyond its own SessionConfig.
+	// Gates are the project's blocking check commands (ProjectConfig.Gates).
 	Gates []string
-	// PrimerFn builds the context-primer block (LEARN-TASKS.md LN-05); nil
-	// disables it regardless of Config.ContextPrimer (e.g. app.go wires it
-	// only when a store is open).
-	PrimerFn PrimerFunc
-	// GateRunFn records the outcome of a strict-gates run (WASTE-TASKS.md WS-07);
-	// nil unless [optimization] repo_suggestions is on.
-	GateRunFn GateRunFunc
 
 	// Optimization carries the global context-restart thresholds/mode
 	// ([optimization] in config.toml) that drive the mid-run context
-	// monitor (LEARN-TASKS.md LN-15). nil disables the monitor entirely
+	// monitor. nil disables the monitor entirely
 	// (Observe always returns ContextEventNone), matching a session started
 	// without a SessionManager behind it (e.g. in unit tests).
 	Optimization *config.OptimizationSettings
-
-	// LoopMemory remembers detected loops across runs and answers a repeated
-	// one with what broke it last time ([optimization] loop_memory, WASTE-TASKS.md
-	// WS-04). nil = off: the loop guard behaves as without it.
-	LoopMemory optimization.LoopMemory
-
-	// HandoffFn distills a compact recap of an in-flight task interrupted by
-	// a context restart (LEARN-TASKS.md LN-15); nil disables the handoff
-	// restart path regardless of Config.ContextHandoff (e.g. before app.go
-	// has wired it).
-	HandoffFn HandoffFunc
-
-	// ExcludeDynamic adds --exclude-dynamic-system-prompt-sections
-	// to Claude launches ([optimization] exclude_dynamic_system_prompt).
-	ExcludeDynamic bool
-	// MaxTurns is passed as --max-turns to Claude launches; 0 = no cap.
-	// Resolved by the manager from max_turns_auto_adjust and run history
-	// (launch_tuning.go).
-	MaxTurns int
 }
-
-// PrimerFunc builds the context-primer text prepended to a fresh run's
-// initial prompt (LEARN-TASKS.md LN-05). Declared here and consumed by
-// initialPromptText, wired from app.go to a closure over
-// experience.BuildPrimer — a direct import would cycle, since
-// internal/experience already imports internal/session for Step/TokenUsage
-// (same reasoning as ActionIndexFunc in manager.go).
-type PrimerFunc func(project, sessionName, projectPath, taskDesc string, gates []string) string
-
-// HandoffFunc distills a compact recap of an in-flight task interrupted by a
-// context-triggered restart (LEARN-TASKS.md LN-15): given the project/session
-// identity, the about-to-be-killed CLI session id (to locate its transcript),
-// the current task pointer and the live TodoWrite state (rendered as plain
-// lines), it returns the text to send as the first user turn of the fresh,
-// non-resumed process. Declared here and consumed by checkContextRestart,
-// wired from app.go to a closure over experience.BuildHandoffInput +
-// analysis.GenerateHandoff — a direct import would cycle, same reasoning as
-// PrimerFunc/JournalWriteFunc.
-type HandoffFunc func(project, sessionName, projectPath, cliSessionID, taskDesc string, todos []string) (string, error)
 
 // Session is a single Claude CLI process managed by a goroutine.
 // All fields are guarded by mu except where noted.
@@ -311,6 +251,7 @@ type Session struct {
 
 	claudePath string
 	hermesPath string
+	kimiPath   string
 	// runtime is the Runtime implementation selected once in New() from
 	// Config.Runtime (RUNTIME-TASKS.md RT-05). RT-06 routes runOnce's/
 	// runOnceHermes's argv building (Runtime.Args), atomics reset
@@ -323,12 +264,7 @@ type Session struct {
 	questionTimeout   time.Duration
 	onEvent           EventCallback
 	gates             []string
-	primerFn          PrimerFunc
-	gateRunFn         GateRunFunc
-	handoffFn         HandoffFunc
 	contextMonitor    *optimization.ContextMonitor
-	loopDetector      *optimization.LoopDetector
-	loopMemory        optimization.LoopMemory
 
 	mu              sync.Mutex
 	status          config.SessionStatus
@@ -368,33 +304,6 @@ type Session struct {
 	// turn back under the threshold re-arms contextMonitor (RearmBelow).
 	// Spans runs — it is deliberately not in resetRunAtomics.
 	contextRearm atomic.Bool
-	// loopRestartHit is set when loop_action "restart" stopped the run
-	// (loop_guard.go); Run treats it like a context restart.
-	loopRestartHit atomic.Bool
-	// afterLoopRestart marks a run started by such a restart: it only warns
-	// on a loop, so a task that loops again is not restarted forever.
-	afterLoopRestart atomic.Bool
-	// pendingLoopNote is put in front of the next run's prompt after such a
-	// restart (protected by mu; consumed by initialPromptText).
-	pendingLoopNote string
-	// pendingGateFeedback is the red gates' output sent back as the prompt of
-	// the next (resumed) run (WS-05; protected by mu; consumed by
-	// initialPromptBody, ahead of crash recovery).
-	pendingGateFeedback string
-	// refCap is the start of the task in flight and refSpanned the pointer
-	// whose task already spans several runs (WS-06 reference cases; protected
-	// by mu; see reference_case.go). refCasesFlag is [optimization]
-	// reference_cases as read when the session was built.
-	refCap       refCapture
-	refSpanned   string
-	refCasesFlag bool
-	// labelCap is the start of the task in flight for quality labels,
-	// qualityLabelsFlag is [optimization] quality_labels and lastGateFeedback
-	// the last red gate output of the task (WS-11; protected by mu; see
-	// quality_label.go).
-	labelCap          labelCapture
-	qualityLabelsFlag bool
-	lastGateFeedback  string
 	// endInput closes the live run's stdin (idempotent; protected by mu,
 	// nil between runs). It lets a context restart chosen later — from the
 	// "ask" question — end an interactive process idling between turns.
@@ -406,19 +315,14 @@ type Session struct {
 	continueMarkerHit atomic.Bool
 	stepLimitHit      atomic.Bool
 
-	// Launch tuning from [optimization], fixed for the session's lifetime
-	// (see Params.ExcludeDynamic / Params.MaxTurns).
-	excludeDynamic bool
-	maxTurns       int
 	// lastHermesConv is the Hermes conversation the last runOnceHermes left
 	// off in (protected by mu). A run that dies on a rate limit or an API
 	// error resumes it instead of starting the task over in a fresh one.
 	lastHermesConv string
-	// pendingHandoff is the distilled recap text (LEARN-TASKS.md LN-15) to
-	// send as the first user turn of the next runOnce call, set by
-	// checkContextRestart just before it kills the current process. Cleared
-	// by initialPromptText once consumed.
-	pendingHandoff string
+	// wireInitID is a conversation id captured from a stderr resume_hint
+	// (Kimi sometimes prints it there instead of stdout); hermesRunTurn falls
+	// back to it when stdout carried no init event. Guarded by mu.
+	wireInitID string
 	// initCommands is the slash-command list of the last Claude init line
 	// (protected by mu); nil until one arrives. See ListSlashCommands.
 	initCommands *claudeInitCommands
@@ -458,27 +362,8 @@ type Session struct {
 	pendingWorkDirNote string
 	startW             *startWatch // narrates CLI start-up until the init event
 
-	pythonUTF8   bool   // see Params.PythonUTF8
-	commandGuard bool   // see Params.CommandGuard
-	envCard      bool   // see Params.EnvCard
-	managerCard  string // see Params.ManagerCard
-	learnedRules string // see Params.LearnedRules
-
-	// Context-budget handoff (Config.HandoffContextTokens, see
-	// checkHandoffBudget), per run, protected by mu: the tag that marks the
-	// manager's notes, notes sent, over-budget model calls since the last
-	// note, and the previous usage total (every stream line of one call
-	// repeats its usage).
-	handoffTag     string
-	handoffNotes   int
-	handoffCalls   int
-	handoffLastCtx int
-
-	// Interactive context-budget question (checkInteractiveBudget), per
-	// process, protected by mu: whether the user was asked, and the context
-	// size that asks again.
-	budgetAsked bool
-	budgetNext  int
+	pythonUTF8   bool // see Params.PythonUTF8
+	commandGuard bool // see Params.CommandGuard
 
 	// lastCallUsage is the usage of the latest assistant message of the
 	// current turn (nil before the first), protected by mu: the context fill
@@ -560,6 +445,9 @@ func New(p Params) *Session {
 	if p.HermesPath == "" {
 		p.HermesPath = "hermes"
 	}
+	if p.KimiPath == "" {
+		p.KimiPath = "kimi"
+	}
 	if p.RetryDelay <= 0 {
 		p.RetryDelay = 30
 	}
@@ -577,30 +465,19 @@ func New(p Params) *Session {
 		CLISessionID:      uuid.NewString(),
 		claudePath:        p.ClaudePath,
 		hermesPath:        p.HermesPath,
+		kimiPath:          p.KimiPath,
 		runtime:           newRuntime(p.Config),
 		retryDelay:        p.RetryDelay,
 		rateLimitPauseSec: p.RateLimitPauseSec,
 		questionTimeout:   time.Duration(p.QuestionTimeoutSec) * time.Second,
 		onEvent:           p.OnEvent,
 		gates:             p.Gates,
-		primerFn:          p.PrimerFn,
-		gateRunFn:         p.GateRunFn,
-		handoffFn:         p.HandoffFn,
 		contextMonitor:    optimization.NewContextMonitor(p.Optimization, 0),
-		loopDetector:      optimization.NewLoopDetector(p.Optimization),
-		loopMemory:        p.LoopMemory,
-		refCasesFlag:      p.Optimization != nil && p.Optimization.ReferenceCases,
-		qualityLabelsFlag: p.Optimization != nil && p.Optimization.QualityLabels,
 		status:            config.StatusIdle,
 		stateStore:        p.StateStore,
 		crashRecovery:     p.CrashRecovery,
 		pythonUTF8:        p.PythonUTF8,
 		commandGuard:      p.CommandGuard,
-		envCard:           p.EnvCard,
-		managerCard:       p.ManagerCard,
-		learnedRules:      p.LearnedRules,
-		excludeDynamic:    p.ExcludeDynamic,
-		maxTurns:          p.MaxTurns,
 		activeModel:       p.Config.Model,
 		resumeSessionID:   p.ResumeSessionID,
 	}
@@ -1083,12 +960,6 @@ func (s *Session) Run(ctx context.Context) {
 	// two hours earlier fired on the rate-limit error and the session never
 	// resumed after the limit reset).
 	atTaskBoundary := true
-	// Strict gates (WS-05): reworking is true while the run in flight is a
-	// rework round sent back after red gates; gateRound counts those rounds.
-	// A rework run neither re-reads the queue (its task already left it) nor
-	// looks for a new pointer.
-	reworking := false
-	gateRound := 0
 	for {
 		if ctx.Err() != nil {
 			logger.L.Info("session.run.cancelled", "id", s.ID)
@@ -1123,7 +994,7 @@ func (s *Session) Run(ctx context.Context) {
 		// has pending tasks (mirrors orchestrator.py has_tasks()). The resolved
 		// description is shown in the UI whenever task_source is set, even if
 		// run_without_tasks is on — display and auto-stop are separate concerns.
-		if s.Config.TaskSource != "" && !reworking {
+		if s.Config.TaskSource != "" {
 			taskPath := s.Config.TaskSource
 			if !filepath.IsAbs(taskPath) {
 				taskPath = filepath.Join(s.ProjectPath, taskPath)
@@ -1177,10 +1048,8 @@ func (s *Session) Run(ctx context.Context) {
 		// it, so the outcome is judged by whether that pointer left the queue
 		// rather than by the agent's word for it.
 		pointerBefore := ""
-		if s.Config.TaskSource != "" && !reworking {
+		if s.Config.TaskSource != "" {
 			pointerBefore = firstTaskPointer(readTaskQueue(ctx, s.ProjectPath, s.Config.TaskSource))
-			s.beginReferenceCase(ctx, pointerBefore)
-			s.beginLabelCapture(ctx, pointerBefore)
 		}
 		err := s.runOnce(ctx, false)
 		atTaskBoundary = false
@@ -1355,13 +1224,7 @@ func (s *Session) Run(ctx context.Context) {
 				s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
 					Time: time.Now(), Level: "system", Source: "manager", Message: msg,
 				}})
-				// Unfinished run after run until the loop stops is a bad ending
-				// for good (WS-11); a single retried run is not.
-				var label *LabelRecord
-				if outcome == OutcomeUnfinished && unfinishedStreak+1 >= maxUnfinishedStreak {
-					label = s.badEndingLabel(ctx, LabelOutcomeUnfinishedLoop, "")
-				}
-				s.emit(SessionEvent{Type: EvtRunEnd, RunStatus: status, CLISessionID: finishedCLISessionID, Label: label})
+				s.emit(SessionEvent{Type: EvtRunEnd, RunStatus: status, CLISessionID: finishedCLISessionID})
 				if outcome == OutcomeUnfinished {
 					unfinishedStreak++
 					if unfinishedStreak >= maxUnfinishedStreak {
@@ -1381,27 +1244,6 @@ func (s *Session) Run(ctx context.Context) {
 				}
 				break
 			}
-			if s.strictGatesOn() {
-				switch s.checkStrictGates(ctx, &gateRound) {
-				case gatesRework:
-					reworking = true
-					continue
-				case gatesExhausted:
-					s.mu.Lock()
-					feedback := s.lastGateFeedback
-					s.mu.Unlock()
-					s.emit(SessionEvent{Type: EvtRunEnd, RunStatus: RunStatusUnfinished, CLISessionID: s.CLISessionID,
-						Label: s.badEndingLabel(ctx, LabelOutcomeGatesRed, feedback)})
-					s.setStatus(config.StatusError)
-					s.emitErr(fmt.Errorf("gates still red after %d rework rounds — stopped, the work folder is left as is for a person to look at",
-						s.Config.GateRounds))
-					return
-				}
-			}
-			refCase := s.finishReferenceCase(ctx, gateRound)
-			s.endLabelCapture()
-			reworking = false
-			gateRound = 0
 			unfinishedStreak = 0
 			atTaskBoundary = true
 			s.mu.Lock()
@@ -1414,13 +1256,9 @@ func (s *Session) Run(ctx context.Context) {
 			// affect the run loop (PLAN.md section 9).
 			s.runPostTaskHook(ctx)
 			// EvtTaskDone carries the CLI session id of the run that JUST
-			// finished (LEARN-TASKS.md LN-21) — finishRun's live-transcript
-			// indexer needs that exact id to find the right transcript.
-			// Rotating s.CLISessionID before this emit (the previous ordering)
-			// meant the manager's EvtTaskDone handler always read the NEXT
-			// task's not-yet-existing id instead, so IngestRun's FindTranscript
-			// failed on effectively every completed autonomous task.
-			s.emit(SessionEvent{Type: EvtTaskDone, TasksDone: done, CLISessionID: finishedCLISessionID, RefCase: refCase})
+			// finished — rotated only after this emit so observers never see
+			// the next task's id in place of the one that just finished.
+			s.emit(SessionEvent{Type: EvtTaskDone, TasksDone: done, CLISessionID: finishedCLISessionID})
 			// Each task gets a fresh CLI session: reusing the previous
 			// --session-id would resume the old conversation and drag the whole
 			// finished task's dialogue into the next task's context. Rotated
@@ -1621,7 +1459,7 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	// Runtime.Args, atomics reset via resetRunAtomics, outcome
 	// classification via classifySentinelError) is already shared.
 	if s.runtime.PerTurnProcess() {
-		return s.runOnceHermes(ctx, forceInteractive)
+		return s.runOncePerTurn(ctx, forceInteractive)
 	}
 
 	// In autonomous mode the manager owns the session lifecycle: one CLI process
@@ -1633,17 +1471,9 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	// and no task loop) keep stdin open so the user can continue the conversation.
 	autonomous := s.Config.AutoRestart && !forceInteractive
 
-	// A fresh process gets a fresh handoff tag (buildCLIArgs mints it).
-	s.mu.Lock()
-	s.handoffTag, s.handoffNotes, s.handoffCalls, s.handoffLastCtx = "", 0, 0, 0
-	s.budgetAsked, s.budgetNext = false, 0
-	s.mu.Unlock()
-
 	s.emitRunStartLog("Готовлю промпт…")
 	workDir, slot := s.prepareWorkDir(ctx)
-	s.captureRefBase(ctx, workDir)
-	s.captureLabelBase(ctx, workDir)
-	args := s.runtime.Args(s, autonomous, "", "")
+	args := s.runtime.Args(s, autonomous, "", "", "")
 
 	logger.L.Debug("session.launch",
 		"id", s.ID,
@@ -1870,17 +1700,8 @@ func (s *Session) initialPromptBody(forceInteractive bool) string {
 	s.mu.Lock()
 	recovering := s.resumeSessionID != ""
 	taskDesc := s.taskSourceDesc
-	handoff := s.pendingHandoff
-	s.pendingHandoff = ""
-	loopNote := s.pendingLoopNote
-	s.pendingLoopNote = ""
-	gateFeedback := s.pendingGateFeedback
-	s.pendingGateFeedback = ""
 	s.mu.Unlock()
 
-	if gateFeedback != "" {
-		return gateFeedback
-	}
 	if recovering {
 		if p := strings.TrimSpace(s.Config.CrashRecoveryPrompt); p != "" {
 			return p
@@ -1908,14 +1729,6 @@ func (s *Session) initialPromptBody(forceInteractive bool) string {
 		}
 		return b.String()
 	}
-	// Context handoff (LEARN-TASKS.md LN-15) takes over next: a compact
-	// distilled recap set by checkContextRestart just before the previous
-	// process was closed. Sent as-is, in place of the normal prompt, so the
-	// fresh (non-resumed) process picks the task back up instead of starting
-	// from scratch or blindly repeating the session's own configured prompt.
-	if handoff != "" {
-		return handoff
-	}
 	if forceInteractive {
 		return fmt.Sprintf(
 			"There are currently no pending tasks queued in %s. Skip the usual session-start task protocol — just "+
@@ -1933,21 +1746,6 @@ func (s *Session) initialPromptBody(forceInteractive bool) string {
 				"Follow the working protocol in the project's CLAUDE.md and the task file, and finish this one task.",
 			s.Config.TaskSource, taskDesc,
 		)
-	}
-	// Context primer (LEARN-TASKS.md LN-05): only in the plain-prompt branch —
-	// crash recovery and the no-tasks fallback above have their own semantics
-	// and are never prefixed. With the flag off (default) or no PrimerFn wired,
-	// prompt is unchanged, so this is byte-identical to before LN-05 existed.
-	// An empty prompt (an interactive session waiting for the user's first
-	// message) gets no primer: sent alone, a primer-only turn makes the model
-	// invent a question of its own and the user's real one waits behind it.
-	if prompt != "" && s.Config.ContextPrimer && s.primerFn != nil {
-		if primer := s.primerFn(s.ProjectName, s.Config.Name, s.ProjectPath, taskDesc, s.gates); primer != "" {
-			prompt = "--- Project state (auto-generated) ---\n" + primer + "\n\n" + prompt
-		}
-	}
-	if loopNote != "" {
-		prompt = loopNote + "\n\n" + prompt
 	}
 	return prompt
 }
@@ -1990,8 +1788,6 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 	s.mu.Lock()
 	s.lastActivity = time.Now()
 	s.mu.Unlock()
-
-	s.observeLoops(&ev)
 
 	if ev.Activity != nil {
 		s.setActivity(*ev.Activity)
@@ -2042,7 +1838,6 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 			s.mu.Lock()
 			s.lastCallUsage = &usage
 			s.mu.Unlock()
-			s.checkHandoffBudget(usage, autonomous)
 		}
 
 	case EventResult:
@@ -2125,12 +1920,7 @@ func (s *Session) handleEvent(ev ParsedEvent, autonomous bool) bool {
 				s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
 				return true
 			}
-			s.mu.Lock()
-			lastCall := s.lastCallUsage
-			s.mu.Unlock()
-			if !s.checkContextRestart(ev.Result, autonomous) {
-				s.checkInteractiveBudget(lastCall, autonomous)
-			}
+			s.checkContextRestart(ev.Result, autonomous)
 			s.emit(SessionEvent{Type: EvtResult, Result: ev.Result})
 		}
 		return true
@@ -2268,7 +2058,7 @@ func (s *Session) askContextQuestion(util float64, question string) {
 		ID:       uuid.NewString(),
 		Question: question,
 		Options:  contextRestartOptions,
-		AskedAt: time.Now(),
+		AskedAt:  time.Now(),
 	}
 	pq.onAnswer = func(answer string) error {
 		switch answer {
@@ -2311,36 +2101,15 @@ func (s *Session) compactInPlace(util float64) error {
 	return nil
 }
 
-// restartWithHandoff synchronously distills a compact handoff (via
-// handoffFn, if wired — a plain restart with no distilled recap otherwise)
-// and arms contextRestartHit, then closes stdin so the process exits even
-// for an interactive session that would otherwise keep the now-oversized
-// conversation open waiting for the next human turn.
+// restartWithHandoff arms contextRestartHit and closes stdin so the process
+// exits even for an interactive session that would otherwise keep the
+// now-oversized conversation open waiting for the next human turn. The next
+// run starts a fresh, non-resumed process.
 func (s *Session) restartWithHandoff(util float64) {
-	s.mu.Lock()
-	cliSessionID := s.CLISessionID
-	taskDesc := s.taskSourceDesc
-	todos := formatTodoLines(s.todos)
-	s.mu.Unlock()
-
 	s.emitManagerLog(fmt.Sprintf(
-		"Context usage reached %.0f%% — restarting with a compact handoff instead of --resume-ing this conversation.",
+		"Context usage reached %.0f%% — restarting with a fresh conversation instead of --resume-ing this one.",
 		util*100,
 	))
-
-	var handoff string
-	if s.handoffFn != nil {
-		h, err := s.handoffFn(s.ProjectName, s.Config.Name, s.ProjectPath, cliSessionID, taskDesc, todos)
-		if err != nil {
-			logger.L.Warn("session.context_restart.handoff_failed", "id", s.ID, "error", err)
-		} else {
-			handoff = h
-		}
-	}
-
-	s.mu.Lock()
-	s.pendingHandoff = handoff
-	s.mu.Unlock()
 	s.applyFailure(&TurnFailure{Kind: KindContextRestart})
 	s.mu.Lock()
 	endInput := s.endInput
@@ -2537,10 +2306,6 @@ func (s *Session) resetRunAtomics() {
 	s.sessionNotFoundHit.Store(false)
 	s.contextRestartHit.Store(false)
 	s.transientAPIHit.Store(false)
-	s.afterLoopRestart.Store(s.loopRestartHit.Swap(false))
-	if s.loopDetector != nil {
-		s.loopDetector.NewRun()
-	}
 	s.continueMarkerHit.Store(false)
 	s.stepLimitHit.Store(false)
 }
@@ -2573,10 +2338,6 @@ func (s *Session) classifySentinelError() error {
 	}
 	if s.contextRestartHit.Load() {
 		logger.L.Info("session.process_exit.context_restart", "id", s.ID)
-		return errContextRestart
-	}
-	if s.loopRestartHit.Load() {
-		logger.L.Info("session.process_exit.loop_restart", "id", s.ID)
 		return errContextRestart
 	}
 	return nil
@@ -2679,10 +2440,6 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 	s.mu.Lock()
 	resumeID := s.resumeSessionID
 	activeModel := s.activeModel
-	if s.Config.HandoffContextTokens > 0 && s.handoffTag == "" {
-		s.handoffTag = newHandoffTag()
-	}
-	handoffTag := s.handoffTag
 	s.mu.Unlock()
 
 	args := []string{
@@ -2724,14 +2481,6 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 	if s.Config.MaxBudgetUSD > 0 {
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(s.Config.MaxBudgetUSD, 'f', -1, 64))
 	}
-	// The cap guards unattended loops only. An interactive session (Chat) has
-	// the user watching, and a cut-off leaves their request half-done.
-	if s.maxTurns > 0 && autonomous {
-		args = append(args, "--max-turns", strconv.Itoa(s.maxTurns))
-	}
-	if s.excludeDynamic {
-		args = append(args, "--exclude-dynamic-system-prompt-sections")
-	}
 	// No --worktree: the CLI runs inside the session's persistent pool slot
 	// (prepareWorkDir), never in a throwaway worktree of its own.
 	if len(s.Config.AllowedTools) > 0 {
@@ -2741,45 +2490,20 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 		args = append(args, "--disallowedTools", strings.Join(s.Config.DisallowedTools, " "))
 	}
 	if s.commandGuard {
-		if exe, err := selfExe(); err == nil {
+		if exe, err := os.Executable(); err == nil {
 			args = append(args, "--settings", cmdguard.SettingsJSON(exe))
 		}
 	}
-	card := ""
-	if s.envCard {
-		card = envCard(hostProbe(), s.ProjectPath)
-	}
-	if s.managerCard != "" {
-		if card != "" {
-			card += "\n\n"
-		}
-		card += s.managerCard
-	}
 	interactiveAsk := !autonomous && s.Config.AskUserMarker
-	if s.Config.SystemPromptAppend != "" || autonomous || interactiveAsk || card != "" || s.learnedRules != "" {
+	if s.Config.SystemPromptAppend != "" || autonomous || interactiveAsk {
 		combined := strings.TrimSpace(s.Config.SystemPromptAppend)
 		if (autonomous || interactiveAsk) && combined != "" {
 			combined += "\n\n"
 		}
 		if autonomous {
 			combined += askUserProtocolPrompt + "\n\n" + backgroundTaskWarningPrompt
-			if s.Config.HandoffContextTokens > 0 {
-				combined += "\n\n" + handoffBudgetPrompt(handoffTag)
-			}
 		} else if interactiveAsk {
 			combined += askUserInteractivePrompt
-		}
-		if card != "" {
-			if combined != "" {
-				combined += "\n\n"
-			}
-			combined += card
-		}
-		if s.learnedRules != "" {
-			if combined != "" {
-				combined += "\n\n"
-			}
-			combined += s.learnedRules
 		}
 		args = append(args, "--append-system-prompt", combined)
 	}

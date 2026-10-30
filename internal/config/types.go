@@ -154,7 +154,10 @@ type GlobalSettings struct {
 	ClaudePath string `toml:"claude_path"`
 	// HermesPath is the `hermes` binary used by sessions with
 	// runtime = "hermes" (HERMES-TASKS.md HR-02). Default "hermes".
-	HermesPath        string `toml:"hermes_path"`
+	HermesPath string `toml:"hermes_path"`
+	// KimiPath is the `kimi` binary used by sessions with runtime = "kimi"
+	// (Kimi Code CLI, `kimi -p --output-format stream-json`). Default "kimi".
+	KimiPath          string `toml:"kimi_path"`
 	DefaultRetryDelay int    `toml:"default_retry_delay"`
 	RateLimitPause    int    `toml:"rate_limit_pause"`
 	LogRetentionDays  int    `toml:"log_retention_days"`
@@ -357,10 +360,10 @@ type ProjectConfig struct {
 }
 
 type SessionConfig struct {
-	Name            string `toml:"name"`
-	Prompt          string `toml:"prompt"`
-	AutoRestart     bool   `toml:"auto_restart"`
-	MaxTasks        int    `toml:"max_tasks"`
+	Name        string `toml:"name"`
+	Prompt      string `toml:"prompt"`
+	AutoRestart bool   `toml:"auto_restart"`
+	MaxTasks    int    `toml:"max_tasks"`
 	// RunWithoutTasks keeps launching runs when task_source has no pending
 	// tasks. Off (zero) = stop and open a plain interactive session.
 	RunWithoutTasks bool `toml:"run_without_tasks"`
@@ -466,8 +469,15 @@ type SessionConfig struct {
 // RuntimeHermes is the SessionConfig.Runtime value that drives `hermes`.
 const RuntimeHermes = "hermes"
 
+// RuntimeKimi is the SessionConfig.Runtime value that drives `kimi`
+// (Kimi Code CLI: one `kimi -p` process per turn, resumed by --session).
+const RuntimeKimi = "kimi"
+
 // IsHermes reports whether the session runs on the Hermes CLI runtime.
 func (s SessionConfig) IsHermes() bool { return s.Runtime == RuntimeHermes }
+
+// IsKimi reports whether the session runs on the Kimi Code CLI runtime.
+func (s SessionConfig) IsKimi() bool { return s.Runtime == RuntimeKimi }
 
 type PermissionRule struct {
 	Tool     string `toml:"tool"`     // "Bash", "Edit", "Write", "*"

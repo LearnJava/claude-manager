@@ -2,10 +2,13 @@
 
 Desktop app (Windows) to launch, monitor, and control parallel Claude Code CLI sessions across multiple projects.
 
+> **Branch `slim-for-kimi`:** the experience layer and its WS follow-ups (transcript mining, skills/rules autopilot, primer, journal, handoff distillation, env/manager cards, launch tuning, loop detection, benchmarks, suggestions, nightly gates) are removed — they made sessions measurably slower (see the A/B pilot below). Kept: projects/parallel sessions, worktree pool, task queues, permissions, the live feed and queue/roadmap panels, history/cost, mixed programming, MCP/control-plane, mirror/logship, cmdguard. Runtime seam widened: `Runtime` now carries `Capabilities` (resume/effort/permission protocol/cost/token usage/images/prompt-arg) plus `Binary`/`Env`/`ClassifyStderr`/`Preamble`/`WarnOptions` and the optional `TurnExpander`/`TurnFinisher` hooks, and the per-turn loop (`runOncePerTurn`) is runtime-generic — it drives Hermes and the new **Kimi** runtime (`kimi -p --output-format stream-json`, one process per turn, resume by `--session`). The real Kimi 2.x wire has no init/result events: the conversation id arrives as a `session.resume_hint` meta event and the turn's `EventResult` is synthesized in `kimiStream.Flush`.
+
 ## Documentation map
 
 | Doc | Covers |
 |---|---|
+| [docs/slim-for-kimi.md](./docs/slim-for-kimi.md) | This branch: what was removed and why, the Kimi runtime and its real 2.x wire, verification results, remaining work (Playwright run, GUI smoke, ACP later) |
 | [docs/architecture.md](./docs/architecture.md) | Tech stack, package/component tree, the Wails-bound method table (`app.go`), SQLite schema, file logging, build commands |
 | [docs/design-decisions.md](./docs/design-decisions.md) | The *why* behind every non-obvious choice: config layering, bidirectional streaming, permissions, crash recovery, context handoff, the mixed-programming and experience-layer subsystems, and everything else under "Key Design Decisions" |
 | [docs/testing-harness.md](./docs/testing-harness.md) | fakeclaude/fakeworker, the control-plane, `cm-mcp` — how to test without spending API tokens, and how Claude itself drives the running app for GUI testing |

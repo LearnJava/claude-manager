@@ -33,6 +33,43 @@ export const MODELS: ModelOption[] = [
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 /**
+ * What each CLI backend actually supports (mirrors session.Capabilities in
+ * internal/session/runtime.go). UI components key on these flags instead of
+ * hardcoding runtime names: a per-turn runtime cannot be interrupted, one
+ * without effort hides the effort picker, one without cost shows "no data"
+ * instead of $0.
+ */
+export interface RuntimeCapabilities {
+    resume: boolean;
+    effort: boolean;
+    permissionProtocol: boolean;
+    cost: boolean;
+    tokenUsage: boolean;
+    images: boolean;
+    perTurnProcess: boolean;
+}
+
+export const RUNTIME_CAPABILITIES: Record<string, RuntimeCapabilities> = {
+    claude: { resume: true, effort: true, permissionProtocol: true, cost: true, tokenUsage: true, images: true, perTurnProcess: false },
+    hermes: { resume: true, effort: true, permissionProtocol: false, cost: false, tokenUsage: true, images: true, perTurnProcess: true },
+    kimi: { resume: true, effort: false, permissionProtocol: false, cost: false, tokenUsage: false, images: false, perTurnProcess: true },
+};
+
+export function capabilitiesOf(runtime: string | null | undefined): RuntimeCapabilities {
+    return RUNTIME_CAPABILITIES[runtime ?? ''] ?? RUNTIME_CAPABILITIES.claude;
+}
+
+/** Model catalog for the Kimi Code CLI (`-m` alias from its own config). */
+export const KIMI_MODELS: ModelOption[] = [
+    { value: 'kimi-code/kimi-for-coding', label: 'Kimi for Coding' },
+];
+
+/** MODELS for Claude/Hermes, KIMI_MODELS for the Kimi runtime. */
+export function modelsFor(runtime: string | null | undefined): ModelOption[] {
+    return (runtime ?? '') === 'kimi' ? KIMI_MODELS : MODELS;
+}
+
+/**
  * Maps any spelling of a model onto the canonical value from MODELS.
  * An unrecognised model is returned trimmed but otherwise untouched — a
  * custom/pinned id the user typed in Settings must still round-trip.

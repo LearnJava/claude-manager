@@ -130,7 +130,7 @@ type hermesTurn struct {
 	questions []Question
 }
 
-func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) error {
+func (s *Session) runOncePerTurn(ctx context.Context, forceInteractive bool) error {
 	autonomous := s.Config.AutoRestart && !forceInteractive
 	s.emitRunStartLog("Готовлю промпт…")
 	s.prepareWorkDir(ctx)
@@ -163,15 +163,15 @@ func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) erro
 
 	prompt := s.initialPromptText(forceInteractive)
 	var images []ImageAttachment
-	// Hermes has no --append-system-prompt: the session's own append text
-	// and the autonomous-run protocol ride in front of the FIRST turn of a
-	// fresh conversation instead (a resumed one already has them).
+	// A per-turn runtime has no --append-system-prompt: the session's own
+	// append text and the autonomous-run protocol ride in front of the FIRST
+	// turn of a fresh conversation instead (a resumed one already has them).
 	if convID == "" && prompt != "" {
-		if pre := s.hermesPreamble(autonomous); pre != "" {
+		if pre := s.runtime.Preamble(s, autonomous); pre != "" {
 			prompt = pre + "\n\n---\n\n" + prompt
 		}
 	}
-	s.warnUnsupportedHermesOptions()
+	s.runtime.WarnOptions(s)
 
 	s.setStatus(config.StatusWorking)
 	for {
@@ -210,24 +210,31 @@ func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) erro
 			s.askQuestions(turn.questions, autonomous)
 			continue
 		}
-		if autonomous && turn.sessionID != "" && hermesTurnHitStepLimit(s.hermesStateDB(), turn.sessionID) {
-			s.applyFailure(&TurnFailure{Kind: KindStepLimit})
-			logger.L.Warn("session.hermes.step_limit", "id", s.ID, "conversation", turn.sessionID)
-			s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
-				Time: time.Now(), Level: "system", Source: "manager",
-				Message: "Turn stopped by Hermes' step limit (--max-turns) — the agent was cut off mid-task",
-			}})
-		}
 		if autonomous && turn.finished {
-			return nil
+			// An ask-user marker means the turn is over but the conversation
+			// is paused on a human answer, not done: wait for it on inputCh
+			// instead of ending the run (Claude's close-stdin-on-result would
+			// have the same effect there).
+			s.mu.Lock()
+			waiting := s.pendingQuestion != nil
+			s.mu.Unlock()
+			if !waiting {
+				return nil
+			}
 		}
 		// Interactive session, or an autonomous one paused on an ask-user
 		// question: the next turn starts when a message/answer arrives.
 	}
 }
 
-// hermesRunTurn launches one `hermes chat` process for one user turn and
-// streams its output through handleEvent.
+// runOnceHermes is kept for the existing Hermes tests; the loop itself is
+// runtime-generic and also drives Kimi (one process per turn).
+func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) error {
+	return s.runOncePerTurn(ctx, forceInteractive)
+}
+
+// hermesRunTurn launches one CLI process for one user turn and streams its
+// output through handleEvent.
 func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []ImageAttachment, convID string, autonomous bool) (hermesTurn, error) {
 	var turn hermesTurn
 
@@ -236,36 +243,43 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 		logger.L.Warn("session.hermes.image", "id", s.ID, "error", err)
 	}
 	defer cleanup()
+	if len(images) > 0 && !s.runtime.Capabilities().Images {
+		s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
+			Time: time.Now(), Level: "system", Source: "manager",
+			Message: s.runtime.Name() + " runtime does not accept image attachments — sending text only",
+		}})
+		imagePath = ""
+	}
 
-	args := s.runtime.Args(s, autonomous, convID, imagePath)
-	// A leading "/skill" is the "/" autocomplete's pick: Hermes' -Q path
-	// would pass it to the model as text, so it becomes `-s` instead. The
-	// log below keeps showing what the user typed.
 	shown := prompt
-	if strings.HasPrefix(prompt, "/") {
-		var skills []string
-		prompt, skills = expandHermesSkills(prompt, hermesSkillCommands(hermesHome(s.Config.HermesProfile)))
-		for _, sk := range skills {
-			args = append(args, "-s", sk)
-		}
+	args := s.runtime.Args(s, autonomous, convID, imagePath, prompt)
+	if ex, ok := s.runtime.(TurnExpander); ok {
+		var extra []string
+		prompt, extra = ex.ExpandPrompt(s, prompt)
+		args = append(args, extra...)
 	}
 	turnStart := time.Now()
 	workDir := s.runDir()
-	logger.L.Debug("session.launch", "id", s.ID, "hermes", s.hermesPath, "cwd", workDir,
+	logger.L.Debug("session.launch", "id", s.ID, "runtime", s.runtime.Name(), "binary", s.runtime.Binary(s), "cwd", workDir,
 		"args", strings.Join(args, " "))
 
 	// turnCtx lets a `clarify` call end this one process without ending the run.
 	turnCtx, cancelTurn := context.WithCancel(ctx)
 	defer cancelTurn()
-	cmd := exec.CommandContext(turnCtx, s.hermesPath, args...)
+	cmd := exec.CommandContext(turnCtx, s.runtime.Binary(s), args...)
 	proc.HideConsole(cmd)
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
-	// The query goes through stdin (--query-file -), never argv: nothing is
-	// shell- or argv-quoted, so any prompt text arrives verbatim.
-	cmd.Stdin = strings.NewReader(prompt)
-	cmd.Env = hermesEnv(os.Environ(), s.ProjectPath)
+	if s.runtime.Capabilities().PromptArg {
+		// The prompt is already inline in argv (kimi -p) — nothing on stdin.
+		cmd.Stdin = strings.NewReader("")
+	} else {
+		// The query goes through stdin (--query-file -), never argv: nothing is
+		// shell- or argv-quoted, so any prompt text arrives verbatim.
+		cmd.Stdin = strings.NewReader(prompt)
+	}
+	cmd.Env = s.runtime.Env(s, os.Environ())
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -279,7 +293,7 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 		logger.L.Error("session.spawn_failed", "id", s.ID, "error", err)
 		return turn, fmt.Errorf("start hermes: %w", err)
 	}
-	logger.L.Info("session.spawned", "id", s.ID, "pid", cmd.Process.Pid, "runtime", "hermes")
+	logger.L.Info("session.spawned", "id", s.ID, "pid", cmd.Process.Pid, "runtime", s.runtime.Name())
 	s.beginStartWatch(cmd.Process.Pid)
 	defer s.endStartWatch()
 
@@ -314,7 +328,7 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 		s.drainHermesStderr(stderr)
 	}()
 
-	stream := newHermesStream()
+	parser := s.runtime.NewParser()
 	s.setActivity(Activity{Kind: ActivityThinking}) // until the first event says otherwise
 	dispatch := func(evs []ParsedEvent) {
 		for _, ev := range evs {
@@ -322,11 +336,11 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 				turn.sessionID = ev.Init.SessionID
 			}
 			if ev.EventType == EventResult && ev.Result != nil && ev.Result.StopReason == "error" {
-				turn.failed = stream.lastError
-				if info, ok := detectRateLimitText(stream.lastError); ok {
+				turn.failed = parser.LastError()
+				if info, ok := detectRateLimitText(parser.LastError()); ok {
 					s.onRateLimit(info)
 				}
-				s.applyFailure(ClassifyStderrLine(stream.lastError))
+				s.applyFailure(ClassifyStderrLine(parser.LastError()))
 			}
 			if s.handleEvent(ev, autonomous) {
 				turn.finished = true
@@ -349,35 +363,28 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for turn.questions == nil && scanner.Scan() {
-		dispatch(stream.Parse(scanner.Text()))
+		dispatch(parser.Parse(scanner.Text()))
 	}
 	if turn.questions == nil {
-		dispatch(stream.Flush())
+		dispatch(parser.Flush())
 	}
 	scanErr := scanner.Err()
 	<-stderrDone
 	waitErr := cmd.Wait()
+	if turn.sessionID == "" {
+		s.mu.Lock()
+		turn.sessionID = s.wireInitID
+		s.wireInitID = ""
+		s.mu.Unlock()
+	}
 
-	// A failed turn whose own log lines show a 429 was a spent usage limit,
-	// whatever error Hermes reported last (see hermesTurnHitRateLimit).
-	if turn.failed != "" && !s.rateLimited.Load() {
-		conv := turn.sessionID
-		if conv == "" {
-			conv = convID
-		}
-		if hermesTurnHitRateLimit(s.hermesAgentLog(), conv, turnStart) {
-			logger.L.Warn("session.hermes.rate_limit_in_log", "id", s.ID, "conversation", conv, "reported", turn.failed)
-			s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
-				Time: time.Now(), Level: "system", Source: "manager",
-				Message: "Hermes hit the API usage limit (429) — waiting for it to reset, then continuing this conversation",
-			}})
-			s.onRateLimit(&RateLimitInfo{Status: "exceeded", RateLimitType: "hermes_429", Utilization: 1.0})
-		}
+	if fin, ok := s.runtime.(TurnFinisher); ok {
+		fin.AfterTurn(s, turn, convID, turnStart)
 	}
 
 	if turn.questions != nil {
 		s.setActivity(Activity{Kind: ActivityIdle})
-		logger.L.Info("session.process_exit", "id", s.ID, "clarify", true, "runtime", "hermes")
+		logger.L.Info("session.process_exit", "id", s.ID, "clarify", true, "runtime", s.runtime.Name())
 		return turn, nil
 	}
 	if waitErr != nil && turn.failed == "" && ctx.Err() == nil {
@@ -387,7 +394,7 @@ func (s *Session) hermesRunTurn(ctx context.Context, prompt string, images []Ima
 	if scanErr != nil {
 		return turn, fmt.Errorf("stdout scan: %w", scanErr)
 	}
-	logger.L.Info("session.process_exit", "id", s.ID, "ok", turn.failed == "", "runtime", "hermes")
+	logger.L.Info("session.process_exit", "id", s.ID, "ok", turn.failed == "", "runtime", s.runtime.Name())
 	return turn, nil
 }
 
@@ -503,10 +510,10 @@ func (s *Session) warnUnsupportedHermesOptions() {
 	}})
 }
 
-// drainHermesStderr is drainStderr for Hermes. Hermes writes diagnostics
-// and its own `session_id: …` trailer to stderr on every successful turn, so
-// lines are logged as "system", not "error"; rate-limit and auth detection
-// still run on every line.
+// drainHermesStderr is drainStderr for a per-turn runtime. Lines are logged
+// as "system" (Hermes writes diagnostics and its own `session_id: …` trailer
+// to stderr on every successful turn); rate-limit and auth detection still
+// run on every line, classified by the session's own runtime.
 func (s *Session) drainHermesStderr(r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 32*1024), 1024*1024)
@@ -519,9 +526,17 @@ func (s *Session) drainHermesStderr(r io.Reader) {
 		if info, ok := detectRateLimitText(line); ok {
 			s.onRateLimit(info)
 		}
-		s.applyFailure(ClassifyHermesStderrLine(line))
+		if initer, ok := s.runtime.(StderrIniter); ok {
+			if sid, found := initer.SessionIDFromStderr(line); found {
+				s.mu.Lock()
+				s.wireInitID = sid
+				s.mu.Unlock()
+				s.emit(SessionEvent{Type: EvtInit, Init: &InitInfo{SessionID: sid}})
+			}
+		}
+		s.applyFailure(s.runtime.ClassifyStderr(line))
 		s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
-			Time: time.Now(), Level: "system", Source: "hermes", Message: line,
+			Time: time.Now(), Level: "system", Source: s.runtime.Name(), Message: line,
 		}})
 	}
 }

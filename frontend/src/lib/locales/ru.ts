@@ -15,11 +15,7 @@ import permissionBanner from './ru/permissionBanner';
 import permissionQueue from './ru/permissionQueue';
 import questionBanner from './ru/questionBanner';
 import resumePrompt from './ru/resumePrompt';
-import hookRules from './ru/hookRules';
-import suggestions from './ru/suggestions';
-import learned from './ru/learned';
 import waiting from './ru/waiting';
-import quality from './ru/quality';
 import modelPicker from './ru/modelPicker';
 import logStream from './ru/logStream';
 import roadmapTree from './ru/roadmapTree';
@@ -27,8 +23,6 @@ import roadmapNode from './ru/roadmapNode';
 import history from './ru/history';
 import costDashboard from './ru/costDashboard';
 import planReview from './ru/planReview';
-import skillReview from './ru/skillReview';
-import experiencePanel from './ru/experiencePanel';
 import mixedRun from './ru/mixedRun';
 import settings from './ru/settings';
 import contextMenu from './ru/contextMenu';
@@ -50,11 +44,7 @@ export default {
     ...permissionQueue,
     ...questionBanner,
     ...resumePrompt,
-    ...hookRules,
-    ...suggestions,
-    ...learned,
     ...waiting,
-    ...quality,
     ...modelPicker,
     ...logStream,
     ...roadmapTree,
@@ -62,8 +52,6 @@ export default {
     ...history,
     ...costDashboard,
     ...planReview,
-    ...skillReview,
-    ...experiencePanel,
     ...mixedRun,
     ...settings,
     ...contextMenu,

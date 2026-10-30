@@ -35,6 +35,9 @@ export default {
     'sessionCard.contextTooltip': 'Использование окна контекста',
     'sessionCard.useHermesLabel': 'Use Hermes',
     'sessionCard.useHermesTooltip': 'Сессию ведёт Hermes CLI',
+    'sessionCard.useKimiLabel': 'Use Kimi',
+    'sessionCard.useKimiTooltip': 'Сессию ведёт Kimi Code CLI',
+    'sessionCard.costNoData': 'нет данных',
     'sessionCard.useClaudeCodeLabel': 'Use Claude Code',
     'sessionCard.useClaudeCodeTooltip': 'Сессию ведёт Claude Code CLI',
 } as Record<string, string>;

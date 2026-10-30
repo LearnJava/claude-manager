@@ -1,7 +1,6 @@
 package control
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -200,34 +199,6 @@ func interactionTools() []Tool {
 			},
 			Summary: func(in ruleIn, out ruleAck) string {
 				return fmt.Sprintf("Rule %s %s added to %s.", in.Decision, in.Tool, out.SessionID)
-			},
-		}),
-		define(spec[candidatesIn, candidatesOut]{
-			Name: "get_permission_candidates", Title: "Suggest permission rules",
-			Doc: Doc{
-				What:    "Suggest auto-allow rules from a project's permission history: requests that keep recurring and were always approved.",
-				UseWhen: "sessions keep stopping on the same permission prompts.",
-				NotFor:  "listing what waits now (use get_pending_permissions).",
-				Returns: "safe (read-only, ready for add_permission_rule) and needs_review; both are empty unless experience tracking was on.",
-				Effects: "none, read only.",
-				Example: `{"project":"lumen","days":30}`,
-			},
-			Input: func(props map[string]*jsonschema.Schema) {
-				d := props["days"]
-				d.Minimum, d.Default = fptr(1), json.RawMessage("30")
-			},
-			Level: LevelRead, Annotations: ro, Covers: []string{"GetPermissionCandidates"},
-			Translate: func(in candidatesIn) (string, any, error) {
-				return "/rpc", rpcCallBody("GetPermissionCandidates", map[string]any{
-					"project": in.Project, "days": orDefault(in.Days, 30),
-				}), nil
-			},
-			Result: func(_ candidatesIn, raw any) candidatesOut {
-				m, _ := raw.(map[string]any)
-				return candidatesOut{Safe: list(m["safe"]), NeedsReview: list(m["needs_review"])}
-			},
-			Summary: func(_ candidatesIn, out candidatesOut) string {
-				return fmt.Sprintf("%d safe, %d needs review.", len(out.Safe), len(out.NeedsReview))
 			},
 		}),
 		define(spec[planIn, planDetailOut]{

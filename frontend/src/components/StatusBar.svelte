@@ -10,7 +10,6 @@
         todayTokens,
         appStartedAt,
         rateLimitStatus,
-        regressionAlerts,
     } from '../stores/sessions';
     import { costUnit, toggleCostUnit } from '../stores/units';
     import { formatDuration, formatTokens, tokenSplitLabel } from '../lib/formatters';
@@ -69,7 +68,6 @@
     $: uptimeStr = fmtUptime($appStartedAt.getTime(), now);
     $: rlInfo = $rateLimitStatus;
     $: rlUtil = rlInfo ? (rlInfo.utilization ?? rlInfo.Utilization) : undefined;
-    $: regressions = $regressionAlerts.length;
     // The button exists only with [optimization] waiting_screen on; at zero it
     // still opens the screen (an empty list reads as "all clear").
     $: waitingForYou = $waitingItems.length;
@@ -80,10 +78,6 @@
 
     function openWaiting() {
         dispatch('openWaiting');
-    }
-
-    function openRegressions() {
-        dispatch('openDashboard');
     }
 </script>
 
@@ -123,17 +117,6 @@
     <span class={errors > 0 ? 'text-status-error' : ''}>
         {$t('statusBar.errorsLabel', { count: errors })}
     </span>
-
-    {#if regressions > 0}
-        <button
-            class="text-status-error hover:underline focus:outline-none flex items-center gap-1"
-            on:click={openRegressions}
-            title={$t('statusBar.openDashboardTooltip')}
-            type="button">
-            <span>⚠</span>
-            <span>{$t('statusBar.regressionsLabel', { count: regressions })}</span>
-        </button>
-    {/if}
 
     <!--
         Tokens lead, dollars follow. Click switches which one is the headline;

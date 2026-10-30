@@ -2,6 +2,7 @@
     import type { SessionState } from '../stores/sessions';
     import { t } from '../lib/i18n';
     import { tick } from 'svelte';
+    import { capabilitiesOf } from '../lib/models';
     import { ListSlashCommands, SendMessage, SendMessageWithImages } from '../../wailsjs/go/main/App';
     import {
         applySlashCommand,
@@ -50,7 +51,12 @@
     $: matches = query === null ? [] : filterSlashCommands(commands, query).slice(0, MAX_MATCHES);
     $: menuOpen = query !== null && !menuDismissed && commandsLoaded;
     $: query, (menuIndex = 0);
-    $: isHermes = session?.runtime === 'hermes';
+    $: caps = capabilitiesOf(session?.runtime);
+    $: slashHeader = session?.runtime === 'hermes'
+        ? $t('sessionInput.slash.header.hermes')
+        : session?.runtime === 'kimi'
+            ? $t('sessionInput.slash.header.kimi')
+            : $t('sessionInput.slash.header.claude');
 
     async function loadCommands(id: string) {
         commandsLoaded = false;
@@ -94,6 +100,7 @@
     }
 
     async function onPaste(e: ClipboardEvent) {
+        if (!caps.images) return;
         const items = e.clipboardData?.items;
         if (!items) return;
         const imageItems = Array.from(items).filter((it) => it.type.startsWith('image/'));
@@ -205,7 +212,7 @@
                        rounded shadow-lg text-sm"
                 data-testid="slash-menu">
                 <div class="flex justify-between gap-2 px-2 py-1 text-[11px] text-text-dim border-b border-bg-border">
-                    <span>{isHermes ? $t('sessionInput.slash.header.hermes') : $t('sessionInput.slash.header.claude')}</span>
+                    <span>{slashHeader}</span>
                     <span>{$t('sessionInput.slash.hint')}</span>
                 </div>
                 {#if matches.length === 0}

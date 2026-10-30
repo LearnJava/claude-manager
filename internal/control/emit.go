@@ -215,8 +215,7 @@ var EventNames = []string{
 	session.EventNameTaskSource, session.EventNameInit, session.EventNameResult,
 	session.EventNameError, session.EventNameStopReq, session.EventNameQueueChanged,
 	session.EventNamePlanStatus, session.EventNameRoadmapProgress,
-	session.EventNameBudgetAlert, session.EventNameLoopAlert, session.EventNameSkillsChanged,
-	session.EventNameSkillProgress, session.EventNameRegression, session.EventNameImportProgress,
+	session.EventNameBudgetAlert,
 	worker.EventRound, worker.EventPatch, worker.EventGate, worker.EventDone,
 }
 

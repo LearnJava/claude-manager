@@ -1,7 +1,6 @@
 package session
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -421,78 +420,6 @@ func TestHandlePermissionQueuesWhenNoRuleMatches(t *testing.T) {
 	}
 }
 
-// TestRecordPermissionEvent_GatedOnExperienceTracking (LEARN-TASKS.md LN-04):
-// with the flag off (the default), handlePermission's auto-allow path must
-// not touch the store at all — same "off means nothing is read/written"
-// contract as the transcript indexer (LN-03).
-func TestRecordPermissionEvent_GatedOnExperienceTracking(t *testing.T) {
-	m, st := newTestManagerWithStore(t)
-	ms := addStubSession(m, "lumen", "P1")
-	ms.session.Config.PermissionRules = []config.PermissionRule{
-		{Tool: "Bash", Pattern: "ls", Decision: "allow"},
-	}
-	// ExperienceTracking left at its zero value (false).
-
-	m.handlePermission(ms, &PermissionRequest{ID: "r1", Tool: "Bash", Command: "ls"})
-
-	rows, err := st.PermissionEventsForProject("lumen")
-	if err != nil {
-		t.Fatalf("PermissionEventsForProject: %v", err)
-	}
-	if len(rows) != 0 {
-		t.Errorf("expected no permission_events rows with experience_tracking off, got %+v", rows)
-	}
-}
-
-// TestHandlePermission_RecordsAutoDecision: with the flag on, a config-rule
-// auto-allow is recorded with Auto=true.
-func TestHandlePermission_RecordsAutoDecision(t *testing.T) {
-	m, st := newTestManagerWithStore(t)
-	m.cfg.Optimization.ExperienceTracking = true
-	ms := addStubSession(m, "lumen", "P1")
-	ms.session.Config.PermissionRules = []config.PermissionRule{
-		{Tool: "Bash", Pattern: "ls", Decision: "allow"},
-	}
-
-	m.handlePermission(ms, &PermissionRequest{ID: "r1", Tool: "Bash", Command: "ls"})
-
-	rows, err := st.PermissionEventsForProject("lumen")
-	if err != nil {
-		t.Fatalf("PermissionEventsForProject: %v", err)
-	}
-	if len(rows) != 1 {
-		t.Fatalf("got %d rows, want 1", len(rows))
-	}
-	if !rows[0].Auto || rows[0].Decision != "allow" || rows[0].Tool != "Bash" || rows[0].Pattern != "ls" {
-		t.Errorf("unexpected row: %+v", rows[0])
-	}
-}
-
-// TestRespondPermission_RecordsHumanDecision: a human decision through
-// RespondPermission is recorded with Auto=false.
-func TestRespondPermission_RecordsHumanDecision(t *testing.T) {
-	m, st := newTestManagerWithStore(t)
-	m.cfg.Optimization.ExperienceTracking = true
-	ms := addStubSession(m, "lumen", "P1")
-
-	req := permission.PermissionRequest{
-		ID: "r5", SessionID: ms.session.ID, Tool: "Bash", Command: "npm test",
-	}
-	m.queue.Add(req)
-	_ = m.RespondPermission(ms.session.ID, "r5", "allow")
-
-	rows, err := st.PermissionEventsForProject("lumen")
-	if err != nil {
-		t.Fatalf("PermissionEventsForProject: %v", err)
-	}
-	if len(rows) != 1 {
-		t.Fatalf("got %d rows, want 1", len(rows))
-	}
-	if rows[0].Auto || rows[0].Decision != "allow" || rows[0].Pattern != "npm test" {
-		t.Errorf("unexpected row: %+v", rows[0])
-	}
-}
-
 func TestRespondPermissionRegistersRuntimeRule(t *testing.T) {
 	m := newTestManager(t)
 	ms := addStubSession(m, "lumen", "P1")
@@ -643,104 +570,6 @@ type indexCall struct {
 // JSONL transcript can't be found. The two used to run as independent
 // fire-and-forget goroutines with no ordering guarantee between them; now
 // autosave always completes before the indexer call in the same goroutine.
-func TestFinishRun_IndexerReceivesAutosavedLogPath(t *testing.T) {
-	m, _ := newTestManagerWithStore(t)
-	ms := addStubSession(m, "lumen", "P1")
-	ms.session.CLISessionID = "cli-123"
-
-	m.cfg.Optimization.ExperienceTracking = true
-	calls := make(chan indexCall, 1)
-	m.SetActionIndexer(func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr, mdLogPath string) (IngestResult, error) {
-		calls <- indexCall{project, sessionName, cliSessionID, projectPath, taskPtr, mdLogPath, runID}
-		return IngestResult{}, nil
-	})
-
-	m.beginRun(ms)
-	ms.mu.Lock()
-	ms.pendingLogs = append(ms.pendingLogs, store.LogEntry{Timestamp: time.Now(), Level: "text", Message: "hi"})
-	ms.mu.Unlock()
-
-	m.finishRun(ms, "completed", "", "")
-
-	select {
-	case c := <-calls:
-		if c.mdLogPath == "" {
-			t.Fatal("mdLogPath is empty — indexer must receive the just-autosaved log's path")
-		}
-		if _, err := os.Stat(c.mdLogPath); err != nil {
-			t.Errorf("mdLogPath %q does not exist on disk: %v", c.mdLogPath, err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for the indexer to be called")
-	}
-}
-
-// TestFinishRun_IndexesActionsWhenTrackingEnabled: with experience_tracking
-// on and an indexer wired (app.go's job normally), a completed run with a
-// CLI session id triggers exactly one indexing call carrying the run's
-// identity (LEARN-TASKS.md LN-03).
-func TestFinishRun_IndexesActionsWhenTrackingEnabled(t *testing.T) {
-	m, _ := newTestManagerWithStore(t)
-	ms := addStubSession(m, "lumen", "P1")
-	ms.session.CLISessionID = "cli-123"
-
-	m.cfg.Optimization.ExperienceTracking = true
-	calls := make(chan indexCall, 1)
-	m.SetActionIndexer(func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr, mdLogPath string) (IngestResult, error) {
-		calls <- indexCall{project, sessionName, cliSessionID, projectPath, taskPtr, mdLogPath, runID}
-		return IngestResult{}, nil
-	})
-
-	m.beginRun(ms)
-	m.finishRun(ms, "completed", "", "")
-
-	select {
-	case c := <-calls:
-		if c.project != "lumen" || c.sessionName != "P1" || c.cliSessionID != "cli-123" {
-			t.Errorf("unexpected index call: %+v", c)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for the indexer to be called")
-	}
-}
-
-// TestFinishRun_NoIndexingWhenTrackingDisabled: the flag being off (the
-// default) must mean the indexer is never invoked, even though it's wired —
-// "no transcript is opened at all", not just "the result is discarded".
-func TestFinishRun_NoIndexingWhenTrackingDisabled(t *testing.T) {
-	m, _ := newTestManagerWithStore(t)
-	ms := addStubSession(m, "lumen", "P1")
-	ms.session.CLISessionID = "cli-123"
-
-	calls := make(chan indexCall, 1)
-	m.SetActionIndexer(func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr, mdLogPath string) (IngestResult, error) {
-		calls <- indexCall{project, sessionName, cliSessionID, projectPath, taskPtr, mdLogPath, runID}
-		return IngestResult{}, nil
-	})
-
-	m.beginRun(ms)
-	m.finishRun(ms, "completed", "", "")
-
-	select {
-	case c := <-calls:
-		t.Fatalf("indexer must not run with experience_tracking off, got %+v", c)
-	case <-time.After(100 * time.Millisecond):
-		// expected: nothing arrived
-	}
-}
-
-// TestFinishRun_NoIndexerWiredIsSafe: the default (no app.go wiring at all)
-// must not panic finishRun.
-func TestFinishRun_NoIndexerWiredIsSafe(t *testing.T) {
-	m, _ := newTestManagerWithStore(t)
-	ms := addStubSession(m, "lumen", "P1")
-	ms.session.CLISessionID = "cli-123"
-	m.cfg.Optimization.ExperienceTracking = true
-
-	m.beginRun(ms)
-	m.finishRun(ms, "completed", "", "") // must not panic
-}
-
 func TestSetConfigReplacesConfig(t *testing.T) {
 	m := newTestManager(t)
 	newCfg := &config.AppConfig{

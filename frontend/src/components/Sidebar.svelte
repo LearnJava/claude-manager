@@ -7,7 +7,7 @@
     import PlanReview from './PlanReview.svelte';
     import QueueMiniBar from './QueueMiniBar.svelte';
     import { syncQueue } from '../stores/queues';
-    import { MODELS, normalizeModel } from '../lib/models';
+    import { MODELS, normalizeModel, modelsFor } from '../lib/models';
     import { t } from '../lib/i18n';
 
     const dispatch = createEventDispatcher();
@@ -88,7 +88,7 @@
     }
 
     function runtimeOf(s: SessionState): string {
-        return s.runtime === 'hermes' ? 'hermes' : 'claude';
+        return s.runtime || 'claude';
     }
 
     // Value for the model <select>. Claude sessions fold resolved ids onto
@@ -96,7 +96,7 @@
     // (`anthropic/claude-sonnet-4.6`), and folding that onto "sonnet" would
     // show a model the session isn't actually using — only exact aliases fold.
     function modelValue(s: SessionState): string {
-        if (s.runtime === 'hermes') {
+        if (s.runtime === 'hermes' || s.runtime === 'kimi') {
             const raw = (s.model ?? '').trim();
             return MODELS.some((m) => m.value === raw.toLowerCase()) ? raw.toLowerCase() : raw;
         }
@@ -498,6 +498,7 @@
                                     style="font-size: 10px; line-height: 1.4;">
                                     <option value="claude">Claude</option>
                                     <option value="hermes">☤ Hermes</option>
+                                    <option value="kimi">Kimi</option>
                                 </select>
                                 </span>
                                 <select
@@ -515,7 +516,7 @@
                                     {#if !s.model}
                                         <option value="" disabled>—</option>
                                     {/if}
-                                    {#each MODELS as m}
+                                    {#each modelsFor(s.runtime) as m}
                                         <option value={m.value}>{m.label}</option>
                                     {/each}
                                     {#if hasCustomModel(s)}
@@ -567,6 +568,7 @@
     <ModelPicker
         project={pickerFor.project}
         sessionName={pickerFor.name}
+        runtime={pickerFor.runtime}
         on:confirm={async (e) => {
             const p = pickerFor;
             pickerFor = null;

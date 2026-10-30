@@ -4,6 +4,7 @@
 [settings]
 claude_path = "claude"                  # path to CLI; "claude" if it's in PATH
 hermes_path = "hermes"                  # Hermes CLI, used by sessions with runtime = "hermes"
+kimi_path = "kimi"                      # Kimi Code CLI, used by sessions with runtime = "kimi"
 default_retry_delay = 30               # seconds between retries on error
 rate_limit_pause = 300                 # seconds to pause when rate-limited
 log_retention_days = 30                # days to keep session history in SQLite

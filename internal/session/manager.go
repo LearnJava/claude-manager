@@ -1,10 +1,9 @@
 package session
 
 import (
-	"os"
 	"context"
-	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -26,88 +25,6 @@ import (
 type Emitter interface {
 	Emit(event string, data any)
 }
-
-// IngestResult mirrors experience.IngestResult (LEARN-TASKS.md LN-21) without
-// importing internal/experience — same import-cycle reason as ActionIndexFunc
-// below.
-type IngestResult struct {
-	Rows   int
-	Reason string
-}
-
-// ActionIndexFunc indexes one finished run's newly-appended CLI transcript
-// lines into action_signatures (LEARN-TASKS.md LN-03). Declared as a function
-// type here, consumed by finishRun, and wired from app.go to
-// internal/experience.IngestRun — a direct import would cycle, since
-// internal/experience already imports internal/session for Step/TokenUsage.
-// mdLogPath (LN-21) is this run's own auto-saved markdown log — the fallback
-// source IngestRun uses when the CLI's own JSONL transcript can't be found.
-type ActionIndexFunc func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr, mdLogPath string) (IngestResult, error)
-
-// JournalEntry mirrors experience.Entry (LEARN-TASKS.md LN-06) without
-// importing internal/experience — same import-cycle reason as
-// ActionIndexFunc above.
-type JournalEntry struct {
-	Date      time.Time
-	TaskPtr   string
-	Done      string
-	Surprises []string
-	Avoid     []string
-}
-
-// JournalWriteFunc persists one distilled journal entry for a project
-// (LEARN-TASKS.md LN-06). Declared as a function type here, consumed by
-// finishRun, and wired from app.go to internal/experience.AppendEntry — a
-// direct import would cycle, same as ActionIndexFunc.
-type JournalWriteFunc func(projectPath string, commit bool, entry JournalEntry) error
-
-// journalAnalyzeFn abstracts analysis.GenerateJournalEntry so tests can stub
-// the analyst CLI (LEARN-TASKS.md LN-06). Unlike indexRun/primerFn, this one
-// defaults to the real implementation in NewSessionManager rather than
-// starting nil — the distillation call is gated by the project's own Journal
-// flag and by journalFn being wired (see finishRun), not by whether this is
-// set.
-type journalAnalyzeFn func(ctx context.Context, projectPath string, in analysis.JournalInput, cfg analysis.AnalysisConfig) (*analysis.JournalResult, error)
-
-// RegressionResult is a positive cost-regression check's outcome —
-// RegressionFunc returns nil when nothing crossed the threshold.
-type RegressionResult struct {
-	// Factor is how many times the trailing median of its session's own
-	// recent runs the just-finished run's cost or input tokens came out to.
-	Factor float64
-	// Hint is a best-effort explanation of what grew in the manager's own
-	// prompt overhead since it was last measured for this session (primer,
-	// skill descriptions, journal tail) — "" when nothing grew, or nothing
-	// could be measured.
-	Hint string
-}
-
-// RegressionFunc checks a just-finished run's cost/input-tokens against its
-// own session's recent trend (LEARN-TASKS.md LN-16). Declared as a function
-// type here, consumed by finishRun, and wired from app.go to
-// internal/experience.DetectRegression — a direct import would cycle, same
-// as ActionIndexFunc above. runID is the just-persisted session_runs row;
-// taskDesc/gates feed only the Hint component, mirroring PrimerFunc's own
-// arguments.
-type RegressionFunc func(project, sessionName, projectPath, taskDesc string, gates []string, runID int64) (*RegressionResult, error)
-
-// ImportStats mirrors experience.ImportStats (LEARN-TASKS.md LN-20) without
-// importing internal/experience — same import-cycle reason as ActionIndexFunc
-// above.
-type ImportStats struct {
-	Files   int
-	Runs    int
-	Actions int
-	Skipped int
-	Errors  int
-}
-
-// ImportLogsFunc bulk-imports a directory of saved CLI logs into
-// action_signatures (LEARN-TASKS.md LN-20). Declared as a function type here,
-// consumed by ImportProjectLogs below, and wired from app.go to
-// internal/experience.IngestDir — a direct import would cycle, same as
-// ActionIndexFunc above. onProgress mirrors experience.ImportOpts.OnProgress.
-type ImportLogsFunc func(dir, project, projectPath string, onProgress func(processed, total int)) (ImportStats, error)
 
 // Event names emitted to the Wails frontend (see PLAN.md section 8).
 const (
@@ -237,13 +154,13 @@ type ErrorEvent struct {
 
 // SessionState is a snapshot of a session's full state returned to the UI.
 type SessionState struct {
-	ID             string     `json:"id"`
-	Project        string     `json:"project"`
-	Name           string     `json:"name"`
-	Status         string     `json:"status"`
-	Model          string     `json:"model"`
-	Effort         string     `json:"effort"`
-	PermissionMode string     `json:"permission_mode"`
+	ID             string `json:"id"`
+	Project        string `json:"project"`
+	Name           string `json:"name"`
+	Status         string `json:"status"`
+	Model          string `json:"model"`
+	Effort         string `json:"effort"`
+	PermissionMode string `json:"permission_mode"`
 	// Runtime is "hermes" for a Hermes CLI session, "" for Claude Code CLI.
 	Runtime        string     `json:"runtime"`
 	StartedAt      time.Time  `json:"started_at"`
@@ -342,65 +259,9 @@ type SessionManager struct {
 	store   *store.Store
 	emitter Emitter
 
-	// indexRun is nil unless app.go has wired the experience-layer indexer
-	// (LEARN-TASKS.md LN-03); even then, finishRun only calls it when
-	// cfg.Optimization.ExperienceTracking is on — see SetActionIndexer.
-	indexRun ActionIndexFunc
-
-	// primerFn is nil unless app.go has wired the context primer
-	// (LEARN-TASKS.md LN-05); passed through to every new Session's PrimerFn
-	// field, which only calls it when that session's own ContextPrimer flag
-	// is on — see SetPrimerBuilder.
-	primerFn PrimerFunc
-
-	// journalFn is nil unless app.go has wired the project journal
-	// (LEARN-TASKS.md LN-06); finishRun only calls it for a completed run
-	// whose project has Journal=true — see SetJournalWriter.
-	journalFn JournalWriteFunc
-	// journalAnalyze abstracts the analyst CLI call so tests can stub it;
-	// defaults to analysis.GenerateJournalEntry (see NewSessionManager).
-	journalAnalyze journalAnalyzeFn
-
-	// handoffFn is nil unless app.go has wired the context-handoff distiller
-	// (LEARN-TASKS.md LN-15); passed through to every new Session's
-	// HandoffFn field, which only calls it when that session's own
-	// ContextHandoff flag is on — see SetHandoffBuilder.
-	handoffFn HandoffFunc
-
-	// loopMemoryFn / loopResolveFn are nil unless app.go has wired the loop
-	// history (WASTE-TASKS.md WS-04) — see SetLoopMemory.
-	loopMemoryFn  LoopMemoryFactory
-	loopResolveFn LoopResolveFunc
-
-	// refCaseFn is nil unless app.go has wired the reference-case recorder
-	// (WASTE-TASKS.md WS-06) — see SetReferenceCases.
-	refCaseFn ReferenceCaseFunc
-
-	// labelFn is nil unless app.go has wired the quality labeller
-	// (WASTE-TASKS.md WS-11) — see SetQualityLabels.
-	labelFn QualityLabelFunc
-	// gateRunFn is nil unless app.go has wired the gate-run recorder (WS-07).
-	gateRunFn GateRunFunc
-
-	// regressionFn is nil unless app.go has wired the cost-regression
-	// detector (LEARN-TASKS.md LN-16); even then, finishRun only calls it
-	// when cfg.Optimization.ExperienceTracking is on — see
-	// SetRegressionDetector.
-	regressionFn RegressionFunc
-
 	// budgetAlerts dedups alert:budget per day/week (budget_alerts.go);
 	// guarded by mu.
 	budgetAlerts budgetAlertState
-
-	// importLogsFn is nil unless app.go has wired the bulk log importer
-	// (LEARN-TASKS.md LN-20); ImportProjectLogs also independently gates on
-	// cfg.Optimization.ExperienceTracking — see SetLogImporter.
-	importLogsFn ImportLogsFunc
-
-	// skillPilotFn is nil unless app.go has wired the skill autopilot
-	// (LEARN-TASKS.md LN-27); finishRun also gates every call on
-	// experience_tracking and the project's own AutoSkills flag.
-	skillPilotFn SkillAutopilotFunc
 
 	// queueWatchCancel stops the queue-file poller (queuewatch.go); nil when
 	// not running. Guarded by mu.
@@ -431,14 +292,13 @@ type SessionManager struct {
 func NewSessionManager(cfg *config.AppConfig, cfgPath string, st *store.Store, emitter Emitter) *SessionManager {
 	stateDir := filepath.Join(filepath.Dir(cfgPath), "state")
 	return &SessionManager{
-		cfg:            cfg,
-		cfgPath:        cfgPath,
-		store:          st,
-		emitter:        emitter,
-		sessions:       make(map[string]*managedSession),
-		stateStore:     NewStateStore(stateDir),
-		journalAnalyze: analysis.GenerateJournalEntry,
-		runtimeRules:   permission.NewRuntimeRuleSet(),
+		cfg:          cfg,
+		cfgPath:      cfgPath,
+		store:        st,
+		emitter:      emitter,
+		sessions:     make(map[string]*managedSession),
+		stateStore:   NewStateStore(stateDir),
+		runtimeRules: permission.NewRuntimeRuleSet(),
 		queue:        permission.NewPendingQueue(),
 		workerStore:  worker.NewStore(stateDir),
 		taskStore:    worker.NewTaskStore(stateDir),
@@ -466,115 +326,6 @@ func (m *SessionManager) SetConfig(cfg *config.AppConfig) {
 	m.mu.Lock()
 	m.cfg = cfg
 	m.mu.Unlock()
-}
-
-// SetActionIndexer wires the experience-layer indexer (LEARN-TASKS.md LN-03).
-// Pass nil to disable it entirely (the zero value — no app.go wiring means no
-// transcript is ever opened). Even wired, finishRun still gates every call on
-// the live experience_tracking config flag, so flipping the setting off stops
-// indexing immediately without needing to re-wire anything.
-func (m *SessionManager) SetActionIndexer(fn ActionIndexFunc) {
-	m.mu.Lock()
-	m.indexRun = fn
-	m.mu.Unlock()
-}
-
-// SetPrimerBuilder wires the experience-layer context primer (LEARN-TASKS.md
-// LN-05). Pass nil to disable it entirely. Each session's own ContextPrimer
-// flag still gates whether it's ever called for that session (see
-// Session.initialPromptText), so this only needs to be set once at startup.
-func (m *SessionManager) SetPrimerBuilder(fn PrimerFunc) {
-	m.mu.Lock()
-	m.primerFn = fn
-	m.mu.Unlock()
-}
-
-// SetJournalWriter wires the experience-layer project journal (LEARN-TASKS.md
-// LN-06). Pass nil to disable it entirely (the zero value — no app.go wiring
-// means finishRun never calls the distillation analyst at all). Each
-// project's own Journal flag still gates whether it's ever invoked for that
-// project (see finishRun), so this only needs to be set once at startup.
-func (m *SessionManager) SetJournalWriter(fn JournalWriteFunc) {
-	m.mu.Lock()
-	m.journalFn = fn
-	m.mu.Unlock()
-}
-
-// SetLogImporter wires the experience-layer bulk log importer (LEARN-TASKS.md
-// LN-20). Pass nil to disable it entirely (the zero value — ImportProjectLogs
-// then always errors). experience_tracking still gates every call — see
-// ImportProjectLogs.
-func (m *SessionManager) SetLogImporter(fn ImportLogsFunc) {
-	m.mu.Lock()
-	m.importLogsFn = fn
-	m.mu.Unlock()
-}
-
-// SetHandoffBuilder wires the experience-layer context-handoff distiller
-// (LEARN-TASKS.md LN-15). Pass nil to disable it entirely (the zero value —
-// no app.go wiring means a context restart still fires and closes the
-// process, just without a distilled recap). Each Session gets this same
-// function; it only actually runs it when that session's own
-// Config.ContextHandoff flag is on — see checkContextRestart.
-func (m *SessionManager) SetHandoffBuilder(fn HandoffFunc) {
-	m.mu.Lock()
-	m.handoffFn = fn
-	m.mu.Unlock()
-}
-
-// SetRegressionDetector wires the experience-layer cost-regression detector
-// (LEARN-TASKS.md LN-16). Pass nil to disable it entirely (the zero value —
-// no app.go wiring means finishRun never checks for a regression at all).
-// Even wired, finishRun still gates every call on the live
-// experience_tracking config flag — same reasoning as SetActionIndexer.
-func (m *SessionManager) SetRegressionDetector(fn RegressionFunc) {
-	m.mu.Lock()
-	m.regressionFn = fn
-	m.mu.Unlock()
-}
-
-// SkillAutopilotFunc runs one skill-autopilot step for a project (see
-// experience.SkillPilot.Tick) and reports whether any skill row changed.
-// internal/session cannot import internal/experience, so app.go supplies it.
-type SkillAutopilotFunc func(project, projectPath string, gates []string, dailyBudgetUSD float64) (changed bool, err error)
-
-// EventNameSkillsChanged tells the frontend the skill autopilot changed a
-// project's skills (applied, kept, switched off, rejected) — the Skills tab
-// reloads on it.
-const EventNameSkillsChanged = "skills:changed"
-
-// SkillsChangedEvent is the payload of EventNameSkillsChanged.
-type SkillsChangedEvent struct {
-	Project string `json:"project"`
-}
-
-// SetSkillAutopilot wires the skill autopilot (LEARN-TASKS.md LN-27). Pass
-// nil to disable it entirely. Even wired, it only runs after a run of a
-// project with AutoSkills on, once that run's transcript has been indexed —
-// its trial counts are built from the index.
-func (m *SessionManager) SetSkillAutopilot(fn SkillAutopilotFunc) {
-	m.mu.Lock()
-	m.skillPilotFn = fn
-	m.mu.Unlock()
-}
-
-// runSkillAutopilot runs the autopilot for project if it is wired and the
-// project opted in, emitting EventNameSkillsChanged when something changed.
-func (m *SessionManager) runSkillAutopilot(project, projectPath string) {
-	m.mu.Lock()
-	fn := m.skillPilotFn
-	m.mu.Unlock()
-	pcfg := m.findProjectConfig(project)
-	if fn == nil || pcfg == nil || !pcfg.AutoSkills {
-		return
-	}
-	changed, err := fn(project, projectPath, append([]string(nil), pcfg.Gates...), pcfg.AutoSkillsDailyBudgetUSD)
-	if err != nil {
-		logger.L.Error("manager.skill_autopilot_failed", "project", project, "error", err)
-	}
-	if changed {
-		m.emit(EventNameSkillsChanged, SkillsChangedEvent{Project: project})
-	}
 }
 
 // Shutdown stops every session and waits briefly. Safe to call multiple times.
@@ -700,8 +451,6 @@ func (m *SessionManager) StartSession(project, name string) error {
 		name:    name,
 	}
 	m.mu.Lock()
-	primerFn := m.primerFn
-	handoffFn := m.handoffFn
 	m.mu.Unlock()
 	sess := New(Params{
 		ID:                id,
@@ -710,23 +459,15 @@ func (m *SessionManager) StartSession(project, name string) error {
 		Config:            *sc,
 		ClaudePath:        m.cfg.Settings.ClaudePath,
 		HermesPath:        m.cfg.Settings.HermesPath,
+		KimiPath:          m.cfg.Settings.KimiPath,
 		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
 		CrashRecovery:     m.cfg.Settings.CrashRecovery,
 		PythonUTF8:        m.cfg.Settings.PythonUTF8,
 		CommandGuard:      m.cfg.Settings.CommandGuard,
-		EnvCard:           m.cfg.Settings.EnvCard,
-		ManagerCard:       m.managerCardFor(proj, name),
-		LearnedRules:      m.learnedRulesFor(proj),
 		Gates:             proj.Gates,
-		PrimerFn:          primerFn,
-		GateRunFn:         m.gateRunFnFor(project),
 		Optimization:      &m.cfg.Optimization,
-		MaxTurns:          m.adaptiveMaxTurns(project, name),
-		ExcludeDynamic:    m.excludeDynamicSystemPrompt(),
-		HandoffFn:         handoffFn,
-		LoopMemory:        m.loopMemoryFor(ms, project, name, proj.Path),
 		OnEvent: func(sid string, ev SessionEvent) {
 			m.onSessionEvent(sid, ev)
 		},
@@ -789,8 +530,6 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 
 	ms := &managedSession{project: project, name: name}
 	m.mu.Lock()
-	primerFn := m.primerFn
-	handoffFn := m.handoffFn
 	m.mu.Unlock()
 	sess := New(Params{
 		ID:                id,
@@ -799,23 +538,15 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 		Config:            sessionCfg,
 		ClaudePath:        m.cfg.Settings.ClaudePath,
 		HermesPath:        m.cfg.Settings.HermesPath,
+		KimiPath:          m.cfg.Settings.KimiPath,
 		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
 		CrashRecovery:     m.cfg.Settings.CrashRecovery,
 		PythonUTF8:        m.cfg.Settings.PythonUTF8,
 		CommandGuard:      m.cfg.Settings.CommandGuard,
-		EnvCard:           m.cfg.Settings.EnvCard,
-		ManagerCard:       m.managerCardFor(proj, name),
-		LearnedRules:      m.learnedRulesFor(proj),
 		Gates:             proj.Gates,
-		PrimerFn:          primerFn,
-		GateRunFn:         m.gateRunFnFor(project),
 		Optimization:      &m.cfg.Optimization,
-		MaxTurns:          m.adaptiveMaxTurns(project, name),
-		ExcludeDynamic:    m.excludeDynamicSystemPrompt(),
-		HandoffFn:         handoffFn,
-		LoopMemory:        m.loopMemoryFor(ms, project, name, proj.Path),
 		OnEvent:           func(sid string, ev SessionEvent) { m.onSessionEvent(sid, ev) },
 	})
 	ms.session = sess
@@ -1046,9 +777,9 @@ func (m *SessionManager) SetSessionModel(id, model string) error {
 	if sess.Autonomous() {
 		return nil
 	}
-	// Hermes runs one process per turn, so the next turn's `-m` already
-	// picks up the new model — no restart, nothing interrupted.
-	if sess.Config.IsHermes() {
+	// A per-turn runtime starts a fresh process per turn, so the next turn's
+	// model flag already picks up the new model — no restart, nothing interrupted.
+	if sess.runtime.PerTurnProcess() {
 		return nil
 	}
 
@@ -1105,8 +836,6 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 
 	ms := &managedSession{project: project, name: name}
 	m.mu.Lock()
-	primerFn := m.primerFn
-	handoffFn := m.handoffFn
 	m.mu.Unlock()
 	sess := New(Params{
 		ID:                id,
@@ -1115,23 +844,15 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 		Config:            sessionCfg,
 		ClaudePath:        m.cfg.Settings.ClaudePath,
 		HermesPath:        m.cfg.Settings.HermesPath,
+		KimiPath:          m.cfg.Settings.KimiPath,
 		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
 		CrashRecovery:     m.cfg.Settings.CrashRecovery,
 		PythonUTF8:        m.cfg.Settings.PythonUTF8,
 		CommandGuard:      m.cfg.Settings.CommandGuard,
-		EnvCard:           m.cfg.Settings.EnvCard,
-		ManagerCard:       m.managerCardFor(proj, name),
-		LearnedRules:      m.learnedRulesFor(proj),
 		Gates:             proj.Gates,
-		PrimerFn:          primerFn,
-		GateRunFn:         m.gateRunFnFor(project),
 		Optimization:      &m.cfg.Optimization,
-		MaxTurns:          m.adaptiveMaxTurns(project, name),
-		ExcludeDynamic:    m.excludeDynamicSystemPrompt(),
-		HandoffFn:         handoffFn,
-		LoopMemory:        m.loopMemoryFor(ms, project, name, proj.Path),
 		ResumeSessionID:   resumeID,
 		OnEvent:           func(sid string, ev SessionEvent) { m.onSessionEvent(sid, ev) },
 	})
@@ -1264,7 +985,6 @@ func (m *SessionManager) RespondPermission(id, requestID, decision string) error
 		case "deny_always":
 			m.runtimeRules.Add(req.Tool, req.Pattern(), "deny")
 		}
-		m.recordPermissionEvent(ms, req, decision, false)
 	}
 	m.queue.Remove(requestID)
 	return ms.session.RespondPermission(requestID, decision)
@@ -1617,12 +1337,12 @@ func (m *SessionManager) GetDailyCost(date string) (float64, error) {
 // because cache reads are an order of magnitude cheaper than fresh input —
 // two days with the same total can differ several-fold in real cost.
 type DailyTokens struct {
-	Date          string `json:"date"`
-	InputTokens   int64  `json:"input_tokens"`
-	OutputTokens  int64  `json:"output_tokens"`
-	CacheRead     int64  `json:"cache_read"`
-	CacheCreation int64  `json:"cache_creation"`
-	Total         int64  `json:"total"`
+	Date          string  `json:"date"`
+	InputTokens   int64   `json:"input_tokens"`
+	OutputTokens  int64   `json:"output_tokens"`
+	CacheRead     int64   `json:"cache_read"`
+	CacheCreation int64   `json:"cache_creation"`
+	Total         int64   `json:"total"`
 	CostUSD       float64 `json:"cost_usd"`
 	// DurationMs is the wall-clock time of the runs the figures cover
 	// (WASTE-TASKS.md WS-02: the subscription readout leads with tokens and time).
@@ -1818,16 +1538,9 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 		ms.mu.Lock()
 		runID := ms.runID
 		ms.mu.Unlock()
-		refCase := m.referenceCaseInfo(ms, ev.RefCase)
 		if runID != 0 {
-			// ev.CLISessionID is the id of the run that just finished, captured
-			// by Session before it rotates s.CLISessionID for the next task
-			// (LEARN-TASKS.md LN-21) — reading ms.session.CLISessionID here
-			// instead would almost always see that next task's not-yet-launched
-			// id, since this handler runs synchronously off the same emit.
 			m.finishRun(ms, "completed", "", ev.CLISessionID)
 		}
-		m.recordReferenceCase(refCase)
 		m.emit(EventNameTaskDone, TaskDoneEvent{ID: id, TasksDone: ev.TasksDone})
 
 	case EvtRunEnd:
@@ -1836,11 +1549,9 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 		ms.mu.Lock()
 		runID := ms.runID
 		ms.mu.Unlock()
-		label := m.qualityLabelInfo(ms, ev.Label)
 		if runID != 0 {
 			m.finishRun(ms, ev.RunStatus, "", ev.CLISessionID)
 		}
-		m.judgeQualityLabel(label)
 	case EvtRateLimit:
 		if ev.RateLimit != nil {
 			until := time.Time{}
@@ -1877,10 +1588,6 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 			m.emit(EventNameQuestion, QuestionEvent{ID: id, Question: *ev.Question})
 		}
 
-	case EvtLoop:
-		if ev.Loop != nil {
-			m.emit(EventNameLoopAlert, LoopAlertEvent{ID: id, LoopAlert: *ev.Loop})
-		}
 	case EvtError:
 		msg := ""
 		if ev.Err != nil {
@@ -2075,27 +1782,9 @@ func (m *SessionManager) handleResult(ms *managedSession, res *SessionResult) {
 
 // finishRun finalizes the in-flight run record with the given status / error
 // and flushes buffered logs.
-// EventNameRegression notifies the frontend that a just-finished run broke
-// out of its session's own recent cost/token trend (LEARN-TASKS.md LN-16) —
-// CostDashboard shows it as a dismissible banner, StatusBar as a counter.
-const EventNameRegression = "experience:regression"
-
-// RegressionEvent is the payload of EventNameRegression.
-type RegressionEvent struct {
-	Project string  `json:"project"`
-	Session string  `json:"session"`
-	RunID   int64   `json:"run_id"`
-	Factor  float64 `json:"factor"`
-	Hint    string  `json:"hint"`
-}
-
 // finishedCLISessionID, when non-empty, is the CLI session id of the run
-// that just finished — passed explicitly for a completed task
-// (LEARN-TASKS.md LN-21) because Session rotates ms.session.CLISessionID to
-// the next task's id before this is called, so reading it back off
-// ms.session here would name the wrong run. Empty means "read
-// ms.session.CLISessionID", still correct for the error/stopped paths, which
-// finish before any rotation happens.
+// that just finished (kept for the callers' symmetry; the run's own log and
+// metrics no longer depend on it).
 func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedCLISessionID string) {
 	if m.store == nil {
 		return
@@ -2141,7 +1830,6 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 	outTok := ms.outputTokens
 	cacheReadTok := ms.cacheReadTokens
 	cacheCreateTok := ms.cacheCreateTokens
-	resultText := ms.lastResultText
 	project := ms.project
 	ms.mu.Unlock()
 
@@ -2150,62 +1838,21 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 		_ = m.store.InsertLogs(runID, logs)
 	}
 
-	// Resolve the CLI session id to index (LEARN-TASKS.md LN-21): the
-	// explicit finishedCLISessionID for a completed task, else the session's
-	// own live field (still correct for error/stopped — see the doc comment
-	// above).
-	cliSessionID := finishedCLISessionID
-	if cliSessionID == "" {
-		cliSessionID = ms.session.CLISessionID
-	}
-
 	// Auto-save this run's log to <project>/.claude-manager/logs/ as markdown
 	// so it survives independently of the SQLite history (and of "Clear log"
-	// in the UI, which only empties the on-screen buffer), and index this
-	// run's transcript into action_signatures for the "Actions" tab
-	// (LEARN-TASKS.md LN-03). One goroutine, sequential: the indexer needs
-	// the autosaved log's own path as its markdown fallback when the CLI's
-	// own JSONL transcript can't be found (LEARN-TASKS.md LN-21), so the
-	// save must complete first. Fire-and-forget either way — a failure in
-	// either step must never affect the run's own completed/error/stopped
+	// in the UI, which only empties the on-screen buffer). Fire-and-forget —
+	// a failure must never affect the run's own completed/error/stopped
 	// status, just get logged.
-	m.mu.Lock()
-	indexRun := m.indexRun
-	tracking := m.cfg != nil && m.cfg.Optimization.ExperienceTracking
-	m.mu.Unlock()
-	doIndex := indexRun != nil && tracking
-	if len(logs) > 0 || doIndex {
+	if len(logs) > 0 {
 		projectPath := ms.session.ProjectPath
 		sessID := ms.session.ID
-		taskPtr := ms.session.taskSourceDesc
-		sessionName := ms.name
 		go func() {
 			defer logger.Recover("manager.finish_run_async", "id", sessID)
-			var mdLogPath string
-			if len(logs) > 0 {
-				path, err := store.SaveSessionLogFile(projectPath, sessID, logs)
-				if err != nil {
-					logger.L.Error("session.log_autosave_failed", "id", sessID, "error", err)
-				} else if path != "" {
-					logger.L.Info("session.log_autosaved", "id", sessID, "path", path)
-					mdLogPath = path
-				}
-			}
-			if doIndex {
-				res, err := indexRun(project, sessionName, runID, cliSessionID, projectPath, taskPtr, mdLogPath)
-				if err != nil {
-					logger.L.Error("session.index_run_failed", "id", sessID, "cli_session_id", cliSessionID, "error", err)
-					return
-				}
-				logger.L.Info("experience.ingest_run",
-					"id", sessID,
-					"project", project,
-					"cli_session_id", cliSessionID,
-					"rows", res.Rows,
-					"reason", res.Reason,
-				)
-				m.resolveLoops(sessID, runID)
-				m.runSkillAutopilot(project, projectPath)
+			path, err := store.SaveSessionLogFile(projectPath, sessID, logs)
+			if err != nil {
+				logger.L.Error("session.log_autosave_failed", "id", sessID, "error", err)
+			} else if path != "" {
+				logger.L.Info("session.log_autosaved", "id", sessID, "path", path)
 			}
 		}()
 	}
@@ -2236,129 +1883,6 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 		}()
 	}
 
-	// Check whether this run broke out of its session's own recent cost/
-	// token trend (LEARN-TASKS.md LN-16) — same fire-and-forget goroutine
-	// pattern as the transcript indexer above. Gated on the same
-	// experience_tracking flag: session_runs itself is always collected,
-	// but the detector's Hint component reads skills/journal data the same
-	// privacy gate already covers, and reusing the flag needed no new
-	// config surface (same reasoning as LN-04/12/18).
-	m.mu.Lock()
-	regressionFn := m.regressionFn
-	m.mu.Unlock()
-	if regressionFn != nil && tracking {
-		sessID := ms.session.ID
-		projectPath := ms.session.ProjectPath
-		taskPtr := ms.session.taskSourceDesc
-		gates := ms.session.gates
-		sessionName := ms.name
-		go func() {
-			defer logger.Recover("manager.regression_check", "id", sessID)
-			res, err := regressionFn(project, sessionName, projectPath, taskPtr, gates, runID)
-			if err != nil {
-				logger.L.Error("session.regression_check_failed", "id", sessID, "error", err)
-				return
-			}
-			if res == nil {
-				return
-			}
-			logger.L.Warn("session.regression", "id", sessID, "factor", res.Factor, "hint", res.Hint)
-			m.emit(EventNameRegression, RegressionEvent{
-				Project: project,
-				Session: sessionName,
-				RunID:   runID,
-				Factor:  res.Factor,
-				Hint:    res.Hint,
-			})
-		}()
-	}
-
-	// Distill this run into one journal entry for the project's episodic
-	// memory (LEARN-TASKS.md LN-06) — same fire-and-forget goroutine pattern
-	// as the transcript indexer above. Gated on the project's own Journal
-	// flag (off by default) and on a writer actually being wired: with either
-	// missing, the analyst is never invoked at all, not just discarded. A
-	// finished slice of a multi-slice task is journaled like a closed task.
-	if status == "completed" || status == RunStatusSlice {
-		pcfg := m.findProjectConfig(project)
-		m.mu.Lock()
-		journalWrite := m.journalFn
-		journalAnalyze := m.journalAnalyze
-		m.mu.Unlock()
-		if pcfg != nil && pcfg.Journal && journalWrite != nil {
-			sessID := ms.session.ID
-			projectPath := ms.session.ProjectPath
-			taskPtr := ms.session.taskSourceDesc
-			commit := pcfg.JournalCommit
-			files := filesChangedFromLogs(logs)
-			go func() {
-				defer logger.Recover("manager.journal", "id", sessID)
-				m.runJournalEntry(context.Background(), project, projectPath, taskPtr, resultText, files, commit, journalAnalyze)
-			}()
-		}
-	}
-}
-
-// filesChangedFromLogs extracts the Edit/Write file paths from one run's
-// buffered log entries — the in-memory equivalent of primer.go's
-// previousRunFilesSection, but for the run that just finished rather than a
-// past one read back through the store. The journal's "this run" needs data
-// action_signatures may not have yet: LN-03 ingestion runs in its own async
-// goroutine off this same finishRun call, so it cannot be relied on to have
-// indexed this run already.
-func filesChangedFromLogs(logs []store.LogEntry) []string {
-	seen := make(map[string]bool)
-	var files []string
-	for _, l := range logs {
-		if l.Level != "tool" || (l.ToolName != "Edit" && l.ToolName != "Write") {
-			continue
-		}
-		f := strings.TrimSpace(l.ToolInput)
-		if f == "" || seen[f] {
-			continue
-		}
-		seen[f] = true
-		files = append(files, f)
-	}
-	return files
-}
-
-// runJournalEntry distills one completed run into a journal entry via
-// analyze and persists it through m.journalFn (LEARN-TASKS.md LN-06). Kept as
-// its own method (rather than inlined in finishRun's goroutine) so tests can
-// call it synchronously with a stub analyzer.
-func (m *SessionManager) runJournalEntry(ctx context.Context, project, projectPath, taskPtr, resultText string, filesChanged []string, commit bool, analyze journalAnalyzeFn) {
-	m.mu.Lock()
-	write := m.journalFn
-	acfg := analysis.AnalysisConfig{
-		ClaudePath: m.cfg.Settings.ClaudePath,
-		Model:      m.cfg.Settings.JournalModel,
-	}
-	m.mu.Unlock()
-	if write == nil || analyze == nil {
-		return
-	}
-
-	result, err := analyze(ctx, projectPath, analysis.JournalInput{
-		TaskPtr:      taskPtr,
-		FilesChanged: filesChanged,
-		ResultText:   resultText,
-	}, acfg)
-	if err != nil {
-		logger.L.Error("manager.journal_failed", "project", project, "error", err)
-		return
-	}
-
-	entry := JournalEntry{
-		Date:      time.Now(),
-		TaskPtr:   taskPtr,
-		Done:      result.Done,
-		Surprises: result.Surprises,
-		Avoid:     result.Avoid,
-	}
-	if err := write(projectPath, commit, entry); err != nil {
-		logger.L.Error("manager.journal_write_failed", "project", project, "error", err)
-	}
 }
 
 // handlePermission applies auto-approval rules and emits a UI event when a
@@ -2379,7 +1903,6 @@ func (m *SessionManager) handlePermission(ms *managedSession, req *PermissionReq
 	// 1. Session-config rules (per-session, declared in TOML).
 	if dec, _, ok := permission.MatchRules(ms.session.Config.PermissionRules, permReq); ok {
 		if dec != "ask" {
-			m.recordPermissionEvent(ms, permReq, dec, true)
 			_ = ms.session.RespondPermission(permReq.ID, dec)
 			return
 		}
@@ -2387,14 +1910,12 @@ func (m *SessionManager) handlePermission(ms *managedSession, req *PermissionReq
 	// 2. Runtime rules (allow_session / allow_always added at runtime).
 	if dec, ok := m.runtimeRules.Match(permReq); ok {
 		if dec != "ask" {
-			m.recordPermissionEvent(ms, permReq, dec, true)
 			_ = ms.session.RespondPermission(permReq.ID, dec)
 			return
 		}
 	}
 	// 3. Bypass mode auto-allows everything.
 	if ms.session.Config.PermissionMode == "bypassPermissions" {
-		m.recordPermissionEvent(ms, permReq, "allow", true)
 		_ = ms.session.RespondPermission(permReq.ID, "allow")
 		return
 	}
@@ -2404,38 +1925,6 @@ func (m *SessionManager) handlePermission(ms *managedSession, req *PermissionReq
 	notify, sound := m.permissionAlertFlags()
 	m.emit(EventNamePermission, PermissionEvent{ID: ms.session.ID, Request: permReq, Notify: notify, Sound: sound})
 	m.schedulePermissionTimeout(ms.session.ID, permReq.ID)
-}
-
-// recordPermissionEvent persists one resolved permission request into
-// permission_events (LEARN-TASKS.md LN-04) — both auto-decided (a rule or
-// bypassPermissions, called from handlePermission) and human-decided (called
-// from RespondPermission), so a later candidate query can tell "still needs
-// asking" apart from "a rule already covers this". Gated on the same
-// [optimization] experience_tracking flag as the rest of the experience
-// layer (off by default) and a no-op without a store (e.g. playwright-server).
-func (m *SessionManager) recordPermissionEvent(ms *managedSession, req permission.PermissionRequest, decision string, auto bool) {
-	if m.store == nil || m.cfg == nil || !m.cfg.Optimization.ExperienceTracking {
-		return
-	}
-	ms.mu.Lock()
-	var runID *int64
-	if ms.runID != 0 {
-		v := ms.runID
-		runID = &v
-	}
-	project, name := ms.project, ms.name
-	ms.mu.Unlock()
-
-	_ = m.store.InsertPermissionEvent(store.PermissionEvent{
-		Project:   project,
-		Session:   name,
-		RunID:     runID,
-		Tool:      req.Tool,
-		Pattern:   req.Pattern(),
-		Decision:  decision,
-		Auto:      auto,
-		Timestamp: time.Now(),
-	})
 }
 
 // ---- Pre-flight plans (PLAN.md section 17) ----
@@ -2571,133 +2060,6 @@ func (m *SessionManager) GetLatestDraftRoadmap(project string) (*analysis.TaskPl
 }
 
 // EventNameSkillProgress notifies the frontend of activity while
-// DistillSkill's analyst CLI run is in flight (LEARN-TASKS.md LN-09) — mirrors
-// EventNameRoadmapProgress above for the same reason: a distillation run has
-// no other visible sign of being alive rather than hung.
-const EventNameSkillProgress = "skill:progress"
-
-// SkillProgressEvent is the payload of EventNameSkillProgress.
-type SkillProgressEvent struct {
-	Project string `json:"project"`
-	Text    string `json:"text"`
-}
-
-// skillDistillFn abstracts analysis.DistillSkill so tests can stub the
-// analyst CLI, mirroring roadmapAnalyzeFn above.
-type skillDistillFn func(ctx context.Context, projectPath string, in analysis.SkillDistillInput, score, minScore float64, cfg analysis.AnalysisConfig, onProgress analysis.ProgressFunc) (*analysis.SkillDraft, error)
-
-// DistillSkill turns one recurring tool-call sequence into a skill draft and
-// persists it to the `skills` table as status=draft (LEARN-TASKS.md LN-09).
-// in is built by the caller (app.go) from an internal/experience
-// SkillCandidate — see analysis.SkillDistillInput's doc comment for why this
-// package cannot take that type directly. Returns analysis.ErrBelowThreshold
-// when score does not clear minScore (<=0 uses analysis.DefaultSkillMinScore)
-// — the caller should treat that as "skip this candidate", not a failure.
-func (m *SessionManager) DistillSkill(project string, in analysis.SkillDistillInput, sourceJSON string, score, minScore float64, model string) (*store.Skill, error) {
-	return m.distillSkill(context.Background(), project, in, sourceJSON, score, minScore, model, analysis.DistillSkill)
-}
-
-func (m *SessionManager) distillSkill(ctx context.Context, project string, in analysis.SkillDistillInput, sourceJSON string, score, minScore float64, model string, distill skillDistillFn) (*store.Skill, error) {
-	if m.store == nil {
-		return nil, fmt.Errorf("manager: no store configured")
-	}
-	path, err := m.projectPath(project)
-	if err != nil {
-		return nil, err
-	}
-	m.mu.Lock()
-	acfg := analysis.AnalysisConfig{
-		ClaudePath:   m.cfg.Settings.ClaudePath,
-		Model:        model,
-		MaxBudgetUSD: m.cfg.Settings.PreflightMaxBudget,
-	}
-	m.mu.Unlock()
-
-	onProgress := func(text string) {
-		m.emit(EventNameSkillProgress, SkillProgressEvent{Project: project, Text: text})
-	}
-	draft, err := distill(ctx, path, in, score, minScore, acfg, onProgress)
-	if err != nil {
-		return nil, err
-	}
-
-	draftJSON, err := json.Marshal(draft)
-	if err != nil {
-		return nil, fmt.Errorf("manager: encode skill draft: %w", err)
-	}
-
-	sk := &store.Skill{
-		Project:    project,
-		Name:       draft.Name,
-		Status:     "draft",
-		DraftJSON:  string(draftJSON),
-		MD:         analysis.RenderSkillMarkdown(*draft),
-		SourceJSON: sourceJSON,
-		CreatedAt:  time.Now(),
-	}
-	if err := m.store.InsertSkill(sk); err != nil {
-		return nil, err
-	}
-	logger.L.Info("manager.skill_distilled",
-		"project", project, "skill", sk.Name, "id", sk.ID, "cost_usd", draft.CostUSD)
-	return sk, nil
-}
-
-// EventNameImportProgress notifies the frontend while ImportProjectLogs's
-// bulk directory walk is in flight (LEARN-TASKS.md LN-20) — mirrors
-// EventNameRoadmapProgress/EventNameSkillProgress above: importing a corpus
-// of thousands of log files with no signal reads as a hung UI.
-const EventNameImportProgress = "experience:import"
-
-// ImportProgressEvent is the payload of EventNameImportProgress.
-type ImportProgressEvent struct {
-	Project   string `json:"project"`
-	Processed int    `json:"processed"`
-	Total     int    `json:"total"`
-}
-
-// ImportProjectLogs bulk-imports a directory of CLI JSONL transcripts and
-// auto-saved markdown session logs into action_signatures — the missing UI to
-// LN-17's IngestDir (LEARN-TASKS.md LN-20). dir defaults to the project's own
-// <project>/.claude-manager/logs/ when empty; a caller may instead pass a
-// directory picked via PickDirectory to import a corpus brought from another
-// machine. Gated on the same [optimization] experience_tracking flag as the
-// rest of the experience layer: off, or no importer wired (app.go only wires
-// one when a store is configured), returns an error rather than silently
-// reading — or not reading — the directory, since a click that does nothing
-// must still be visible to whoever clicked it.
-func (m *SessionManager) ImportProjectLogs(project, dir string) (ImportStats, error) {
-	m.mu.Lock()
-	tracking := m.cfg != nil && m.cfg.Optimization.ExperienceTracking
-	importFn := m.importLogsFn
-	m.mu.Unlock()
-	if !tracking {
-		return ImportStats{}, fmt.Errorf("manager: experience_tracking is disabled")
-	}
-	if importFn == nil {
-		return ImportStats{}, fmt.Errorf("manager: no store configured")
-	}
-	path, err := m.projectPath(project)
-	if err != nil {
-		return ImportStats{}, err
-	}
-	if dir == "" {
-		dir = filepath.Join(path, ".claude-manager", "logs")
-	}
-
-	onProgress := func(processed, total int) {
-		m.emit(EventNameImportProgress, ImportProgressEvent{Project: project, Processed: processed, Total: total})
-	}
-	stats, err := importFn(dir, project, path, onProgress)
-	if err != nil {
-		return stats, err
-	}
-	logger.L.Info("manager.import_logs",
-		"project", project, "dir", dir, "files", stats.Files, "runs", stats.Runs,
-		"actions", stats.Actions, "skipped", stats.Skipped, "errors", stats.Errors)
-	return stats, nil
-}
-
 // ApproveRoadmapFiles materializes an approved roadmap plan into
 // <project>/ROADMAP.md + <project>/STATUS-P1.md (see analysis.WriteRoadmapFiles)
 // and marks the plan completed. Rejects plans that aren't PlanKindRoadmap, so
@@ -3032,43 +2394,6 @@ func (m *SessionManager) CancelMixedTask(id string) error {
 	return nil
 }
 
-// managerCardFor renders the Claude Manager card for one session of proj, or
-// "" when GlobalSettings.ManagerCard is off.
-func (m *SessionManager) managerCardFor(proj *config.ProjectConfig, session string) string {
-	if !m.cfg.Settings.ManagerCard || proj == nil {
-		return ""
-	}
-	return managerCard(proj.Name, proj.Path, proj.Sessions, session)
-}
-
-// learnedRulesFor renders the failure rules the autopilot applied (trial and
-// kept) as a system-prompt block for proj's Claude sessions, or "" when the
-// project has auto_skills off, there is no store or no such rule (LN-40).
-func (m *SessionManager) learnedRulesFor(proj *config.ProjectConfig) string {
-	if proj == nil || !proj.AutoSkills || m.store == nil {
-		return ""
-	}
-	rules, err := m.store.InjectedFailureRules(proj.Name)
-	if err != nil || len(rules) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString("## Learned from failures (Claude Manager)\nErrors that kept recurring in this project's past runs, with the rule that avoids each:")
-	n := 0
-	for _, r := range rules {
-		text := strings.Join(strings.Fields(r.RuleText), " ")
-		if text == "" {
-			continue
-		}
-		b.WriteString("\n- " + text)
-		n++
-	}
-	if n == 0 {
-		return ""
-	}
-	return b.String()
-}
-
 // slotConflictLocked refuses to start a session whose work folder (pool slot)
 // is already held by another running session of the same project: two CLIs in
 // one checkout would trample each other's branch and index. Caller holds m.mu.
@@ -3089,33 +2414,4 @@ func (m *SessionManager) slotConflictLocked(project, id string, sc *config.Sessi
 		}
 	}
 	return nil
-}
-
-// ErrTextBackfillFunc fills err_text of already-indexed failed actions from
-// their transcripts (wired from app.go to experience.BackfillErrorText).
-type ErrTextBackfillFunc func(projectPaths map[string]string) (filled, missing int, err error)
-
-// StartErrTextBackfill runs fn once in a background goroutine (LEARN-TASKS.md
-// LN-36) when experience_tracking is on; it never blocks startup. It reports
-// whether a run was started.
-func (m *SessionManager) StartErrTextBackfill(fn ErrTextBackfillFunc) bool {
-	m.mu.Lock()
-	cfg := m.cfg
-	m.mu.Unlock()
-	if fn == nil || cfg == nil || !cfg.Optimization.ExperienceTracking {
-		return false
-	}
-	paths := make(map[string]string, len(cfg.Projects))
-	for _, p := range cfg.Projects {
-		paths[p.Name] = p.Path
-	}
-	go func() {
-		filled, missing, err := fn(paths)
-		if err != nil {
-			logger.L.Error("experience.err_text_backfill", "error", err, "filled", filled, "missing", missing)
-			return
-		}
-		logger.L.Info("experience.err_text_backfill", "filled", filled, "missing", missing)
-	}()
-	return true
 }

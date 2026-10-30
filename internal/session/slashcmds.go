@@ -91,6 +91,11 @@ func (s *Session) ListSlashCommands() []SlashCommand {
 	if s.Config.IsHermes() {
 		return hermesSkillCommands(hermesHome(s.Config.HermesProfile))
 	}
+	if s.Config.IsKimi() {
+		// No catalog source for Kimi commands yet — no autocomplete rather
+		// than a wrong (Claude) one.
+		return nil
+	}
 	s.mu.Lock()
 	init := s.initCommands
 	s.mu.Unlock()

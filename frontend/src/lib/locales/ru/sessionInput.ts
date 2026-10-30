@@ -12,6 +12,7 @@ export default {
     'sessionInput.send': 'Отправить ▶',
     'sessionInput.slash.header.claude': 'Команды и скиллы Claude Code',
     'sessionInput.slash.header.hermes': 'Скиллы Hermes',
+    'sessionInput.slash.header.kimi': 'Команды и скиллы Kimi Code',
     'sessionInput.slash.hint': '↑↓ выбор · Enter/Tab вставить · Esc закрыть',
     'sessionInput.slash.empty': 'Нет подходящих команд',
     'sessionInput.slash.skill': 'скилл',

@@ -154,7 +154,7 @@ func TestDrainStderr_AuthLine_SetsAuthErrorHit(t *testing.T) {
 }
 
 func TestDrainHermesStderr_SessionNotFound_SetsSessionNotFoundHit(t *testing.T) {
-	s := New(Params{Config: config.SessionConfig{Name: "s"}})
+	s := New(Params{Config: config.SessionConfig{Name: "s", Runtime: config.RuntimeHermes}})
 	s.drainHermesStderr(bytes.NewBufferString("Session not found: 20260101_000000_abcdef\n"))
 	if !s.sessionNotFoundHit.Load() {
 		t.Fatal("drainHermesStderr did not set sessionNotFoundHit")
@@ -162,7 +162,7 @@ func TestDrainHermesStderr_SessionNotFound_SetsSessionNotFoundHit(t *testing.T) 
 }
 
 func TestDrainHermesStderr_Auth_SetsAuthErrorHit(t *testing.T) {
-	s := New(Params{Config: config.SessionConfig{Name: "s"}})
+	s := New(Params{Config: config.SessionConfig{Name: "s", Runtime: config.RuntimeHermes}})
 	s.drainHermesStderr(bytes.NewBufferString("HTTP 403 forbidden: unauthorized\n"))
 	if !s.authErrorHit.Load() {
 		t.Fatal("drainHermesStderr did not set authErrorHit on a 403 line")

@@ -25,6 +25,9 @@
     // Hide the leading [hh:mm:ss] column — the feed view puts time in a
     // block-level title instead (UI-03), the classic view keeps it inline.
     export let showTime: boolean = true;
+    // 'kimi' renders text entries like Kimi Code's own transcript: a leading
+    // "• " bullet on assistant text (thinking text is not on the wire).
+    export let runtime: string = '';
 
     const COLLAPSE_CHARS = 200;
 
@@ -98,10 +101,13 @@
     $: shown = foldDoneMarkers(msg, (s) =>
         '✓ ' + (s ? $t('logStream.doneMarkerWith', { s }) : $t('logStream.doneMarker')),
     );
+    $: displayed = runtime === 'kimi' && (entry.level === 'text' || entry.level === 'thinking') && !shown.startsWith('• ')
+        ? '• ' + shown
+        : shown;
     $: mdSrc = mdForced ?? autoMarkdown(entry);
     $: md = $logMarkdown && mdSrc;
     $: offered = $logMarkdown && offersMarkdown(entry);
-    $: collapsible = isCollapsible(shown);
+    $: collapsible = isCollapsible(displayed);
     $: isOpen = collapsible ? openForced ?? mdSrc : true;
     $: html = md && isOpen ? renderCached(shown) : '';
 </script>
@@ -154,7 +160,7 @@
         </div>
     {:else}
         <span class="whitespace-pre-wrap break-words">
-            {collapsible && !isOpen ? summarize(shown) : shown}
+            {collapsible && !isOpen ? summarize(displayed) : displayed}
         </span>
     {/if}
     {#if msg}

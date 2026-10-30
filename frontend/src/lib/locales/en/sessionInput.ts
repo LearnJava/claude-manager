@@ -12,6 +12,7 @@ export default {
     'sessionInput.send': 'Send ▶',
     'sessionInput.slash.header.claude': 'Claude Code commands and skills',
     'sessionInput.slash.header.hermes': 'Hermes skills',
+    'sessionInput.slash.header.kimi': 'Kimi Code commands and skills',
     'sessionInput.slash.hint': '↑↓ select · Enter/Tab insert · Esc close',
     'sessionInput.slash.empty': 'No matching commands',
     'sessionInput.slash.skill': 'skill',

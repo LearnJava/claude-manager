@@ -25,18 +25,8 @@ func (c controlApp) MirrorStatusOf(project string) any {
 	return c.App.GetProjectMirror(project)
 }
 
-// The App, wrapped as controlApp, must keep serving the skills RPCs (MCP-11).
-var _ control.SkillsApp = controlApp{}
-
-// SkillAutopilotOf is GetSkillAutopilot with its package-main result type
-// returned as a plain value (control.SkillsApp).
-func (c controlApp) SkillAutopilotOf(project string) (any, error) {
-	return c.App.GetSkillAutopilot(project)
-}
-
 // The session RPCs (MCP-23) call these App methods instead of the bare
-// manager, so the GUI's extra logic (StartProject's cache-affinity order,
-// remembered model/runtime) reaches MCP too.
+// manager, so the GUI's extra logic (remembered model/runtime) reaches MCP too.
 var _ control.SessionApp = (*App)(nil)
 
 // The interaction RPCs go through the App as well.
@@ -44,13 +34,3 @@ var _ control.InteractionApp = (*App)(nil)
 
 // The project RPCs get the App wrapped as controlApp.
 var _ control.ProjectsApp = controlApp{}
-
-// The App, wrapped as controlApp, must keep serving the failure-rule RPCs
-// (LEARN-TASKS.md LN-38).
-var _ control.FailuresApp = controlApp{}
-
-// FailureRulesOf is GetFailureRules with its package-main result type
-// returned as a plain value (control.FailuresApp).
-func (c controlApp) FailureRulesOf(project string) (any, error) {
-	return c.App.GetFailureRules(project)
-}

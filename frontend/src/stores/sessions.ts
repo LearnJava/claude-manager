@@ -201,29 +201,6 @@ export const todayTokens = writable<DailyTokenTotals>({
 // Track when the manager started (for uptime in the status bar)
 export const appStartedAt = writable<Date>(new Date());
 
-// Cost-regression alerts (LEARN-TASKS.md LN-16): a run that came out 2x its
-// own session's recent median cost/input-tokens. Transient by design — a
-// dismiss just filters seq out of the array, nothing is persisted, matching
-// every other "closes on click" banner in this app (see CLAUDE.md
-// "Conventions" — no window.confirm(), and per LN-16's own "Готово когда"
-// the banner is UI-only, not a stored record).
-export interface RegressionAlert {
-    project: string;
-    session: string;
-    run_id: number;
-    factor: number;
-    hint: string;
-    seq: number; // client-assigned dismiss key
-}
-
-export const regressionAlerts = writable<RegressionAlert[]>([]);
-
-let regressionSeq = 0;
-
-export function dismissRegression(seq: number): void {
-    regressionAlerts.update((list) => list.filter((r) => r.seq !== seq));
-}
-
 // Per-session log buffers (in-memory tail). Persisted logs come from store via Wails.
 export const sessionLogs = writable<Record<string, LogEntry[]>>({});
 
@@ -579,16 +556,6 @@ function subscribeEvents() {
         }));
     });
 
-    // A tool-call loop detected in a session (loop_guard.go).
-    EventsOn('alert:loop', (evt: { id: string; tool: string; input: string; count: number; action: string }) => {
-        if (!evt) return;
-        const what = evt.input ? `${evt.tool} ${evt.input}` : evt.tool;
-        notify(get(t)('notify.loop.title', { id: evt.id }), get(t)(`notify.loop.body.${evt.action}`, {
-            what,
-            count: evt.count ?? 0,
-        }));
-    });
-
     EventsOn('session:question', (evt: { id: string; question: PendingQuestion }) => {
         if (!evt || !evt.id) return;
         setSession(evt.id, (s) => ({ ...s, pending_question: evt.question }));
@@ -664,21 +631,6 @@ function subscribeEvents() {
                 message: evt.message ?? get(t)('notify.unknownError'),
             }));
         }
-    });
-
-    EventsOn('experience:regression', (evt: {
-        project: string;
-        session: string;
-        run_id: number;
-        factor: number;
-        hint: string;
-    }) => {
-        if (!evt || !evt.project || !evt.session) return;
-        regressionAlerts.update((list) => [...list, { ...evt, seq: ++regressionSeq }]);
-        notify(get(t)('notify.costRegression.title'), get(t)('notify.costRegression.body', {
-            id: `${evt.project}/${evt.session}`,
-            factor: evt.factor?.toFixed(1) ?? '?',
-        }));
     });
 }
 

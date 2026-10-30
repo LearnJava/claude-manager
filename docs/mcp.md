@@ -412,7 +412,6 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `get_pending_questions` | read | только чтение, идемпотентное | List the questions sessions asked the human (AskUserQuestion, clarify, the manager's own restart choice) that still wait for an answer. |
 | `answer_question` | operate | запускает модель | Answer a question a session asked the human. |
 | `add_permission_rule` | admin | идемпотентное | Add a standing allow or deny rule to one session's permission rules. |
-| `get_permission_candidates` | read | только чтение, идемпотентное | Suggest auto-allow rules from a project's permission history: requests that keep recurring and were always approved. |
 | `get_plan` | read | только чтение, идемпотентное | Get a persisted plan with its subtasks and their progress. |
 | `approve_plan` | admin | идемпотентное | Persist a plan, optionally edited, as approved on the human's behalf. |
 | `get_projects` | read | только чтение, идемпотентное | List the configured projects with their folder, session names and mirror and mixed-programming flags. |
@@ -440,20 +439,9 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `get_session_metrics` | read | только чтение, идемпотентное | Get a session's token counts, turns, cost, context use and duration. |
 | `get_cost` | read | только чтение, идемпотентное | Get the cost and token volume of one day across all projects, or of one project over a period. |
 | `export_log` | operate | — | Write a session's latest log to a file in the manager's exports folder and return its path. |
-| `import_project_logs` | operate | идемпотентное | Read a folder of saved CLI logs into the project's experience tables. |
 | `get_project_log_files` | read | только чтение, идемпотентное | List the session logs the manager saved automatically in a project's .claude-manager/logs folder, newest first. |
 | `clear_project_logs` | admin | разрушительное, идемпотентное | Delete every saved log file of a project and its stored log lines. |
 | `clean_old_logs` | admin | разрушительное, идемпотентное | Delete the stored log lines of runs older than a number of days, in every project. |
-| `get_top_actions` | read | только чтение, идемпотентное | List the tool calls a project's sessions repeat most, grouped by signature, with error rate and token weight. |
-| `get_action_samples` | read | только чтение, идемпотентное | List concrete calls that make up one action signature of a project. |
-| `get_duration_profile` | read | только чтение, идемпотентное | Show how long each kind of tool call takes in a project: median, 90th percentile, maximum, total and failure rate. |
-| `get_token_attribution` | read | только чтение, идемпотентное | Estimate which tool calls fill a project's context: tokens per signature, per tool and per result length. |
-| `get_waste_report` | read | только чтение, идемпотентное | Find work in a project that succeeded and still bought nothing: reads repeated with no edit between, streaks of empty searches, whole-file reads, commands rerun unchanged. Per category: count, estimated tokens, share of the project's volume and examples. |
-| `get_task_labels` | read | только чтение, идемпотентное | List why a project's tasks that ended badly went wrong: each carries one label - tests_fitted_to_code, protocol_broken, garbage_left or wrong_task_done - with a reason, the judging model and the tokens the judgement cost; plus the count per label. |
-| `get_reference_report` | read | только чтение, идемпотентное | List a project's reference cases - finished tasks kept with their text, starting commit, gates and cost - and, per task, every model/setting that has run it: whether the gates went green, in how many rework rounds, with how many tokens and how much time. |
-| `replay_reference_case` | operate | запускает модель | Run a stored reference case again with another model or effort: a detached worktree at the case's starting commit, the task text as the prompt, the same gates, up to two rework rounds on red gates. The outcome is stored next to the original. |
-| `run_benchmark` | operate | запускает модель | Run a suite of tasks (reference cases or your own) under several configurations - model, effort, skills, bans, gate-driven rework - several times each, every trial in a throwaway worktree at the task's starting commit, judged by its gates. Inputs are frozen with the run. |
-| `get_benchmark_report` | read | только чтение, идемпотентное | Report a benchmark run metric by metric: per configuration the share of trials that passed, rounds to green, tokens and seconds, each with mean, range and standard deviation, plus the same per repeat; and each configuration against the first as differs, within_noise or indistinguishable. There is no single score - the weights are yours. |
 | `get_model_advice` | read | только чтение, идемпотентное | Say whether automatic model routing is on and which model and effort it recommends for a configured session's prompt. |
 | `session_preflight` | operate | запускает модель | Run the preflight analysis the settings of a session call for (what the Start button does) and return the plan to review, or nothing when the session should simply start. |
 | `generate_roadmap` | operate | запускает модель | Split a whole project idea into a backlog of phases and tasks and save it as a draft roadmap plan. |
@@ -464,23 +452,6 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `get_roadmap_row_detail` | read | только чтение, идемпотентное | Read the long text of one roadmap row: its note column, else the raw row. |
 | `get_mixed_quality` | read | только чтение, идемпотентное | Compare the worker models of the mixed-programming tasks of a project: tasks done, rounds to green, clean patch rate and failures per worker. |
 | `cancel_mixed_task` | operate | разрушительное, идемпотентное | Cancel a running mixed-programming task. |
-| `get_skill_candidates` | read | только чтение, идемпотентное | List the action patterns of a project's past runs that are worth turning into a skill, best first. |
-| `distill_skill` | operate | запускает модель | Turn one skill candidate into a skill draft with a model run and save it as a draft; nothing is written into the project yet. |
-| `get_skills` | read | только чтение, идемпотентное | List the skills of a project in every status: drafts, trials, approved, rejected and archived. |
-| `approve_skill` | admin | идемпотентное | Write a skill draft into the project as .claude/skills/<name>/SKILL.md so the agents load it. |
-| `archive_skill` | operate | идемпотентное | Switch a skill off: an applied skill's folder is moved out of .claude/skills so the agents stop seeing it. |
-| `restore_skill` | admin | идемпотентное | Bring an archived skill back into .claude/skills, or apply a rejected one anyway. |
-| `get_skill_usage` | read | только чтение, идемпотентное | Show how often agents actually load each skill of a project. |
-| `get_skill_quality` | read | только чтение, идемпотентное | Compare the runs before and after each approved skill of a project: does the skill help. |
-| `get_skill_autopilot` | read | только чтение, идемпотентное | Show whether the skill autopilot is on for a project, its daily budget and what it has spent. |
-| `set_skill_autopilot` | admin | идемпотентное | Turn the skill autopilot on or off for a project and set its daily budget. |
-| `run_skill_autopilot` | operate | запускает модель | Run one autopilot step for a project now instead of waiting for the next finished run. |
-| `get_failure_rules` | read | только чтение, идемпотентное | List the CLAUDE.md rules drafted from a project's recurring errors, with the examples and, for accepted ones, how often the error came back. |
-| `draft_failure_rules` | operate | запускает модель | Ask a model to write a one-line CLAUDE.md rule for each of the project's most frequent recurring errors that has none yet. |
-| `accept_failure_rule` | admin | — | Append a drafted rule to the "Learned from failures" section of the project's CLAUDE.md and mark it accepted. |
-| `dismiss_failure_rule` | operate | идемпотентное | Turn a drafted rule down so the error is not proposed again. |
-| `revert_failure_rule` | operate | идемпотентное | Switch off a rule the skill autopilot applies to the project's sessions (status trial or kept). |
-| `restore_failure_rule` | operate | идемпотентное | Bring a reverted autopilot rule back into the system prompt of the project's sessions. |
 
 <!-- END GENERATED: tools -->
 
@@ -617,93 +588,64 @@ cursor="N"`. Страница дополнительно режется до `Ma
 
 | Метод `App` | Инструмент | Уровень |
 |---|---|---|
-| `AcceptFailureRule` | `accept_failure_rule` | admin |
 | `AddPermissionRule` | `add_permission_rule` | admin |
 | `AnswerQuestion` | `answer_question` | operate |
 | `ApprovePlan` | `approve_plan` | admin |
 | `ApproveRoadmap` | `approve_roadmap` | admin |
-| `ApproveSkill` | `approve_skill` | admin |
-| `ArchiveSkill` | `archive_skill` | operate |
 | `CancelMixedTask` | `cancel_mixed_task` | operate |
 | `CheckEnvironment` | `check_environment` | read |
 | `CleanOldLogs` | `clean_old_logs` | admin |
 | `ClearProjectLogs` | `clear_project_logs` | admin |
 | `ClearSessionState` | `clear_session_state` | admin |
-| `DismissFailureRule` | `dismiss_failure_rule` | operate |
 | `DispatchMixedTask` | `dispatch_mixed_task` | operate |
-| `DistillSkill` | `distill_skill` | operate |
-| `DraftFailureRules` | `draft_failure_rules` | operate |
 | `ExecutePlan` | `execute_plan` | operate |
 | `ExportLog` | `export_log` | operate |
 | `GenerateClaudeMdSession` | `generate_claude_md` | admin |
 | `GenerateRoadmap` | `generate_roadmap` | operate |
-| `GetActionSamples` | `get_action_samples` | read |
 | `GetAllSessions` | `get_sessions` | read |
 | `GetAutoModelRouting` | `get_model_advice` | read |
-| `GetBenchmarkReport` | `get_benchmark_report` | read |
 | `GetDailyCost` | `get_cost` | read |
 | `GetDailyTokens` | `get_cost` | read |
-| `GetDurationProfile` | `get_duration_profile` | read |
-| `GetFailureRules` | `get_failure_rules` | read |
 | `GetHistory` | `get_history` | read |
 | `GetLatestDraftRoadmap` | `get_latest_draft_roadmap` | read |
 | `GetLogShipStatus` | `get_log_ship_status` | read |
 | `GetMixedQuality` | `get_mixed_quality` | read |
 | `GetMixedRounds` | `get_mixed_rounds` | read |
 | `GetModelRecommendation` | `get_model_advice` | read |
-| `GetPendingPermissions` | `get_pending_permissions` | read |
 | `GetPendingPermissions` | `get_pending` | read |
-| `GetPendingQuestions` | `get_pending` | read |
+| `GetPendingPermissions` | `get_pending_permissions` | read |
 | `GetPendingQuestions` | `get_pending_questions` | read |
-| `GetPermissionCandidates` | `get_permission_candidates` | read |
+| `GetPendingQuestions` | `get_pending` | read |
 | `GetPlan` | `get_plan` | read |
 | `GetProjectLogFiles` | `get_project_log_files` | read |
 | `GetProjectMirror` | `get_project_setup` | read |
 | `GetProjectTokens` | `get_cost` | read |
 | `GetProjects` | `get_projects` | read |
 | `GetRateLimitStatus` | `get_rate_limit` | read |
-| `GetReferenceReport` | `get_reference_report` | read |
 | `GetRoadmapRowDetail` | `get_roadmap_row_detail` | read |
 | `GetRoadmapTaskDetail` | `get_roadmap_task_detail` | read |
 | `GetSessionLog` | `get_session_logs` | read |
 | `GetSessionMetrics` | `get_session_metrics` | read |
 | `GetSessionRoadmap` | `get_session_roadmap` | read |
 | `GetSessionState` | `get_session` | read |
-| `GetSkillAutopilot` | `get_skill_autopilot` | read |
-| `GetSkillCandidates` | `get_skill_candidates` | read |
-| `GetSkillQuality` | `get_skill_quality` | read |
-| `GetSkillUsage` | `get_skill_usage` | read |
-| `GetSkills` | `get_skills` | read |
-| `GetTaskLabels` | `get_task_labels` | read |
-| `GetTokenAttribution` | `get_token_attribution` | read |
-| `GetTopActions` | `get_top_actions` | read |
-| `GetWasteReport` | `get_waste_report` | read |
 | `HasClaudeMd` | `get_project_setup` | read |
 | `HasSessionProtocol` | `get_project_setup` | read |
-| `ImportProjectLogs` | `import_project_logs` | operate |
 | `InitGitRepo` | `init_git_repo` | admin |
 | `InstallSessionProtocol` | `install_session_protocol` | admin |
 | `InterruptSession` | `interrupt_session` | operate |
 | `ListSlashCommands` | `list_slash_commands` | read |
 | `MirrorProject` | `mirror_project` | admin |
 | `RegisterMixedBrief` | `register_mixed_brief` | operate |
-| `ReplayReferenceCase` | `replay_reference_case` | operate |
 | `RespondPermission` | `approve_permission` | admin |
 | `RespondPermission` | `deny_permission` | operate |
 | `RestartSession` | `restart_session` | operate |
-| `RestoreFailureRule` | `restore_failure_rule` | operate |
-| `RestoreSkill` | `restore_skill` | admin |
 | `ResumeSession` | `restart_session` | operate |
-| `RevertFailureRule` | `revert_failure_rule` | operate |
-| `RunBenchmark` | `run_benchmark` | operate |
 | `RunPreflight` | `run_preflight` | operate |
-| `RunSkillAutopilot` | `run_skill_autopilot` | operate |
 | `SendMessage` | `send_message` | operate |
 | `SendMessageWithImages` | `send_message` | operate |
 | `SessionPreflight` | `session_preflight` | operate |
 | `SetSessionModel` | `set_session_model` | operate |
 | `SetSessionRuntime` | `set_session_runtime` | operate |
-| `SetSkillAutopilot` | `set_skill_autopilot` | admin |
 | `ShipLogsNow` | `ship_logs_now` | operate |
 | `StartAdHocChatSession` | `start_ad_hoc_chat` | operate |
 | `StartProject` | `start_project` | operate |

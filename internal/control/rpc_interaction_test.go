@@ -2,24 +2,16 @@ package control
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"claude-manager/internal/experience"
 )
 
 // interactionApp is a mockApp that also implements InteractionApp.
 type interactionApp struct {
 	*mockApp
 	calls *[]string
-}
-
-func (a interactionApp) GetPermissionCandidates(project string, days int) (*experience.CandidateSet, error) {
-	*a.calls = append(*a.calls, fmt.Sprintf("GetPermissionCandidates %s %d", project, days))
-	return &experience.CandidateSet{}, nil
 }
 
 func (a interactionApp) AddPermissionRule(project, name, tool, pattern, decision string) error {
@@ -46,10 +38,7 @@ func TestRPC_InteractionMethods(t *testing.T) {
 	if out := planRPC(t, ts, token, rpcBody("AddPermissionRule", `{"project":"p","session":"s","tool":"Bash","pattern":"ls*","decision":"allow"}`)); out.Error != nil {
 		t.Fatal(out.Error.Message)
 	}
-	if out := planRPC(t, ts, token, rpcBody("GetPermissionCandidates", `{"project":"p","days":30}`)); out.Error != nil {
-		t.Fatal(out.Error.Message)
-	}
-	if got := strings.Join(calls, "|"); got != "AddPermissionRule p/s Bash ls* allow|GetPermissionCandidates p 30" {
+	if got := strings.Join(calls, "|"); got != "AddPermissionRule p/s Bash ls* allow" {
 		t.Errorf("app calls %q", got)
 	}
 
@@ -69,14 +58,9 @@ func TestRPC_InteractionNeedsApp(t *testing.T) {
 	srv, token := newTestServer(t, &mockManager{})
 	ts := httptest.NewServer(srv.srv.Handler)
 	defer ts.Close()
-	for _, tc := range []struct{ method, params string }{
-		{"AddPermissionRule", `{"project":"p","session":"s","tool":"Bash","decision":"allow"}`},
-		{"GetPermissionCandidates", `{"project":"p"}`},
-	} {
-		out := planRPC(t, ts, token, rpcBody(tc.method, tc.params))
-		if out.Error == nil || !strings.Contains(out.Error.Message, "needs the Claude Manager app") {
-			t.Errorf("%s without app: %+v", tc.method, out.Error)
-		}
+	out := planRPC(t, ts, token, rpcBody("AddPermissionRule", `{"project":"p","session":"s","tool":"Bash","decision":"allow"}`))
+	if out.Error == nil || !strings.Contains(out.Error.Message, "needs the Claude Manager app") {
+		t.Errorf("AddPermissionRule without app: %+v", out.Error)
 	}
 }
 

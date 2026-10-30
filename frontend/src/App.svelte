@@ -9,7 +9,6 @@
     import History from './components/History.svelte';
     import CostDashboard from './components/CostDashboard.svelte';
     import MixedRun from './components/MixedRun.svelte';
-    import ExperiencePanel from './components/ExperiencePanel.svelte';
     import ContextMenu from './components/ContextMenu.svelte';
     import { initSessions, selectedSessionId, sessions, sessionList, waitingSessions } from './stores/sessions';
     import { initProjects } from './stores/projects';
@@ -30,7 +29,6 @@
     let showHistory = false;
     let showDashboard = false;
     let showMixedRun = false;
-    let showExperience = false;
 
     // ---- Resizable sidebar ----
     // Default wide enough for a session row's name + CLI + model pickers;
@@ -167,10 +165,6 @@
         <div class="flex items-center gap-2">
             <button
                 class="text-text-muted hover:text-text text-xs px-2 py-0.5 rounded hover:bg-bg-elevated"
-                on:click={() => (showExperience = true)}
-                type="button">{$t('app.navExperience')}</button>
-            <button
-                class="text-text-muted hover:text-text text-xs px-2 py-0.5 rounded hover:bg-bg-elevated"
                 on:click={() => (showMixedRun = true)}
                 type="button">{$t('app.navMixed')}</button>
             <button
@@ -295,10 +289,6 @@
 
     {#if showMixedRun}
         <MixedRun on:close={() => (showMixedRun = false)} />
-    {/if}
-
-    {#if showExperience}
-        <ExperiencePanel on:close={() => (showExperience = false)} />
     {/if}
 </div>
 

@@ -4,17 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"claude-manager/internal/experience"
 	"claude-manager/internal/permission"
 	"claude-manager/internal/session"
 )
 
 // InteractionApp is the part of *App the interaction RPCs need beyond the
-// manager: the experience store (permission candidates) and the config
-// round-trip that appends a permission rule. A control server without it
-// (playwright-server, tests) reports these methods as unavailable.
+// manager: the config round-trip that appends a permission rule. A control
+// server without it (playwright-server, tests) reports these methods as
+// unavailable.
 type InteractionApp interface {
-	GetPermissionCandidates(project string, days int) (*experience.CandidateSet, error)
 	AddPermissionRule(project, sessionName, tool, pattern, decision string) error
 }
 
@@ -78,20 +76,6 @@ func (s *Server) registerInteractionRPCs(reg map[string]handler) {
 		}
 		perms, qs := s.pendingFor(a.ID)
 		return map[string]any{"permissions": perms, "questions": qs}, nil
-	}
-
-	reg["GetPermissionCandidates"] = func(p json.RawMessage) (any, error) {
-		var a struct {
-			Project string `json:"project"`
-			Days    int    `json:"days"`
-		}
-		if err := json.Unmarshal(p, &a); err != nil {
-			return nil, err
-		}
-		if iapp == nil {
-			return nil, needApp("permission candidates")
-		}
-		return iapp.GetPermissionCandidates(a.Project, a.Days)
 	}
 
 	reg["AddPermissionRule"] = func(p json.RawMessage) (any, error) {

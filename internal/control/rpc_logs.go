@@ -9,31 +9,18 @@ import (
 	"time"
 
 	"claude-manager/internal/config"
-	"claude-manager/internal/experience"
 	"claude-manager/internal/optimization"
-	"claude-manager/internal/session"
 	"claude-manager/internal/store"
 )
 
 // LogsApp is the part of *App the logs-and-metrics RPCs need beyond the
-// manager: the project log files, the experience tables and the model-routing
-// advice. A control server without it (playwright-server, tests) reports these
-// methods as unavailable.
+// manager: the project log files and the model-routing advice. A control
+// server without it (playwright-server, tests) reports these methods as
+// unavailable.
 type LogsApp interface {
 	GetProjectLogFiles(project string) ([]store.LogFileInfo, error)
 	ClearProjectLogs(project string) error
 	CleanOldLogs(retentionDays int) error
-	ImportProjectLogs(project, dir string) (session.ImportStats, error)
-	GetTopActions(project string, days int) ([]store.SignatureStat, error)
-	GetActionSamples(project, sig string, limit int) ([]store.ActionRow, error)
-	GetDurationProfile(project string) ([]experience.SignatureDuration, error)
-	GetTokenAttribution(project string, topN int) (experience.AttributionReport, error)
-	GetWasteReport(project string) (experience.WasteReport, error)
-	GetReferenceReport(project string) (experience.ReferenceReport, error)
-	GetTaskLabels(project string) (experience.LabelReport, error)
-	ReplayReferenceCase(project string, caseID int64, model, effort string) (*store.ReferenceReplay, error)
-	RunBenchmark(project string, spec experience.BenchmarkSpec) (experience.BenchmarkReport, error)
-	GetBenchmarkReport(project string, runID int64) (experience.BenchmarkReport, error)
 	GetModelRecommendation(project, name string) (*optimization.ModelRecommendation, error)
 	GetAutoModelRouting() bool
 }
@@ -224,175 +211,6 @@ func (s *Server) registerLogsRPCs(reg map[string]handler) {
 			return nil, needApp("cleaning old logs")
 		}
 		return nil, lapp.CleanOldLogs(a.RetentionDays)
-	}
-
-	reg["ImportProjectLogs"] = func(p json.RawMessage) (any, error) {
-		var a struct {
-			Project string `json:"project"`
-			Dir     string `json:"dir"`
-		}
-		if err := json.Unmarshal(p, &a); err != nil {
-			return nil, err
-		}
-		if lapp == nil {
-			return nil, needApp("importing project logs")
-		}
-		if a.Dir != "" {
-			if fi, err := os.Stat(a.Dir); err != nil || !fi.IsDir() {
-				return nil, fmt.Errorf("dir %q does not exist or is not a folder", a.Dir)
-			}
-		}
-		st, err := lapp.ImportProjectLogs(a.Project, a.Dir)
-		return map[string]int{"files": st.Files, "runs": st.Runs, "actions": st.Actions, "skipped": st.Skipped, "errors": st.Errors}, err
-	}
-
-	reg["GetTopActions"] = func(p json.RawMessage) (any, error) {
-		var a struct {
-			Project string `json:"project"`
-			Days    int    `json:"days"`
-		}
-		if err := json.Unmarshal(p, &a); err != nil {
-			return nil, err
-		}
-		if lapp == nil {
-			return nil, needApp("the action table")
-		}
-		rows, err := lapp.GetTopActions(a.Project, a.Days)
-		if rows == nil {
-			rows = []store.SignatureStat{}
-		}
-		return rows, err
-	}
-
-	reg["GetActionSamples"] = func(p json.RawMessage) (any, error) {
-		var a struct {
-			Project string `json:"project"`
-			Sig     string `json:"sig"`
-			Limit   int    `json:"limit"`
-		}
-		if err := json.Unmarshal(p, &a); err != nil {
-			return nil, err
-		}
-		if lapp == nil {
-			return nil, needApp("action samples")
-		}
-		rows, err := lapp.GetActionSamples(a.Project, a.Sig, a.Limit)
-		if rows == nil {
-			rows = []store.ActionRow{}
-		}
-		return rows, err
-	}
-
-	reg["GetDurationProfile"] = func(p json.RawMessage) (any, error) {
-		var a projectArg
-		if err := json.Unmarshal(p, &a); err != nil {
-			return nil, err
-		}
-		if lapp == nil {
-			return nil, needApp("the duration profile")
-		}
-		rows, err := lapp.GetDurationProfile(a.Project)
-		if rows == nil {
-			rows = []experience.SignatureDuration{}
-		}
-		return rows, err
-	}
-
-	reg["GetTokenAttribution"] = func(p json.RawMessage) (any, error) {
-		var a struct {
-			Project string `json:"project"`
-			TopN    int    `json:"top_n"`
-		}
-		if err := json.Unmarshal(p, &a); err != nil {
-			return nil, err
-		}
-		if lapp == nil {
-			return nil, needApp("token attribution")
-		}
-		return lapp.GetTokenAttribution(a.Project, a.TopN)
-	}
-
-	reg["GetWasteReport"] = func(p json.RawMessage) (any, error) {
-		var a struct {
-			Project string `json:"project"`
-		}
-		if err := json.Unmarshal(p, &a); err != nil {
-			return nil, err
-		}
-		if lapp == nil {
-			return nil, needApp("the waste report")
-		}
-		return lapp.GetWasteReport(a.Project)
-	}
-
-	reg["GetTaskLabels"] = func(p json.RawMessage) (any, error) {
-		var a struct {
-			Project string `json:"project"`
-		}
-		if err := json.Unmarshal(p, &a); err != nil {
-			return nil, err
-		}
-		if lapp == nil {
-			return nil, needApp("the task labels")
-		}
-		return lapp.GetTaskLabels(a.Project)
-	}
-
-	reg["GetReferenceReport"] = func(p json.RawMessage) (any, error) {
-		var a struct {
-			Project string `json:"project"`
-		}
-		if err := json.Unmarshal(p, &a); err != nil {
-			return nil, err
-		}
-		if lapp == nil {
-			return nil, needApp("the reference report")
-		}
-		return lapp.GetReferenceReport(a.Project)
-	}
-
-	reg["ReplayReferenceCase"] = func(p json.RawMessage) (any, error) {
-		var a struct {
-			Project string `json:"project"`
-			CaseID  int64  `json:"case_id"`
-			Model   string `json:"model"`
-			Effort  string `json:"effort"`
-		}
-		if err := json.Unmarshal(p, &a); err != nil {
-			return nil, err
-		}
-		if lapp == nil {
-			return nil, needApp("reference case replay")
-		}
-		return lapp.ReplayReferenceCase(a.Project, a.CaseID, a.Model, a.Effort)
-	}
-
-	reg["RunBenchmark"] = func(p json.RawMessage) (any, error) {
-		var a struct {
-			Project string                    `json:"project"`
-			Spec    experience.BenchmarkSpec `json:"spec"`
-		}
-		if err := json.Unmarshal(p, &a); err != nil {
-			return nil, err
-		}
-		if lapp == nil {
-			return nil, needApp("the benchmark")
-		}
-		return lapp.RunBenchmark(a.Project, a.Spec)
-	}
-
-	reg["GetBenchmarkReport"] = func(p json.RawMessage) (any, error) {
-		var a struct {
-			Project string `json:"project"`
-			RunID   int64  `json:"run_id"`
-		}
-		if err := json.Unmarshal(p, &a); err != nil {
-			return nil, err
-		}
-		if lapp == nil {
-			return nil, needApp("the benchmark report")
-		}
-		return lapp.GetBenchmarkReport(a.Project, a.RunID)
 	}
 
 	reg["GetAutoModelRouting"] = func(_ json.RawMessage) (any, error) {

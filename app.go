@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -16,7 +15,6 @@ import (
 	"claude-manager/internal/config"
 	"claude-manager/internal/control"
 	"claude-manager/internal/envcheck"
-	"claude-manager/internal/experience"
 	"claude-manager/internal/gitutil"
 	"claude-manager/internal/logger"
 	"claude-manager/internal/optimization"
@@ -36,17 +34,15 @@ const toastAppID = "Claude Session Manager"
 // App is the Wails application struct. All exported methods become callable
 // from the frontend via auto-generated JS bindings.
 type App struct {
-	ctx              context.Context
-	cfg              *config.AppConfig
-	cfgPath          string
-	store            *store.Store
-	manager          *session.SessionManager
-	wailsEmitter     *control.WailsEmitter
-	ctrlServer       *control.Server
-	closeLog         func()                                                                                                          // shuts down the file logger on exit
-	trayEnabled      bool                                                                                                            // set by main() before wails.Run; see main.go for why
-	skillPilot       *experience.SkillPilot                                                                                          // nil without a store (LEARN-TASKS.md LN-27)
-	draftFailureRule func(ctx context.Context, projectPath string, in analysis.FailureRuleInput) (*analysis.FailureRuleDraft, error) // test hook (LN-38)
+	ctx          context.Context
+	cfg          *config.AppConfig
+	cfgPath      string
+	store        *store.Store
+	manager      *session.SessionManager
+	wailsEmitter *control.WailsEmitter
+	ctrlServer   *control.Server
+	closeLog     func() // shuts down the file logger on exit
+	trayEnabled  bool   // set by main() before wails.Run; see main.go for why
 }
 
 // NewApp creates a new App with the default config path.
@@ -104,13 +100,6 @@ func (a *App) startup(ctx context.Context) {
 		logger.L.Error("store.open", "error", err)
 	} else {
 		a.store = st
-		// No benchmark can be alive in a fresh process: close the ones a
-		// crash or quit left marked running (WASTE-TASKS.md WS-12).
-		if n, err := st.InterruptRunningBenchmarks(); err != nil {
-			logger.L.Error("store.benchmark_interrupt", "error", err)
-		} else if n > 0 {
-			logger.L.Info("store.benchmark_interrupt", "closed", n)
-		}
 		// Drop persisted logs whose runs are older than the retention window.
 		if days := cfg.Settings.LogRetentionDays; days > 0 {
 			if err := st.DeleteOldLogs(days); err != nil {
@@ -136,187 +125,6 @@ func (a *App) startup(ctx context.Context) {
 
 	a.manager = session.NewSessionManager(cfg, a.cfgPath, a.store, sessionEmitter)
 	a.manager.StartQueueWatch() // session:queue_changed (QUEUE-TASKS.md QV-02)
-
-	// Wire the experience-layer indexer (LEARN-TASKS.md LN-03): finishRun
-	// calls this after every run, but only actually opens a transcript when
-	// [optimization] experience_tracking is on (checked live against
-	// whatever config SetConfig last installed, not just at startup).
-	// mdLogPath (LN-21) is this same run's own auto-saved markdown log, the
-	// fallback source when the CLI's own JSONL transcript can't be found.
-	if a.store != nil {
-		st := a.store
-		a.manager.SetActionIndexer(func(project, sessionName string, runID int64, cliSessionID, projectPath, taskPtr, mdLogPath string) (session.IngestResult, error) {
-			res, err := experience.IngestRun(st, project, sessionName, runID, cliSessionID, projectPath, taskPtr, mdLogPath)
-			return session.IngestResult{Rows: res.Rows, Reason: res.Reason}, err
-		})
-		// Loop history (WASTE-TASKS.md WS-04): only built for a session when
-		// [optimization] loop_memory is on.
-		a.manager.SetLoopMemory(
-			func(project, sessionName, projectPath string, runID func() int64) optimization.LoopMemory {
-				return experience.NewLoopMemory(st, project, sessionName, projectPath, runID)
-			},
-			func(runID int64) (int, error) { return experience.ResolveRunLoops(st, runID) },
-		)
-		// Reference cases (WASTE-TASKS.md WS-06): a task that closed well is
-		// stored as a case; only fed when [optimization] reference_cases is on.
-		a.manager.SetReferenceCases(func(info session.ReferenceCaseInfo) error {
-			_, err := experience.RecordReferenceCase(st, experience.RefCaseInput{
-				Project: info.Project, TaskPtr: info.TaskPtr, TaskText: info.TaskText,
-				BaseCommit: info.BaseCommit, ResultCommit: info.ResultCommit, Gates: info.Gates,
-				Rounds: info.Rounds, Tokens: info.Tokens, DurationSec: info.DurationSec,
-				Model: info.Model, Effort: info.Effort, Success: true,
-			})
-			return err
-		})
-		// Quality labels (WASTE-TASKS.md WS-11): a task that ended badly for
-		// good is judged by the cheapest model; only fed when [optimization]
-		// quality_labels is on. The judge's tokens are charged to the run.
-		a.manager.SetQualityLabels(func(ctx context.Context, info session.QualityLabelInfo, judgeModel string) error {
-			acfg := analysis.AnalysisConfig{Model: judgeModel}
-			if a.cfg != nil {
-				acfg.ClaudePath = a.cfg.Settings.ClaudePath
-			}
-			_, err := experience.LabelTask(ctx, st, experience.LabelInput{
-				Project: info.Project, TaskPtr: info.TaskPtr, RunID: info.RunID, Outcome: info.Outcome,
-				TaskText: info.TaskText, Feedback: info.Feedback, Diff: info.Diff,
-			}, func(ctx context.Context, in analysis.TaskLabelInput) (*analysis.TaskLabelResult, error) {
-				return analysis.GenerateTaskLabel(ctx, info.ProjectPath, in, acfg)
-			})
-			return err
-		})
-	}
-
-	// Gate-run record for the repository scanner (WASTE-TASKS.md WS-07): given
-	// to a session only while [optimization] repo_suggestions is on.
-	if a.store != nil {
-		st := a.store
-		a.manager.SetGateRuns(func(project string, passed bool, head, summary string) error {
-			return st.InsertGateRun(&store.GateRun{Project: project, Passed: passed, Head: head, Summary: summary})
-		})
-	}
-
-	// Wire the context primer (LEARN-TASKS.md LN-05): only ever called for a
-	// session with ContextPrimer=true (checked in Session.initialPromptText),
-	// so this is safe to wire unconditionally even for projects that never
-	// opt in.
-	{
-		st := a.store
-		a.manager.SetPrimerBuilder(func(project, sessionName, projectPath, taskDesc string, gates []string) string {
-			return experience.BuildPrimer(experience.PrimerInput{
-				Project:     project,
-				Session:     sessionName,
-				ProjectPath: projectPath,
-				TaskDesc:    taskDesc,
-				Gates:       gates,
-				Store:       st,
-			})
-		})
-	}
-
-	// Wire the project journal (LEARN-TASKS.md LN-06): finishRun only ever
-	// calls this for a completed run whose project has Journal=true, so it's
-	// safe to wire unconditionally even for projects that never opt in.
-	a.manager.SetJournalWriter(func(projectPath string, commit bool, entry session.JournalEntry) error {
-		return experience.AppendEntry(projectPath, commit, experience.Entry{
-			Date:      entry.Date,
-			TaskPtr:   entry.TaskPtr,
-			Done:      entry.Done,
-			Surprises: entry.Surprises,
-			Avoid:     entry.Avoid,
-		})
-	})
-
-	// Wire the context-handoff distiller (LEARN-TASKS.md LN-15): only ever
-	// called for a session with ContextHandoff=true whose own context
-	// utilization just crossed the restart threshold (checked in
-	// Session.checkContextRestart), so this is safe to wire unconditionally
-	// even for sessions that never opt in.
-	a.manager.SetHandoffBuilder(func(project, sessionName, projectPath, cliSessionID, taskDesc string, todos []string) (string, error) {
-		in := experience.BuildHandoffInput(experience.TranscriptsRoot(), projectPath, cliSessionID, taskDesc, todos)
-		res, err := analysis.GenerateHandoff(context.Background(), projectPath, in, analysis.AnalysisConfig{
-			ClaudePath: a.cfg.Settings.ClaudePath,
-		})
-		if err != nil {
-			return "", err
-		}
-		return experience.RenderHandoffPrompt(res), nil
-	})
-
-	// Wire the cost-regression detector (LEARN-TASKS.md LN-16): finishRun
-	// calls this after every run, but only actually reads anything when
-	// [optimization] experience_tracking is on (same reasoning as the
-	// action indexer above). overheadTracker is one in-memory instance for
-	// the app's lifetime — its "grew since last time" comparison only needs
-	// to survive within one running process, not across restarts.
-	if a.store != nil {
-		st := a.store
-		overheadTracker := experience.NewOverheadTracker()
-		a.manager.SetRegressionDetector(func(project, sessionName, projectPath, taskDesc string, gates []string, runID int64) (*session.RegressionResult, error) {
-			res, err := experience.DetectRegression(st, overheadTracker, project, sessionName, projectPath, taskDesc, gates, runID)
-			if err != nil || res == nil {
-				return nil, err
-			}
-			return &session.RegressionResult{Factor: res.Factor, Hint: res.Hint}, nil
-		})
-	}
-
-	// Wire the skill autopilot (LEARN-TASKS.md LN-27): finishRun calls it
-	// after a run's transcript is indexed, and only for a project with
-	// AutoSkills on, so wiring it unconditionally is safe.
-	if a.store != nil {
-		a.skillPilot = experience.NewSkillPilot(experience.SkillPilotDeps{
-			Store: a.store,
-			Distill: func(ctx context.Context, projectPath string, in analysis.SkillDistillInput) (*analysis.SkillDraft, error) {
-				// The autopilot picks only candidates that already cleared
-				// the relative threshold, so the distiller's own gate is
-				// passed trivially (score == threshold).
-				return analysis.DistillSkill(ctx, projectPath, in, 1, 1, a.analysisConfig(""), nil)
-			},
-			Review: func(ctx context.Context, projectPath string, in analysis.SkillReviewInput) (*analysis.SkillReview, error) {
-				return analysis.ReviewSkill(ctx, projectPath, in, a.analysisConfig(analysis.DefaultSkillReviewModel))
-			},
-			DraftRule: a.draftFailureRuleModel,
-		})
-		a.manager.SetSkillAutopilot(func(project, projectPath string, gates []string, budget float64) (bool, error) {
-			rep, err := a.skillPilot.Tick(context.Background(), experience.SkillPilotParams{
-				Project: project, ProjectPath: projectPath, Gates: gates, DailyBudgetUSD: budget,
-				HookRules: a.cfg != nil && a.cfg.Optimization.HookRules,
-			})
-			if rep.Changed() || err != nil {
-				logger.L.Info("experience.skill_autopilot", "project", project,
-					"applied", rep.Applied, "kept", rep.Kept, "archived", rep.Archived, "rejected", rep.Rejected,
-					"rules_applied", rep.RulesApplied, "rules_kept", rep.RulesKept, "rules_reverted", rep.RulesReverted, "error", err)
-			}
-			return rep.Changed(), err
-		})
-	}
-
-	// Wire the bulk log importer (LEARN-TASKS.md LN-20): only ever reached
-	// when [optimization] experience_tracking is on (checked in
-	// SessionManager.ImportProjectLogs), and only wired at all when a store
-	// exists to import into.
-	if a.store != nil {
-		st := a.store
-		a.manager.SetLogImporter(func(dir, project, projectPath string, onProgress func(int, int)) (session.ImportStats, error) {
-			stats, err := experience.IngestDir(st, dir, project, projectPath, experience.ImportOpts{OnProgress: onProgress})
-			return session.ImportStats{
-				Files:   stats.Files,
-				Runs:    stats.Runs,
-				Actions: stats.Actions,
-				Skipped: stats.Skipped,
-				Errors:  stats.Errors,
-			}, err
-		})
-	}
-
-	// Fill err_text of failed actions indexed before LN-35 (LEARN-TASKS.md
-	// LN-36): one background pass per start, gated on experience_tracking.
-	if a.store != nil {
-		st := a.store
-		a.manager.StartErrTextBackfill(func(paths map[string]string) (int, int, error) {
-			return experience.BackfillErrorText(st, paths)
-		})
-	}
 
 	// Start the control-plane server (no-op when CM_CONTROL disables it).
 	if controlEmitter != nil {
@@ -344,7 +152,6 @@ func (a *App) startup(ctx context.Context) {
 
 	a.startMirrorLoop(ctx)
 	a.startLogShipLoop(ctx)
-	a.startNightlyLoop(ctx)
 
 	go func() {
 		defer logger.Recover("window.ensure_on_screen")
@@ -510,9 +317,6 @@ func (a *App) GetModelRecommendation(project, name string) (*optimization.ModelR
 		return nil, fmt.Errorf("model routing analysis: %w", err)
 	}
 	router := optimization.NewModelRouter(&a.cfg.Optimization)
-	if a.store != nil {
-		router.SetOutcomeProvider(a.store)
-	}
 	rec := router.Route(project, result.RecommendedModel, result.RecommendedEffort,
 		result.Feasibility.EstimatedComplexity)
 	return &rec, nil
@@ -893,55 +697,9 @@ func (a *App) InitGitRepo(projectPath string) error {
 	return gitutil.EnsureRepoWithCommit(context.Background(), projectPath)
 }
 
-// StartProject launches every configured session in project. When
-// experience tracking is on and a store is configured, sessions launch in
-// cache-affinity order (LEARN-TASKS.md LN-14) instead of plain config order:
-// grouped by launch model first (a model switch resets the shared
-// system-prompt cache, see "Token Optimization" above), then within a group
-// by descending overlap of the files the session's last run touched. With
-// tracking off, no store, or a project with no run history yet,
-// projectStartOrder returns nil and this falls back to plain
-// SessionManager.StartProject unchanged (LEARN-TASKS.md invariant 6).
+// StartProject launches every configured session in project, in config order.
 func (a *App) StartProject(project string) error {
-	order := a.projectStartOrder(project)
-	if len(order) == 0 {
-		return a.manager.StartProject(project)
-	}
-	for _, name := range order {
-		if err := a.manager.StartSession(project, name); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// projectStartOrder computes the LN-14 cache-affinity launch order for
-// project's sessions — see StartProject above. Returns nil when there is
-// nothing to reorder by (tracking off, no store) so the caller's fallback
-// path runs instead.
-func (a *App) projectStartOrder(project string) []string {
-	if a.cfg == nil || !a.cfg.Optimization.ExperienceTracking || a.store == nil {
-		return nil
-	}
-	var sessions []config.SessionConfig
-	for i := range a.cfg.Projects {
-		if a.cfg.Projects[i].Name == project {
-			sessions = a.cfg.Projects[i].Sessions
-			break
-		}
-	}
-	if len(sessions) == 0 {
-		return nil
-	}
-	inputs := make([]experience.SessionAffinityInput, len(sessions))
-	for i, s := range sessions {
-		inputs[i] = experience.SessionAffinityInput{
-			ID:    s.Name,
-			Model: s.Model,
-			Files: experience.LastRunFiles(a.store, project, s.Name),
-		}
-	}
-	return experience.OrderByCacheAffinity(inputs)
+	return a.manager.StartProject(project)
 }
 
 func (a *App) StopProject(project string) error {
@@ -1076,8 +834,8 @@ func (a *App) SetSessionRuntime(id, runtime string) error {
 	if runtime == "claude" {
 		runtime = "" // config default; keeps untouched configs byte-identical
 	}
-	if runtime != "" && runtime != config.RuntimeHermes {
-		return fmt.Errorf("unknown runtime %q (want claude|hermes)", runtime)
+	if runtime != "" && runtime != config.RuntimeHermes && runtime != config.RuntimeKimi {
+		return fmt.Errorf("unknown runtime %q (want claude|hermes|kimi)", runtime)
 	}
 	project, name, ok := splitSessionID(id)
 	if !ok {
@@ -1579,99 +1337,7 @@ func (a *App) sessionTaskSource(project, sessionName string) string {
 	return ""
 }
 
-// GetTopActions aggregates action_signatures for a project over the last
-// days days, most frequent signature first — the "Actions" tab table
-// (LEARN-TASKS.md LN-03). Requires [optimization] experience_tracking to have
-// been on for some runs; with it off, the table is simply empty.
-func (a *App) GetTopActions(project string, days int) ([]store.SignatureStat, error) {
-	if a.store == nil {
-		return nil, fmt.Errorf("no store")
-	}
-	return a.store.TopSignatures(project, days, 0)
-}
-
-// GetActionSamples returns concrete example rows for one (project, sig) pair
-// — the "Actions" tab's click-through from an aggregated signature to what
-// it actually covers.
-func (a *App) GetActionSamples(project, sig string, limit int) ([]store.ActionRow, error) {
-	if a.store == nil {
-		return nil, fmt.Errorf("no store")
-	}
-	return a.store.ActionSamples(project, sig, limit)
-}
-
-// GetDurationProfile aggregates action_signatures durations for a project —
-// median/p90/max/failure-rate/count per normalized command, most
-// time-consuming first — the "Timing" tab of the Experience panel
-// (LEARN-TASKS.md LN-18). Requires [optimization] experience_tracking to have
-// been on for some runs; with it off, the table is simply empty.
-func (a *App) GetDurationProfile(project string) ([]experience.SignatureDuration, error) {
-	if a.store == nil {
-		return nil, fmt.Errorf("no store")
-	}
-	return experience.DurationProfile(a.store, project)
-}
-
-// GetTokenAttribution aggregates action_signatures result sizes for a
-// project into per-signature and per-tool estimated-token attribution — the
-// "Cost by tool" tab of the Experience panel (LEARN-TASKS.md LN-12). Requires
-// [optimization] experience_tracking to have been on for some runs; with it
-// off, the report is simply empty. topN<=0 means no limit on the
-// per-signature cut.
-func (a *App) GetTokenAttribution(project string, topN int) (experience.AttributionReport, error) {
-	if a.store == nil {
-		return experience.AttributionReport{}, fmt.Errorf("no store")
-	}
-	return experience.BuildAttributionReport(a.store, project, topN)
-}
-
-// GetWasteReport mines a project's action_signatures for successful but
-// useless work — repeated reads, streaks of empty searches, whole-file reads,
-// commands rerun with no edit between — the "Waste" tab of the Experience
-// panel (WASTE-TASKS.md WS-01). Read only; cut-offs come from [optimization]
-// waste_* (0 = default).
-func (a *App) GetWasteReport(project string) (experience.WasteReport, error) {
-	if a.store == nil {
-		return experience.WasteReport{}, fmt.Errorf("no store")
-	}
-	var th experience.WasteThresholds
-	if a.cfg != nil {
-		th.EmptySearchChars = a.cfg.Optimization.WasteEmptySearchChars
-		th.OversizedReadTokens = a.cfg.Optimization.WasteOversizedReadTokens
-	}
-	report, err := experience.BuildWasteReport(a.store, project, th)
-	if err != nil {
-		return report, err
-	}
-	if a.cfg != nil {
-		report.ApplyWindow(a.cfg.Settings.LimitWindowTokens)
-	}
-	return report, nil
-}
-
-// GetPermissionCandidates aggregates permission_events for a project into
-// suggested auto-allow rules (LEARN-TASKS.md LN-04) — the "Permissions" tab
-// of the Experience panel. Safe are (tool, pattern) pairs that keep asking,
-// have been consistently approved, and passed the read-only whitelist
-// classifier; NeedsReview holds everything else that still meets the
-// frequency/consistency bar (Edit/Write, or a Bash command outside the
-// whitelist) — never auto-applied, just surfaced so a human can decide.
-// Requires [optimization] experience_tracking to have been on for some runs;
-// with it off, both lists are simply empty.
-func (a *App) GetPermissionCandidates(project string, days int) (*experience.CandidateSet, error) {
-	if a.store == nil {
-		return nil, fmt.Errorf("no store")
-	}
-	stats, err := a.store.TopPermissionEvents(project, days, 0)
-	if err != nil {
-		return nil, err
-	}
-	safe, needsReview := experience.Candidates(stats, experience.MinPermissionCount)
-	return &experience.CandidateSet{Safe: safe, NeedsReview: needsReview}, nil
-}
-
-// AddPermissionRule appends a PermissionRule to one session's config — the
-// "Add rule" button on the Permissions tab (LEARN-TASKS.md LN-04). Goes
+// AddPermissionRule appends a PermissionRule to one session's config. Goes
 // through the same GetConfig→mutate→UpdateConfig round-trip every other
 // config edit in this app uses; a rule already present for this exact
 // (tool, pattern, decision) triple is a no-op rather than a duplicate.
@@ -1718,328 +1384,9 @@ func addPermissionRuleInConfig(cfg *config.AppConfig, project, sessionName, tool
 	return false
 }
 
-// GetSkillCandidates mines a project's recent action_signatures into ranked
-// skill candidates (LEARN-TASKS.md LN-08) — the Skills tab's "Candidates"
-// list, and the only source of an experience.SkillCandidate to pass to
-// DistillSkill below (nothing else in the app produces one). Requires
-// [optimization] experience_tracking to have been on for some runs; with it
-// off, or too little history (fewer than experience.MinCandidateRuns runs
-// sharing a pattern), the list is simply empty.
-func (a *App) GetSkillCandidates(project string) ([]experience.SkillCandidate, error) {
-	if a.store == nil {
-		return nil, fmt.Errorf("no store")
-	}
-	return experience.MineProjectCandidates(a.store, project)
-}
-
-// DistillSkill turns one LN-08 skill candidate into a skill draft and
-// persists it as a status=draft row (LEARN-TASKS.md LN-09), streaming
-// skill:progress while the distillation CLI run is in flight. gates is
-// normally the project's own config.ProjectConfig.Gates.
-//
-// minScore > 0 is an explicit override (a UI-entered threshold) and is used
-// as-is. minScore <= 0 (the default the UI sends) resolves to a *relative*
-// threshold instead (LEARN-TASKS.md LN-23,
-// experience.RelativeScoreThreshold): the project's current candidates are
-// re-mined and the cutoff is set to the top DefaultSkillTopFraction of their
-// scores, so the threshold tracks corpus size instead of the old fixed
-// analysis.DefaultSkillMinScore, which cut everything on a small project and
-// almost nothing on a large imported one. When candidate.Score does not
-// clear the resolved threshold, the CLI is never invoked and the error is
-// analysis.ErrBelowThreshold, wrapped with the actual score and threshold —
-// callers driving a batch of candidates should treat that as "skip this
-// one", not surface it as a failure.
-//
-// SessionManager.DistillSkill takes analysis.SkillDistillInput, not
-// experience.SkillCandidate/FailureCluster directly — see
-// analysis.SkillDistillInput's doc comment for why (internal/session cannot
-// import internal/experience without cycling back through it). This method
-// does the translation, since app.go already imports both packages.
-func (a *App) DistillSkill(project string, candidate experience.SkillCandidate, gates []string, model string, minScore float64) (*store.Skill, error) {
-	in, sourceJSON, err := skillDistillInputFromCandidate(candidate, gates)
-	if err != nil {
-		return nil, err
-	}
-	in.RejectedBefore = experience.RejectedBefore(a.store, project, 5)
-	effectiveMin := a.resolveSkillMinScore(project, minScore)
-	return a.manager.DistillSkill(project, in, sourceJSON, candidate.Score, effectiveMin, model)
-}
-
-// resolveSkillMinScore is DistillSkill's minScore resolution (LEARN-TASKS.md
-// LN-23), split out for direct unit testing without going through the full
-// SessionManager/CLI path: minScore > 0 (an explicit UI override) always
-// wins outright; minScore <= 0 re-mines the project's current candidates and
-// resolves via experience.ResolveSkillMinScore/RelativeScoreThreshold. A
-// mining failure (or no store configured) is not surfaced here — it simply
-// yields an empty distribution, which RelativeScoreThreshold turns into 0,
-// and analysis.DistillSkill's own <=0 fallback (DefaultSkillMinScore) takes
-// over from there as a last resort.
-func (a *App) resolveSkillMinScore(project string, minScore float64) float64 {
-	if minScore > 0 {
-		return minScore
-	}
-	var candidates []experience.SkillCandidate
-	if a.store != nil {
-		candidates, _ = experience.MineProjectCandidates(a.store, project)
-	}
-	return experience.ResolveSkillMinScore(candidates, minScore, 0)
-}
-
-// skillDistillInputFromCandidate translates one LN-08 SkillCandidate (plus
-// the project's gates) into analysis.SkillDistillInput, and encodes the
-// candidate's own signature sequence as source_json (LEARN-TASKS.md LN-09:
-// "source_json — сигнатуры кандидата; по ним LN-11 определяет, сработал ли
-// скилл"). Takes one representative example per related failure cluster —
-// enough context for the distillation prompt without re-exporting
-// FailureCluster's full shape.
-func skillDistillInputFromCandidate(c experience.SkillCandidate, gates []string) (analysis.SkillDistillInput, string, error) {
-	in := experience.SkillDistillInputFromCandidate(c, gates)
-	srcJSON, err := json.Marshal(c.Sig)
-	if err != nil {
-		return in, "", fmt.Errorf("distill skill: encode source signatures: %w", err)
-	}
-	return in, string(srcJSON), nil
-}
-
-// GetSkills lists every distilled skill for a project — draft, approved and
-// archived alike, newest first — the "Skills" tab's source of truth
-// (LEARN-TASKS.md LN-10). The tab itself decides what to show for each
-// status (a draft gets review buttons, an approved/archived row is
-// read-only).
-func (a *App) GetSkills(project string) ([]store.Skill, error) {
-	if a.store == nil {
-		return nil, fmt.Errorf("no store")
-	}
-	return a.store.ListSkills(project)
-}
-
-// ImportProjectLogs bulk-imports a directory of saved CLI logs into
-// action_signatures — the "Import logs" button that was missing from LN-17's
-// IngestDir (LEARN-TASKS.md LN-20). An empty dir imports the project's own
-// <project>/.claude-manager/logs/; otherwise dir is expected to come from
-// PickDirectory (a corpus brought from another machine). Streams
-// experience:import progress while the walk is in flight; a re-import of a
-// directory already covered is a cheap no-op (session.ImportStats.Skipped
-// reports how many files were skipped).
-func (a *App) ImportProjectLogs(project, dir string) (session.ImportStats, error) {
-	return a.manager.ImportProjectLogs(project, dir)
-}
-
-// ApproveSkill writes a draft's (possibly reviewer-edited) markdown to
-// <project>/.claude/skills/<name>/SKILL.md (LEARN-TASKS.md LN-10). md need
-// not be byte-identical to the skill's stored draft — the reviewer may have
-// fixed something in SkillReview.svelte before accepting. name is fixed to
-// the row's own Skill.Name (not a parameter): the invariant is "an unsafe
-// name can never be written", regardless of what a caller passes, and
-// experience.WriteSkillFile enforces that by construction. Refuses to
-// overwrite an existing file unless overwrite is true
-// (experience.ErrSkillFileExists), so the UI has something to catch for its
-// inline "already exists — overwrite?" banner — window.confirm() is
-// disabled in Wails WebView2. With the project's skill autopilot on, the
-// skill starts a trial the autopilot will judge (LN-26); otherwise it is
-// simply approved.
-func (a *App) ApproveSkill(id int64, md string, overwrite bool) (string, error) {
-	sk, path, err := a.skillAndProjectPath(id)
-	if err != nil {
-		return "", err
-	}
-	written, err := experience.WriteSkillFile(path, sk.Name, md, overwrite)
-	if err != nil {
-		return "", err
-	}
-	status := a.appliedSkillStatus(sk.Project)
-	reason := experience.SkillReason{Code: experience.ReasonAppliedManual}.Encode()
-	if err := a.store.UpdateSkillApproved(id, md, status, reason, time.Now()); err != nil {
-		return "", err
-	}
-	return written, nil
-}
-
-// ArchiveSkill switches a skill off (LEARN-TASKS.md LN-10/24): an applied
-// skill's folder is moved out of <project>/.claude/skills/ into
-// <project>/.claude-manager/archived-skills/ so the CLI stops seeing it —
-// archiving only the row used to leave the skill fully active. A draft or
-// rejected row has no file and is just marked archived.
-func (a *App) ArchiveSkill(id int64) error {
-	sk, path, err := a.skillAndProjectPath(id)
-	if err != nil {
-		return err
-	}
-	if err := experience.ArchiveSkillFile(path, sk.Name, sk.ID); err != nil {
-		return err
-	}
-	reason := experience.SkillReason{Code: experience.ReasonArchivedManual}.Encode()
-	return a.store.UpdateSkillStatus(id, store.SkillStatusArchived, reason, time.Now())
-}
-
-// RestoreSkill brings an archived skill back into
-// <project>/.claude/skills/<name>/ (LEARN-TASKS.md LN-24) — the archived
-// copy, hand edits included, or the row's markdown when there is none — and
-// starts a new trial (autopilot on) or marks it approved. A rejected row is
-// applied the same way ("apply anyway"). overwrite works like ApproveSkill's.
-func (a *App) RestoreSkill(id int64, overwrite bool) (string, error) {
-	sk, path, err := a.skillAndProjectPath(id)
-	if err != nil {
-		return "", err
-	}
-	written, err := experience.RestoreSkillFile(path, sk.Name, sk.ID, sk.MD, overwrite)
-	if err != nil {
-		return "", err
-	}
-	status := a.appliedSkillStatus(sk.Project)
-	reason := experience.SkillReason{Code: experience.ReasonRestoredManual}.Encode()
-	if err := a.store.UpdateSkillApproved(id, sk.MD, status, reason, time.Now()); err != nil {
-		return "", err
-	}
-	return written, nil
-}
-
-// GetSkillUsage returns how much each of a project's skills is actually
-// loaded by agents, keyed by skill ID (LEARN-TASKS.md LN-24).
-func (a *App) GetSkillUsage(project string) (map[int64]experience.SkillUsage, error) {
-	if a.store == nil {
-		return nil, fmt.Errorf("no store")
-	}
-	return experience.BuildSkillUsage(a.store, project)
-}
-
-// SkillAutopilotState is the Skills tab's autopilot header.
-type SkillAutopilotState struct {
-	Enabled bool `json:"enabled"`
-	// Tracking mirrors [optimization] experience_tracking: without it no
-	// transcript is indexed and the autopilot never runs.
-	Tracking       bool    `json:"tracking"`
-	DailyBudgetUSD float64 `json:"daily_budget_usd"`
-	SpentTodayUSD  float64 `json:"spent_today_usd"`
-	SpentTotalUSD  float64 `json:"spent_total_usd"`
-	// TrialRuns is experience.SkillTrialRuns, so the UI can show trial
-	// progress as "N of TrialRuns runs".
-	TrialRuns int `json:"trial_runs"`
-}
-
-// GetSkillAutopilot reports a project's skill-autopilot state (LN-27).
-func (a *App) GetSkillAutopilot(project string) (SkillAutopilotState, error) {
-	st := SkillAutopilotState{TrialRuns: experience.SkillTrialRuns}
-	if a.cfg == nil {
-		return st, fmt.Errorf("no config")
-	}
-	st.Tracking = a.cfg.Optimization.ExperienceTracking
-	for _, p := range a.cfg.Projects {
-		if p.Name == project {
-			st.Enabled = p.AutoSkills
-			st.DailyBudgetUSD = p.AutoSkillsDailyBudgetUSD
-		}
-	}
-	if a.store == nil {
-		return st, nil
-	}
-	skills, err := a.store.ListSkills(project)
-	if err != nil {
-		return st, err
-	}
-	today := time.Now().Format("2006-01-02")
-	for _, sk := range skills {
-		if sk.Origin != store.SkillOriginAuto {
-			continue
-		}
-		st.SpentTotalUSD += sk.CostUSD
-		if sk.CreatedAt.Local().Format("2006-01-02") == today {
-			st.SpentTodayUSD += sk.CostUSD
-		}
-	}
-	return st, nil
-}
-
-// SetSkillAutopilot turns a project's skill autopilot on or off and sets its
-// daily budget (0 = no cap), persisting both to the project's private
-// config.local.toml (LN-27). Turning it on also turns on
-// experience_tracking: the autopilot sees nothing without it.
-func (a *App) SetSkillAutopilot(project string, enabled bool, dailyBudgetUSD float64) error {
-	if a.cfg == nil {
-		return fmt.Errorf("no config")
-	}
-	if dailyBudgetUSD < 0 {
-		return fmt.Errorf("daily budget must not be negative")
-	}
-	cfg := *a.cfg
-	cfg.Projects = append([]config.ProjectConfig(nil), a.cfg.Projects...)
-	found := false
-	for i := range cfg.Projects {
-		if cfg.Projects[i].Name == project {
-			cfg.Projects[i].AutoSkills = enabled
-			cfg.Projects[i].AutoSkillsDailyBudgetUSD = dailyBudgetUSD
-			found = true
-		}
-	}
-	if !found {
-		return fmt.Errorf("project %q not found", project)
-	}
-	if enabled {
-		cfg.Optimization.ExperienceTracking = true
-	}
-	return a.UpdateConfig(cfg)
-}
-
-// RunSkillAutopilot runs one autopilot step for project right now instead
-// of waiting for the next finished run (the Skills tab's "Run now"). Errors
-// when the project has the autopilot off.
-func (a *App) RunSkillAutopilot(project string) (experience.SkillPilotReport, error) {
-	if a.skillPilot == nil || a.cfg == nil {
-		return experience.SkillPilotReport{}, fmt.Errorf("no store")
-	}
-	var pcfg *config.ProjectConfig
-	for i := range a.cfg.Projects {
-		if a.cfg.Projects[i].Name == project {
-			pcfg = &a.cfg.Projects[i]
-		}
-	}
-	if pcfg == nil {
-		return experience.SkillPilotReport{}, fmt.Errorf("project %q not found", project)
-	}
-	if !pcfg.AutoSkills {
-		return experience.SkillPilotReport{}, fmt.Errorf("skill autopilot is off for %s", project)
-	}
-	return a.skillPilot.Tick(context.Background(), experience.SkillPilotParams{
-		Project: project, ProjectPath: pcfg.Path, Gates: pcfg.Gates, DailyBudgetUSD: pcfg.AutoSkillsDailyBudgetUSD,
-		HookRules: a.cfg.Optimization.HookRules,
-	})
-}
-
-// skillAndProjectPath loads skill id and its project's folder.
-func (a *App) skillAndProjectPath(id int64) (*store.Skill, string, error) {
-	if a.store == nil {
-		return nil, "", fmt.Errorf("no store")
-	}
-	sk, err := a.store.GetSkill(id)
-	if err != nil {
-		return nil, "", err
-	}
-	if sk == nil {
-		return nil, "", fmt.Errorf("skill %d not found", id)
-	}
-	path, err := a.projectPath(sk.Project)
-	if err != nil {
-		return nil, "", err
-	}
-	return sk, path, nil
-}
-
-// appliedSkillStatus is the status a manually applied skill gets: a trial
-// when the project's autopilot will judge it, approved otherwise.
-func (a *App) appliedSkillStatus(project string) string {
-	if a.cfg != nil {
-		for _, p := range a.cfg.Projects {
-			if p.Name == project && p.AutoSkills {
-				return store.SkillStatusTrial
-			}
-		}
-	}
-	return store.SkillStatusApproved
-}
-
-// analysisConfig is the one-shot analyst config for the skill autopilot:
-// the app-wide CLI path and per-call budget, with model overriding the
-// call's own default when non-empty.
+// analysisConfig is the one-shot analyst config: the app-wide CLI path and
+// per-call budget, with model overriding the call's own default when
+// non-empty.
 func (a *App) analysisConfig(model string) analysis.AnalysisConfig {
 	cfg := analysis.AnalysisConfig{Model: model}
 	if a.cfg != nil {
@@ -2047,18 +1394,6 @@ func (a *App) analysisConfig(model string) analysis.AnalysisConfig {
 		cfg.MaxBudgetUSD = a.cfg.Settings.PreflightMaxBudget
 	}
 	return cfg
-}
-
-// GetSkillQuality measures the before/after-approval effect of every
-// approved skill in project — the "Skills" tab's quality table
-// (LEARN-TASKS.md LN-11). See experience.BuildSkillQualityReport for the
-// comparison and staleness rules; this is a thin store-backed wrapper, same
-// pattern as GetDurationProfile.
-func (a *App) GetSkillQuality(project string) ([]experience.SkillEffect, error) {
-	if a.store == nil {
-		return nil, fmt.Errorf("no store")
-	}
-	return experience.BuildSkillQualityReport(a.store, project)
 }
 
 // GetProjectLogFiles lists the auto-saved session-log files in

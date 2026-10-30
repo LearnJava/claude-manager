@@ -14,6 +14,7 @@
     import { costUnit } from '../stores/units';
     import { billing } from '../stores/billing';
     import { limitTokens, windowShare, formatWindowShare } from '../lib/billing';
+    import { capabilitiesOf } from '../lib/models';
     import { t } from '../lib/i18n';
 
     export let session: SessionState;
@@ -81,6 +82,9 @@
         ? new Date(session.stopped_after_task_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         : '';
     $: runtime = formatDuration(runtimeMs(session, now));
+    $: costText = capabilitiesOf(session.runtime).cost
+        ? formatCost(session.total_cost_usd)
+        : $t('sessionCard.costNoData');
     $: hit = cacheHitRatio(session.cache_read, session.cache_creation);
     $: split = tokenSplit(session);
     $: util = Number(session.context_util) || 0;
@@ -147,6 +151,11 @@
                 data-testid="runtime-label"
                 class="text-lg font-extrabold bg-gradient-to-r from-violet-600 to-blue-600 dark:from-violet-400 dark:to-blue-400 bg-clip-text text-transparent"
                 title={$t('sessionCard.useHermesTooltip')}>{$t('sessionCard.useHermesLabel')}</span>
+        {:else if session.runtime === 'kimi'}
+            <span
+                data-testid="runtime-label"
+                class="text-lg font-extrabold bg-gradient-to-r from-teal-600 to-cyan-600 dark:from-teal-400 dark:to-cyan-400 bg-clip-text text-transparent"
+                title={$t('sessionCard.useKimiTooltip')}>{$t('sessionCard.useKimiLabel')}</span>
         {:else}
             <span
                 data-testid="runtime-label"
@@ -171,14 +180,14 @@
                 {$t('sessionCard.timeLabel')} <span class="text-text">{runtime}</span>
             </span>
             <span class="opacity-70" data-testid="card-cost-conventional" title={$t('sessionCard.costConventionalTooltip')}>
-                {$t('sessionCard.costConventional', { cost: formatCost(session.total_cost_usd) })}
+                {$t('sessionCard.costConventional', { cost: costText })}
             </span>
         {:else}
             <!-- Dollars stay on screen but step back when tokens are the chosen unit. -->
             <span>
                 {$t('sessionCard.costLabel')}
                 <span class={$costUnit === 'usd' ? 'text-text' : 'opacity-70'}>
-                    {formatCost(session.total_cost_usd)}
+                    {costText}
                 </span>
             </span>
         {/if}

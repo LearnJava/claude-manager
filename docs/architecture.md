@@ -1,5 +1,7 @@
 # Architecture Reference
 
+> **Branch `slim-for-kimi` — this document predates it.** The experience layer and its WS follow-ups (`internal/experience`, `internal/learned`, `internal/suggest`, `internal/nightly`, `internal/guardaudit`, `cmd/cm-mcp-eval`, `cmd/guardaudit`) are removed, along with primer/journal/handoff distillation, env/manager cards, launch tuning, loop detection, strict gates, reference cases, quality labels, benchmarks, hook/failure rules and their UI (Experience panel, Skills, Waste, Quality, Suggestions, FailureReview, HookRules, LearnedFiles). Kept: sessions/queues/roadmaps, the live feed, permissions, history/cost, mixed programming, MCP/control-plane, mirror/logship, cmdguard. The runtime seam is now capability-based (`Capabilities` + `Binary`/`Env`/`ClassifyStderr`/`Preamble`/`WarnOptions` + optional `TurnExpander`/`TurnFinisher`); the per-turn loop `runOncePerTurn` drives Hermes and the new **Kimi** runtime (`internal/session/kimi_runtime.go`, `kimi_parser.go`, `cmd/fakekimi`). The tables below describe the pre-slim tree and are only accurate for what remains.
+
 Tech stack, the package/component map, the Wails-bound method table, the SQLite schema and the file-logging setup. See [CLAUDE.md](../CLAUDE.md) for the project index.
 
 ## Tech Stack

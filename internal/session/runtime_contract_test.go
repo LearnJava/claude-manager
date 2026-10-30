@@ -72,6 +72,7 @@ func contractRuntimes(t *testing.T) []contractCase {
 	t.Helper()
 	claudeBin := buildFakeclaudeForSession(t)
 	hermesBin := buildFakehermes(t)
+	kimiBin := buildFakekimi(t)
 	scenarioDir, err := filepath.Abs(filepath.Join("..", "..", "testdata", "scenarios"))
 	if err != nil {
 		t.Fatalf("abs: %v", err)
@@ -110,6 +111,22 @@ func contractRuntimes(t *testing.T) []contractCase {
 		})
 	}
 
+	newKimiSession := func(t *testing.T, prompt string, onEvent EventCallback, autoRestart bool) *Session {
+		cfg := config.SessionConfig{
+			Name: "K", Runtime: "kimi", Model: "m", PermissionMode: "bypassPermissions",
+			Prompt: prompt,
+		}
+		if autoRestart {
+			cfg.AutoRestart = true
+			cfg.MaxTasks = 1
+		}
+		return New(Params{
+			ID: "ct/kimi", ProjectName: "ct", ProjectPath: t.TempDir(), KimiPath: kimiBin,
+			RetryDelay: 1, RateLimitPauseSec: 1,
+			Config: cfg, OnEvent: onEvent,
+		})
+	}
+
 	return []contractCase{
 		{
 			name:              "claude",
@@ -140,6 +157,21 @@ func contractRuntimes(t *testing.T) []contractCase {
 			resumePrompt1:     "first",
 			resumePrompt2:     "second turn text",
 			resumePrompt2Want: "echo: second turn text",
+		},
+		{
+			name:              "kimi",
+			newSession:        newKimiSession,
+			happyPrompt:       "hello there",
+			toolPrompt:        "use the tool",
+			askUserPrompt:     "ask-user-marker please",
+			askUserAnswers:    []string{"Keep 2ms"},
+			askUserAnswerWant: "proceeding with the chosen budget",
+			rateLimitPrompt:   "FAIL_429",
+			authPrompt:        "FAIL_403",
+			sessionNotFound:   "FAIL_SESSION_NOT_FOUND",
+			resumePrompt1:     "first",
+			resumePrompt2:     "resume-demo turn 2",
+			resumePrompt2Want: "step 2",
 		},
 	}
 }
