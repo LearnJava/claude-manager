@@ -11,7 +11,6 @@
         type SessionState,
     } from '../stores/sessions';
     import { projects } from '../stores/projects';
-    import { formatTime } from '../lib/formatters';
     import QueueBoard from './QueueBoard.svelte';
     import { queues, syncQueue } from '../stores/queues';
     import { EMPTY_QUEUE, hasQueue } from '../lib/queue';
@@ -22,7 +21,6 @@
         InterruptSession,
         RestartSession,
         RestartSessionMode,
-        ExportLog,
         InitGitRepo,
     } from '../../wailsjs/go/main/App';
 
@@ -30,9 +28,6 @@
 
     let busy: string | null = null;
     let lastError = '';
-    let copyConfirm = false;
-    let exportFormat: 'md' | 'json' | 'txt' = 'md';
-    let exportConfirm = '';
 
     function busyMatches(label: string): boolean {
         return busy === label;
@@ -74,24 +69,6 @@
         call('Restart', () => RestartSessionMode(session.id, fresh));
     }
 
-    async function onCopyLog() {
-        const entries = $sessionLogs[session.id] ?? [];
-        const text = entries
-            .map((e) => `[${formatTime(e.time)}] ${e.level ?? ''} ${e.message ?? ''}`)
-            .join('\n');
-        try {
-            await navigator.clipboard.writeText(text);
-            copyConfirm = true;
-            setTimeout(() => (copyConfirm = false), 1500);
-        } catch (e: any) {
-            lastError = `${$t('sessionView.copyLog.errorPrefix')}: ${e?.message ?? String(e)}`;
-        }
-    }
-
-    function onClearLog() {
-        clearSessionLog(session.id);
-    }
-
     // `--worktree` needs the project folder to be a git repo with at least
     // one commit — a bare `git init` leaves an unborn HEAD it can't branch
     // from. Detect the CLI's own error text in the log and offer a one-click
@@ -125,30 +102,6 @@
         } finally {
             gitInitBusy = false;
         }
-    }
-
-    async function onExportLog() {
-        const entries = $sessionLogs[session.id] ?? [];
-        // Map the in-memory LogEntry shape to the Go store.LogEntry payload
-        // so the backend can render markdown / JSON / txt identically.
-        const payload = entries.map((e) => ({
-            ID: 0,
-            RunID: 0,
-            Timestamp: e.time,
-            Level: e.level ?? '',
-            Message: e.message ?? '',
-            ToolName: e.tool_name ?? '',
-            ToolInput: e.tool_input ?? '',
-        }));
-        await call(`Export log (${exportFormat})`, async () => {
-            const path = await ExportLog(session.id, payload as any, exportFormat);
-            if (path) {
-                exportConfirm = `${$t('sessionView.exportLog.savedPrefix')} ${path}`;
-                setTimeout(() => (exportConfirm = ''), 3000);
-            } else {
-                exportConfirm = ''; // user cancelled
-            }
-        });
     }
 
     // Log | Board: the board replaces the log stream and is only offered when
@@ -277,48 +230,6 @@
             title={$t('sessionView.restart.title')}>
             {busyMatches('Restart') ? '…' : '🔄'} {$t('sessionView.restart.label')}
         </button>
-
-        <span class="w-px h-4 bg-bg-border mx-1"></span>
-
-        <button
-            type="button"
-            class="px-2.5 py-1 text-xs rounded bg-bg-elevated border border-bg-border
-                   text-text hover:bg-bg-panel"
-            on:click={onCopyLog}
-            title={$t('sessionView.copyLog.title')}>
-            {copyConfirm ? $t('sessionView.copyLog.copied') : $t('sessionView.copyLog.label')}
-        </button>
-        <button
-            type="button"
-            class="px-2.5 py-1 text-xs rounded bg-bg-elevated border border-bg-border
-                   text-text hover:bg-bg-panel"
-            on:click={onClearLog}
-            title={$t('sessionView.clearLog.title')}>
-            {$t('sessionView.clearLog.label')}
-        </button>
-
-        <span class="w-px h-4 bg-bg-border mx-1"></span>
-
-        <select
-            bind:value={exportFormat}
-            title={$t('sessionView.export.formatTitle')}
-            class="bg-bg-elevated border border-bg-border rounded px-1.5 py-1 text-xs text-text">
-            <option value="md">{$t('sessionView.export.formatMarkdown')}</option>
-            <option value="json">{$t('sessionView.export.formatJson')}</option>
-            <option value="txt">{$t('sessionView.export.formatText')}</option>
-        </select>
-        <button
-            type="button"
-            class="px-2.5 py-1 text-xs rounded bg-bg-elevated border border-bg-border
-                   text-text hover:bg-bg-panel disabled:opacity-40"
-            disabled={!!busy}
-            on:click={onExportLog}
-            title={$t('sessionView.exportLog.title')}>
-            {busyMatches(`Export log (${exportFormat})`) ? '…' : '💾'} {$t('sessionView.exportLog.label')}
-        </button>
-        {#if exportConfirm}
-            <span class="text-status-working text-xs ml-1">{exportConfirm}</span>
-        {/if}
 
         {#if lastError}
             <span class="text-status-error text-xs ml-2">{lastError}</span>

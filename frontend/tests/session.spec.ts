@@ -116,5 +116,9 @@ test.describe('SessionInput and LogStream', () => {
 
     const sendBtn = page.getByRole('button', { name: /Send/ });
     await expect(sendBtn).toBeDisabled({ timeout: 3_000 });
+    await expect(page.getByRole('button', { name: /Copy log/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Clear log/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Export log/ })).toHaveCount(0);
+    await expect(page.getByTitle('Export format')).toHaveCount(0);
   });
 });
