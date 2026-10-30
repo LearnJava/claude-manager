@@ -14,7 +14,7 @@
     import { costUnit } from '../stores/units';
     import { billing } from '../stores/billing';
     import { limitTokens, windowShare, formatWindowShare } from '../lib/billing';
-    import { capabilitiesOf } from '../lib/models';
+    import { capabilitiesOf, modelLabelFor } from '../lib/models';
     import { t } from '../lib/i18n';
 
     export let session: SessionState;
@@ -144,7 +144,7 @@
             </span>
         </span>
         {#if session.model}
-            <span>{$t('sessionCard.modelLabel')} <span class="text-text">{session.model}</span></span>
+            <span>{$t('sessionCard.modelLabel')} <span class="text-text">{modelLabelFor(session.runtime, session.model)}</span></span>
         {/if}
         {#if session.runtime === 'hermes'}
             <span

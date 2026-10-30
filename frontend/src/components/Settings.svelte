@@ -25,7 +25,7 @@
     import { applyBillingFromSettings } from '../stores/billing';
     import { applyWaitingFromConfig } from '../stores/waiting';
     import { formatBytes } from '../lib/formatters';
-    import { MODELS, EFFORTS, isKnownModel } from '../lib/models';
+    import { MODELS, EFFORTS, modelsFor } from '../lib/models';
     import PlanReview from './PlanReview.svelte';
     import EnvironmentCheck from './EnvironmentCheck.svelte';
 
@@ -1707,10 +1707,10 @@
                                                 <select
                                                     bind:value={sess.Model}
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
-                                                    {#each MODELS as m}
+                                                    {#each modelsFor(sess.Runtime) as m}
                                                         <option value={m.value}>{m.label}</option>
                                                     {/each}
-                                                    {#if sess.Model && !isKnownModel(sess.Model)}
+                                                    {#if sess.Model && !modelsFor(sess.Runtime).some((m) => m.value === sess.Model)}
                                                         <!-- A pinned id someone put in config.toml by hand -->
                                                         <option value={sess.Model}>{sess.Model}</option>
                                                     {/if}

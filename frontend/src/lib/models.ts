@@ -61,7 +61,12 @@ export function capabilitiesOf(runtime: string | null | undefined): RuntimeCapab
 
 /** Model catalog for the Kimi Code CLI (`-m` alias from its own config). */
 export const KIMI_MODELS: ModelOption[] = [
-    { value: 'kimi-code/kimi-for-coding', label: 'Kimi for Coding' },
+    { value: 'kimi-code/kimi-for-coding', label: 'K2.8 Preview' },
+    { value: 'kimi-code/kimi-for-coding-highspeed', label: 'K2.7 Code Highspeed' },
+    { value: 'kimi-code/k3', label: 'K3' },
+    { value: 'kimi-code/k3-256k', label: 'K3-256k' },
+    { value: 'kimi-code/k3.1-pro', label: 'K3.1 Pro' },
+    { value: 'kimi-code/k3.1-pro-highspeed', label: 'K3.1 Pro Highspeed 2x Usage Cost' },
 ];
 
 /** MODELS for Claude/Hermes, KIMI_MODELS for the Kimi runtime. */
@@ -85,10 +90,15 @@ export function normalizeModel(raw: string | null | undefined): string {
     return trimmed;
 }
 
+/** Display name in the runtime's own catalog, falling back to the raw value. */
+export function modelLabelFor(runtime: string | null | undefined, raw: string | null | undefined): string {
+    const value = (runtime ?? '') === 'kimi' ? (raw ?? '').trim() : normalizeModel(raw);
+    return modelsFor(runtime).find((o) => o.value === value)?.label ?? value;
+}
+
 /** Display name for a model, falling back to the raw value when unknown. */
 export function modelLabel(raw: string | null | undefined): string {
-    const value = normalizeModel(raw);
-    return MODELS.find((o) => o.value === value)?.label ?? value;
+    return modelLabelFor('', raw);
 }
 
 /** True when raw resolves to one of the offered options. */

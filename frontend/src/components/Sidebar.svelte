@@ -105,7 +105,7 @@
 
     function hasCustomModel(s: SessionState): boolean {
         const v = modelValue(s);
-        return !!v && !MODELS.some((m) => m.value === v);
+        return !!v && !modelsFor(s.runtime).some((m) => m.value === v);
     }
 
     // CLAUDE.md presence, checked lazily per project on first click (not a
@@ -151,7 +151,7 @@
     }
 
     // Session for which the ModelPicker is currently open: "project/name" or null
-    let pickerFor: { project: string; name: string } | null = null;
+    let pickerFor: { project: string; name: string; runtime: string } | null = null;
     // Session whose "Features" popup is open (the ⚙ icon on its row).
     let featuresFor: { project: string; name: string } | null = null;
     // Pre-flight analysis on start (PLAN.md §17, preflight_gate.go):
@@ -285,7 +285,7 @@
         // Read at click time, not once on mount: a change in Settings or the
         // Features popup applies to the very next start.
         if (await GetAutoModelRouting().catch(() => false)) {
-            pickerFor = { project, name };
+            pickerFor = { project, name, runtime: $sessions[`${project}/${name}`]?.runtime ?? '' };
             return;
         }
         await StartSession(project, name);
