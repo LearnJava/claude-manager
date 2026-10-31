@@ -256,6 +256,17 @@ test.describe('groupEntries — turn result echoing the last text', () => {
         expect(blocks[0].entries).toEqual([result]);
     });
 
+    test('a result echoing the last of consecutive texts keeps the combined prose block', () => {
+        const result = entry({ level: 'result', message: 'Final answer\n' });
+        const blocks = groupEntries([
+            entry({ level: 'text', message: 'Earlier detail' }),
+            entry({ level: 'text', message: 'Final answer' }),
+            result,
+        ]);
+        expect(blocks).toHaveLength(1);
+        expect(blocks[0].entries).toEqual([{ ...result, message: 'Earlier detail\n\nFinal answer' }]);
+    });
+
     test('a result with different text stays its own block', () => {
         const blocks = groupEntries([
             entry({ level: 'text', message: 'Working on it' }),

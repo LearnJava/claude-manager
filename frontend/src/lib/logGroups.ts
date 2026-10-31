@@ -300,14 +300,21 @@ export function groupEntries(entries: LogEntry[], processEnded = false): LogBloc
         // same text twice — the result entry is the one carrying `turn`, which
         // the turn summary line reads.
         const prev = blocks[blocks.length - 1];
-        if (
-            level === 'result' &&
-            prev?.kind === 'prose' &&
-            (prev.entries[0].level ?? '').toLowerCase() === 'text' &&
-            prev.entries[0].message.trim() === e.message.trim()
-        ) {
-            prev.entries = [e];
+        const prevEntry = prev?.kind === 'prose' ? prev.entries[0] : undefined;
+        if (level === 'text' && prevEntry && (prevEntry.level ?? '').toLowerCase() === 'text') {
+            prev.entries[0] = { ...prevEntry, message: prevEntry.message + '\n\n' + e.message };
             return;
+        }
+        if (level === 'result' && prevEntry && (prevEntry.level ?? '').toLowerCase() === 'text') {
+            const message = prevEntry.message;
+            if (message.trim() === e.message.trim()) {
+                prev.entries = [e];
+                return;
+            }
+            if (message.endsWith('\n\n' + e.message.trim())) {
+                prev.entries = [{ ...e, message }];
+                return;
+            }
         }
 
         if (level === 'user') {

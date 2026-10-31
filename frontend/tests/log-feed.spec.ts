@@ -48,7 +48,7 @@ async function openFeed(page: Page, theme: 'dark' | 'light') {
     await page.goto('/');
     const row = page.locator('[role="button"]', { hasText: 'S1' }).first();
     await expect(row).toBeVisible({ timeout: 5_000 });
-    await row.getByText('S1', { exact: true }).click();
+    await row.click();
 
     const toggle = page.locator(feedToggleSel);
     await expect(toggle).toBeVisible({ timeout: 5_000 });
@@ -93,6 +93,26 @@ for (const theme of ['dark', 'light'] as const) {
             // must not leak into a prose block.
             const proseContainer = page.locator('.font-sans.md-body, .font-sans:has(.md-body)').first();
             await expect(proseContainer).toBeVisible();
+        });
+
+        test('consecutive assistant messages share one prose block', async ({ page }) => {
+            await page.goto('/');
+            await page.evaluate(() => (window as any).go.main.App.SetSessionRuntime('test/S1', 'kimi'));
+            await page.evaluate(() => (window as any).go.main.App.SetSessionModel('test/S1', 'kimi-code/k3.1-pro'));
+            await page.reload();
+            try {
+                await openFeed(page, theme);
+
+                await pushLog(page, 'text', 'first');
+                await pushLog(page, 'text', 'second');
+
+                await expect(page.getByText('• first\n\nsecond', { exact: true })).toBeVisible();
+                await expect(page.getByText('first', { exact: true })).toHaveCount(0);
+                await expect(page.getByText('second', { exact: true })).toHaveCount(0);
+            } finally {
+                await page.evaluate(() => (window as any).go.main.App.SetSessionRuntime('test/S1', 'claude'));
+                await page.evaluate(() => (window as any).go.main.App.SetSessionModel('test/S1', 'claude-sonnet-4-6'));
+            }
         });
 
         test('a file edit renders as its own card with +N/-M and an expandable diff', async ({ page }) => {

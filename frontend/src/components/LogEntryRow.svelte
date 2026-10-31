@@ -108,8 +108,10 @@
     $: md = $logMarkdown && mdSrc;
     $: offered = $logMarkdown && offersMarkdown(entry);
     $: collapsible = isCollapsible(displayed);
-    $: isOpen = collapsible ? openForced ?? mdSrc : true;
-    $: html = md && isOpen ? renderCached(shown) : '';
+    $: isOpen = collapsible
+        ? openForced ?? (mdSrc || (runtime === 'kimi' && entry.level === 'text' && msg.includes('\n\n')))
+        : true;
+    $: html = md && isOpen ? renderCached(displayed) : '';
 </script>
 
 <div class="group/row relative flex items-start gap-2 py-px {logEntryColor(entry)}">
