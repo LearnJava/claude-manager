@@ -11,7 +11,7 @@
         cancel: void;
     }>();
 
-    import { MODELS, modelLabel, normalizeModel, modelsFor, effortsFor, capabilitiesOf } from '../lib/models';
+    import { MODELS, modelLabel, normalizeModel, modelsFor, effortsFor, snapEffort, capabilitiesOf } from '../lib/models';
 
     // Recommendation loaded from backend (null = not yet loaded)
     type Rec = { model: string; effort: string; complexity: string; reason: string } | null;
@@ -31,6 +31,9 @@
     $: if (!modelsFor(runtime).some((m) => m.value === chosenModel)) {
         chosenModel = modelsFor(runtime)[0]?.value ?? chosenModel;
     }
+    // The default and the recommendation are Claude-list values; snap them
+    // into the target runtime's levels (GLM-5.3 has no 'medium').
+    $: chosenEffort = snapEffort(runtime, chosenEffort);
 
     import { GetModelRecommendation } from '../../wailsjs/go/main/App';
 
@@ -192,7 +195,7 @@
                         <select
                             bind:value={chosenEffort}
                             class="bg-bg border border-bg-border rounded px-2 py-1 text-text">
-                            {#each EFFORTS as e}
+                            {#each effortsFor(runtime) as e}
                                 <option value={e}>{e}</option>
                             {/each}
                         </select>

@@ -372,9 +372,14 @@ headless mode today (checked 2026-11-04, zai-org/feedback#29), so a turn is a
 file pair, wire-compatible with zsm's `engines/zcode_file.py`:
 
 - `<workdir>/.zsm/inbox/<id>.json` — the order (prompt, conversation_id,
-  resume, model). Mid-turn control messages are appended to its `messages`
-  array: `user_message`, `permission_response`, `question_response`,
-  `soft_stop` (zsm `events.py`).
+  resume, model, reasoning_effort). Mid-turn control messages are appended
+  to its `messages` array: `user_message`, `permission_response`,
+  `question_response`, `soft_stop` (zsm `events.py`). `reasoning_effort` is
+  a manager extension of the wire format (absent in zsm's producer, `omitempty`
+  when unset): the consuming ZCode session applies it if it can — GLM-5.3
+  levels are low/high/max, and ZCode exposes thought level only as a
+  session-UI setting today (no external API; persisted levels live in
+  `~/.zcode/v2/provider_config.json`).
 - `<workdir>/.zsm/outbox/<id>.json` — the status a ZCode session writes via
   its skills/hooks: `state` (working|waiting_permission|done|failed), `text`,
   `continuation`, `tool_calls`, `usage`, `permission`, `question`, `limit`.

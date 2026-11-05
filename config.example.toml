@@ -326,8 +326,11 @@ path = 'D:\RustProjects\lumen-browser'
   # which a ZCode session running in that folder answers via its skills/hooks
   # (state, text, tool_calls, permission, question, usage, limit). Permission
   # answers and question replies are appended to the order's "messages"
-  # array. Wire-compatible with zsm's engines/zcode_file.py. Ignored here:
-  # effort, max_budget_usd, fallback_model, allowed/disallowed_tools, add_dirs.
+  # array. Wire-compatible with zsm's engines/zcode_file.py, extended with
+  # the order's "reasoning_effort" field (GLM-5.3: low | high | max): the
+  # consuming ZCode session applies it if it can (thought level is a
+  # session-UI setting today, no external API). Ignored here:
+  # max_budget_usd, fallback_model, allowed/disallowed_tools, add_dirs.
   # runtime = "zcode"
 
   # Auto-approve rules evaluated in order; first match wins

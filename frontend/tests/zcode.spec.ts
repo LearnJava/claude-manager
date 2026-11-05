@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { ZCODE_MODELS, modelLabelFor, modelsFor, capabilitiesOf } from '../src/lib/models';
+import { ZCODE_MODELS, EFFORTS_ZCODE, modelLabelFor, modelsFor, effortsFor, snapEffort, capabilitiesOf } from '../src/lib/models';
 
 test('ZCode catalog mirrors the picker names and file-transport capabilities', () => {
     // Names as ZCode's own model picker shows them (Z.ai account, checked
@@ -12,9 +12,18 @@ test('ZCode catalog mirrors the picker names and file-transport capabilities', (
     // Exact ids: no folding onto the Claude aliases.
     expect(modelLabelFor('zcode', 'GLM-5.3-Flash')).toBe('GLM-5.3-Flash');
     expect(modelLabelFor('zcode', 'claude-sonnet-5')).toBe('claude-sonnet-5');
+    // Effort levels GLM-5.3 officially has (z.ai, checked 2026-11-05); the
+    // value travels into the order file's reasoning_effort field.
+    expect(effortsFor('zcode')).toBe(EFFORTS_ZCODE);
+    expect(EFFORTS_ZCODE).toEqual(['low', 'high', 'max']);
+    // A Claude-list recommendation snaps to the nearest GLM level.
+    expect(snapEffort('zcode', 'high')).toBe('high');
+    expect(snapEffort('zcode', 'medium')).toBe('high');
+    expect(snapEffort('zcode', 'xhigh')).toBe('max');
+    expect(snapEffort('zcode', 'max')).toBe('max');
     // Mirrors zcodeRuntime.Capabilities() (internal/session/zcode_runtime.go).
     expect(capabilitiesOf('zcode')).toEqual({
-        resume: true, effort: false, permissionProtocol: true,
+        resume: true, effort: true, permissionProtocol: true,
         cost: false, tokenUsage: true, images: false, perTurnProcess: true,
     });
 });

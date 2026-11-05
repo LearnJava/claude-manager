@@ -25,7 +25,7 @@
     import { applyBillingFromSettings } from '../stores/billing';
     import { applyWaitingFromConfig } from '../stores/waiting';
     import { formatBytes } from '../lib/formatters';
-    import { MODELS, EFFORTS, modelsFor } from '../lib/models';
+    import { MODELS, modelsFor, effortsFor } from '../lib/models';
     import PlanReview from './PlanReview.svelte';
     import EnvironmentCheck from './EnvironmentCheck.svelte';
 
@@ -1723,9 +1723,13 @@
                                                 <select
                                                     bind:value={sess.Effort}
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
-                                                    {#each EFFORTS as e}
+                                                    {#each effortsFor(sess.Runtime) as e}
                                                         <option value={e}>{e}</option>
                                                     {/each}
+                                                    {#if sess.Effort && !effortsFor(sess.Runtime).includes(sess.Effort)}
+                                                        <!-- A level someone put in config.toml by hand -->
+                                                        <option value={sess.Effort}>{sess.Effort}</option>
+                                                    {/if}
                                                 </select>
                                             </label>
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
