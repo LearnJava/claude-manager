@@ -148,6 +148,46 @@ func TestKimiParser_MetaMessagesAreReadable(t *testing.T) {
 	}
 }
 
+func TestKimiRuntime_RolePromptIncludesQueuedTask(t *testing.T) {
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, "STATUS-P1.md"), []byte("ROADMAP.md:3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "ROADMAP.md"), []byte("# Roadmap\n\nVTT-RENDER-S1: parse cue text\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var texts []string
+	s := New(Params{
+		ID: "kimi/S1", ProjectName: "kimi", ProjectPath: projectDir,
+		KimiPath: buildFakekimi(t), RetryDelay: 1,
+		Config: config.SessionConfig{
+			Name: "S1", Runtime: config.RuntimeKimi,
+			Prompt:     "You are programmer 1, a browser and Rust expert.",
+			TaskSource: "STATUS-P1.md",
+		},
+		OnEvent: func(_ string, ev SessionEvent) {
+			if ev.Type == EvtLog && ev.Entry != nil && ev.Entry.Level == "text" {
+				texts = append(texts, ev.Entry.Message)
+			}
+		},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	s.Run(ctx)
+
+	got := strings.Join(texts, "\n")
+	for _, want := range []string{
+		"You are programmer 1, a browser and Rust expert.",
+		"Take the next task from STATUS-P1.md",
+		"VTT-RENDER-S1: parse cue text",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Kimi received %q, which does not mention %q", got, want)
+		}
+	}
+}
+
 func TestKimiRuntime_TransientTimeoutRetriesAndResumes(t *testing.T) {
 	bin := buildFakekimi(t)
 	state := filepath.Join(t.TempDir(), "kimi-retry-state")

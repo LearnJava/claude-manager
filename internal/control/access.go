@@ -81,6 +81,7 @@ var rpcLevels = map[string]AccessLevel{
 	"GetSessionState": LevelRead, "GetPlan": LevelRead, "GetMixedRounds": LevelRead,
 	"GetMixedQuality": LevelRead, "ListSlashCommands": LevelRead, "GetSessionOverview": LevelRead,
 	"GetProjects": LevelRead, "GetConfigView": LevelRead, "CheckEnvironment": LevelRead,
+	"ObserveZcode": LevelRead,
 	"HasClaudeMd": LevelRead, "HasSessionProtocol": LevelRead, "GetProjectMirror": LevelRead, "GetProjectSetup": LevelRead,
 	"GetPendingQuestions": LevelRead, "GetPending": LevelRead,
 	"GetDailyTokens": LevelRead, "GetProjectTokens": LevelRead, "SearchSessionLog": LevelRead,

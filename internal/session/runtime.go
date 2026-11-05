@@ -130,6 +130,15 @@ type StderrIniter interface {
 	SessionIDFromStderr(line string) (string, bool)
 }
 
+// PermissionResponder is an optional Runtime hook for backends whose
+// permission answers do not travel over the CLI's stdin as a
+// permission_response line (the ZCode file transport appends them to the
+// turn's order file instead). RespondPermission hands the already-normalized
+// decision ("allow" | "deny") to it and skips the stdin write.
+type PermissionResponder interface {
+	DeliverPermission(s *Session, requestID, decision string) error
+}
+
 // Parser turns one runtime's stdout lines into the shared ParsedEvent format
 // (docs/runtimes.md §§2-3) — the format both Session.handleEvent and the
 // manager consume identically regardless of which Runtime produced it. A
@@ -165,6 +174,8 @@ func newRuntime(cfg config.SessionConfig) Runtime {
 		return hermesRuntime{}
 	case cfg.IsKimi():
 		return kimiRuntime{}
+	case cfg.IsZcode():
+		return zcodeRuntime{}
 	default:
 		return claudeRuntime{}
 	}

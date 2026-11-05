@@ -821,6 +821,27 @@ func TestInitialPromptText_EmptyPromptWithQueuedTask(t *testing.T) {
 	}
 }
 
+func TestInitialPromptText_RolePromptWithQueuedTaskIncludesAssignment(t *testing.T) {
+	s := New(Params{Config: config.SessionConfig{
+		Prompt:     "You are programmer 1, a browser and Rust expert.",
+		TaskSource: "STATUS-P1.md",
+	}})
+	s.mu.Lock()
+	s.taskSourceDesc = "ROADMAP.md:1377 | VTT-RENDER-S1"
+	s.mu.Unlock()
+
+	got := s.initialPromptText(false)
+	for _, want := range []string{
+		"You are programmer 1, a browser and Rust expert.",
+		"Take the next task from STATUS-P1.md",
+		"VTT-RENDER-S1",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("prompt %q does not mention %q", got, want)
+		}
+	}
+}
+
 func TestInitialPromptText_EmptyPromptWithoutTaskStaysInteractive(t *testing.T) {
 	s := New(Params{Config: config.SessionConfig{TaskSource: "STATUS-P4.md"}})
 	if got := s.initialPromptText(false); got != "" {

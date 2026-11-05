@@ -1667,6 +1667,7 @@
                                                     <option value="">Claude Code CLI</option>
                                                     <option value="hermes">Hermes CLI</option>
                                                     <option value="kimi">Kimi Code CLI</option>
+                                                    <option value="zcode">ZCode (file transport)</option>
                                                 </select>
                                             </label>
                                             {#if sess.Runtime === 'hermes'}

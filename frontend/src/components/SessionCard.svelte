@@ -156,6 +156,11 @@
                 data-testid="runtime-label"
                 class="text-lg font-extrabold bg-gradient-to-r from-teal-600 to-cyan-600 dark:from-teal-400 dark:to-cyan-400 bg-clip-text text-transparent"
                 title={$t('sessionCard.useKimiTooltip')}>{$t('sessionCard.useKimiLabel')}</span>
+        {:else if session.runtime === 'zcode'}
+            <span
+                data-testid="runtime-label"
+                class="text-lg font-extrabold bg-gradient-to-r from-emerald-600 to-lime-600 dark:from-emerald-400 dark:to-lime-400 bg-clip-text text-transparent"
+                title={$t('sessionCard.useZcodeTooltip')}>{$t('sessionCard.useZcodeLabel')}</span>
         {:else}
             <span
                 data-testid="runtime-label"

@@ -79,6 +79,10 @@ type environmentOut struct {
 	Report any `json:"report" jsonschema:"The programs found (Claude CLI, Git, Python, build tools) with versions, and for each missing one the command that installs it"`
 }
 
+type zcodeObserveOut struct {
+	Snapshot any `json:"snapshot" jsonschema:"ZCode session database snapshot: db_path, db_exists, sessions (id, title, timestamps, tokens), usage_tables; error carries why a part is unknown"`
+}
+
 type setupOut struct {
 	Project         string `json:"project" jsonschema:"The project asked about"`
 	Path            string `json:"path" jsonschema:"The project folder"`
@@ -235,6 +239,23 @@ func projectsTools() []Tool {
 			},
 			Result:  func(_ noIn, raw any) environmentOut { return environmentOut{Report: raw} },
 			Summary: func(noIn, environmentOut) string { return "Environment checked." },
+		}),
+		define(spec[noIn, zcodeObserveOut]{
+			Name: "observe_zcode", Title: "Observe ZCode sessions",
+			Doc: Doc{
+				What:    "Read the local ZCode session database (read-only) and report what the ZCode app is doing: sessions, titles, token totals.",
+				UseWhen: "checking whether a ZCode session is alive and what it worked on last, without any control channel.",
+				NotFor:  "a manager-driven session's state (use get_session); this observes the separate ZCode app.",
+				Returns: "the snapshot: db_exists, sessions newest first, usage tables, error explaining any unknown part.",
+				Effects: "none, read only; the ZCode database is opened mode=ro.",
+				Example: `{}`,
+			},
+			Level: LevelRead, Annotations: ToolAnnotations{ReadOnly: true, OpenWorld: true}, Covers: []string{"ObserveZcode"},
+			Translate: func(noIn) (string, any, error) {
+				return "/rpc", rpcCallBody("ObserveZcode", map[string]string{}), nil
+			},
+			Result:  func(_ noIn, raw any) zcodeObserveOut { return zcodeObserveOut{Snapshot: raw} },
+			Summary: func(noIn, zcodeObserveOut) string { return "ZCode observed." },
 		}),
 		define(spec[pathOptIn, setupOut]{
 			Name: "get_project_setup", Title: "Get project setup",

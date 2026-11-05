@@ -33,6 +33,9 @@ func (a *fileApp) UpdateConfig(cfg config.AppConfig) error {
 }
 
 func (a *fileApp) CheckEnvironment() envcheck.Report { return envcheck.Report{} }
+func (a *fileApp) ObserveZcode() session.ZcodeObserveSnapshot {
+	return session.ZcodeObserveSnapshot{Sessions: []map[string]any{}}
+}
 func (a *fileApp) HasClaudeMd(path string) bool {
 	_, err := os.Stat(filepath.Join(path, "CLAUDE.md"))
 	return err == nil

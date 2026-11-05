@@ -53,6 +53,12 @@ export const RUNTIME_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     claude: { resume: true, effort: true, permissionProtocol: true, cost: true, tokenUsage: true, images: true, perTurnProcess: false },
     hermes: { resume: true, effort: true, permissionProtocol: false, cost: false, tokenUsage: true, images: true, perTurnProcess: true },
     kimi: { resume: true, effort: false, permissionProtocol: false, cost: false, tokenUsage: false, images: false, perTurnProcess: true },
+    // Mirrors zcodeRuntime.Capabilities() (internal/session/zcode_runtime.go):
+    // resume via the order's conversation_id, permissions answered through
+    // the order file, usage reported by the outbox; effort rides the order
+    // file as reasoning_effort (applying it is up to the consuming ZCode
+    // session); no USD cost, no image attachments on the file wire.
+    zcode: { resume: true, effort: true, permissionProtocol: true, cost: false, tokenUsage: true, images: false, perTurnProcess: true },
 };
 
 export function capabilitiesOf(runtime: string | null | undefined): RuntimeCapabilities {
@@ -69,9 +75,54 @@ export const KIMI_MODELS: ModelOption[] = [
     { value: 'kimi-code/k3.1-pro-highspeed', label: 'K3.1 Pro Highspeed 2x Usage Cost' },
 ];
 
-/** MODELS for Claude/Hermes, KIMI_MODELS for the Kimi runtime. */
+/**
+ * Model catalog for ZCode: the names its own model picker shows (Z.ai
+ * account, checked 2026-11-05). Values travel verbatim into the order
+ * file's `model` field (internal/session/zcode_file.go) — no alias
+ * resolution, and a pinned id from config.toml still round-trips as a
+ * custom option.
+ */
+export const ZCODE_MODELS: ModelOption[] = [
+    { value: 'GLM-5.3', label: 'GLM-5.3' },
+    { value: 'GLM-5.3-Flash', label: 'GLM-5.3-Flash' },
+];
+
+/** MODELS for Claude/Hermes, KIMI_MODELS for Kimi, ZCODE_MODELS for ZCode. */
 export function modelsFor(runtime: string | null | undefined): ModelOption[] {
-    return (runtime ?? '') === 'kimi' ? KIMI_MODELS : MODELS;
+    const r = runtime ?? '';
+    if (r === 'kimi') return KIMI_MODELS;
+    if (r === 'zcode') return ZCODE_MODELS;
+    return MODELS;
+}
+
+/**
+ * Reasoning-effort levels the ZCode side actually has: GLM-5.3 officially
+ * supports low / high / max (default max; thinking cannot be disabled) —
+ * the shared EFFORTS list carries Claude/Hermes values that GLM lacks.
+ */
+export const EFFORTS_ZCODE = ['low', 'high', 'max'];
+
+/** EFFORTS_ZCODE for ZCode, the shared EFFORTS list otherwise. */
+export function effortsFor(runtime: string | null | undefined): string[] {
+    if ((runtime ?? '') === 'zcode') return EFFORTS_ZCODE;
+    return EFFORTS;
+}
+
+// Superset of every runtime's levels, ordered weakest → strongest; snapEffort
+// uses it to map a level one list lacks onto the nearest one it has.
+const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+
+/**
+ * Snap an effort to the runtime's list: the nearest listed level at or above
+ * the requested one, else the strongest listed level. A recommendation
+ * computed for one runtime (e.g. 'medium' from the Claude router) stays a
+ * valid choice when the launch targets another (GLM-5.3 has no 'medium').
+ */
+export function snapEffort(runtime: string | null | undefined, effort: string): string {
+    const list = effortsFor(runtime);
+    if (list.includes(effort)) return effort;
+    const at = EFFORT_ORDER.indexOf(effort);
+    return list.find((e) => EFFORT_ORDER.indexOf(e) >= at) ?? list[list.length - 1];
 }
 
 /**
@@ -92,7 +143,9 @@ export function normalizeModel(raw: string | null | undefined): string {
 
 /** Display name in the runtime's own catalog, falling back to the raw value. */
 export function modelLabelFor(runtime: string | null | undefined, raw: string | null | undefined): string {
-    const value = (runtime ?? '') === 'kimi' ? (raw ?? '').trim() : normalizeModel(raw);
+    // Kimi and ZCode take exact ids — no alias folding onto the Claude list.
+    const exact = (runtime ?? '') === 'kimi' || (runtime ?? '') === 'zcode';
+    const value = exact ? (raw ?? '').trim() : normalizeModel(raw);
     return modelsFor(runtime).find((o) => o.value === value)?.label ?? value;
 }
 

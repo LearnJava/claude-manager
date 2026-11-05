@@ -11,7 +11,7 @@
         cancel: void;
     }>();
 
-    import { MODELS, EFFORTS, modelLabel, normalizeModel, modelsFor, capabilitiesOf } from '../lib/models';
+    import { MODELS, modelLabel, normalizeModel, modelsFor, effortsFor, capabilitiesOf } from '../lib/models';
 
     // Recommendation loaded from backend (null = not yet loaded)
     type Rec = { model: string; effort: string; complexity: string; reason: string } | null;
@@ -24,6 +24,13 @@
     let chosenModel  = 'sonnet';
     let chosenEffort = 'medium';
     let overriding   = false;   // true = user opened the override dropdowns
+
+    // 'sonnet' is a Claude alias; on a runtime whose catalog lacks it (Kimi,
+    // ZCode) fall back to that catalog's first entry, else "Start with model"
+    // would confirm a model the runtime does not offer.
+    $: if (!modelsFor(runtime).some((m) => m.value === chosenModel)) {
+        chosenModel = modelsFor(runtime)[0]?.value ?? chosenModel;
+    }
 
     import { GetModelRecommendation } from '../../wailsjs/go/main/App';
 

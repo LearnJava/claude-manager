@@ -7,6 +7,7 @@ import (
 
 	"claude-manager/internal/config"
 	"claude-manager/internal/envcheck"
+	"claude-manager/internal/session"
 )
 
 // ProjectsApp is the part of *App the projects-and-configuration RPCs need
@@ -16,6 +17,7 @@ import (
 // App's own result types live in package main.
 type ProjectsApp interface {
 	CheckEnvironment() envcheck.Report
+	ObserveZcode() session.ZcodeObserveSnapshot
 	HasClaudeMd(projectPath string) bool
 	HasSessionProtocol(project string) (bool, error)
 	InstallSessionProtocol(project string) ([]string, error)
@@ -181,6 +183,13 @@ func (s *Server) registerProjectRPCs(reg map[string]handler) {
 			return nil, needApp("the environment check")
 		}
 		return papp.CheckEnvironment(), nil
+	}
+
+	reg["ObserveZcode"] = func(_ json.RawMessage) (any, error) {
+		if papp == nil {
+			return nil, needApp("the ZCode observation")
+		}
+		return papp.ObserveZcode(), nil
 	}
 
 	reg["HasClaudeMd"] = projectAction("the CLAUDE.md check", func(a editArgs) (any, error) {

@@ -252,6 +252,9 @@ type Session struct {
 	claudePath string
 	hermesPath string
 	kimiPath   string
+	// zcode is the file-transport channel of the zcode turn in flight (nil
+	// when no zcode turn is running); guarded by mu. See zcode_file.go.
+	zcode *zcodeChannel
 	// runtime is the Runtime implementation selected once in New() from
 	// Config.Runtime (RUNTIME-TASKS.md RT-05). RT-06 routes runOnce's/
 	// runOnceHermes's argv building (Runtime.Args), atomics reset
@@ -696,6 +699,17 @@ func (s *Session) RespondPermission(requestID, decision string) error {
 		cliDecision = "allow"
 	case "deny", "deny_always":
 		cliDecision = "deny"
+	}
+
+	// Backends whose permission answers do not travel over the CLI's stdin
+	// (the ZCode file transport appends them to the turn's order file)
+	// deliver the decision themselves.
+	if r, ok := s.runtime.(PermissionResponder); ok {
+		if err := r.DeliverPermission(s, requestID, cliDecision); err != nil {
+			return err
+		}
+		s.setStatus(config.StatusWorking)
+		return nil
 	}
 
 	data, err := json.Marshal(PermissionResponseMessage{
@@ -1743,15 +1757,20 @@ func (s *Session) initialPromptBody(forceInteractive bool) string {
 		)
 	}
 	prompt := strings.TrimSpace(s.Config.Prompt)
-	// A queue-driven session with no configured prompt still has a task to do:
-	// sending nothing would leave the CLI blocked on stdin while the card shows
-	// "working". Only an empty prompt with no queued task stays interactive.
-	if prompt == "" && s.Config.TaskSource != "" && taskDesc != "" {
-		prompt = fmt.Sprintf(
+	// A role-only prompt is not a task assignment: always name the queued task
+	// explicitly. With no configured prompt this also keeps the CLI from waiting
+	// on stdin while the card shows "working".
+	if s.Config.TaskSource != "" && taskDesc != "" {
+		assignment := fmt.Sprintf(
 			"Take the next task from %s: %s\n"+
 				"Follow the working protocol in the project's CLAUDE.md and the task file, and finish this one task.",
 			s.Config.TaskSource, taskDesc,
 		)
+		if prompt == "" {
+			prompt = assignment
+		} else {
+			prompt += "\n\n" + assignment
+		}
 	}
 	return prompt
 }

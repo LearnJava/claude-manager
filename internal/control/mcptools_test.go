@@ -39,6 +39,7 @@ var toolSamples = map[string]struct {
 	"get_projects":             {`{}`, `[{"name":"p","path":"/p","sessions":["s"],"mirror":false,"mixed_programming":false}]`},
 	"get_config":               {`{"section":"settings"}`, `{"version":"abc","config":{"settings":{"theme":"dark"},"project":[]}}`},
 	"check_environment":        {`{}`, `{"tools":[]}`},
+	"observe_zcode":            {`{}`, `{"db_path":"C:/z/.zcode/cli/db/db.sqlite","db_exists":true,"sessions":[{"id":"s1","title":"t"}],"usage_tables":[],"error":null,"ts":1}`},
 	"get_project_setup":        {`{"project":"p"}`, `{"project":"p","path":"/p","claude_md":true,"session_protocol":false,"mirror":{"enabled":false}}`},
 	"add_project":              {`{"name":"p","path":"."}`, `{"dry_run":false,"changed":true,"changes":{"project":{"was":null,"now":{"name":"p"}}},"version":"abc"}`},
 	"update_project":           {`{"project":"p","fields":{"journal":true}}`, `{"dry_run":true,"changed":false,"changes":{"journal":{"was":false,"now":true}},"version":"abc"}`},

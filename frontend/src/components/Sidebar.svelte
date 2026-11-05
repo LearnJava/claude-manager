@@ -95,8 +95,9 @@
     // our aliases (see lib/models). Hermes takes any provider id
     // (`anthropic/claude-sonnet-4.6`), and folding that onto "sonnet" would
     // show a model the session isn't actually using — only exact aliases fold.
+    // ZCode, like Kimi, takes exact ids with no alias resolution.
     function modelValue(s: SessionState): string {
-        if (s.runtime === 'hermes' || s.runtime === 'kimi') {
+        if (s.runtime === 'hermes' || s.runtime === 'kimi' || s.runtime === 'zcode') {
             const raw = (s.model ?? '').trim();
             return MODELS.some((m) => m.value === raw.toLowerCase()) ? raw.toLowerCase() : raw;
         }
@@ -499,6 +500,7 @@
                                     <option value="claude">Claude</option>
                                     <option value="hermes">☤ Hermes</option>
                                     <option value="kimi">Kimi</option>
+                                    <option value="zcode">ZCode</option>
                                 </select>
                                 </span>
                                 <select

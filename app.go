@@ -274,6 +274,14 @@ func (a *App) CheckEnvironment() envcheck.Report {
 	return envcheck.Check(claudePath)
 }
 
+// ObserveZcode returns a read-only snapshot of the local ZCode session
+// database (~/.zcode/cli/db/db.sqlite): what the ZCode app is doing, without
+// touching any control channel. Ported from zsm's engines/zcode_observe.py;
+// problems land in the snapshot's Error field, never as a Go error.
+func (a *App) ObserveZcode() session.ZcodeObserveSnapshot {
+	return session.ObserveZcode("")
+}
+
 // GetAutoModelRouting reports whether auto_model_routing is enabled in config.
 func (a *App) GetAutoModelRouting() bool {
 	if a.cfg == nil {
@@ -834,8 +842,8 @@ func (a *App) SetSessionRuntime(id, runtime string) error {
 	if runtime == "claude" {
 		runtime = "" // config default; keeps untouched configs byte-identical
 	}
-	if runtime != "" && runtime != config.RuntimeHermes && runtime != config.RuntimeKimi {
-		return fmt.Errorf("unknown runtime %q (want claude|hermes|kimi)", runtime)
+	if runtime != "" && runtime != config.RuntimeHermes && runtime != config.RuntimeKimi && runtime != config.RuntimeZcode {
+		return fmt.Errorf("unknown runtime %q (want claude|hermes|kimi|zcode)", runtime)
 	}
 	project, name, ok := splitSessionID(id)
 	if !ok {

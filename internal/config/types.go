@@ -473,11 +473,20 @@ const RuntimeHermes = "hermes"
 // (Kimi Code CLI: one `kimi -p` process per turn, resumed by --session).
 const RuntimeKimi = "kimi"
 
+// RuntimeZcode is the SessionConfig.Runtime value that drives ZCode through
+// the file transport (no CLI process: the manager writes .zsm order files
+// and polls outbox status files; ported from zsm's engines/zcode_file.py).
+const RuntimeZcode = "zcode"
+
 // IsHermes reports whether the session runs on the Hermes CLI runtime.
 func (s SessionConfig) IsHermes() bool { return s.Runtime == RuntimeHermes }
 
 // IsKimi reports whether the session runs on the Kimi Code CLI runtime.
 func (s SessionConfig) IsKimi() bool { return s.Runtime == RuntimeKimi }
+
+// IsZcode reports whether the session runs on the ZCode file-transport
+// runtime.
+func (s SessionConfig) IsZcode() bool { return s.Runtime == RuntimeZcode }
 
 type PermissionRule struct {
 	Tool     string `toml:"tool"`     // "Bash", "Edit", "Write", "*"

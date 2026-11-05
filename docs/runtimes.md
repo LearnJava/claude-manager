@@ -364,6 +364,39 @@ stream-json fixture and ACP for the runtime contract. `TestKimiRuntime_RealKimi`
 (`CM_REAL_KIMI=1`) covers start → thinking/text → second message → stop →
 resume by id.
 
+## 13. ZCode runtime, file transport (ported from zsm)
+
+The fourth `Runtime` implementation (`internal/session/zcode_runtime.go`,
+`zcode_file.go`) drives no CLI process at all: ZCode has no working external
+headless mode today (checked 2026-11-04, zai-org/feedback#29), so a turn is a
+file pair, wire-compatible with zsm's `engines/zcode_file.py`:
+
+- `<workdir>/.zsm/inbox/<id>.json` — the order (prompt, conversation_id,
+  resume, model). Mid-turn control messages are appended to its `messages`
+  array: `user_message`, `permission_response`, `question_response`,
+  `soft_stop` (zsm `events.py`).
+- `<workdir>/.zsm/outbox/<id>.json` — the status a ZCode session writes via
+  its skills/hooks: `state` (working|waiting_permission|done|failed), `text`,
+  `continuation`, `tool_calls`, `usage`, `permission`, `question`, `limit`.
+
+`RunTurn` (the `TurnRunner` hook, like Kimi ACP) polls the outbox once a
+second and maps it onto the common events: the first read emits `EventInit`
+with the outbox's `conversation_id` (the resume id); a state change emits the
+last five `tool_calls` as tool cards plus `usage`/`limit`; a new
+`permission.id` emits `EventPermission` — the answer travels back through the
+`PermissionResponder` hook (`RespondPermission` → appended to the order
+instead of stdin); a new `question.id` becomes a pending question whose
+`AnswerQuestion` appends `question_response` to the order; done/failed emits
+the result, and an ```ask-user``` marker in the final text is honoured as on
+every other runtime. Cancel writes `soft_stop` (+ its companion user message),
+waits a short grace, then removes the order file — on this transport that
+removal is the force stop. The order file is always unlinked at turn end.
+
+`session.ObserveZcode` (`zcode_observe.go`, port of zsm's
+`engines/zcode_observe.py`) reads `~/.zcode/cli/db/db.sqlite` read-only and
+degrades to "unknown" on any schema drift; it is exposed as the App method
+`ObserveZcode` and the MCP tool `observe_zcode` (level read).
+
 ## 8. `AskUserQuestion` у Claude Code (RT-02, checked on v2.1.280)
 
 Question RT-01 §6 left open: what happens when the model calls Anthropic's

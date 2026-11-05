@@ -593,8 +593,8 @@ func validate(cfg *AppConfig) error {
 			if names[s.Name] {
 				return fmt.Errorf("config: project %q has duplicate session name %q", p.Name, s.Name)
 			}
-			if s.Runtime != "" && s.Runtime != "claude" && s.Runtime != RuntimeHermes && s.Runtime != RuntimeKimi {
-				return fmt.Errorf("config: project %q session %q has invalid runtime %q (want claude|hermes|kimi)", p.Name, s.Name, s.Runtime)
+			if s.Runtime != "" && s.Runtime != "claude" && s.Runtime != RuntimeHermes && s.Runtime != RuntimeKimi && s.Runtime != RuntimeZcode {
+				return fmt.Errorf("config: project %q session %q has invalid runtime %q (want claude|hermes|kimi|zcode)", p.Name, s.Name, s.Runtime)
 			}
 			names[s.Name] = true
 		}

@@ -37,6 +37,8 @@ export default {
     'sessionCard.useHermesTooltip': 'This session is driven by Hermes CLI',
     'sessionCard.useKimiLabel': 'Use Kimi',
     'sessionCard.useKimiTooltip': 'This session is driven by Kimi Code CLI',
+    'sessionCard.useZcodeLabel': 'Use ZCode',
+    'sessionCard.useZcodeTooltip': 'This session is driven by ZCode via the file transport (.zsm inbox/outbox); no CLI process is started',
     'sessionCard.costNoData': 'no data',
     'sessionCard.useClaudeCodeLabel': 'Use Claude Code',
     'sessionCard.useClaudeCodeTooltip': 'This session is driven by Claude Code CLI',

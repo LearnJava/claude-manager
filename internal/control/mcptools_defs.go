@@ -626,15 +626,15 @@ func buildCoreTools() []Tool {
 		sessionTool(spec[runtimeIn, sessionAck]{
 			Name: "set_session_runtime", Title: "Set session runtime",
 			Doc: Doc{
-				What:    "Choose which agent CLI (claude or hermes) a session drives.",
-				UseWhen: "a stopped session should run on another CLI the next time it starts.",
+				What:    "Choose which agent backend a session drives: claude, hermes, kimi (CLIs) or zcode (file transport, no CLI process).",
+				UseWhen: "a stopped session should run on another backend the next time it starts.",
 				NotFor:  "a running session (stop_session first) or changing the model (use set_session_model).",
 				Returns: "ok and the session_id.",
 				Effects: "rewrites the session's runtime in the saved configuration; refused while the session runs.",
 				Example: `{"session_id":"lumen/P1","runtime":"hermes"}`,
 			},
 			Input: func(props map[string]*jsonschema.Schema) {
-				props["runtime"].Enum = []any{"claude", "hermes"}
+				props["runtime"].Enum = []any{"claude", "hermes", "kimi", "zcode"}
 			},
 			Level: LevelOperate, Annotations: ToolAnnotations{Idempotent: true}, Covers: []string{"SetSessionRuntime"},
 			Translate: func(in runtimeIn) (string, any, error) {
@@ -643,7 +643,7 @@ func buildCoreTools() []Tool {
 					return "", nil, err
 				}
 				if in.Runtime == "" {
-					return "", nil, fmt.Errorf("runtime is required: claude or hermes")
+					return "", nil, fmt.Errorf("runtime is required: claude, hermes, kimi or zcode")
 				}
 				return "/rpc", rpcCallBody("SetSessionRuntime", map[string]string{"id": id, "runtime": in.Runtime}), nil
 			},
