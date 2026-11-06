@@ -123,6 +123,30 @@ func zcodeResolveProvider() (string, error) {
 	return "", errors.New("zcode: в пуше реестра нет ни одного доступного z.ai-плана — обнови zcodeAccountRevision (payload привязан к версии ZCode)")
 }
 
+// zcodePermissionMode maps the manager's permission_mode config onto the
+// app-server's session mode enum (zcode.cjs 0.17.x: plan|build|edit|yolo|
+// guarded|auto). "yolo" is the wire form of Full access — the engine allows
+// every tool without the permission broker ("Yolo mode bypasses permission
+// prompts"). The server default is "build", which routes every non-read tool
+// to the broker, and a stdio client with no registered permission client
+// gets the deny-everything broker ("No permission client configured for
+// Write") — the read-only symptom this mapping exists to fix. "" maps to
+// yolo because applySessionDefaults already defaults PermissionMode to
+// bypassPermissions; "auto" is never returned (server: "reserved but not
+// implemented yet" → deny).
+func zcodePermissionMode(pm string) string {
+	switch pm {
+	case "acceptEdits":
+		return "edit"
+	case "plan":
+		return "plan"
+	case "default":
+		return "build"
+	default: // bypassPermissions, dontAsk, "" (config default)
+		return "yolo"
+	}
+}
+
 // zcodeEnvHas reports whether the k=v list already carries key.
 func zcodeEnvHas(env []string, key string) bool {
 	prefix := key + "="
@@ -420,6 +444,15 @@ func (c *zcodeConn) answerServerRequest(id, method string, params json.RawMessag
 		result = c.runtimeHeadersResult(params)
 	case "interaction/requestOfficialMcpAuthHeaders":
 		result = map[string]any{"headersApplied": false}
+	case "interaction/requestPermission":
+		// Only reachable in non-yolo modes: the manager registers no
+		// interactive permission gate on this wire, so the honest answer is
+		// a valid deny decision (enum allow|deny|escalate|modify) instead
+		// of the empty-object default the server would fail to parse.
+		result = map[string]any{
+			"decision": "deny",
+			"reason":   "claude-manager: no interactive permission client on the app-server wire",
+		}
 	default:
 		result = map[string]any{}
 	}
@@ -684,10 +717,16 @@ func (s *Session) zcodeProtocolTurn(ctx context.Context, conn *zcodeConn, workDi
 	}
 
 	// 3. Fresh session or resume of the previous turn's conversation.
+	// Both carry the permission mode: create takes it inline, while resume
+	// (whose schema has no mode field) is followed by session/setMode so a
+	// conversation persisted under the old build default comes up with the
+	// session's configured mode too.
+	mode := zcodePermissionMode(s.Config.PermissionMode)
 	if convID == "" {
 		var created zcodeCreateResult
 		if err := conn.call(ctx, "session/create", map[string]any{
 			"workspace": workspace,
+			"mode":      mode,
 		}, &created); err != nil {
 			return fail(fmt.Errorf("zcode: session/create: %w", err))
 		}
@@ -703,6 +742,14 @@ func (s *Session) zcodeProtocolTurn(ctx context.Context, conn *zcodeConn, workDi
 			return fail(fmt.Errorf("zcode: session/resume %s: %w", convID, err))
 		}
 		turn.sessionID = convID
+		// Non-fatal on purpose: a setMode rejection must not kill the turn,
+		// the conversation just keeps its persisted mode (reads still work).
+		if err := conn.call(ctx, "session/setMode", map[string]any{
+			"sessionId": convID,
+			"mode":      mode,
+		}, nil); err != nil {
+			logger.L.Warn("session.zcode_setmode_failed", "id", s.ID, "conversation", convID, "mode", mode, "error", err)
+		}
 	}
 	if turn.sessionID == "" {
 		return fail(errors.New("zcode: session/create вернул пустой sessionId"))

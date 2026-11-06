@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +25,11 @@ type fakeZcodeServer struct {
 	conn   net.Conn
 	enc    *json.Encoder
 	nextID int
+
+	mu           sync.Mutex
+	createParams map[string]any
+	setModeCount int
+	setModeMode  string
 
 	gotPush bool
 	// sent is signaled once the client reaches session/send (or resume).
@@ -76,12 +82,23 @@ func (f *fakeZcodeServer) serve() {
 			f.gotPush = true
 			f.reply(id, map[string]any{"receivedRevision": "ok"})
 		case "session/create":
+			p, _ := msg["params"].(map[string]any)
+			f.mu.Lock()
+			f.createParams = p
+			f.mu.Unlock()
 			f.reply(id, map[string]any{
 				"sessionId": "sess_new",
 				"session":   map[string]any{"sessionId": "sess_nested"},
 			})
 		case "session/resume":
 			f.reply(id, map[string]any{"sessionId": "sess_old"})
+		case "session/setMode":
+			p, _ := msg["params"].(map[string]any)
+			f.mu.Lock()
+			f.setModeCount++
+			f.setModeMode, _ = p["mode"].(string)
+			f.mu.Unlock()
+			f.reply(id, map[string]any{})
 		case "session/subscribe", "session/send":
 			select {
 			case f.sent <- struct{}{}:
@@ -221,6 +238,30 @@ func TestZcodeConnReverseRequests(t *testing.T) {
 	if res["headersApplied"] != false {
 		t.Fatalf("keyless headers answer: %v", res)
 	}
+
+	// 5. permission ask (non-yolo modes): a valid deny decision, not the
+	// empty-object default the server would fail to parse.
+	res = ask("server-4", "interaction/requestPermission",
+		map[string]any{"toolName": "Write"})["result"].(map[string]any)
+	if res["decision"] != "deny" {
+		t.Fatalf("permission answer: %v", res)
+	}
+}
+
+func TestZcodePermissionModeMapping(t *testing.T) {
+	cases := map[string]string{
+		"":                  "yolo", // applySessionDefaults default is bypassPermissions
+		"bypassPermissions": "yolo",
+		"dontAsk":           "yolo",
+		"acceptEdits":       "edit",
+		"plan":              "plan",
+		"default":           "build",
+	}
+	for in, want := range cases {
+		if got := zcodePermissionMode(in); got != want {
+			t.Errorf("zcodePermissionMode(%q) = %q, want %q", in, got, want)
+		}
+	}
 }
 
 // TestZcodeCoalescesDeltas drives the mapper directly: streamed word
@@ -330,6 +371,16 @@ func TestZcodeProtocolTurnHappyPath(t *testing.T) {
 		if !srv.gotPush {
 			t.Fatal("registry push not sent")
 		}
+		// The config default ("" → bypassPermissions) must reach the wire as
+		// the session mode "yolo": without it the server defaults to "build"
+		// and its deny-everything permission broker makes the session
+		// read-only.
+		srv.mu.Lock()
+		mode, _ := srv.createParams["mode"].(string)
+		srv.mu.Unlock()
+		if mode != "yolo" {
+			t.Fatalf("session/create mode: %q, want yolo (params %v)", mode, srv.createParams)
+		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("turn did not complete")
 	}
@@ -337,6 +388,7 @@ func TestZcodeProtocolTurnHappyPath(t *testing.T) {
 
 func TestZcodeProtocolTurnResume(t *testing.T) {
 	srv, conn, s := newFakeZcodeServer(t)
+	s.Config.PermissionMode = "acceptEdits"
 	done := make(chan hermesTurn, 1)
 	errCh := make(chan error, 1)
 	go conn.loop()
@@ -357,6 +409,15 @@ func TestZcodeProtocolTurnResume(t *testing.T) {
 		}
 		if turn.sessionID != "sess_old" {
 			t.Fatalf("resumed sessionID: %q", turn.sessionID)
+		}
+		// resume's schema has no mode field, so a resumed conversation is
+		// re-armed via session/setMode — without it a conversation persisted
+		// under the old build default stays read-only.
+		srv.mu.Lock()
+		count, mode := srv.setModeCount, srv.setModeMode
+		srv.mu.Unlock()
+		if count != 1 || mode != "edit" {
+			t.Fatalf("session/setMode: count=%d mode=%q, want 1/edit", count, mode)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("turn did not complete")

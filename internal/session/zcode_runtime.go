@@ -44,10 +44,13 @@ func (zcodeRuntime) ClassifyStderr(line string) *TurnFailure { return ClassifySt
 
 // Capabilities: resume works (session/resume of the persisted conversation);
 // effort is native (modelSelection.options.reasoningLevel, GLM-5.3: low,
-// high, max); token usage arrives via usage.delta events. Permission
-// requests exist on the wire (permission.requested) but the manager only
-// surfaces them as log entries today — answering them is not wired, so the
-// capability stays off. No USD cost, no image attachments on this wire.
+// high, max); token usage arrives via usage.delta events. Permission mode is
+// honored natively: permission_mode maps onto the session mode enum
+// (bypassPermissions → "yolo", acceptEdits → "edit", plan → "plan") passed to
+// session/create and session/setMode. In non-yolo modes the manager
+// registers no interactive gate — interaction/requestPermission is answered
+// with a deny decision — so the capability stays off. No USD cost, no image
+// attachments on this wire.
 func (zcodeRuntime) Capabilities() Capabilities {
 	return Capabilities{
 		Resume: true, Effort: true, PermissionProtocol: false,
@@ -77,10 +80,6 @@ func (zcodeRuntime) Preamble(s *Session, autonomous bool) string {
 func (zcodeRuntime) WarnOptions(s *Session) {
 	var ignored []string
 	c := s.Config
-	if c.PermissionMode != "" && c.PermissionMode != "bypassPermissions" {
-		ignored = append(ignored, "permission_mode="+c.PermissionMode+
-			" (the server applies its own policy; permission requests surface as log entries, the manager does not answer them yet)")
-	}
 	if c.MaxBudgetUSD > 0 {
 		ignored = append(ignored, "max_budget_usd")
 	}

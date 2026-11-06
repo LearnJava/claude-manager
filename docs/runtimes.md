@@ -379,11 +379,24 @@ One turn's protocol: `provider/updateAccountConfig` (the account registry
 push captured from the desktop, builtin revision `zcode-builtin:43:…` —
 versioned to this ZCode build; an update that bumps the revision fails the
 push with a clear error) → `session/create` `{workspace:{workspacePath,
-workspaceKey}}` or `session/resume` `{sessionId, workspace}` →
-`session/subscribe` `{sessionId, deliveryKind:"desktop-continuous"}` →
+workspaceKey}, mode}` or `session/resume` `{sessionId, workspace}` followed
+by `session/setMode` `{sessionId, mode}` (resume's schema has no mode field;
+a conversation persisted under the old default comes up read-only without
+it) → `session/subscribe` `{sessionId, deliveryKind:"desktop-continuous"}` →
 `session/send` `{sessionId, content, modelSelection:{providerId, modelId,
 options:{reasoningLevel}}}` (effort is native: low/high/max) → events until
 `turn.completed` / `turn.failed` / `turn.terminal`.
+
+`mode` maps the session's `permission_mode` onto the app-server's enum
+(probed in zcode.cjs 0.17.x: plan|build|edit|yolo|guarded|auto):
+`bypassPermissions`/`dontAsk`/`""` → `yolo` (Full access — the engine allows
+every tool without the permission broker, "Yolo mode bypasses permission
+prompts"), `acceptEdits` → `edit`, `plan` → `plan`, `default` → `build`.
+The mapping matters because the server default is `build`: it routes every
+non-read tool to the permission broker, and a stdio client with no
+registered permission client gets the deny-everything broker ("No permission
+client configured for Write") — the symptom of a session that can read but
+never write (diagnosed 2026-11-06).
 
 The server makes reverse requests the client must answer:
 `session/requestRuntimePreferences` → `{nativeSearchEnhancementsEnabled:
@@ -396,14 +409,18 @@ pay-as-you-go key authenticates but every model call fails with
 `[1113] Insufficient balance` — verified 2026-11-06; the `accountScope`
 echoes `expectedAccountScope` or the provider's `connectionKey`). Without
 a key the turn fails fast with a clear error.
-`interaction/requestOfficialMcpAuthHeaders` → `{headersApplied:false}`.
+`interaction/requestOfficialMcpAuthHeaders` → `{headersApplied:false}`;
+`interaction/requestPermission` (non-yolo modes only) → a valid
+`{decision:"deny", reason}` — the manager has no interactive permission
+gate on this wire.
 
 Events map onto the common format: `part.delta` (field `text`/`reasoning`)
 streams answer/thinking; `message.upserted` carries the authoritative
 message snapshot (the turn's result text); `tool.call.started/completed/
 failed` become tool cards; `usage.delta` feeds TokenUsage;
-`permission.requested` surfaces as a log entry only (the manager does not
-answer permissions on this wire — capability false); `turn.failed` carries
+`permission.requested` surfaces as a log entry only (in non-yolo modes the
+manager answers the matching `interaction/requestPermission` with a deny —
+capability false); `turn.failed` carries
 the error. Cancellation kills the per-turn process (the conversation
 persists in ZCode's own session DB, so the next turn resumes it).
 
