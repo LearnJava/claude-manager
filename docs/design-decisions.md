@@ -977,6 +977,19 @@ Crash-loop protection: at most `MAX_RESTARTS` (10) consecutive failures, with a
 The backoff uses `ping -n`, not `timeout`, which refuses to wait when stdin is
 redirected — i.e. whenever the launcher is started by another process.
 
+**3. A hard death must not take the run logs with it.** The auto-save to
+`<project>/.claude-manager/logs/` fires in `finishRun` — a run cut by a crash
+or kill never reaches it, and until 2026-11-06 its whole log lived in memory
+until that moment, so it was lost twice over (measured: 14 runs stuck as
+`running` since September with zero `session_logs` rows). Two changes close
+that: `onSessionEvent` flushes the log into `session_logs` incrementally,
+`logFlushBatch` (25) entries at a time, so SQLite stays within one batch of
+the live feed; and `NewSessionManager` → `recoverOrphanedRuns` closes every
+row still `running` at startup (the app is single-instance, so those are all
+previous-lifetime orphans) as `unfinished` and dumps what the flush saved
+into the project's logs folder as a normal markdown file. A clean restart now
+costs at most the last 24 entries of a run, never the run.
+
 **Update on launch.** Before the relaunch loop, the launcher runs
 `git fetch`, fast-forwards (`pull --ff-only --autostash`) if `origin` is ahead,
 and rebuilds when `HEAD` differs from the commit recorded in

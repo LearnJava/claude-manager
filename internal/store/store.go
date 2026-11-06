@@ -258,6 +258,28 @@ func (s *Store) ListRuns(project, session string, limit int) ([]*SessionRun, err
 	return runs, rows.Err()
 }
 
+// ListRunningRuns returns every run row still marked 'running'. Right after
+// app startup — the manager is single-instance — those are runs orphaned by
+// the previous lifetime (crash or kill: finishRun never ran), which
+// recoverOrphanedRuns closes and dumps to the project's logs folder.
+func (s *Store) ListRunningRuns() ([]*SessionRun, error) {
+	rows, err := s.db.Query("SELECT " + selectRunCols + " FROM session_runs WHERE status='running' ORDER BY started_at")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var runs []*SessionRun
+	for rows.Next() {
+		r, err := scanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, r)
+	}
+	return runs, rows.Err()
+}
+
 // --- session_logs ---
 
 // InsertLogs batch-inserts log entries for a run in a single transaction.
@@ -315,8 +337,8 @@ func (s *Store) GetLogs(runID int64, offset, limit int) ([]*LogEntry, error) {
 }
 
 // LatestRunWithLogs returns the newest run of project/session that has saved
-// log entries, skipping excludeRunID (the run in progress, whose entries are
-// not written until it ends). Returns nil, nil when there is none.
+// log entries, skipping excludeRunID (the run in progress, which serves its
+// not-yet-flushed tail from memory). Returns nil, nil when there is none.
 func (s *Store) LatestRunWithLogs(project, session string, excludeRunID int64) (*SessionRun, error) {
 	q := "SELECT " + selectRunCols + ` FROM session_runs r
     WHERE project=? AND session=? AND id<>?

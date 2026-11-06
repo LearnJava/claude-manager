@@ -243,9 +243,20 @@ type managedSession struct {
 	// finishRun feeds to journal distillation (LEARN-TASKS.md LN-06).
 	lastResultText string
 
-	// pendingLogs is flushed to the store when the run ends.
+	// pendingLogs is the run's full log: served to the UI live, flushed to
+	// the store incrementally while the run is in flight (logFlushBatch
+	// entries at a time), with the remainder written when the run ends.
 	pendingLogs []store.LogEntry
+	// flushedLogs counts the pendingLogs prefix already inserted into
+	// session_logs by the incremental flush; finishRun inserts the rest.
+	flushedLogs int
 }
+
+// logFlushBatch is how many unflushed log entries trigger an incremental
+// write to session_logs while the run is still going. Without it the whole
+// log lives in memory until finishRun — an app crash or kill mid-run loses
+// it entirely (neither SQLite nor the auto-saved markdown file appears).
+const logFlushBatch = 25
 
 // ---- SessionManager ----
 
@@ -291,7 +302,7 @@ type SessionManager struct {
 // events; pass nil for a no-op emitter (useful in tests).
 func NewSessionManager(cfg *config.AppConfig, cfgPath string, st *store.Store, emitter Emitter) *SessionManager {
 	stateDir := filepath.Join(filepath.Dir(cfgPath), "state")
-	return &SessionManager{
+	m := &SessionManager{
 		cfg:          cfg,
 		cfgPath:      cfgPath,
 		store:        st,
@@ -305,6 +316,63 @@ func NewSessionManager(cfg *config.AppConfig, cfgPath string, st *store.Store, e
 		worktreeDir:  filepath.Join(filepath.Dir(cfgPath), "worktrees"),
 		mixedTasks:   make(map[string]context.CancelFunc),
 		mixedBriefs:  make(map[string]worker.Brief),
+	}
+	m.recoverOrphanedRuns()
+	return m
+}
+
+// recoverOrphanedRuns closes run rows the previous app lifetime left in
+// 'running' (crash or kill: nothing ran finishRun — measured 2026-11-06:
+// 14 such rows since September, their logs lost entirely) and writes the
+// logs that DID reach SQLite via the incremental flush to the project's
+// .claude-manager/logs as a normal auto-saved markdown file, so a hard
+// restart still leaves everything the runtime printed on disk.
+func (m *SessionManager) recoverOrphanedRuns() {
+	if m.store == nil {
+		return
+	}
+	runs, err := m.store.ListRunningRuns()
+	if err != nil {
+		logger.L.Error("manager.orphan_scan_failed", "error", err)
+		return
+	}
+	for _, run := range runs {
+		now := time.Now()
+		run.Status = RunStatusUnfinished
+		run.FinishedAt = &now
+		run.ErrorMsg = "app was restarted while the run was in flight"
+		if err := m.store.UpdateRun(run); err != nil {
+			logger.L.Error("manager.orphan_close_failed", "run", run.ID, "project", run.Project, "error", err)
+			continue
+		}
+		logger.L.Info("manager.orphan_run_closed", "run", run.ID, "project", run.Project,
+			"session", run.Session, "started_at", run.StartedAt)
+		// Dump what the incremental flush managed to save. Runs killed
+		// before the first flush have nothing — SaveSessionLogFile no-ops.
+		entries, err := m.store.GetLogs(run.ID, 0, 1<<30)
+		if err != nil {
+			logger.L.Error("manager.orphan_logs_read_failed", "run", run.ID, "error", err)
+			continue
+		}
+		if len(entries) == 0 {
+			continue
+		}
+		// A removed session name still resolves its project — only a
+		// missing project (or path) leaves the file nowhere to go.
+		p, _, _ := m.findConfig(run.Project, run.Session)
+		if p == nil || p.Path == "" {
+			continue
+		}
+		logs := make([]store.LogEntry, len(entries))
+		for i, e := range entries {
+			logs[i] = *e
+		}
+		path, err := store.SaveSessionLogFile(p.Path, sessionID(run.Project, run.Session), logs)
+		if err != nil {
+			logger.L.Error("session.log_recover_failed", "id", sessionID(run.Project, run.Session), "run", run.ID, "error", err)
+		} else if path != "" {
+			logger.L.Info("session.log_recovered", "id", sessionID(run.Project, run.Session), "run", run.ID, "path", path)
+		}
 	}
 }
 
@@ -1201,8 +1269,9 @@ func (m *SessionManager) GetSessionLog(id string, offset, limit int) ([]*store.L
 	if limit <= 0 {
 		limit = 500
 	}
-	// The run in flight keeps its entries in memory until it ends, so the
-	// store has none for it yet.
+	// The run in flight serves from memory: pendingLogs is the full log,
+	// regardless of how much of it the incremental flush already wrote to
+	// the store.
 	ms.mu.Lock()
 	if ms.runID != 0 && ms.runID == runs[0].ID {
 		live := liveLogSlice(ms.pendingLogs, runs[0].ID, offset, limit)
@@ -1509,6 +1578,20 @@ func (m *SessionManager) onSessionEvent(id string, ev SessionEvent) {
 				ToolName:  ev.Entry.ToolName,
 				ToolInput: ev.Entry.ToolInput,
 			})
+			// Incremental flush: keep session_logs within logFlushBatch
+			// entries of the live log so a crash/kill mid-run loses at most
+			// that tail, not the whole run. The insert runs under ms.mu so
+			// flushedLogs can't interleave with finishRun/beginRun snapping
+			// the same counters.
+			if runID := ms.runID; runID != 0 && m.store != nil && len(ms.pendingLogs)-ms.flushedLogs >= logFlushBatch {
+				batch := append([]store.LogEntry(nil), ms.pendingLogs[ms.flushedLogs:]...)
+				if err := m.store.InsertLogs(runID, batch); err != nil {
+					logger.L.Error("session.log_incremental_flush_failed",
+						"id", id, "run", runID, "error", err)
+				} else {
+					ms.flushedLogs += len(batch)
+				}
+			}
 			ms.mu.Unlock()
 			m.emit(EventNameLog, LogEvent{ID: id, Entry: *ev.Entry})
 		}
@@ -1681,6 +1764,7 @@ func (m *SessionManager) beginRun(ms *managedSession) {
 	ms.lastContextTokens = 0
 	ms.durationMs = 0
 	ms.pendingLogs = ms.pendingLogs[:0]
+	ms.flushedLogs = 0
 	project, name := ms.project, ms.name
 	model := ms.session.Config.Model
 	effort := ms.session.Config.Effort
@@ -1841,6 +1925,8 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 	run.Effort = ms.session.Config.Effort
 	logs := ms.pendingLogs
 	ms.pendingLogs = nil
+	flushed := ms.flushedLogs
+	ms.flushedLogs = 0
 	totalCost := ms.totalCostUSD
 	inTok := ms.inputTokens
 	outTok := ms.outputTokens
@@ -1849,9 +1935,24 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 	project := ms.project
 	ms.mu.Unlock()
 
-	_ = m.store.UpdateRun(run)
-	if len(logs) > 0 {
-		_ = m.store.InsertLogs(runID, logs)
+	// Swallowed errors here used to leave runs frozen as 'running' in
+	// History with no trace of why (measured live: run 660's file was
+	// auto-saved yet its row never closed) — log them instead.
+	if err := m.store.UpdateRun(run); err != nil {
+		logger.L.Error("session.run_update_failed", "id", ms.session.ID, "run", runID, "error", err)
+	}
+	// Only the not-yet-flushed tail: the prefix went to session_logs
+	// incrementally while the run was in flight.
+	if flushed < 0 {
+		flushed = 0 // defensive: a negative counter would panic the slice below
+	}
+	if flushed > len(logs) {
+		flushed = len(logs) // defensive: claim of more than everything — insert nothing rather than duplicate the prefix
+	}
+	if len(logs) > flushed {
+		if err := m.store.InsertLogs(runID, logs[flushed:]); err != nil {
+			logger.L.Error("session.log_final_flush_failed", "id", ms.session.ID, "run", runID, "error", err)
+		}
 	}
 
 	// Auto-save this run's log to <project>/.claude-manager/logs/ as markdown
