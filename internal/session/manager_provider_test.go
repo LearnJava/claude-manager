@@ -111,3 +111,19 @@ func TestSetSessionModelDerivesProvider(t *testing.T) {
 		t.Errorf("config = (model %q, provider %q), want (sonnet, \"\")", sc.Model, sc.Provider)
 	}
 }
+
+// TestStartSessionRefusesForeignRuntime: a session whose runtime this build
+// does not run (a value written into the shared home config by another
+// line's build) loads and displays, but its launch is refused with a clear
+// error — never a silent claude-CLI fallback.
+func TestStartSessionRefusesForeignRuntime(t *testing.T) {
+	m, _ := newProviderTestManager(t)
+	m.cfg.Projects[0].Sessions[0].Runtime = "something-else"
+	err := m.StartSession("lumen", "P1")
+	if err == nil || !strings.Contains(err.Error(), "does not run") {
+		t.Fatalf("StartSession on foreign runtime = %v, want a refusal", err)
+	}
+	if err := m.StartSessionWithProvider("lumen", "P1", "", "sonnet", ""); err == nil || !strings.Contains(err.Error(), "does not run") {
+		t.Fatalf("StartSessionWithProvider on foreign runtime = %v, want a refusal", err)
+	}
+}

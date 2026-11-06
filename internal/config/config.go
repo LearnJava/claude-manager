@@ -655,9 +655,16 @@ func validate(cfg *AppConfig) error {
 			if names[s.Name] {
 				return fmt.Errorf("config: project %q has duplicate session name %q", p.Name, s.Name)
 			}
-			if s.Runtime != "" && s.Runtime != "claude" && s.Runtime != RuntimeHermes {
-				return fmt.Errorf("config: project %q session %q has invalid runtime %q (want claude|hermes)", p.Name, s.Name, s.Runtime)
-			}
+			// NOTE: runtime values are deliberately NOT validated on load.
+			// The home config and project overlays are shared between builds
+			// of this repo, and another line's build may store runtime values
+			// this one does not implement; rejecting the whole config on one
+			// such session used to blank the entire app (the Load fallback to
+			// defaults), and one Settings save in that state wiped every
+			// [[project]]. Unknown values load and round-trip untouched; the
+			// enum is enforced where it belongs — on writes (SetSessionRuntime,
+			// the MCP config tools) and on launch (the manager refuses to
+			// start a session whose runtime this build does not run).
 			names[s.Name] = true
 		}
 		if p.GateSchedule != "" {

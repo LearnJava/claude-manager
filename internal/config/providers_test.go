@@ -236,3 +236,20 @@ func TestProviderAuthToken(t *testing.T) {
 		t.Errorf("want empty key, got %q", got)
 	}
 }
+
+// TestValidateTolerantToForeignRuntimes: the home config is shared between
+// builds of this repo; a runtime value written by another line's build must
+// LOAD (displaying fine, round-tripping on save) instead of blanking the
+// whole app. Launch of such a session is refused by the manager, and writes
+// of unknown runtimes are rejected by the edit paths.
+func TestValidateTolerantToForeignRuntimes(t *testing.T) {
+	cfg := defaults()
+	cfg.Projects = []ProjectConfig{{
+		Name:     "p",
+		Path:     "/tmp/p",
+		Sessions: []SessionConfig{{Name: "S", Model: "sonnet", Runtime: "something-else"}},
+	}}
+	if err := validate(cfg); err != nil {
+		t.Fatalf("a foreign runtime value must not fail the whole config load: %v", err)
+	}
+}
