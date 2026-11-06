@@ -657,6 +657,14 @@ func (m *SessionManager) reserveStartSlot() time.Duration {
 
 // ---- StartSession / StopSession / lifecycle ----
 
+// runtimeStartable reports whether this build can launch a session with the
+// given runtime. Unknown values (written into the shared home config by
+// another line's build) load and display fine — only their launch is
+// refused, with a clear error instead of silently running the claude CLI.
+func runtimeStartable(rt string) bool {
+	return rt == "" || rt == "claude" || rt == config.RuntimeHermes
+}
+
 // StartSession launches a session by project/session name. Honours the
 // cache-warming delay: the returned error is config-level only; the actual
 // process launch happens in a goroutine after the stagger delay.
@@ -667,6 +675,9 @@ func (m *SessionManager) StartSession(project, name string) error {
 		return err
 	}
 	id := sessionID(project, name)
+	if !runtimeStartable(sc.Runtime) {
+		return fmt.Errorf("session %q uses runtime %q which this build does not run (want claude|hermes)", id, sc.Runtime)
+	}
 	logger.L.Info("manager.start_session",
 		"id", id,
 		"path", proj.Path,
@@ -815,6 +826,9 @@ func (m *SessionManager) StartSessionWithProvider(project, name, provider, model
 		return err
 	}
 	id := sessionID(project, name)
+	if !runtimeStartable(sc.Runtime) {
+		return fmt.Errorf("session %q uses runtime %q which this build does not run (want claude|hermes)", id, sc.Runtime)
+	}
 	if provider != "" {
 		if _, ok := m.cfg.Providers[provider]; !ok {
 			return fmt.Errorf("unknown provider %q", provider)
@@ -1168,6 +1182,9 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 		return err
 	}
 	id := sessionID(project, name)
+	if !runtimeStartable(sc.Runtime) {
+		return fmt.Errorf("session %q uses runtime %q which this build does not run (want claude|hermes)", id, sc.Runtime)
+	}
 
 	m.mu.Lock()
 	if err := m.slotConflictLocked(project, id, sc); err != nil {
