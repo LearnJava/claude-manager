@@ -113,6 +113,39 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         StopProject: (project: string) => rpc('StopProject', { project }),
         StartSessionWithModel: (project: string, session: string, model: string, effort: string) =>
           rpc('StartSessionWithOverride', { project, session, model, effort }),
+        // Provider start: the control plane has no dedicated RPC; the real
+        // binding persists the whole choice via rememberSessionModel before
+        // the override start, so this bridge does the same config
+        // round-trip (provider, model, effort) and then starts.
+        StartSessionWithProviderAndModel: (
+          project: string,
+          session: string,
+          provider: string,
+          model: string,
+          effort: string,
+        ) => {
+          const id = `${project}/${session}`;
+          const persist = provider
+            ? setSessionField(id, 'Provider', provider)
+            : Promise.resolve();
+          return persist
+            .then(() => (model ? setSessionField(id, 'Model', model) : Promise.resolve()))
+            .then(() => (effort ? setSessionField(id, 'Effort', effort) : Promise.resolve()))
+            .then(() => rpc('StartSessionWithOverride', { project, session, model, effort }));
+        },
+        // No control-plane RPC (GUI-only, parityExcluded): return the same
+        // seeded default the real backend reports for a stock config.
+        GetProviders: () =>
+          Promise.resolve([
+            {
+              id: 'glm',
+              label: 'Claude GLM',
+              models: [
+                { id: 'glm-5.3', label: 'GLM-5.3', efforts: ['low', 'high', 'max'] },
+                { id: 'glm-5.3-flash', label: 'GLM-5.3-Flash', efforts: ['low', 'high', 'max'] },
+              ],
+            },
+          ]),
         RestartSession: (id: string) => rpc('RestartSession', { id }),
         ResumeSession: (id: string) => rpc('ResumeSession', { id }),
         StopAll: () => rpc('StopAll', {}),

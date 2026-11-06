@@ -19,5 +19,8 @@ export default {
     'modelPicker.model': 'Model',
     'modelPicker.effortField': 'Effort',
     'modelPicker.startWith': 'Start with {model}/{effort}',
+    'modelPicker.startWithModel': 'Start with {model}',
     'modelPicker.start': 'Start',
+    'modelPicker.providerDefault': 'Claude',
+    'modelPicker.providerManualOnly': 'The model is chosen manually: automatic routing is not supported for this AI yet.',
 } as Record<string, string>;

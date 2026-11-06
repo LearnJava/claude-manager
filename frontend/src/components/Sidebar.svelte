@@ -7,7 +7,7 @@
     import PlanReview from './PlanReview.svelte';
     import QueueMiniBar from './QueueMiniBar.svelte';
     import { syncQueue } from '../stores/queues';
-    import { MODELS, normalizeModel } from '../lib/models';
+    import { MODELS, normalizeModel, type ProviderUI } from '../lib/models';
     import { t } from '../lib/i18n';
 
     const dispatch = createEventDispatcher();
@@ -21,6 +21,8 @@
         UpdateConfig,
         GetAutoModelRouting,
         StartSessionWithModel,
+        StartSessionWithProviderAndModel,
+        GetProviders,
         SetSessionModel,
         SetSessionRuntime,
         HasClaudeMd,
@@ -41,6 +43,24 @@
     // the same model. The raw id stays in the tooltip.
     let modelBusy: Record<string, boolean> = {};
     let modelError: Record<string, string> = {};
+
+    // Providers (backend-configured brains) for the live-switch dropdown: a
+    // session already running on a provider gets that provider's models as
+    // options — a provider model id carries its provider with it (the
+    // backend derives it from the model id). Plain Claude sessions keep the
+    // plain Claude list, byte-identical to before providers existed.
+    let providers: ProviderUI[] = [];
+    GetProviders()
+        .then((ps: ProviderUI[]) => { providers = ps ?? []; })
+        .catch(() => { providers = []; });
+
+    function providerOptionsFor(s: SessionState): { value: string; label: string }[] {
+        const model = modelValue(s);
+        if (!model) return [];
+        const owner = providers.find((p) => (p.models ?? []).some((m) => m.id === model));
+        if (!owner) return [];
+        return (owner.models ?? []).map((m) => ({ value: m.id, label: m.label }));
+    }
 
     async function onModelChange(e: Event, s: SessionState) {
         e.stopPropagation();
@@ -105,7 +125,10 @@
 
     function hasCustomModel(s: SessionState): boolean {
         const v = modelValue(s);
-        return !!v && !MODELS.some((m) => m.value === v);
+        if (!v || MODELS.some((m) => m.value === v)) return false;
+        // Provider models get their own labelled options above — no raw
+        // duplicate entry for the same id.
+        return !providers.some((p) => (p.models ?? []).some((m) => m.id === v));
     }
 
     // CLAUDE.md presence, checked lazily per project on first click (not a
@@ -518,6 +541,11 @@
                                     {#each MODELS as m}
                                         <option value={m.value}>{m.label}</option>
                                     {/each}
+                                    {#each providerOptionsFor(s) as m}
+                                        {#if !MODELS.some((x) => x.value === m.value)}
+                                            <option value={m.value}>{m.label}</option>
+                                        {/if}
+                                    {/each}
                                     {#if hasCustomModel(s)}
                                         <!-- A custom/pinned id from config (or a Hermes provider id) that isn't one of ours -->
                                         <option value={modelValue(s)}>{s.model}</option>
@@ -571,8 +599,14 @@
             const p = pickerFor;
             pickerFor = null;
             if (!p) return;
-            try { await StartSessionWithModel(p.project, p.name, e.detail.model, e.detail.effort); }
-            catch (err) { console.warn('start with model failed:', err); }
+            const d = e.detail;
+            try {
+                if (d.provider) {
+                    await StartSessionWithProviderAndModel(p.project, p.name, d.provider, d.model, d.effort);
+                } else {
+                    await StartSessionWithModel(p.project, p.name, d.model, d.effort);
+                }
+            } catch (err) { console.warn('start with model failed:', err); }
         }}
         on:cancel={() => { pickerFor = null; }}
     />

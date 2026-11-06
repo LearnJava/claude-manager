@@ -33,6 +33,42 @@ export const MODELS: ModelOption[] = [
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 /**
+ * A provider (a non-Anthropic brain behind the same Claude CLI) as the
+ * backend's GetProviders reports it. The provider id '' (plain Claude) is
+ * not listed by the backend — the picker adds it as the default segment.
+ */
+export interface ProviderModelUI {
+    id: string;
+    label: string;
+    efforts: string[];
+}
+
+export interface ProviderUI {
+    id: string;
+    label: string;
+    models: ProviderModelUI[];
+}
+
+/** One flat "model × effort" row of a provider's picker list. */
+export interface ProviderComboUI {
+    value: string; // "<model id>::<effort>" — the <select> value
+    label: string; // "GLM-5.3 low" — what the owner asked to see
+    model: string;
+    effort: string;
+}
+
+/** Flattens a provider's models × efforts into its picker list. */
+export function providerCombos(p: ProviderUI): ProviderComboUI[] {
+    const out: ProviderComboUI[] = [];
+    for (const m of p.models ?? []) {
+        for (const e of m.efforts ?? []) {
+            out.push({ value: `${m.id}::${e}`, label: `${m.label} ${e}`, model: m.id, effort: e });
+        }
+    }
+    return out;
+}
+
+/**
  * Maps any spelling of a model onto the canonical value from MODELS.
  * An unrecognised model is returned trimmed but otherwise untouched — a
  * custom/pinned id the user typed in Settings must still round-trip.

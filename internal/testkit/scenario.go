@@ -37,16 +37,22 @@ type Vars struct {
 	Name      string
 	Model     string
 	Cwd       string
+	// SettingsFile is the value of the CLI's --settings flag (a file path or
+	// inline JSON), captured so scenarios can interpolate ${settings_file} —
+	// e.g. to echo it back for argv assertions.
+	SettingsFile string
 }
 
-// Apply replaces ${session_id}, ${model}, ${cwd}, ${name} placeholders in raw JSON.
-// Windows paths in Cwd are properly escaped for JSON strings.
+// Apply replaces ${session_id}, ${model}, ${cwd}, ${name}, ${settings_file}
+// placeholders in raw JSON. Windows paths in Cwd are properly escaped for
+// JSON strings.
 func (v Vars) Apply(raw json.RawMessage) json.RawMessage {
 	s := string(raw)
 	s = strings.ReplaceAll(s, "${session_id}", jsonEscape(v.SessionID))
 	s = strings.ReplaceAll(s, "${model}", jsonEscape(v.Model))
 	s = strings.ReplaceAll(s, "${cwd}", jsonEscape(v.Cwd))
 	s = strings.ReplaceAll(s, "${name}", jsonEscape(v.Name))
+	s = strings.ReplaceAll(s, "${settings_file}", jsonEscape(v.SettingsFile))
 	return json.RawMessage(s)
 }
 

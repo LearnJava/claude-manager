@@ -19,5 +19,8 @@ export default {
     'modelPicker.model': 'Модель',
     'modelPicker.effortField': 'Уровень',
     'modelPicker.startWith': 'Запустить с {model}/{effort}',
+    'modelPicker.startWithModel': 'Запустить с {model}',
     'modelPicker.start': 'Запустить',
+    'modelPicker.providerDefault': 'Claude',
+    'modelPicker.providerManualOnly': 'Модель выбирается вручную: автоподбор для этого ИИ пока не поддерживается.',
 } as Record<string, string>;

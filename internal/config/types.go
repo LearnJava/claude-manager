@@ -3,10 +3,39 @@ package config
 import "time"
 
 type AppConfig struct {
-	Settings     GlobalSettings       `toml:"settings"`
-	Optimization OptimizationSettings `toml:"optimization"`
-	Projects     []ProjectConfig      `toml:"project"`
-	Workers      []WorkerConfig       `toml:"worker"`
+	Settings     GlobalSettings            `toml:"settings"`
+	Optimization OptimizationSettings      `toml:"optimization"`
+	Projects     []ProjectConfig           `toml:"project"`
+	Workers      []WorkerConfig            `toml:"worker"`
+	Providers    map[string]ProviderConfig `toml:"providers"`
+}
+
+// ProviderConfig describes a drop-in brain replacement for the Claude CLI
+// (AI-STACK.md, axis 2): the claude runtime stays, but the CLI talks to a
+// different Anthropic-compatible endpoint and model set via a generated
+// --settings file plus an auth token in the process env. Concrete defaults
+// (the "glm" provider) are seeded in config.go; the core never sees these
+// names — internal/session receives only the resolved settings file and env
+// pairs.
+type ProviderConfig struct {
+	DisplayName string `toml:"display_name"`
+	BaseURL     string `toml:"base_url"`
+	// KeyEnv names the environment variable holding the API key; the key
+	// itself is never stored in config (same precedent as WorkerConfig.KeyEnv).
+	KeyEnv string `toml:"key_env"`
+	// SettingsDir is where the per-model settings files are generated,
+	// relative to the manager config dir.
+	SettingsDir string          `toml:"settings_dir"`
+	Models      []ProviderModel `toml:"models"`
+}
+
+// ProviderModel is one model offered by a provider. ID goes to --model as-is
+// (e.g. "glm-5.3"); a "[1m]" suffix marks a 1M-context variant whose settings
+// file additionally sets CLAUDE_CODE_AUTO_COMPACT_WINDOW.
+type ProviderModel struct {
+	ID      string   `toml:"id"`
+	Label   string   `toml:"label"`
+	Efforts []string `toml:"efforts"`
 }
 
 // WorkerConfig describes an external OpenAI-compatible model used for mixed
@@ -244,6 +273,14 @@ type GlobalSettings struct {
 	// the timer (shipping then runs only from the button and on settings
 	// save). Default 60.
 	LogsIntervalMin int `toml:"logs_interval_min"`
+
+	// ZCodeAPIKey is a live-config fallback holding the API key for
+	// providers whose key_env variable is not set in the manager's own
+	// environment (e.g. the GLM provider's ZAI_API_KEY when the manager was
+	// started before the variable existed). It is read-only for the app:
+	// the manager never writes it, and config.example.toml documents it
+	// without a value. Prefer setting the provider's key_env variable.
+	ZCodeAPIKey string `toml:"zcode_api_key"`
 }
 
 // ProjectOverlay is the per-project configuration stored inside the project
@@ -374,6 +411,11 @@ type SessionConfig struct {
 	FallbackModel            string `toml:"fallback_model"`
 	FallbackModelOnRateLimit bool   `toml:"fallback_model_on_rate_limit"`
 	Effort                   string `toml:"effort"`
+	// Provider is the id of the non-Anthropic brain this session runs on
+	// ([providers.<id>] in config.toml; empty = plain Claude). The core
+	// session code stays provider-agnostic: the manager resolves this id
+	// into a settings file and env pairs at start time.
+	Provider string `toml:"provider"`
 
 	// Permissions
 	PermissionMode  string           `toml:"permission_mode"`

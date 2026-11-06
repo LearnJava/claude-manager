@@ -106,6 +106,37 @@ mirror_interval_min = 15                 # re-sync period; 0 = only on start/sav
 # logs_repo = 'git@github.com:LearnJava/cm-logs.git'
 logs_interval_min = 60                   # push period; 0 = only from the button
 
+# Fallback API key for providers whose key_env variable is not set in the
+# manager's own environment (e.g. ZAI_API_KEY when the manager was started
+# before the variable existed). Read-only for the app; prefer setting the
+# provider's key_env variable. Never logged, never shipped.
+# zcode_api_key = ""
+
+# ─── Providers (сменные «мозги» claude-CLI; AI-STACK.md ось 2) ───────────────
+# A provider keeps the claude runtime but talks to a different Anthropic-
+# compatible endpoint. Per-model settings files are generated idempotently in
+# settings_dir (existing files are never overwritten — manual edits survive);
+# the API key is NEVER written to disk, it is injected into the session
+# process env from the variable named in key_env. "glm" below is the built-in
+# default; redefine [providers.glm] here to override fields or add variants
+# (e.g. a "[1m]" model id gets CLAUDE_CODE_AUTO_COMPACT_WINDOW in its file).
+
+[providers.glm]
+display_name = "Claude GLM"
+base_url = "https://api.z.ai/api/anthropic"
+key_env = "ZAI_API_KEY"                # env var NAME holding the key — never the key itself
+settings_dir = "state/glm"             # relative to this config file
+
+[[providers.glm.models]]
+id = "glm-5.3"                         # goes to --model as-is
+label = "GLM-5.3"                      # what the model picker shows
+efforts = ["low", "high", "max"]
+
+[[providers.glm.models]]
+id = "glm-5.3-flash"
+label = "GLM-5.3-Flash"
+efforts = ["low", "high", "max"]
+
 # ─── Mixed-programming workers (MIXED-TASKS.md) ──────────────────────────────
 # External OpenAI-compatible models that write code as FIND/REPLACE patches.
 # The manager applies patches in a worktree, runs the project gates and returns
@@ -208,6 +239,10 @@ path = 'D:\RustProjects\lumen-browser'
                                        #   rate limit and restart without waiting 5 min
                                        #   (mirrors orchestrator.py fallback behaviour)
   effort = "high"                      # low | medium | high | xhigh | max
+  provider = ""                        # id из [providers.<id>] ниже; "" = обычный Claude.
+                                       #   Запускает claude-CLI на другом Anthropic-совместимом
+                                       #   endpoint: файл настроек модели через --settings,
+                                       #   ключ API — только в env процесса
 
   # Permissions
   permission_mode = "acceptEdits"      # default | acceptEdits | auto | plan | dontAsk | bypassPermissions

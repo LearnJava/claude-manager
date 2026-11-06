@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -93,6 +94,12 @@ func (a *App) startup(ctx context.Context) {
 		)
 	}
 	a.cfg = cfg
+
+	// Provider settings files are (re)generated idempotently on every start:
+	// missing files appear, existing ones — including manual edits — stay.
+	if err := config.EnsureProviderSettings(cfg, a.cfgPath); err != nil {
+		logger.L.Warn("startup.provider_settings", "error", err)
+	}
 
 	dbPath := defaultDBPath(a.cfgPath)
 	logger.L.Info("store.open", "path", dbPath)
@@ -529,7 +536,67 @@ func (a *App) StartSessionWithModel(project, name, model, effort string) error {
 	if err := a.manager.StartSessionWithOverride(project, name, model, effort); err != nil {
 		return err
 	}
-	a.rememberSessionModel(project, name, model, effort)
+	a.rememberSessionModel(project, name, model, effort, "")
+	return nil
+}
+
+// ProviderModelInfo / ProviderInfo are the GUI-facing mirror of
+// config.ProviderModel / config.ProviderConfig: the model picker builds its
+// lists from these, so a provider configured in config.toml shows up without
+// the frontend knowing any provider name.
+type ProviderModelInfo struct {
+	ID      string   `json:"id"`
+	Label   string   `json:"label"`
+	Efforts []string `json:"efforts"`
+}
+
+type ProviderInfo struct {
+	ID          string              `json:"id"`
+	DisplayName string              `json:"displayName"`
+	Models      []ProviderModelInfo `json:"models"`
+}
+
+// GetProviders returns every configured provider for the model picker's
+// "which AI" segment. The built-in plain Claude option is not listed here —
+// the frontend adds it as the default segment.
+func (a *App) GetProviders() []ProviderInfo {
+	if a.cfg == nil || len(a.cfg.Providers) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(a.cfg.Providers))
+	for id := range a.cfg.Providers {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids) // stable segment order across launches
+	out := make([]ProviderInfo, 0, len(ids))
+	for _, id := range ids {
+		p := a.cfg.Providers[id]
+		pi := ProviderInfo{ID: id, DisplayName: p.DisplayName}
+		if pi.DisplayName == "" {
+			pi.DisplayName = id
+		}
+		for _, m := range p.Models {
+			pi.Models = append(pi.Models, ProviderModelInfo{ID: m.ID, Label: m.Label, Efforts: m.Efforts})
+		}
+		out = append(out, pi)
+	}
+	return out
+}
+
+// StartSessionWithProviderAndModel starts a session on a configured provider
+// ([providers.<id>]) with a model/effort override, and remembers the whole
+// choice — provider included — as the session's stored default so the next
+// start (this app run or the next) repeats it without a human.
+func (a *App) StartSessionWithProviderAndModel(project, name, provider, model, effort string) error {
+	if provider != "" {
+		if _, ok := a.cfg.Providers[provider]; !ok {
+			return fmt.Errorf("unknown provider %q", provider)
+		}
+	}
+	if err := a.manager.StartSessionWithProvider(project, name, provider, model, effort); err != nil {
+		return err
+	}
+	a.rememberSessionModel(project, name, model, effort, provider)
 	return nil
 }
 
@@ -993,7 +1060,10 @@ func (a *App) GetPendingQuestions() []session.QuestionInfo {
 // yet.
 func (a *App) SetSessionModel(id, model string) error {
 	if project, name, ok := splitSessionID(id); ok {
-		a.rememberSessionModel(project, name, model, "")
+		// The provider is derived from the model id so a switch to a
+		// provider model (and back to a Claude alias) is remembered as a
+		// whole — matching what SessionManager.SetSessionModel will do.
+		a.rememberSessionModel(project, name, model, "", config.ProviderForModel(a.cfg, model))
 	}
 	return a.manager.SetSessionModel(id, model)
 }
@@ -1015,16 +1085,17 @@ func splitSessionID(id string) (project, name string, ok bool) {
 // A failure to persist is logged, not returned: the model switch / session
 // start it follows has already happened, and reporting an error for it would
 // tell the user the thing they just watched happen did not.
-func (a *App) rememberSessionModel(project, name, model, effort string) {
+func (a *App) rememberSessionModel(project, name, model, effort, provider string) {
 	model = strings.TrimSpace(model)
 	effort = strings.TrimSpace(effort)
+	provider = strings.TrimSpace(provider)
 	if a.cfg == nil || model == "" {
 		return
 	}
 
 	cfg := *a.cfg
 	cfg.Projects = append([]config.ProjectConfig(nil), a.cfg.Projects...)
-	if !setSessionModelInConfig(&cfg, project, name, model, effort) {
+	if !setSessionModelInConfig(&cfg, project, name, model, effort, provider) {
 		return
 	}
 	if err := a.UpdateConfig(cfg); err != nil {
@@ -1033,15 +1104,17 @@ func (a *App) rememberSessionModel(project, name, model, effort string) {
 		return
 	}
 	logger.L.Info("app.remember_session_model",
-		"project", project, "session", name, "model", model, "effort", effort)
+		"project", project, "session", name, "model", model, "effort", effort, "provider", provider)
 }
 
-// setSessionModelInConfig sets the model/effort of project/session in cfg,
-// operating on cloned slices so the caller's config is never mutated in place
-// (same rule as upsertChatSession above). Reports whether anything changed —
-// false when the session is unknown or already carries these values, so an
-// unchanged config is never rewritten to disk.
-func setSessionModelInConfig(cfg *config.AppConfig, project, name, model, effort string) bool {
+// setSessionModelInConfig sets the model/effort/provider of project/session
+// in cfg, operating on cloned slices so the caller's config is never mutated
+// in place (same rule as upsertChatSession above). Reports whether anything
+// changed — false when the session is unknown or already carries these
+// values, so an unchanged config is never rewritten to disk. Provider is set
+// unconditionally (including back to ""), so a switch to a plain Claude model
+// clears a previous provider instead of leaving it stale.
+func setSessionModelInConfig(cfg *config.AppConfig, project, name, model, effort, provider string) bool {
 	for pi := range cfg.Projects {
 		if cfg.Projects[pi].Name != project {
 			continue
@@ -1050,7 +1123,7 @@ func setSessionModelInConfig(cfg *config.AppConfig, project, name, model, effort
 			if sc.Name != name {
 				continue
 			}
-			if sc.Model == model && (effort == "" || sc.Effort == effort) {
+			if sc.Model == model && sc.Provider == provider && (effort == "" || sc.Effort == effort) {
 				return false
 			}
 			sessions := append([]config.SessionConfig(nil), cfg.Projects[pi].Sessions...)
@@ -1058,6 +1131,7 @@ func setSessionModelInConfig(cfg *config.AppConfig, project, name, model, effort
 			if effort != "" {
 				sessions[si].Effort = effort
 			}
+			sessions[si].Provider = provider
 			cfg.Projects[pi].Sessions = sessions
 			return true
 		}
@@ -1266,6 +1340,11 @@ func (a *App) UpdateConfig(cfg config.AppConfig) error {
 	a.cfg = reloaded
 	if a.manager != nil {
 		a.manager.SetConfig(reloaded)
+	}
+	// Provider settings files follow the config: new/edited [providers.*]
+	// entries get their files; existing files are never overwritten.
+	if err := config.EnsureProviderSettings(reloaded, a.cfgPath); err != nil {
+		logger.L.Warn("app.provider_settings", "error", err)
 	}
 	// Every project added just now gets its interactive "Chat" session. Done
 	// on the reloaded config so a folder with its own overlay keeps its

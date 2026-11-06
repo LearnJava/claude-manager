@@ -679,6 +679,15 @@ func (m *SessionManager) StartSession(project, name string) error {
 		"prompt_len", len(strings.TrimSpace(sc.Prompt)),
 	)
 
+	// Provider sessions (saved provider in their SessionConfig, e.g. night
+	// auto-starts) resolve their launch artifacts the same way as an
+	// explicit provider start — one resolution path, three entries.
+	settingsFile, providerEnv, err := m.providerArtifacts(sc.Provider, sc.Model)
+	if err != nil {
+		logger.L.Error("manager.start_session.provider_error", "id", id, "error", err)
+		return err
+	}
+
 	m.mu.Lock()
 	if err := m.slotConflictLocked(project, id, sc); err != nil {
 		m.mu.Unlock()
@@ -708,6 +717,8 @@ func (m *SessionManager) StartSession(project, name string) error {
 		ProjectName:       project,
 		ProjectPath:       proj.Path,
 		Config:            *sc,
+		SettingsFile:      settingsFile,
+		ProviderEnv:       providerEnv,
 		ClaudePath:        m.cfg.Settings.ClaudePath,
 		HermesPath:        m.cfg.Settings.HermesPath,
 		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
@@ -758,11 +769,57 @@ func (m *SessionManager) StartSession(project, name string) error {
 // model and effort overrides on top of the configured values.
 // Empty strings mean "keep the configured value".
 func (m *SessionManager) StartSessionWithOverride(project, name, model, effort string) error {
+	return m.StartSessionWithProvider(project, name, "", model, effort)
+}
+
+// providerArtifacts resolves a provider session's launch artifacts: the
+// per-model settings file (created on demand) and the extra process env
+// carrying the auth token. An empty provider resolves to nothing — a plain
+// Claude launch, byte-identical to before providers existed. Provider ids
+// come from SessionConfig/ callers; no provider name is known here.
+func (m *SessionManager) providerArtifacts(provider, model string) (string, []string, error) {
+	if provider == "" {
+		return "", nil, nil
+	}
+	p, ok := m.cfg.Providers[provider]
+	if !ok {
+		return "", nil, fmt.Errorf("unknown provider %q", provider)
+	}
+	if model == "" {
+		return "", nil, fmt.Errorf("provider %q session needs a model (settings files are per-model)", provider)
+	}
+	if err := config.EnsureProviderSettings(m.cfg, m.cfgPath); err != nil {
+		return "", nil, err
+	}
+	sf := config.ProviderSettingsPath(m.cfg, m.cfgPath, provider, model)
+	if _, err := os.Stat(sf); err != nil {
+		return "", nil, fmt.Errorf("provider %q settings file %s: %w", provider, sf, err)
+	}
+	var env []string
+	if key := config.ProviderAuthToken(m.cfg, p); key != "" {
+		env = []string{"ANTHROPIC_AUTH_TOKEN=" + key}
+	} else {
+		// Start anyway: the CLI fails with its own understandable auth
+		// error, which is easier to diagnose from the log than a refusal.
+		logger.L.Warn("manager.provider_auth_missing", "provider", provider, "key_env", p.KeyEnv)
+	}
+	return sf, env, nil
+}
+
+// StartSessionWithProvider is StartSessionWithOverride plus a provider id
+// ("" = plain Claude): the session's CLI additionally gets the provider's
+// settings file via --settings and the auth token in its process env.
+func (m *SessionManager) StartSessionWithProvider(project, name, provider, model, effort string) error {
 	proj, sc, err := m.findConfig(project, name)
 	if err != nil {
 		return err
 	}
 	id := sessionID(project, name)
+	if provider != "" {
+		if _, ok := m.cfg.Providers[provider]; !ok {
+			return fmt.Errorf("unknown provider %q", provider)
+		}
+	}
 
 	m.mu.Lock()
 	if err := m.slotConflictLocked(project, id, sc); err != nil {
@@ -786,6 +843,20 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 	if effort != "" {
 		sessionCfg.Effort = effort
 	}
+	if provider != "" {
+		sessionCfg.Provider = provider
+	} else if model != "" {
+		// A model override may cross the provider boundary in either
+		// direction (a provider model id → that provider, a Claude alias
+		// back to plain Claude): derive it so the artifacts match the model
+		// actually being launched.
+		sessionCfg.Provider = config.ProviderForModel(m.cfg, sessionCfg.Model)
+	}
+
+	settingsFile, providerEnv, err := m.providerArtifacts(sessionCfg.Provider, sessionCfg.Model)
+	if err != nil {
+		return err
+	}
 
 	ms := &managedSession{project: project, name: name}
 	m.mu.Lock()
@@ -797,6 +868,8 @@ func (m *SessionManager) StartSessionWithOverride(project, name, model, effort s
 		ProjectName:       project,
 		ProjectPath:       proj.Path,
 		Config:            sessionCfg,
+		SettingsFile:      settingsFile,
+		ProviderEnv:       providerEnv,
 		ClaudePath:        m.cfg.Settings.ClaudePath,
 		HermesPath:        m.cfg.Settings.HermesPath,
 		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
@@ -1016,6 +1089,10 @@ func (m *SessionManager) SetSessionModel(id, model string) error {
 	if model == "" {
 		return fmt.Errorf("model must not be empty")
 	}
+	// A model id may belong to a provider ([providers.<id>].models); the
+	// switch then also crosses that provider boundary, so the provider is
+	// derived here and carried into the config copy and the restart below.
+	provider := config.ProviderForModel(m.cfg, model)
 	ms := m.get(id)
 	if ms == nil {
 		parts := strings.SplitN(id, "/", 2)
@@ -1028,8 +1105,9 @@ func (m *SessionManager) SetSessionModel(id, model string) error {
 		}
 		m.mu.Lock()
 		sc.Model = model
+		sc.Provider = provider
 		m.mu.Unlock()
-		logger.L.Info("manager.set_session_model", "id", id, "model", model, "started", false)
+		logger.L.Info("manager.set_session_model", "id", id, "model", model, "provider", provider, "started", false)
 		return nil
 	}
 	sess := ms.session
@@ -1039,18 +1117,24 @@ func (m *SessionManager) SetSessionModel(id, model string) error {
 	if _, sc, err := m.findConfig(ms.project, ms.name); err == nil && sc != nil {
 		m.mu.Lock()
 		sc.Model = model
+		sc.Provider = provider
 		m.mu.Unlock()
 	}
-	logger.L.Info("manager.set_session_model", "id", id, "model", model)
+	logger.L.Info("manager.set_session_model", "id", id, "model", model, "provider", provider)
 
-	if sess.Autonomous() {
-		return nil
-	}
 	// Hermes runs one process per turn, so the next turn's `-m` already
-	// picks up the new model — no restart, nothing interrupted.
+	// picks up the new model — no restart, nothing interrupted. Providers
+	// are a claude-runtime concept; hermes launches ignore their artifacts.
 	if sess.Config.IsHermes() {
 		return nil
 	}
+	if sess.Autonomous() && provider == sess.Config.Provider {
+		return nil
+	}
+	// An autonomous session switching *across* a provider boundary falls
+	// through to the soft restart: its live Session resolved the old
+	// provider's artifacts (settings file, auth env) at construction, and
+	// the next task would otherwise launch the new brain through them.
 
 	st := sess.Status()
 	if st == config.StatusIdle || st == config.StatusError {
@@ -1103,6 +1187,14 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 	sessionCfg := *sc
 	sessionCfg.Model = model
 
+	// The session config's provider was just re-derived by SetSessionModel,
+	// so this resolution follows the user's new choice across a provider
+	// switch (the resumed conversation keeps its history, the brain changes).
+	settingsFile, providerEnv, err := m.providerArtifacts(sessionCfg.Provider, sessionCfg.Model)
+	if err != nil {
+		return err
+	}
+
 	ms := &managedSession{project: project, name: name}
 	m.mu.Lock()
 	primerFn := m.primerFn
@@ -1133,6 +1225,8 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 		HandoffFn:         handoffFn,
 		LoopMemory:        m.loopMemoryFor(ms, project, name, proj.Path),
 		ResumeSessionID:   resumeID,
+		SettingsFile:      settingsFile,
+		ProviderEnv:       providerEnv,
 		OnEvent:           func(sid string, ev SessionEvent) { m.onSessionEvent(sid, ev) },
 	})
 	ms.session = sess

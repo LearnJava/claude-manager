@@ -38,6 +38,11 @@ func run(args []string, in io.Reader, out io.Writer, scenarioEnv string) int {
 			i++
 		case strings.HasPrefix(arg, "--model="):
 			vars.Model = strings.TrimPrefix(arg, "--model=")
+		case arg == "--settings" && i+1 < len(args):
+			vars.SettingsFile = args[i+1]
+			i++
+		case strings.HasPrefix(arg, "--settings="):
+			vars.SettingsFile = strings.TrimPrefix(arg, "--settings=")
 		case arg == "--add-dir" && i+1 < len(args):
 			if vars.Cwd == "" {
 				vars.Cwd = args[i+1]

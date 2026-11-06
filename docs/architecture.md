@@ -34,8 +34,12 @@ claude-manager/
 │   ├── config/
 │   │   ├── types.go                 # AppConfig, GlobalSettings, OptimizationSettings,
 │   │   │                            #   ProjectConfig, SessionConfig, PermissionRule,
-│   │   │                            #   WorkerConfig (mixed programming, MIXED-TASKS.md)
-│   │   └── config.go                # Load/save TOML, defaults, validation
+│   │   │                            #   WorkerConfig (mixed programming, MIXED-TASKS.md),
+│   │   │                            #   ProviderConfig/ProviderModel (providers, GLM-PLAN.md)
+│   │   ├── config.go                # Load/save TOML, defaults, validation
+│   │   └── providers.go             # Provider registry helpers: idempotent per-model
+│   │                                #   settings files, model→provider lookup, auth-token
+│   │                                #   resolution (key_env env var, live-config fallback)
 │   ├── mirror/
 │   │   └── mirror.go                # Local copy of mirrored projects' settings + saved logs in
 │   │                                #   <checkout>/projects/<name>/, own git repo, no remote
@@ -443,6 +447,8 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `CancelMixedTask(id)` | Cancel a running mixed task by ID |
 | `StartSession(project, name)` | Launch session with config model/effort |
 | `StartSessionWithModel(project, name, model, effort)` | Launch with model/effort override; the override is remembered as the session's default |
+| `GetProviders()` | Configured providers (id, display name, models×efforts) for the model picker's "which AI" segment (GLM-PLAN.md); no MCP tool by design (`parityExcluded`) |
+| `StartSessionWithProviderAndModel(project, name, provider, model, effort)` | Launch on a `[providers.<id>]` brain: settings file via `--settings`, API key in the process env only; the whole choice is remembered as the session's default |
 | `SetSessionModel(id, model)` | Switch a running session's model live and remember it (see "Live Model Switching") |
 | `SetSessionRuntime(id, runtime)` | Switch a stopped session between `claude` and `hermes` CLI (sidebar picker); persisted as the session's `runtime`. Refused while the session runs |
 | `StopSession(id, soft)` | Stop (soft=true finishes current task first) |

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"claude-manager/internal/buildinfo"
+	"claude-manager/internal/config"
 	"claude-manager/internal/control"
 	"claude-manager/internal/logger"
 	"claude-manager/internal/logship"
@@ -106,6 +107,14 @@ func (a *App) shipLogs(ctx context.Context) (logship.Result, error) {
 	}
 	if ep, err := control.LoadEndpoint(); err == nil && ep != nil && ep.Token != "" {
 		opt.ExtraSecrets = append(opt.ExtraSecrets, ep.Token)
+	}
+	// Provider auth tokens (env var or the live-config fallback) never reach
+	// the logs clone either — they ride the session process env, which logs
+	// never echo, but mask the exact strings as a second line of defence.
+	for _, p := range a.cfg.Providers {
+		if key := config.ProviderAuthToken(a.cfg, p); key != "" {
+			opt.ExtraSecrets = append(opt.ExtraSecrets, key)
+		}
 	}
 	res, err := logship.Ship(ctx, opt)
 	if res.At.IsZero() {
