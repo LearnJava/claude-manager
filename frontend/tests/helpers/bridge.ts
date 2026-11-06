@@ -114,22 +114,25 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         StartSessionWithModel: (project: string, session: string, model: string, effort: string) =>
           rpc('StartSessionWithOverride', { project, session, model, effort }),
         // Provider start: the control plane has no dedicated RPC; the real
-        // backend derives the provider from the model id in
-        // StartSessionWithOverride anyway, so this maps onto it after
-        // persisting the provider field through the same config round-trip
-        // the real binding (rememberSessionModel) performs.
+        // binding persists the whole choice via rememberSessionModel before
+        // the override start, so this bridge does the same config
+        // round-trip (provider, model, effort) and then starts.
         StartSessionWithProviderAndModel: (
           project: string,
           session: string,
           provider: string,
           model: string,
           effort: string,
-        ) =>
-          provider
-            ? setSessionField(`${project}/${session}`, 'Provider', provider).then(() =>
-                rpc('StartSessionWithOverride', { project, session, model, effort }),
-              )
-            : rpc('StartSessionWithOverride', { project, session, model, effort }),
+        ) => {
+          const id = `${project}/${session}`;
+          const persist = provider
+            ? setSessionField(id, 'Provider', provider)
+            : Promise.resolve();
+          return persist
+            .then(() => (model ? setSessionField(id, 'Model', model) : Promise.resolve()))
+            .then(() => (effort ? setSessionField(id, 'Effort', effort) : Promise.resolve()))
+            .then(() => rpc('StartSessionWithOverride', { project, session, model, effort }));
+        },
         // No control-plane RPC (GUI-only, parityExcluded): return the same
         // seeded default the real backend reports for a stock config.
         GetProviders: () =>
