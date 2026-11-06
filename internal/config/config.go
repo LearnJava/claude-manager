@@ -371,6 +371,26 @@ func defaults() *AppConfig {
 			LogsIntervalMin:              60,
 		},
 		Optimization: optimizationDefaults(),
+		Providers:    defaultProviders(),
+	}
+}
+
+// defaultProviders seeds the built-in provider registry. Seeding (not a
+// hard-coded lookup) means a user's [providers.*] sections in config.toml
+// override these field-by-field, and adding e.g. a "[1m]" model variant is a
+// pure config edit. GLM-PLAN.md §3.
+func defaultProviders() map[string]ProviderConfig {
+	return map[string]ProviderConfig{
+		"glm": {
+			DisplayName: "Claude GLM",
+			BaseURL:     "https://api.z.ai/api/anthropic",
+			KeyEnv:      "ZAI_API_KEY",
+			SettingsDir: "state/glm",
+			Models: []ProviderModel{
+				{ID: "glm-5.3", Label: "GLM-5.3", Efforts: []string{"low", "high", "max"}},
+				{ID: "glm-5.3-flash", Label: "GLM-5.3-Flash", Efforts: []string{"low", "high", "max"}},
+			},
+		},
 	}
 }
 
@@ -453,6 +473,51 @@ func applyDefaults(cfg *AppConfig) {
 
 	for i := range cfg.Workers {
 		applyWorkerDefaults(&cfg.Workers[i])
+	}
+
+	applyProviderDefaults(cfg)
+}
+
+// applyProviderDefaults finishes the provider registry after decoding: the
+// seeded defaults are refilled field-by-field into partially-overridden
+// entries (TOML replaces a map entry wholesale, so a user's [providers.<id>]
+// with only e.g. key_env would otherwise lose base_url), display_name and
+// settings_dir get per-id fallbacks, and absent built-ins are seeded.
+func applyProviderDefaults(cfg *AppConfig) {
+	if cfg.Providers == nil {
+		cfg.Providers = map[string]ProviderConfig{}
+	}
+	for id, def := range defaultProviders() {
+		p, ok := cfg.Providers[id]
+		if !ok {
+			p = def
+		} else {
+			if p.DisplayName == "" {
+				p.DisplayName = def.DisplayName
+			}
+			if p.BaseURL == "" {
+				p.BaseURL = def.BaseURL
+			}
+			if p.KeyEnv == "" {
+				p.KeyEnv = def.KeyEnv
+			}
+			if p.SettingsDir == "" {
+				p.SettingsDir = def.SettingsDir
+			}
+			if len(p.Models) == 0 {
+				p.Models = def.Models
+			}
+		}
+		cfg.Providers[id] = p
+	}
+	for id, p := range cfg.Providers {
+		if p.DisplayName == "" {
+			p.DisplayName = id
+		}
+		if p.SettingsDir == "" {
+			p.SettingsDir = filepath.Join("state", id)
+		}
+		cfg.Providers[id] = p
 	}
 }
 
@@ -622,7 +687,78 @@ func validate(cfg *AppConfig) error {
 		}
 		workerNames[w.Name] = true
 	}
+
+	for id, p := range cfg.Providers {
+		if err := validateProvider(id, p); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// providerEfforts is the effort vocabulary the CLI/UI knows how to pass
+// through --effort; a provider may offer any subset.
+var providerEfforts = map[string]bool{
+	"low": true, "medium": true, "high": true, "xhigh": true, "max": true,
+}
+
+func validateProvider(id string, p ProviderConfig) error {
+	if id == "" {
+		return fmt.Errorf("config: provider with empty id")
+	}
+	if p.BaseURL == "" {
+		return fmt.Errorf("config: provider %q missing base_url", id)
+	}
+	u, err := url.Parse(p.BaseURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("config: provider %q has invalid base_url %q", id, p.BaseURL)
+	}
+	if !isEnvName(p.KeyEnv) {
+		return fmt.Errorf("config: provider %q key_env %q must be the *name* of an environment variable holding the API key (the key itself is never stored in config)", id, p.KeyEnv)
+	}
+	if len(p.Models) == 0 {
+		return fmt.Errorf("config: provider %q has no models", id)
+	}
+	modelIDs := map[string]bool{}
+	for _, m := range p.Models {
+		if m.ID == "" {
+			return fmt.Errorf("config: provider %q has model with empty id", id)
+		}
+		if modelIDs[m.ID] {
+			return fmt.Errorf("config: provider %q has duplicate model id %q", id, m.ID)
+		}
+		modelIDs[m.ID] = true
+		if len(m.Efforts) == 0 {
+			return fmt.Errorf("config: provider %q model %q has no efforts", id, m.ID)
+		}
+		for _, e := range m.Efforts {
+			if !providerEfforts[e] {
+				return fmt.Errorf("config: provider %q model %q has invalid effort %q (want one of low|medium|high|xhigh|max)", id, m.ID, e)
+			}
+		}
+	}
+	return nil
+}
+
+// isEnvName reports whether s is a valid environment variable name (not a
+// value): letters, digits and underscores, not starting with a digit. Catches
+// a pasted API key being written where its variable name belongs.
+func isEnvName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'):
+		case r >= '0' && r <= '9':
+			if i == 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 var workerRoles = map[string]bool{"hands": true, "quality": true, "eyes": true}
