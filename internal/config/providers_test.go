@@ -134,6 +134,7 @@ func TestEnsureProviderSettings(t *testing.T) {
 	}
 	body := string(raw)
 	for _, want := range []string{
+		`"env": {`,
 		`"ANTHROPIC_BASE_URL": "https://example.invalid/api"`,
 		`"ANTHROPIC_DEFAULT_HAIKU_MODEL": "m1"`,
 		`"ANTHROPIC_DEFAULT_SONNET_MODEL": "m1"`,

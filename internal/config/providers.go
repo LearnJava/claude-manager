@@ -67,7 +67,7 @@ func EnsureProviderSettings(cfg *AppConfig, cfgPath string) error {
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 				return fmt.Errorf("provider %q settings dir: %w", id, err)
 			}
-			data, err := json.MarshalIndent(providerSettingsEnv(p, m.ID), "", "  ")
+			data, err := json.MarshalIndent(map[string]any{"env": providerSettingsEnv(p, m.ID)}, "", "  ")
 			if err != nil {
 				return fmt.Errorf("provider %q settings json: %w", id, err)
 			}
