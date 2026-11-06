@@ -277,6 +277,15 @@ type Params struct {
 	// Resolved by the manager from max_turns_auto_adjust and run history
 	// (launch_tuning.go).
 	MaxTurns int
+
+	// SettingsFile is an extra settings file passed to the CLI via
+	// --settings (e.g. a provider's endpoint env block). The manager
+	// resolves it from Config.Provider; the core never names a provider.
+	SettingsFile string
+	// ProviderEnv holds extra KEY=VALUE pairs injected into the CLI process
+	// environment (e.g. the provider auth token). Same resolution rule as
+	// SettingsFile: concrete names live above this package.
+	ProviderEnv []string
 }
 
 // PrimerFunc builds the context-primer text prepended to a fresh run's
@@ -310,6 +319,13 @@ type Session struct {
 	CLISessionID string // UUID passed via --session-id; reused on --resume
 
 	claudePath string
+	// settingsFile is the resolved extra --settings payload source for this
+	// session (empty = none); providerEnv the extra process env pairs. Both
+	// are resolved by the manager from Config.Provider at construction time
+	// and are immutable afterwards — like commandGuard/envCard, they need no
+	// lock. Provider names never appear here.
+	settingsFile string
+	providerEnv  []string
 	hermesPath string
 	// runtime is the Runtime implementation selected once in New() from
 	// Config.Runtime (RUNTIME-TASKS.md RT-05). RT-06 routes runOnce's/
@@ -603,6 +619,8 @@ func New(p Params) *Session {
 		maxTurns:          p.MaxTurns,
 		activeModel:       p.Config.Model,
 		resumeSessionID:   p.ResumeSessionID,
+		settingsFile:      p.SettingsFile,
+		providerEnv:       p.ProviderEnv,
 	}
 }
 
@@ -1665,6 +1683,9 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	if s.pythonUTF8 {
 		cmd.Env = utf8Env(cmd.Env)
 	}
+	// Extra provider env (auth token et al.) rides last so it wins over any
+	// same-named inherited variable.
+	cmd.Env = applyEnvPairs(cmd.Env, s.providerEnv)
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
@@ -2675,6 +2696,65 @@ const backgroundTaskWarningPrompt = "This session's process is killed the moment
 // and global settings (see PLAN.md section 14). autonomous must be the same
 // value runOnce computes for handleLine — it gates whether the ask-user
 // protocol instruction is injected (see askUserProtocolPrompt).
+// applyEnvPairs merges "KEY=VALUE" pairs into an exec env slice; for a
+// duplicate key the pair wins (it is applied after the base). Malformed
+// pairs (no '=') are skipped.
+func applyEnvPairs(env []string, pairs []string) []string {
+	for _, kv := range pairs {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			env = withEnv(env, k, v)
+		}
+	}
+	return env
+}
+
+// settingsArg returns the single --settings payload for a Claude launch: the
+// command guard's inline JSON, the extra settings file, or a merge of the two
+// when the session carries both. Exactly one --settings flag is ever passed —
+// how the CLI treats repeated flags is undocumented, so the guard's hooks and
+// the file's env block are merged by us instead of racing. With neither
+// feature on, the launch is byte-identical to before this existed.
+func (s *Session) settingsArg() string {
+	if s.settingsFile == "" {
+		if s.commandGuard {
+			if exe, err := selfExe(); err == nil {
+				return cmdguard.SettingsJSON(exe)
+			}
+		}
+		return ""
+	}
+	if !s.commandGuard {
+		return s.settingsFile
+	}
+	exe, err := selfExe()
+	if err != nil {
+		return s.settingsFile
+	}
+	raw, err := os.ReadFile(s.settingsFile)
+	if err != nil {
+		return cmdguard.SettingsJSON(exe)
+	}
+	var merged map[string]any
+	if err := json.Unmarshal(raw, &merged); err != nil || merged == nil {
+		merged = map[string]any{}
+	}
+	var guard map[string]any
+	if err := json.Unmarshal([]byte(cmdguard.SettingsJSON(exe)), &guard); err == nil {
+		// Disjoint keys in practice (file: env; guard: permissions+hooks);
+		// on collision the file's value wins — it is the user-editable one.
+		for k, v := range guard {
+			if _, exists := merged[k]; !exists {
+				merged[k] = v
+			}
+		}
+	}
+	b, err := json.Marshal(merged)
+	if err != nil {
+		return s.settingsFile
+	}
+	return string(b)
+}
+
 func (s *Session) buildCLIArgs(autonomous bool) []string {
 	s.mu.Lock()
 	resumeID := s.resumeSessionID
@@ -2740,10 +2820,8 @@ func (s *Session) buildCLIArgs(autonomous bool) []string {
 	if len(s.Config.DisallowedTools) > 0 {
 		args = append(args, "--disallowedTools", strings.Join(s.Config.DisallowedTools, " "))
 	}
-	if s.commandGuard {
-		if exe, err := selfExe(); err == nil {
-			args = append(args, "--settings", cmdguard.SettingsJSON(exe))
-		}
+	if sa := s.settingsArg(); sa != "" {
+		args = append(args, "--settings", sa)
 	}
 	card := ""
 	if s.envCard {
