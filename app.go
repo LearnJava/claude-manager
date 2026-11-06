@@ -1104,7 +1104,7 @@ func (a *App) rememberSessionModel(project, name, model, effort, provider string
 		return
 	}
 	logger.L.Info("app.remember_session_model",
-		"project", project, "session", name, "model", "effort", effort, "provider", provider)
+		"project", project, "session", name, "model", model, "effort", effort, "provider", provider)
 }
 
 // setSessionModelInConfig sets the model/effort/provider of project/session

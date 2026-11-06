@@ -185,7 +185,7 @@ func TestSetSessionModelInConfig_SetsModelAndEffort(t *testing.T) {
 		Name:     "lumen",
 		Sessions: []config.SessionConfig{{Name: "P1", Model: "sonnet", Effort: "medium"}},
 	}}}
-	if !setSessionModelInConfig(cfg, "lumen", "P1", "opus", "high") {
+	if !setSessionModelInConfig(cfg, "lumen", "P1", "opus", "high", "") {
 		t.Fatal("expected a change to be reported")
 	}
 	got := cfg.Projects[0].Sessions[0]
@@ -194,12 +194,41 @@ func TestSetSessionModelInConfig_SetsModelAndEffort(t *testing.T) {
 	}
 }
 
+// The provider is part of the remembered choice and is set unconditionally —
+// switching back to a plain Claude model must clear a previous provider
+// instead of leaving it stale next to a Claude model id.
+func TestSetSessionModelInConfig_SetsAndClearsProvider(t *testing.T) {
+	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{
+		Name:     "lumen",
+		Sessions: []config.SessionConfig{{Name: "P1", Model: "sonnet", Effort: "high"}},
+	}}}
+	if !setSessionModelInConfig(cfg, "lumen", "P1", "glm-5.3", "low", "glm") {
+		t.Fatal("expected a change to be reported")
+	}
+	got := cfg.Projects[0].Sessions[0]
+	if got.Model != "glm-5.3" || got.Provider != "glm" || got.Effort != "low" {
+		t.Errorf("got %+v, want glm-5.3/glm/low", got)
+	}
+	// Same values again → no change, no rewrite.
+	if setSessionModelInConfig(cfg, "lumen", "P1", "glm-5.3", "low", "glm") {
+		t.Error("identical choice should report no change")
+	}
+	// Back to a Claude model: provider cleared.
+	if !setSessionModelInConfig(cfg, "lumen", "P1", "sonnet", "", "") {
+		t.Fatal("expected the switch back to be reported")
+	}
+	got = cfg.Projects[0].Sessions[0]
+	if got.Model != "sonnet" || got.Provider != "" {
+		t.Errorf("got %+v, want sonnet with provider cleared", got)
+	}
+}
+
 func TestSetSessionModelInConfig_EmptyEffortKeepsConfigured(t *testing.T) {
 	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{
 		Name:     "lumen",
 		Sessions: []config.SessionConfig{{Name: "P1", Model: "sonnet", Effort: "high"}},
 	}}}
-	setSessionModelInConfig(cfg, "lumen", "P1", "haiku", "")
+	setSessionModelInConfig(cfg, "lumen", "P1", "haiku", "", "")
 	got := cfg.Projects[0].Sessions[0]
 	if got.Model != "haiku" || got.Effort != "high" {
 		t.Errorf("got %+v: a live model switch must not reset effort", got)
@@ -213,10 +242,10 @@ func TestSetSessionModelInConfig_NoChange(t *testing.T) {
 		Name:     "lumen",
 		Sessions: []config.SessionConfig{{Name: "P1", Model: "sonnet", Effort: "high"}},
 	}}}
-	if setSessionModelInConfig(cfg, "lumen", "P1", "sonnet", "high") {
+	if setSessionModelInConfig(cfg, "lumen", "P1", "sonnet", "high", "") {
 		t.Error("identical model/effort should report no change")
 	}
-	if setSessionModelInConfig(cfg, "lumen", "P1", "sonnet", "") {
+	if setSessionModelInConfig(cfg, "lumen", "P1", "sonnet", "", "") {
 		t.Error("identical model with no effort override should report no change")
 	}
 }
@@ -226,10 +255,10 @@ func TestSetSessionModelInConfig_UnknownProjectOrSession(t *testing.T) {
 		Name:     "lumen",
 		Sessions: []config.SessionConfig{{Name: "P1", Model: "sonnet"}},
 	}}}
-	if setSessionModelInConfig(cfg, "other", "P1", "opus", "") {
+	if setSessionModelInConfig(cfg, "other", "P1", "opus", "", "") {
 		t.Error("unknown project should report no change")
 	}
-	if setSessionModelInConfig(cfg, "lumen", "P9", "opus", "") {
+	if setSessionModelInConfig(cfg, "lumen", "P9", "opus", "", "") {
 		t.Error("unknown session should report no change")
 	}
 	if cfg.Projects[0].Sessions[0].Model != "sonnet" {
@@ -242,7 +271,7 @@ func TestSetSessionModelInConfig_DoesNotMutateCallerSlices(t *testing.T) {
 	cfg := &config.AppConfig{
 		Projects: []config.ProjectConfig{{Name: "lumen", Sessions: original}},
 	}
-	setSessionModelInConfig(cfg, "lumen", "P1", "opus", "")
+	setSessionModelInConfig(cfg, "lumen", "P1", "opus", "", "")
 	if original[0].Model != "sonnet" {
 		t.Errorf("caller's slice mutated in place: %+v", original[0])
 	}
@@ -337,14 +366,14 @@ func TestSplitSessionID(t *testing.T) {
 // rememberSessionModel is a no-op without a loaded config or with an empty
 // model — it must never write a session's model away to "".
 func TestRememberSessionModel_NoConfigOrEmptyModel(t *testing.T) {
-	(&App{}).rememberSessionModel("lumen", "P1", "opus", "")
+	(&App{}).rememberSessionModel("lumen", "P1", "opus", "", "")
 
 	cfg := &config.AppConfig{Projects: []config.ProjectConfig{{
 		Name:     "lumen",
 		Sessions: []config.SessionConfig{{Name: "P1", Model: "sonnet"}},
 	}}}
 	a := &App{cfg: cfg}
-	a.rememberSessionModel("lumen", "P1", "  ", "")
+	a.rememberSessionModel("lumen", "P1", "  ", "", "")
 	if cfg.Projects[0].Sessions[0].Model != "sonnet" {
 		t.Error("an empty model must not overwrite the configured one")
 	}
