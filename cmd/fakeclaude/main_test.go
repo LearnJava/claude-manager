@@ -255,3 +255,26 @@ func TestPrintModePromptStdin(t *testing.T) {
 		t.Error("a session must not consume stdin")
 	}
 }
+
+// TestSettingsFlagAccepted: the CLI passes --settings (a file path or inline
+// JSON) on provider launches; fakeclaude must accept the flag without
+// choking. The captured value is exposed to scenarios as ${settings_file}
+// (see Vars.Apply).
+func TestSettingsFlagAccepted(t *testing.T) {
+	pipeR, pipeW := io.Pipe()
+	var buf bytes.Buffer
+	go func() {
+		defer pipeW.Close()
+		pipeW.Write([]byte(`{"type":"user","message":{"role":"user","content":"hello simple task"}}` + "\n"))
+	}()
+
+	path := scenarioPath("happy-path.json")
+	code := run([]string{
+		"--session-id", "test-sid",
+		"--model", "some-model",
+		"--settings", `C:\state\some-model.json`,
+	}, pipeR, &buf, path)
+	if code != 0 {
+		t.Fatalf("exit code %d, want 0; output:\n%s", code, buf.String())
+	}
+}
