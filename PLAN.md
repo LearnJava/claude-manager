@@ -233,6 +233,10 @@ mirror = true                             # копия настроек и ло�
   model = "sonnet"                        # Модель: opus | sonnet | haiku | полное имя
   fallback_model = ""                     # Fallback при перегрузке (опц.)
   effort = "high"                         # low | medium | high | xhigh | max
+  provider = ""                           # id из [providers.<id>]: «сменный мозг» claude-CLI
+                                          #   (Anthropic-совместимый endpoint). "" = обычный Claude.
+                                          #   Файл настроек модели идёт через --settings,
+                                          #   ключ API — только в env процесса, не на диск
 
   # Разрешения (см. секцию 16)
   permission_mode = "acceptEdits"         # default | acceptEdits | auto | plan | dontAsk | bypassPermissions
@@ -304,6 +308,30 @@ path = 'D:\Projects\my-api'
   name = "frontend"
   prompt = "Work on the next frontend task."
   auto_restart = false
+```
+
+### Провайдеры (сменные «мозги», GLM-PLAN.md)
+
+Секция `[providers.<id>]` описывает замену мозга claude-CLI на другом
+Anthropic-совместимом endpoint (ось 2 AI-STACK.md): тот же рантайм, другой
+endpoint и набор моделей. Менеджер идемпотентно генерирует файлы настроек
+по модели в `settings_dir` (существующие файлы не перезаписываются), ключ
+API берётся из env-переменной с именем `key_env` (сам ключ в конфиге не
+хранится; фолбэк — `settings.zcode_api_key`) и передаётся только в окружение
+процесса сессии. Встроенный дефолт — `glm`; поля можно переопределить,
+модели — заменить (например, добавить вариант с суффиксом `[1m]`):
+
+```toml
+[providers.glm]
+display_name = "Claude GLM"
+base_url = "https://api.z.ai/api/anthropic"
+key_env = "ZAI_API_KEY"
+settings_dir = "state/glm"
+
+[[providers.glm.models]]
+id = "glm-5.3"          # идёт в --model как есть
+label = "GLM-5.3"       # подпись в пикере GUI
+efforts = ["low", "high", "max"]
 ```
 
 ### Переменные в промпте
