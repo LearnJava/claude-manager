@@ -53,3 +53,7 @@ testdata/configs/playwright-runtime.toml
 __pycache__/
 ~$*
 frontend/package.json.md5
+
+# ZCode agent workspace state (plans, checkpoints) — machine-local
+.zcode/
+frontend/.tmp-zcode-test.log
