@@ -7,7 +7,7 @@
     import PlanReview from './PlanReview.svelte';
     import QueueMiniBar from './QueueMiniBar.svelte';
     import { syncQueue } from '../stores/queues';
-    import { MODELS, normalizeModel } from '../lib/models';
+    import { MODELS, normalizeModel, type ProviderUI } from '../lib/models';
     import { t } from '../lib/i18n';
 
     const dispatch = createEventDispatcher();
@@ -21,6 +21,8 @@
         UpdateConfig,
         GetAutoModelRouting,
         StartSessionWithModel,
+        StartSessionWithProviderAndModel,
+        GetProviders,
         SetSessionModel,
         SetSessionRuntime,
         HasClaudeMd,
@@ -41,6 +43,18 @@
     // the same model. The raw id stays in the tooltip.
     let modelBusy: Record<string, boolean> = {};
     let modelError: Record<string, string> = {};
+
+    // Provider models (backend-configured brains) for the live-switch
+    // dropdown: a provider model id switched to from any session carries its
+    // provider with it (the backend derives it from the model id).
+    let providerModels: { value: string; label: string }[] = [];
+    GetProviders()
+        .then((ps: ProviderUI[]) => {
+            providerModels = (ps ?? []).flatMap((p) =>
+                (p.models ?? []).map((m) => ({ value: m.id, label: m.label })),
+            );
+        })
+        .catch(() => { providerModels = []; });
 
     async function onModelChange(e: Event, s: SessionState) {
         e.stopPropagation();
@@ -518,6 +532,11 @@
                                     {#each MODELS as m}
                                         <option value={m.value}>{m.label}</option>
                                     {/each}
+                                    {#each providerModels as m}
+                                        {#if !MODELS.some((x) => x.value === m.value)}
+                                            <option value={m.value}>{m.label}</option>
+                                        {/if}
+                                    {/each}
                                     {#if hasCustomModel(s)}
                                         <!-- A custom/pinned id from config (or a Hermes provider id) that isn't one of ours -->
                                         <option value={modelValue(s)}>{s.model}</option>
@@ -571,8 +590,14 @@
             const p = pickerFor;
             pickerFor = null;
             if (!p) return;
-            try { await StartSessionWithModel(p.project, p.name, e.detail.model, e.detail.effort); }
-            catch (err) { console.warn('start with model failed:', err); }
+            const d = e.detail;
+            try {
+                if (d.provider) {
+                    await StartSessionWithProviderAndModel(p.project, p.name, d.provider, d.model, d.effort);
+                } else {
+                    await StartSessionWithModel(p.project, p.name, d.model, d.effort);
+                }
+            } catch (err) { console.warn('start with model failed:', err); }
         }}
         on:cancel={() => { pickerFor = null; }}
     />

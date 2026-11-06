@@ -6,11 +6,11 @@
     export let sessionName: string;
 
     const dispatch = createEventDispatcher<{
-        confirm: { model: string; effort: string };
+        confirm: { provider: string; model: string; effort: string };
         cancel: void;
     }>();
 
-    import { MODELS, EFFORTS, modelLabel, normalizeModel } from '../lib/models';
+    import { MODELS, EFFORTS, modelLabel, normalizeModel, providerCombos, type ProviderUI } from '../lib/models';
 
     // Recommendation loaded from backend (null = not yet loaded)
     type Rec = { model: string; effort: string; complexity: string; reason: string } | null;
@@ -24,7 +24,28 @@
     let chosenEffort = 'medium';
     let overriding   = false;   // true = user opened the override dropdowns
 
-    import { GetModelRecommendation } from '../../wailsjs/go/main/App';
+    // Which AI: '' = built-in Claude; anything else is a backend-configured
+    // provider (GetProviders). Errors/empty degrade to the Claude-only picker.
+    let providers: ProviderUI[] = [];
+    let chosenProvider = '';
+    let chosenCombo = '';
+
+    import { GetModelRecommendation, GetProviders } from '../../wailsjs/go/main/App';
+
+    GetProviders()
+        .then((ps: ProviderUI[]) => { providers = ps ?? []; })
+        .catch(() => { providers = []; });
+
+    $: providerModels = providers.find((p) => p.id === chosenProvider);
+    $: combos = providerModels ? providerCombos(providerModels) : [];
+
+    function selectProvider(id: string) {
+        chosenProvider = id;
+        const p = providers.find((x) => x.id === id);
+        chosenCombo = p ? (providerCombos(p)[0]?.value ?? '') : '';
+    }
+
+    $: comboLabel = combos.find((c) => c.value === chosenCombo)?.label ?? combos[0]?.label ?? '';
 
     async function load() {
         loading = true;
@@ -65,7 +86,15 @@
     }
 
     function confirm() {
-        dispatch('confirm', { model: chosenModel, effort: chosenEffort });
+        if (chosenProvider !== '') {
+            // A provider choice: the flat model×effort list. No
+            // recommendation path — model routing is Claude-only (scope cut).
+            const c = combos.find((x) => x.value === chosenCombo) ?? combos[0];
+            if (!c) return;
+            dispatch('confirm', { provider: chosenProvider, model: c.model, effort: c.effort });
+            return;
+        }
+        dispatch('confirm', { provider: '', model: chosenModel, effort: chosenEffort });
     }
 
     function cancel() {
@@ -110,8 +139,52 @@
             <button class="text-text-muted hover:text-text" on:click={cancel} type="button">✕</button>
         </div>
 
+        <!-- Which AI: Claude | configured providers. Backend-driven; nothing
+             provider-specific is hardcoded here. -->
+        {#if providers.length > 0}
+            <div class="flex gap-1" role="tablist" data-testid="provider-segment">
+                <button
+                    type="button"
+                    role="tab"
+                    aria-selected={chosenProvider === ''}
+                    data-testid="provider-tab-claude"
+                    class="px-3 py-1 rounded-t border-b-2 {chosenProvider === ''
+                        ? 'border-blue-500 text-text font-medium'
+                        : 'border-transparent text-text-muted hover:text-text'}"
+                    on:click={() => selectProvider('')}>
+                    {$t('modelPicker.providerDefault')}
+                </button>
+                {#each providers as p}
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={chosenProvider === p.id}
+                        data-testid="provider-tab-{p.id}"
+                        class="px-3 py-1 rounded-t border-b-2 {chosenProvider === p.id
+                            ? 'border-blue-500 text-text font-medium'
+                            : 'border-transparent text-text-muted hover:text-text'}"
+                        on:click={() => selectProvider(p.id)}>
+                        {p.label}
+                    </button>
+                {/each}
+            </div>
+        {/if}
+
         <!-- Body -->
-        {#if loading}
+        {#if chosenProvider !== ''}
+            <!-- Provider: one flat model×effort list, manual choice only. -->
+            <div class="flex flex-col gap-2">
+                <div class="text-text-muted" style="font-size:13px">{$t('modelPicker.providerManualOnly')}</div>
+                <select
+                    bind:value={chosenCombo}
+                    data-testid="provider-combo-select"
+                    class="bg-bg border border-bg-border rounded px-2 py-1 text-text font-mono">
+                    {#each combos as c}
+                        <option value={c.value}>{c.label}</option>
+                    {/each}
+                </select>
+            </div>
+        {:else if loading}
             <div class="text-text-muted text-sm py-3 text-center flex flex-col items-center gap-3"
                  data-testid="model-picker-analyzing">
                 <div class="flex items-center gap-2 text-text">
@@ -204,11 +277,13 @@
             <button
                 type="button"
                 on:click={confirm}
-                disabled={loading}
+                disabled={loading && chosenProvider === ''}
                 class="px-4 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium
                        disabled:opacity-50 disabled:cursor-not-allowed"
                 style="font-size:13px">
-                {#if overriding}
+                {#if chosenProvider !== ''}
+                    {$t('modelPicker.startWithModel', { model: comboLabel })}
+                {:else if overriding}
                     {$t('modelPicker.startWith', { model: modelLabel(chosenModel), effort: chosenEffort })}
                 {:else if rec}
                     {$t('modelPicker.startWith', { model: modelLabel(rec.model), effort: rec.effort })}
