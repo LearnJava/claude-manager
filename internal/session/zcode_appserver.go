@@ -30,23 +30,27 @@ import (
 //
 // Two server→client (reverse) requests must be answered for a turn to work:
 //   - session/requestRuntimePreferences: app preferences (one boolean);
-//   - interaction/requestProviderRuntimeHeaders: the z.ai API key the
-//     server signs its model requests with (Settings.ZcodeApiKey, env
-//     ZAI_API_KEY). Without a key the turn fails at the model call — the
-//     key is created at https://z.ai/manage-apikey/apikey-list.
+//   - interaction/requestProviderRuntimeHeaders: the Coding Plan API key
+//     the runtime sends as X-Coding-Plan-Api-Key on model requests
+//     (Settings.ZcodeApiKey, env ZAI_API_KEY). The key is created at
+//     https://z.ai/manage-apikey/apikey-list bound to the Coding Plan —
+//     a plain pay-as-you-go key authenticates but fails every model call
+//     with [1113] "Insufficient balance" (verified live 2026-11-06).
 //
 // The model provider comes from the account registry push (see
 // zcodeAccountRevision): a coding-plan provider entitled for this account.
 // The payload is versioned to the ZCode build it was captured from; a
 // ZCode update that bumps the builtin revision makes the push (and the
-// turn) fail with a clear error instead of misbehaving silently.
+// turn) fail with a clear error instead of misbehaving silently. (A
+// push-less "child signs itself" mode does not exist on 0.17.x: a
+// standalone app-server child resolves no models at all.)
 
 const (
 	// zcodePreferredProvider is the coding-plan provider used when entitled
 	// (matches the account this payload was captured from); any other
 	// entitled zai-* provider from the payload works as a fallback.
 	zcodePreferredProvider = "account:zai-individual-coding-plan"
-	zcodeDefaultModel      = "GLM-5.3-Flash"
+	zcodeDefaultModel      = "GLM-5.3"
 	zcodeDeliveryKind      = "desktop-continuous"
 )
 
@@ -473,9 +477,9 @@ func (s *Session) runZcodeAppserverTurn(ctx context.Context, prompt string, imag
 	if s.zcodeAPIKey == "" {
 		s.emit(SessionEvent{Type: EvtLog, Entry: &config.LogEntry{
 			Time: time.Now(), Level: "system", Source: "manager",
-			Message: "z.ai API key не задан: добавь zcode_api_key в [settings] config.toml (или переменную ZAI_API_KEY); ключ создаётся на https://z.ai/manage-apikey/apikey-list",
+			Message: "z.ai Coding Plan API key не задан: добавь zcode_api_key в [settings] config.toml (или переменную ZAI_API_KEY); нужен ключ Coding Plan с https://z.ai/manage-apikey/apikey-list — обычный PAYG-ключ даёт [1113] Insufficient balance",
 		}})
-		return turn, errors.New("zcode: не задан z.ai API key (zcode_api_key)")
+		return turn, errors.New("zcode: не задан z.ai Coding Plan API key (zcode_api_key)")
 	}
 
 	exe, cjs, err := zcodeDetectBinary()
@@ -631,15 +635,18 @@ func (s *Session) zcodeProtocolTurn(ctx context.Context, conn *zcodeConn, workDi
 
 	// The mapper emits into the session and finishes the turn on the first
 	// terminal event (turn.completed/failed/terminal via handleEvent).
+	// It returns a slice: phase-buffer flushes may precede the event's own
+	// entry (see zcodeMapEvent).
 	turnDone := make(chan struct{})
 	var once sync.Once
 	conn.onEvent = func(ev zcodeEvent) {
-		if res := s.zcodeMapEvent(ev, &turn); res != nil {
+		for _, res := range s.zcodeMapEvent(ev, &turn) {
 			if s.handleEvent(*res, autonomous) {
 				once.Do(func() {
 					turn.finished = true
 					close(turnDone)
 				})
+				break // terminal: nothing after it matters
 			}
 		}
 	}
@@ -651,7 +658,16 @@ func (s *Session) zcodeProtocolTurn(ctx context.Context, conn *zcodeConn, workDi
 		return turn, err
 	}
 
-	// 1. Account registry push (idempotent; payload matches this ZCode build).
+	// 1. Account registry push (idempotent; payload matches this ZCode
+	//    build). Mandatory: on ZCode 0.17.x a standalone app-server child
+	//    resolves no models on its own ("Select a model before continuing",
+	//    model.available: [] — probed live 2026-11-06); only the host-side
+	//    push makes account-plan providers selectable. The push also puts
+	//    the child into host-managed auth: the model call then requires
+	//    interaction/requestProviderRuntimeHeaders, whose apiKey the
+	//    runtime sends as X-Coding-Plan-Api-Key — a Coding Plan API key,
+	//    NOT a pay-as-you-go key (those fail with [1113] "Insufficient
+	//    balance", verified live).
 	if err := conn.call(ctx, "provider/updateAccountConfig", map[string]any{
 		"revision":                    zcodeAccountRevision,
 		"basedOnZCodeBuiltinRevision": zcodeBuiltinRevision,
@@ -691,6 +707,14 @@ func (s *Session) zcodeProtocolTurn(ctx context.Context, conn *zcodeConn, workDi
 	if turn.sessionID == "" {
 		return fail(errors.New("zcode: session/create вернул пустой sessionId"))
 	}
+	// The protocol handshake IS the zcode "init": stop the start-watch
+	// narration right here instead of promising an initialization phase
+	// this runtime does not have.
+	s.mu.Lock()
+	if w := s.startW; w != nil {
+		w.gotInit()
+	}
+	s.mu.Unlock()
 
 	// 4. Subscribe to the event stream (live delivery of the turn).
 	if err := conn.call(ctx, "session/subscribe", map[string]any{
@@ -736,113 +760,158 @@ func (s *Session) zcodeProtocolTurn(ctx context.Context, conn *zcodeConn, workDi
 
 // ---- event mapping ----
 
-// zcodeMapEvent maps one session/event onto the manager's ParsedEvent (nil
-// = nothing to report). Text streams through part.delta (field "text"),
-// thinking through field "reasoning"; message.upserted carries the
-// authoritative message snapshot; usage.delta the token counters;
-// turn.completed/turn.failed/turn.terminal end the turn.
-func (s *Session) zcodeMapEvent(ev zcodeEvent, turn *hermesTurn) *ParsedEvent {
+// zcodeFlushMin: streamed deltas accumulate in per-turn buffers and are
+// emitted as whole blocks — one per reasoning/text phase — because the
+// GUI renders each log entry as its own paragraph (consecutive entries
+// join with a blank line, which would shatter word fragments). Long
+// monologues still stream: past this size a buffer flushes at its last
+// newline, a boundary the paragraph rendering already implies.
+const zcodeFlushMin = 400
+
+// zcodeMapEvent maps one session/event onto the manager's ParsedEvents
+// (empty = nothing to report). Real 0.17.1 taxonomy (probed live
+// 2026-11-06, .tmp/probe_full.mjs): text streams through model.streaming
+// payloads {kind:"text_delta", delta}; session.updated is multipurpose —
+// a payload with content+usage is the authoritative assistant-message
+// snapshot; turn.completed {response, usage} ends the turn with the
+// final text and provider usage; turn.failed {error{message,code,detail}}
+// carries the failure (e.g. [1113]). Phase-buffer flushes may precede the
+// event's own entries (a tool call closes the open text block first).
+func (s *Session) zcodeMapEvent(ev zcodeEvent, turn *hermesTurn) []*ParsedEvent {
 	now := time.Now()
 	switch ev.Type {
-	case "part.delta":
+	case "turn.started":
+		return []*ParsedEvent{{Activity: &Activity{Kind: ActivityThinking}}}
+
+	case "model.streaming":
 		var p struct {
-			Field string `json:"field"`
-			Delta string `json:"delta"`
+			Kind     string          `json:"kind"`
+			Delta    string          `json:"delta"`
+			ToolName string          `json:"toolName"`
+			Input    json.RawMessage `json:"input"`
 		}
-		if json.Unmarshal(ev.Payload, &p) != nil || p.Delta == "" {
+		if json.Unmarshal(ev.Payload, &p) != nil {
 			return nil
 		}
-		level, activity := "text", ActivityWriting
-		if p.Field == "reasoning" {
-			level, activity = "thinking", ActivityThinking
+		switch p.Kind {
+		case "text_delta":
+			turn.sawTextDelta = true
+			if p.Delta == "" {
+				return nil
+			}
+			return s.zcodeAppendStream(turn, "text", p.Delta, now)
+		case "reasoning_delta":
+			if p.Delta == "" {
+				return nil
+			}
+			return s.zcodeAppendStream(turn, "thinking", p.Delta, now)
+		case "tool_call":
+			// The full tool invocation in one payload (name + input);
+			// tool_input_start/delta/end are its streaming build-up.
+			name := p.ToolName
+			if name == "" {
+				name = "tool"
+			}
+			detail := string(p.Input)
+			if detail == "" && p.Delta != "" {
+				detail = p.Delta
+			}
+			out := s.zcodeFlushStreams(turn, now)
+			out = append(out, &ParsedEvent{EventType: EventLog, Entries: []config.LogEntry{{
+				Time: now, Level: "tool", Source: "zcode", ToolName: name, Message: detail,
+			}}, Activity: &Activity{Kind: ActivityTool}})
+			return out
 		}
-		return &ParsedEvent{EventType: EventLog, Entries: []config.LogEntry{{
-			Time: now, Level: level, Source: "zcode", Message: p.Delta,
-		}}, Activity: &Activity{Kind: activity}}
+		return nil
 
-	case "message.upserted":
+	case "tool.updated":
+		// Tool lifecycle (probed live): kind=scheduled/started/result/batch.
+		// The call itself is already logged from model.streaming tool_call;
+		// only the result carries new information.
 		var p struct {
-			Content string `json:"content"`
-		}
-		if json.Unmarshal(ev.Payload, &p) != nil || p.Content == "" {
-			return nil
-		}
-		s.mu.Lock()
-		s.zcodeLastText = p.Content
-		s.mu.Unlock()
-		return &ParsedEvent{EventType: EventLog, Entries: []config.LogEntry{{
-			Time: now, Level: "text", Source: "zcode", Message: p.Content,
-		}}, Activity: &Activity{Kind: ActivityWriting}}
-
-	case "tool.call.started", "tool.call.completed", "tool.call.failed":
-		var p struct {
+			Kind     string `json:"kind"`
 			ToolName string `json:"toolName"`
-			Input    string `json:"input"`
-			Output   string `json:"output"`
-			Text     string `json:"text"`
+			Result   *struct {
+				Success bool   `json:"success"`
+				Content string `json:"content"`
+				Error   string `json:"error"`
+			} `json:"result"`
 		}
-		_ = json.Unmarshal(ev.Payload, &p)
-		level := "tool"
-		switch ev.Type {
-		case "tool.call.completed":
-			level = "tool_result"
-		case "tool.call.failed":
+		if json.Unmarshal(ev.Payload, &p) != nil || p.Kind != "result" || p.Result == nil {
+			return nil
+		}
+		msg := p.Result.Content
+		level := "tool_result"
+		if !p.Result.Success {
 			level = "error"
+			if p.Result.Error != "" {
+				msg = p.Result.Error
+			}
 		}
 		name := p.ToolName
 		if name == "" {
 			name = "tool"
 		}
-		detail := p.Text
-		if detail == "" {
-			detail = p.Input
-		}
-		if level == "tool_result" && p.Output != "" {
-			detail = p.Output
-		}
-		activity := ActivityTool
-		if level != "tool" {
-			activity = ActivityThinking
-		}
-		return &ParsedEvent{EventType: EventLog, Entries: []config.LogEntry{{
-			Time: now, Level: level, Source: "zcode", ToolName: name, Message: detail,
-		}}, Activity: &Activity{Kind: activity}}
+		out := s.zcodeFlushStreams(turn, now)
+		out = append(out, &ParsedEvent{EventType: EventLog, Entries: []config.LogEntry{{
+			Time: now, Level: level, Source: "zcode", ToolName: name, Message: msg,
+		}}, Activity: &Activity{Kind: ActivityThinking}})
+		return out
 
-	case "usage.delta":
+	case "session.updated":
+		// Multipurpose event: the fields present decide the meaning. The
+		// assistant-message snapshot carries content + stopReason + usage;
+		// other session.updated payloads (model request spans, hooks,
+		// pending-input bookkeeping) map to nothing. The snapshot is the
+		// authoritative turn text — log it only when the answer did not
+		// already stream (else it would duplicate the feed).
 		var p struct {
-			InputTokens         int `json:"inputTokens"`
-			OutputTokens        int `json:"outputTokens"`
-			ReasoningTokens     int `json:"reasoningTokens"`
-			CacheCreationTokens int `json:"cacheCreationTokens"`
-			CacheReadTokens     int `json:"cacheReadTokens"`
+			Content    string      `json:"content"`
+			StopReason string      `json:"stopReason"`
+			Usage      *zcodeUsage `json:"usage"`
 		}
-		if json.Unmarshal(ev.Payload, &p) != nil {
+		if json.Unmarshal(ev.Payload, &p) != nil || (p.Content == "" && p.Usage == nil) {
 			return nil
 		}
-		return &ParsedEvent{EventType: EventLog, Usage: &TokenUsage{
-			InputTokens:              p.InputTokens,
-			OutputTokens:             p.OutputTokens + p.ReasoningTokens,
-			CacheCreationInputTokens: p.CacheCreationTokens,
-			CacheReadInputTokens:     p.CacheReadTokens,
-		}}
+		if p.Content != "" {
+			s.mu.Lock()
+			s.zcodeLastText = p.Content
+			s.mu.Unlock()
+		}
+		var out []*ParsedEvent
+		if p.Content != "" && !turn.sawTextDelta {
+			out = append(out, &ParsedEvent{EventType: EventLog, Entries: []config.LogEntry{{
+				Time: now, Level: "text", Source: "zcode", Message: p.Content,
+			}}, Activity: &Activity{Kind: ActivityWriting}})
+		} else {
+			out = s.zcodeFlushStreams(turn, now)
+		}
+		if p.Usage != nil {
+			if len(out) > 0 {
+				out[len(out)-1].Usage = p.Usage.tokenUsage()
+			} else {
+				out = append(out, &ParsedEvent{EventType: EventLog, Usage: p.Usage.tokenUsage()})
+			}
+		}
+		return out
 
-	case "permission.requested":
+	case "turn.completed":
 		var p struct {
-			ToolName string `json:"toolName"`
-			Title    string `json:"title"`
+			Response string      `json:"response"`
+			Usage    *zcodeUsage `json:"usage"`
 		}
 		_ = json.Unmarshal(ev.Payload, &p)
-		name := p.ToolName
-		if name == "" {
-			name = p.Title
+		if p.Response != "" {
+			s.mu.Lock()
+			s.zcodeLastText = p.Response
+			s.mu.Unlock()
 		}
-		return &ParsedEvent{EventType: EventLog, Entries: []config.LogEntry{{
-			Time: now, Level: "system", Source: "zcode",
-			Message: "требуется разрешение: " + name + " (проверь в открытом ZCode — менеджер запросы разрешений на этом транспорте пока не отвечает)",
-		}}}
-
-	case "turn.completed", "turn.terminal":
-		return s.zcodeFinishEvent("success", s.zcodeTurnText(), turn)
+		out := s.zcodeFlushStreams(turn, now)
+		fin := s.zcodeFinishEvent("success", s.zcodeTurnText(), turn)
+		if p.Usage != nil {
+			fin.Usage = p.Usage.tokenUsage()
+		}
+		return append(out, fin)
 
 	case "turn.failed":
 		var p struct {
@@ -863,9 +932,96 @@ func (s *Session) zcodeMapEvent(ev zcodeEvent, turn *hermesTurn) *ParsedEvent {
 		if msg == "" {
 			msg = "неизвестная ошибка хода"
 		}
-		return s.zcodeFinishEvent("error", msg, turn)
+		out := s.zcodeFlushStreams(turn, now)
+		return append(out, s.zcodeFinishEvent("error", msg, turn))
 	}
 	return nil
+}
+
+// zcodeAppendStream adds one streamed delta to its phase buffer, flushing
+// the other phase (reasoning↔text switch) and flushing the buffer itself
+// at newline boundaries once it grows past zcodeFlushMin.
+func (s *Session) zcodeAppendStream(turn *hermesTurn, level, delta string, now time.Time) []*ParsedEvent {
+	var out []*ParsedEvent
+	if level == "text" && turn.thoughtBuf != "" {
+		out = append(out, zcodeBlockEntry(turn, "thinking", now))
+	} else if level == "thinking" && turn.textBuf != "" {
+		out = append(out, zcodeBlockEntry(turn, "text", now))
+	}
+	buf := &turn.textBuf
+	if level == "text" {
+		turn.textBuf += delta
+	} else {
+		turn.thoughtBuf += delta
+		buf = &turn.thoughtBuf
+	}
+	if len(*buf) >= zcodeFlushMin {
+		// Flush up to the last newline so the cut lands on a paragraph
+		// boundary the feed rendering already implies.
+		if idx := strings.LastIndexByte(*buf, '\n'); idx > 0 {
+			emit := (*buf)[:idx]
+			*buf = (*buf)[idx+1:]
+			out = append(out, &ParsedEvent{EventType: EventLog, Entries: []config.LogEntry{{
+				Time: now, Level: level, Source: "zcode", Message: emit,
+			}}})
+		}
+	}
+	activity := ActivityWriting
+	if level == "thinking" {
+		activity = ActivityThinking
+	}
+	if len(out) > 0 {
+		out[len(out)-1].Activity = &Activity{Kind: activity}
+	}
+	return out
+}
+
+// zcodeBlockEntry emits one whole phase buffer as a single log entry.
+func zcodeBlockEntry(turn *hermesTurn, level string, now time.Time) *ParsedEvent {
+	msg := turn.textBuf
+	if level == "thinking" {
+		msg = turn.thoughtBuf
+	}
+	if level == "thinking" {
+		turn.thoughtBuf = ""
+	} else {
+		turn.textBuf = ""
+	}
+	return &ParsedEvent{EventType: EventLog, Entries: []config.LogEntry{{
+		Time: now, Level: level, Source: "zcode", Message: msg,
+	}}}
+}
+
+// zcodeFlushStreams closes both open phase buffers (thought first — it
+// precedes the answer), e.g. at a tool call or turn end.
+func (s *Session) zcodeFlushStreams(turn *hermesTurn, now time.Time) []*ParsedEvent {
+	var out []*ParsedEvent
+	if turn.thoughtBuf != "" {
+		out = append(out, zcodeBlockEntry(turn, "thinking", now))
+	}
+	if turn.textBuf != "" {
+		out = append(out, zcodeBlockEntry(turn, "text", now))
+	}
+	return out
+}
+
+// zcodeUsage is the provider usage block both the message snapshot and
+// turn.completed carry (field names as probed live 2026-11-06).
+type zcodeUsage struct {
+	InputTokens      int `json:"inputTokens"`
+	OutputTokens     int `json:"outputTokens"`
+	ReasoningTokens  int `json:"reasoningTokens"`
+	CacheReadTokens  int `json:"cacheReadTokens"`
+	CacheWriteTokens int `json:"cacheWriteTokens"`
+}
+
+func (u *zcodeUsage) tokenUsage() *TokenUsage {
+	return &TokenUsage{
+		InputTokens:              u.InputTokens,
+		OutputTokens:             u.OutputTokens + u.ReasoningTokens,
+		CacheCreationInputTokens: u.CacheWriteTokens,
+		CacheReadInputTokens:     u.CacheReadTokens,
+	}
 }
 
 // zcodeTurnText is the last assistant message snapshot this turn saw (the
@@ -877,8 +1033,22 @@ func (s *Session) zcodeTurnText() string {
 }
 
 func (s *Session) zcodeFinishEvent(stop, text string, turn *hermesTurn) *ParsedEvent {
+	// [1113] is the provider's "no balance / no resource package": the
+	// zcode_api_key bills a pay-as-you-go wallet, not the Coding Plan
+	// subscription (interactive ZCode signs with plan OAuth, not this key).
+	if stop == "error" && strings.Contains(text, "[1113]") {
+		text += " — у zcode_api_key нет пакета/баланса: нужен API-ключ, привязанный к Coding Plan (https://z.ai/manage-apikey/apikey-list, аккаунт с планом), а не обычный PAYG-ключ"
+	}
+
+	// The log entry must not repeat the answer the feed already showed
+	// (the GUI renders the result entry as its own block); ResultText
+	// still carries the full response for the session/task machinery.
+	entryMsg := text
+	if stop == "success" && turn.sawTextDelta {
+		entryMsg = ""
+	}
 	entries := []config.LogEntry{{
-		Time: time.Now(), Level: "result", Source: "zcode", Message: text,
+		Time: time.Now(), Level: "result", Source: "zcode", Message: entryMsg,
 	}}
 	if stop == "error" {
 		turn.failed = text

@@ -388,11 +388,14 @@ options:{reasoningLevel}}}` (effort is native: low/high/max) → events until
 The server makes reverse requests the client must answer:
 `session/requestRuntimePreferences` → `{nativeSearchEnhancementsEnabled:
 false}`; `interaction/requestProviderRuntimeHeaders` →
-`{headersApplied:true, requestAuth:{apiKey, accountScope}}` — the z.ai API
-key the model requests are signed with (`Settings.ZcodeApiKey`/env
-`ZAI_API_KEY`, created at https://z.ai/manage-apikey/apikey-list; the
-`accountScope` echoes `expectedAccountScope` or the provider's
-`connectionKey`). Without a key the turn fails fast with a clear error.
+`{headersApplied:true, requestAuth:{apiKey, accountScope}}` — the z.ai
+**Coding Plan** API key the runtime sends as `X-Coding-Plan-Api-Key` on
+model requests (`Settings.ZcodeApiKey`/env `ZAI_API_KEY`, created at
+https://z.ai/manage-apikey/apikey-list bound to the Coding Plan; a plain
+pay-as-you-go key authenticates but every model call fails with
+`[1113] Insufficient balance` — verified 2026-11-06; the `accountScope`
+echoes `expectedAccountScope` or the provider's `connectionKey`). Without
+a key the turn fails fast with a clear error.
 `interaction/requestOfficialMcpAuthHeaders` → `{headersApplied:false}`.
 
 Events map onto the common format: `part.delta` (field `text`/`reasoning`)

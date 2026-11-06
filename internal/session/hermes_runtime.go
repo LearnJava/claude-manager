@@ -125,6 +125,14 @@ type hermesTurn struct {
 	finished  bool   // handleEvent reported the turn as finished
 	sessionID string // Hermes session id from the init line
 	failed    string // non-empty when the result reported an error
+	// sawTextDelta: the zcode transport streamed answer text this turn, so
+	// the message snapshot and result entry must not re-log it (mapper
+	// thread only). thoughtBuf/textBuf coalesce streamed deltas into whole
+	// blocks — the GUI renders each log entry as a paragraph, so per-delta
+	// entries would shatter words.
+	sawTextDelta bool
+	thoughtBuf   string
+	textBuf      string
 	// questions holds a set of questions the turn was cut short on (RT-03:
 	// currently only a Hermes `clarify` call — see hermesRunTurn); nil
 	// otherwise.

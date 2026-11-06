@@ -223,6 +223,61 @@ func TestZcodeConnReverseRequests(t *testing.T) {
 	}
 }
 
+// TestZcodeCoalescesDeltas drives the mapper directly: streamed word
+// fragments must become whole blocks (one thinking entry, one text entry),
+// not per-delta log entries the feed would render as broken lines.
+func TestZcodeCoalescesDeltas(t *testing.T) {
+	_, _, s := newFakeZcodeServer(t)
+	var turn hermesTurn
+	ev := func(typ string, payload map[string]any) []*ParsedEvent {
+		raw, _ := json.Marshal(payload)
+		return s.zcodeMapEvent(zcodeEvent{Type: typ, Payload: raw}, &turn)
+	}
+
+	var got []config.LogEntry
+	collect := func(evs []*ParsedEvent) {
+		for _, pe := range evs {
+			got = append(got, pe.Entries...)
+		}
+	}
+
+	collect(ev("model.streaming", map[string]any{"kind": "reasoning_delta", "delta": "ду"}))
+	collect(ev("model.streaming", map[string]any{"kind": "reasoning_delta", "delta": "маю"}))
+	if len(got) != 0 {
+		t.Fatalf("reasoning deltas emitted early: %d entries", len(got))
+	}
+	collect(ev("model.streaming", map[string]any{"kind": "text_delta", "delta": "при"}))
+	if len(got) != 1 || got[0].Level != "thinking" || got[0].Message != "думаю" {
+		t.Fatalf("thought block: %+v", got)
+	}
+	collect(ev("model.streaming", map[string]any{"kind": "text_delta", "delta": "вет"}))
+	if len(got) != 1 {
+		t.Fatalf("text deltas emitted early: %d entries", len(got))
+	}
+	collect(ev("turn.completed", map[string]any{
+		"response": "привет",
+		"usage":    map[string]any{"inputTokens": 5, "outputTokens": 2},
+	}))
+	// After turn.completed the buffers flushed: one text block; the result
+	// entry itself must NOT repeat the streamed answer.
+	var textEntries []string
+	var resultMsg string
+	for _, e := range got {
+		if e.Level == "text" {
+			textEntries = append(textEntries, e.Message)
+		}
+		if e.Level == "result" {
+			resultMsg = e.Message
+		}
+	}
+	if len(textEntries) != 1 || textEntries[0] != "привет" {
+		t.Fatalf("text blocks: %q", textEntries)
+	}
+	if resultMsg != "" {
+		t.Fatalf("result entry repeated streamed text: %q", resultMsg)
+	}
+}
+
 func TestZcodeProtocolTurnHappyPath(t *testing.T) {
 	srv, conn, s := newFakeZcodeServer(t)
 	done := make(chan hermesTurn, 1)
@@ -237,13 +292,25 @@ func TestZcodeProtocolTurnHappyPath(t *testing.T) {
 	srv.waitSent(t)
 
 	srv.sendEvents([]map[string]any{
-		{"type": "part.delta", "payload": map[string]any{"field": "reasoning", "delta": "думаю"}},
-		{"type": "part.delta", "payload": map[string]any{"field": "text", "delta": "пин"}},
-		{"type": "part.delta", "payload": map[string]any{"field": "text", "delta": "г"}},
-		{"type": "message.upserted", "payload": map[string]any{"content": "пинг"}},
-		{"type": "usage.delta", "payload": map[string]any{
-			"inputTokens": 10, "outputTokens": 3, "reasoningTokens": 2}},
-		{"type": "turn.completed", "payload": map[string]any{}},
+		{"type": "turn.started", "payload": map[string]any{"turnNumber": 0}},
+		{"type": "model.streaming", "payload": map[string]any{"kind": "reasoning_delta", "delta": "думаю"}},
+		{"type": "model.streaming", "payload": map[string]any{
+			"kind": "tool_call", "toolName": "Bash",
+			"input": map[string]any{"command": "echo ping"}}},
+		{"type": "tool.updated", "payload": map[string]any{
+			"kind": "result", "toolName": "Bash",
+			"result": map[string]any{"success": true, "content": "ping"}}},
+		{"type": "model.streaming", "payload": map[string]any{"kind": "text_delta", "delta": "пин"}},
+		{"type": "model.streaming", "payload": map[string]any{"kind": "text_delta", "delta": "г"}},
+		{"type": "session.updated", "payload": map[string]any{
+			"content": "пинг", "stopReason": "stop",
+			"usage": map[string]any{
+				"inputTokens": 10, "outputTokens": 3, "cacheReadTokens": 4}}},
+		{"type": "turn.completed", "payload": map[string]any{
+			"response": "пинг", "tokenCount": 13,
+			"usage": map[string]any{
+				"source": "provider", "inputTokens": 10, "outputTokens": 3,
+				"reasoningTokens": 2, "cacheReadTokens": 4, "cacheWriteTokens": 5}}},
 	})
 
 	select {

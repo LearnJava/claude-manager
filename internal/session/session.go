@@ -195,9 +195,10 @@ type Params struct {
 	// KimiPath is the `kimi` binary for Config.Runtime == "kimi";
 	// default "kimi".
 	KimiPath string
-	// ZcodeAPIKey is the z.ai API key the zcode app-server transport signs
-	// its model requests with (Settings.ZcodeApiKey; env ZAI_API_KEY works
-	// as a fallback). Empty = zcode turns fail with a clear error.
+	// ZcodeAPIKey is the z.ai Coding Plan API key the zcode app-server
+	// transport signs its model requests with (Settings.ZcodeApiKey; env
+	// ZAI_API_KEY works as a fallback). Empty = zcode turns fail with a
+	// clear error.
 	ZcodeAPIKey       string
 	RetryDelay        int // seconds, fallback for non-rate-limit errors
 	RateLimitPauseSec int // seconds, fallback when no resetsAt is provided

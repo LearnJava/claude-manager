@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"claude-manager/internal/config"
 	"claude-manager/internal/gitutil"
 	"claude-manager/internal/logger"
 	"claude-manager/internal/worktree"
@@ -180,7 +181,14 @@ type startWatch struct {
 func (s *Session) newStartWatch(pid int) *startWatch {
 	w := &startWatch{s: s, started: time.Now(), done: make(chan struct{}), once: make(chan struct{}, 1)}
 	w.once <- struct{}{}
-	s.emitManagerLog(fmt.Sprintf("CLI запущен (pid %d), жду инициализации…", pid))
+	// The zcode app-server child has no init line to wait for — its
+	// "init" is session/create inside the turn — so narrate the spawn
+	// factually instead of promising an initialization phase.
+	if s.runtime != nil && s.runtime.Name() == config.RuntimeZcode {
+		s.emitManagerLog(fmt.Sprintf("zcode app-server запущен (pid %d)", pid))
+	} else {
+		s.emitManagerLog(fmt.Sprintf("CLI запущен (pid %d), жду инициализации…", pid))
+	}
 	go func() {
 		defer logger.Recover("session.start_watch", "id", s.ID)
 		t := time.NewTimer(initSlowFirst)
