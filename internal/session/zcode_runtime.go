@@ -7,57 +7,57 @@ import (
 	"claude-manager/internal/config"
 )
 
-// zcodeRuntime is the Runtime implementation for ZCode on the file transport,
-// ported from zsm's engines/zcode_file.py. ZCode has no working external
-// headless mode today (checked 2026-11-04, zai-org/feedback#29: three
-// stacked authorization bugs), so the manager spawns no CLI process: each
-// turn writes an order file under <workdir>/.zsm/inbox/ and a ZCode session
-// running on its own picks it up and reports status in
-// .zsm/outbox/<id>.json, which the turn polls (see zcode_file.go's RunTurn).
+// zcodeRuntime is the Runtime implementation for ZCode over the
+// app-server protocol: each turn spawns `zcode app-server --stdio` (the
+// NDJSON protocol the ZCode desktop itself drives its agent with), pushes
+// the account provider registry, opens or resumes a protocol session and
+// streams session/events until the turn ends — see zcode_appserver.go.
+// This replaces the zsm file transport (.zsm inbox/outbox), which needed
+// an external ZCode conversation to consume the orders.
 type zcodeRuntime struct{}
 
 func (zcodeRuntime) Name() string { return "zcode" }
 
-// PerTurnProcess is true in the loop's sense: one RunTurn call answers
-// exactly one turn and returns; the "process" is the order/outbox file pair.
+// PerTurnProcess is true: one RunTurn call spawns one app-server process,
+// runs exactly one turn and returns.
 func (zcodeRuntime) PerTurnProcess() bool { return true }
 
-// Args returns nil: there is no CLI process to build an argv for — the
-// turn rides entirely through RunTurn's order files.
+// Args returns nil: RunTurn builds its own argv (Electron-as-Node +
+// zcode.cjs app-server) — see zcodeDetectBinary.
 func (zcodeRuntime) Args(_ *Session, _ bool, _, _, _ string) []string { return nil }
 
 // NewParser returns a no-op parser: the zcode runtime implements TurnRunner,
-// so no stdout stream ever exists to translate (the seam just has to hold).
+// so no stdout stream is translated (the seam just has to hold).
 func (zcodeRuntime) NewParser() Parser { return zcodeParser{} }
 
-// Binary returns "": the file transport launches nothing. Never called —
-// RunTurn replaces hermesRunTurn, the only Binary call site.
+// Binary returns "": RunTurn launches the app-server itself and no other
+// call site needs a path. (Detection lives in zcodeDetectBinary.)
 func (zcodeRuntime) Binary(*Session) string { return "" }
 
-// Env returns parent unchanged: with no child process there is nothing to
-// scrub.
+// Env returns parent unchanged: RunTurn appends ELECTRON_RUN_AS_NODE itself.
 func (zcodeRuntime) Env(_ *Session, parent []string) []string { return parent }
 
-// ClassifyStderr never runs (no process, no stderr); it keeps the generic
+// ClassifyStderr never runs (the app-server logs to stdout; its failures
+// arrive as turn.failed events, not stderr lines); it keeps the generic
 // classifier so the seam stays satisfied.
 func (zcodeRuntime) ClassifyStderr(line string) *TurnFailure { return ClassifyStderrLine(line) }
 
-// Capabilities: resume exists (the order carries conversation_id; the outbox
-// reports it back); the permission protocol exists (outbox permission
-// requests answered through the order file); token usage is reported by the
-// outbox. Effort rides the order file as reasoning_effort (GLM-5.3: low,
-// high, max) — applying it is up to the consuming ZCode session; no USD
-// cost, no image attachments on this wire.
+// Capabilities: resume works (session/resume of the persisted conversation);
+// effort is native (modelSelection.options.reasoningLevel, GLM-5.3: low,
+// high, max); token usage arrives via usage.delta events. Permission
+// requests exist on the wire (permission.requested) but the manager only
+// surfaces them as log entries today — answering them is not wired, so the
+// capability stays off. No USD cost, no image attachments on this wire.
 func (zcodeRuntime) Capabilities() Capabilities {
 	return Capabilities{
-		Resume: true, Effort: true, PermissionProtocol: true,
+		Resume: true, Effort: true, PermissionProtocol: false,
 		Cost: false, TokenUsage: true, Images: false, PromptArg: false,
 	}
 }
 
 // Preamble mirrors kimiRuntime's: the session's append text and the
 // autonomous-run protocol ride in front of the first turn of a fresh
-// conversation (a resumed one already has them) — the order file has no
+// conversation (a resumed one already has them) — the wire has no
 // --append-system-prompt equivalent.
 func (zcodeRuntime) Preamble(s *Session, autonomous bool) string {
 	parts := []string{}
@@ -72,14 +72,14 @@ func (zcodeRuntime) Preamble(s *Session, autonomous bool) string {
 	return strings.Join(parts, "\n\n")
 }
 
-// WarnOptions logs, once per run, the session options the file transport
-// silently cannot honour, so the user sees why.
+// WarnOptions logs, once per run, the session options the app-server
+// transport silently cannot honour, so the user sees why.
 func (zcodeRuntime) WarnOptions(s *Session) {
 	var ignored []string
 	c := s.Config
 	if c.PermissionMode != "" && c.PermissionMode != "bypassPermissions" {
 		ignored = append(ignored, "permission_mode="+c.PermissionMode+
-			" (the ZCode session applies its own policy; permission requests arrive via the outbox)")
+			" (the server applies its own policy; permission requests surface as log entries, the manager does not answer them yet)")
 	}
 	if c.MaxBudgetUSD > 0 {
 		ignored = append(ignored, "max_budget_usd")
@@ -103,8 +103,8 @@ func (zcodeRuntime) WarnOptions(s *Session) {
 }
 
 // zcodeParser satisfies the Parser seam but never translates anything: the
-// zcode runtime drives its turn through RunTurn's order/outbox files, so no
-// stdout stream exists.
+// zcode runtime drives its turn through RunTurn's app-server protocol, so
+// no stdout stream exists.
 type zcodeParser struct{}
 
 func (zcodeParser) Parse(string) []ParsedEvent { return nil }

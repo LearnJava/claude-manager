@@ -157,7 +157,12 @@ type GlobalSettings struct {
 	HermesPath string `toml:"hermes_path"`
 	// KimiPath is the `kimi` binary used by sessions with runtime = "kimi"
 	// (Kimi Code CLI, `kimi -p --output-format stream-json`). Default "kimi".
-	KimiPath          string `toml:"kimi_path"`
+	KimiPath string `toml:"kimi_path"`
+	// ZcodeApiKey is the z.ai API key the zcode app-server transport signs
+	// its model requests with (https://z.ai/manage-apikey/apikey-list).
+	// Empty = zcode turns fail with a clear error; env ZAI_API_KEY works as
+	// a fallback.
+	ZcodeApiKey       string `toml:"zcode_api_key"`
 	DefaultRetryDelay int    `toml:"default_retry_delay"`
 	RateLimitPause    int    `toml:"rate_limit_pause"`
 	LogRetentionDays  int    `toml:"log_retention_days"`

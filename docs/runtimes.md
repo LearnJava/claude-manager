@@ -364,38 +364,50 @@ stream-json fixture and ACP for the runtime contract. `TestKimiRuntime_RealKimi`
 (`CM_REAL_KIMI=1`) covers start → thinking/text → second message → stop →
 resume by id.
 
-## 13. ZCode runtime, file transport (ported from zsm)
+## 13. ZCode runtime, app-server transport
 
 The fourth `Runtime` implementation (`internal/session/zcode_runtime.go`,
-`zcode_file.go`) drives no CLI process at all: ZCode has no working external
-headless mode today (checked 2026-11-04, zai-org/feedback#29), so a turn is a
-file pair, wire-compatible with zsm's `engines/zcode_file.py`:
+`zcode_appserver.go`) drives the protocol the ZCode desktop itself uses:
+each turn spawns `zcode app-server --stdio` — the bundled CLI core
+(`resources/glm/zcode.cjs` under Electron-as-Node, auto-detected) speaking
+newline-delimited JSON (NOT JSON-RPC: no `jsonrpc` key). It replaces the
+earlier zsm file transport (.zsm inbox/outbox), which required an external
+ZCode conversation to consume the orders. Verified live against CLI 0.17.1
+(2026-11-05, `.tmp/appserver_*` probes).
 
-- `<workdir>/.zsm/inbox/<id>.json` — the order (prompt, conversation_id,
-  resume, model, reasoning_effort). Mid-turn control messages are appended
-  to its `messages` array: `user_message`, `permission_response`,
-  `question_response`, `soft_stop` (zsm `events.py`). `reasoning_effort` is
-  a manager extension of the wire format (absent in zsm's producer, `omitempty`
-  when unset): the consuming ZCode session applies it if it can — GLM-5.3
-  levels are low/high/max, and ZCode exposes thought level only as a
-  session-UI setting today (no external API; persisted levels live in
-  `~/.zcode/v2/provider_config.json`).
-- `<workdir>/.zsm/outbox/<id>.json` — the status a ZCode session writes via
-  its skills/hooks: `state` (working|waiting_permission|done|failed), `text`,
-  `continuation`, `tool_calls`, `usage`, `permission`, `question`, `limit`.
+One turn's protocol: `provider/updateAccountConfig` (the account registry
+push captured from the desktop, builtin revision `zcode-builtin:43:…` —
+versioned to this ZCode build; an update that bumps the revision fails the
+push with a clear error) → `session/create` `{workspace:{workspacePath,
+workspaceKey}}` or `session/resume` `{sessionId, workspace}` →
+`session/subscribe` `{sessionId, deliveryKind:"desktop-continuous"}` →
+`session/send` `{sessionId, content, modelSelection:{providerId, modelId,
+options:{reasoningLevel}}}` (effort is native: low/high/max) → events until
+`turn.completed` / `turn.failed` / `turn.terminal`.
 
-`RunTurn` (the `TurnRunner` hook, like Kimi ACP) polls the outbox once a
-second and maps it onto the common events: the first read emits `EventInit`
-with the outbox's `conversation_id` (the resume id); a state change emits the
-last five `tool_calls` as tool cards plus `usage`/`limit`; a new
-`permission.id` emits `EventPermission` — the answer travels back through the
-`PermissionResponder` hook (`RespondPermission` → appended to the order
-instead of stdin); a new `question.id` becomes a pending question whose
-`AnswerQuestion` appends `question_response` to the order; done/failed emits
-the result, and an ```ask-user``` marker in the final text is honoured as on
-every other runtime. Cancel writes `soft_stop` (+ its companion user message),
-waits a short grace, then removes the order file — on this transport that
-removal is the force stop. The order file is always unlinked at turn end.
+The server makes reverse requests the client must answer:
+`session/requestRuntimePreferences` → `{nativeSearchEnhancementsEnabled:
+false}`; `interaction/requestProviderRuntimeHeaders` →
+`{headersApplied:true, requestAuth:{apiKey, accountScope}}` — the z.ai API
+key the model requests are signed with (`Settings.ZcodeApiKey`/env
+`ZAI_API_KEY`, created at https://z.ai/manage-apikey/apikey-list; the
+`accountScope` echoes `expectedAccountScope` or the provider's
+`connectionKey`). Without a key the turn fails fast with a clear error.
+`interaction/requestOfficialMcpAuthHeaders` → `{headersApplied:false}`.
+
+Events map onto the common format: `part.delta` (field `text`/`reasoning`)
+streams answer/thinking; `message.upserted` carries the authoritative
+message snapshot (the turn's result text); `tool.call.started/completed/
+failed` become tool cards; `usage.delta` feeds TokenUsage;
+`permission.requested` surfaces as a log entry only (the manager does not
+answer permissions on this wire — capability false); `turn.failed` carries
+the error. Cancellation kills the per-turn process (the conversation
+persists in ZCode's own session DB, so the next turn resumes it).
+
+Auth note (checked 2026-11-05): headless `zcode -p` is still broken
+upstream (zai-org/feedback#29), and the desktop keeps its project access
+token only in host memory — an external process cannot reuse it. The
+app-server path works around both by taking an ordinary z.ai API key.
 
 `session.ObserveZcode` (`zcode_observe.go`, port of zsm's
 `engines/zcode_observe.py`) reads `~/.zcode/cli/db/db.sqlite` read-only and

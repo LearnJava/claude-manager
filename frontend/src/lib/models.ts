@@ -54,11 +54,12 @@ export const RUNTIME_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     hermes: { resume: true, effort: true, permissionProtocol: false, cost: false, tokenUsage: true, images: true, perTurnProcess: true },
     kimi: { resume: true, effort: false, permissionProtocol: false, cost: false, tokenUsage: false, images: false, perTurnProcess: true },
     // Mirrors zcodeRuntime.Capabilities() (internal/session/zcode_runtime.go):
-    // resume via the order's conversation_id, permissions answered through
-    // the order file, usage reported by the outbox; effort rides the order
-    // file as reasoning_effort (applying it is up to the consuming ZCode
-    // session); no USD cost, no image attachments on the file wire.
-    zcode: { resume: true, effort: true, permissionProtocol: true, cost: false, tokenUsage: true, images: false, perTurnProcess: true },
+    // resume via session/resume of the persisted conversation, usage via
+    // usage.delta events, effort native in modelSelection.options
+    // .reasoningLevel (GLM-5.3). Permission requests exist on the wire but
+    // the manager only logs them, hence permissionProtocol: false; no USD
+    // cost, no image attachments on this wire.
+    zcode: { resume: true, effort: true, permissionProtocol: false, cost: false, tokenUsage: true, images: false, perTurnProcess: true },
 };
 
 export function capabilitiesOf(runtime: string | null | undefined): RuntimeCapabilities {
@@ -77,10 +78,10 @@ export const KIMI_MODELS: ModelOption[] = [
 
 /**
  * Model catalog for ZCode: the names its own model picker shows (Z.ai
- * account, checked 2026-11-05). Values travel verbatim into the order
- * file's `model` field (internal/session/zcode_file.go) — no alias
- * resolution, and a pinned id from config.toml still round-trips as a
- * custom option.
+ * account, checked 2026-11-05). Values travel verbatim into the
+ * app-server modelSelection's modelId (internal/session/zcode_appserver.go)
+ * — no alias resolution, and a pinned id from config.toml still round-trips
+ * as a custom option.
  */
 export const ZCODE_MODELS: ModelOption[] = [
     { value: 'GLM-5.3', label: 'GLM-5.3' },

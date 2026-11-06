@@ -194,7 +194,11 @@ type Params struct {
 	HermesPath string
 	// KimiPath is the `kimi` binary for Config.Runtime == "kimi";
 	// default "kimi".
-	KimiPath          string
+	KimiPath string
+	// ZcodeAPIKey is the z.ai API key the zcode app-server transport signs
+	// its model requests with (Settings.ZcodeApiKey; env ZAI_API_KEY works
+	// as a fallback). Empty = zcode turns fail with a clear error.
+	ZcodeAPIKey       string
 	RetryDelay        int // seconds, fallback for non-rate-limit errors
 	RateLimitPauseSec int // seconds, fallback when no resetsAt is provided
 	OnEvent           EventCallback
@@ -252,9 +256,13 @@ type Session struct {
 	claudePath string
 	hermesPath string
 	kimiPath   string
-	// zcode is the file-transport channel of the zcode turn in flight (nil
-	// when no zcode turn is running); guarded by mu. See zcode_file.go.
-	zcode *zcodeChannel
+	// zcodeAPIKey signs the app-server's model requests (the
+	// requestProviderRuntimeHeaders answers); empty = the turn fails with a
+	// clear error. See zcode_appserver.go.
+	zcodeAPIKey string
+	// zcodeLastText is the last assistant message snapshot the app-server
+	// transport saw this turn (message.upserted); guarded by mu.
+	zcodeLastText string
 	// runtime is the Runtime implementation selected once in New() from
 	// Config.Runtime (RUNTIME-TASKS.md RT-05). RT-06 routes runOnce's/
 	// runOnceHermes's argv building (Runtime.Args), atomics reset
@@ -456,6 +464,9 @@ func New(p Params) *Session {
 	if p.KimiPath == "" {
 		p.KimiPath = "kimi"
 	}
+	if p.ZcodeAPIKey == "" {
+		p.ZcodeAPIKey = os.Getenv("ZAI_API_KEY")
+	}
 	if p.RetryDelay <= 0 {
 		p.RetryDelay = 30
 	}
@@ -474,6 +485,7 @@ func New(p Params) *Session {
 		claudePath:        p.ClaudePath,
 		hermesPath:        p.HermesPath,
 		kimiPath:          p.KimiPath,
+		zcodeAPIKey:       p.ZcodeAPIKey,
 		runtime:           newRuntime(p.Config),
 		retryDelay:        p.RetryDelay,
 		rateLimitPauseSec: p.RateLimitPauseSec,
