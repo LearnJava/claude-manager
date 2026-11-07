@@ -73,11 +73,14 @@
     }
 
     function comboValueOf(s: SessionState): string {
-        const m = modelValue(s);
+        // Case-insensitive: the CLI may echo the model id back in its own
+        // case; the display must never go blank over a spelling difference.
+        const m = (modelValue(s) || '').toLowerCase();
         const combos = providerCombosFor(s);
-        return (combos.find((c) => c.model === m && c.effort === s.effort)
-            ?? combos.find((c) => c.model === m)
-            ?? { value: m }).value;
+        return (combos.find((c) => c.model.toLowerCase() === m && c.effort === s.effort)
+            ?? combos.find((c) => c.model.toLowerCase() === m)
+            ?? combos[0]
+            ?? { value: modelValue(s) }).value;
     }
 
     async function onAIChange(e: Event, s: SessionState) {
@@ -103,7 +106,7 @@
         e.stopPropagation();
         const v = (e.target as HTMLSelectElement).value;
         const c = providerCombosFor(s).find((x) => x.value === v);
-        if (!c || (c.model === modelValue(s) && c.effort === s.effort)) return;
+        if (!c || (c.model.toLowerCase() === modelValue(s).toLowerCase() && c.effort === s.effort)) return;
         modelBusy = { ...modelBusy, [s.id]: true };
         modelError = { ...modelError, [s.id]: '' };
         try {
