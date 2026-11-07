@@ -2469,11 +2469,20 @@ func (s *Session) drainStderr(r io.Reader) {
 			s.onRateLimit(info)
 		}
 		s.applyFailure(ClassifyStderrLine(line))
+		level, msg := "error", line
+		if strings.HasPrefix(line, "[claude-code:unrecognized_model]") {
+			// The CLI prints this for any model id it does not know; a
+			// provider brain ([providers] models) is proxied as-is anyway
+			// and the session works. Not an error — show it as info so a
+			// provider start does not look broken in the feed.
+			level = "info"
+			msg = line + " (модель провайдера проксируется как есть — не ошибка)"
+		}
 		entry := config.LogEntry{
 			Time:    time.Now(),
-			Level:   "error",
+			Level:   level,
 			Source:  "claude",
-			Message: line,
+			Message: msg,
 		}
 		s.emit(SessionEvent{Type: EvtLog, Entry: &entry})
 	}
