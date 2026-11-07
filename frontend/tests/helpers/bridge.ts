@@ -219,6 +219,13 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         SetSessionRuntime: (id: string, runtime: string) =>
           setSessionField(id, 'Runtime', runtime === 'claude' ? '' : runtime),
         SetSessionModel: (id: string, model: string) => setSessionField(id, 'Model', model),
+        // GUI-only "which AI" dropdown extras: plain config round-trips, the
+        // same update_session does server-side.
+        SetSessionProvider: (id: string, provider: string) => setSessionField(id, 'Provider', provider),
+        SetSessionModelAndEffort: (id: string, model: string, effort: string) =>
+          setSessionField(id, 'Model', model).then(() =>
+            effort ? setSessionField(id, 'Effort', effort) : Promise.resolve(),
+          ),
         // Mixed programming (MIXED-TASKS.md MP-08).
         RegisterMixedBrief: (id: string, task: string, systemPrompt: string) =>
           rpc('RegisterMixedBrief', { id, task, system_prompt: systemPrompt }).then(() => id),

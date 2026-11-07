@@ -246,6 +246,9 @@ type SessionState struct {
 	PermissionMode string     `json:"permission_mode"`
 	// Runtime is "hermes" for a Hermes CLI session, "" for Claude Code CLI.
 	Runtime        string     `json:"runtime"`
+	// Provider is the non-Anthropic brain id ([providers.<id>]) the session
+	// runs on inside the claude runtime; "" = plain Claude.
+	Provider       string     `json:"provider,omitempty"`
 	StartedAt      time.Time  `json:"started_at"`
 	LastActivity   time.Time  `json:"last_activity"`
 	RateLimitUntil time.Time  `json:"rate_limit_until"`
@@ -1099,7 +1102,15 @@ func (m *SessionManager) ResumeSession(id string) error {
 // default is App.SetSessionModel's job (see CLAUDE.md "Live Model Switching"),
 // since config files are owned by the app layer, not the manager.
 func (m *SessionManager) SetSessionModel(id, model string) error {
+	return m.SetSessionModelWithEffort(id, model, "")
+}
+
+// SetSessionModelWithEffort is SetSessionModel plus an effort override
+// ("" keeps the configured effort) — the sidebar's provider combo dropdown
+// picks model and effort in one choice.
+func (m *SessionManager) SetSessionModelWithEffort(id, model, effort string) error {
 	model = strings.TrimSpace(model)
+	effort = strings.TrimSpace(effort)
 	if model == "" {
 		return fmt.Errorf("model must not be empty")
 	}
@@ -1120,6 +1131,9 @@ func (m *SessionManager) SetSessionModel(id, model string) error {
 		m.mu.Lock()
 		sc.Model = model
 		sc.Provider = provider
+		if effort != "" {
+			sc.Effort = effort
+		}
 		m.mu.Unlock()
 		logger.L.Info("manager.set_session_model", "id", id, "model", model, "provider", provider, "started", false)
 		return nil
@@ -1132,9 +1146,12 @@ func (m *SessionManager) SetSessionModel(id, model string) error {
 		m.mu.Lock()
 		sc.Model = model
 		sc.Provider = provider
+		if effort != "" {
+			sc.Effort = effort
+		}
 		m.mu.Unlock()
 	}
-	logger.L.Info("manager.set_session_model", "id", id, "model", model, "provider", provider)
+	logger.L.Info("manager.set_session_model", "id", id, "model", model, "provider", provider, "effort", effort)
 
 	// Hermes runs one process per turn, so the next turn's `-m` already
 	// picks up the new model — no restart, nothing interrupted. Providers
@@ -1169,6 +1186,102 @@ func (m *SessionManager) SetSessionModel(id, model string) error {
 		time.Sleep(20 * time.Millisecond)
 	}
 	return m.startSessionResuming(project, name, resumeID, model)
+}
+
+func (m *SessionManager) modelBelongsToProvider(provider, model string) bool {
+	p, ok := m.cfg.Providers[provider]
+	if !ok {
+		return false
+	}
+	for _, mm := range p.Models {
+		if mm.ID == model {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *SessionManager) firstProviderModel(provider string) string {
+	if p, ok := m.cfg.Providers[provider]; ok && len(p.Models) > 0 {
+		return p.Models[0].ID
+	}
+	return ""
+}
+
+// SetSessionProvider switches the session's brain provider (the "which AI"
+// dropdown in the sidebar): "" = plain Claude, else an id from [providers].
+// When the current model does not belong to the provider, the provider's
+// first model takes its place; the effort is kept. Same restart semantics
+// and app/manager split as SetSessionModel (persisting is the app layer's
+// job).
+// It returns the resolved model (the provider's first on a crossing) so the
+// app layer can persist the whole remembered choice.
+func (m *SessionManager) SetSessionProvider(id, provider string) (string, error) {
+	provider = strings.TrimSpace(provider)
+	if provider != "" {
+		if _, ok := m.cfg.Providers[provider]; !ok {
+			return "", fmt.Errorf("unknown provider %q", provider)
+		}
+	}
+	ms := m.get(id)
+	if ms == nil {
+		parts := strings.SplitN(id, "/", 2)
+		if len(parts) != 2 {
+			return "", fmt.Errorf("session %q not found", id)
+		}
+		_, sc, err := m.findConfig(parts[0], parts[1])
+		if err != nil {
+			return "", err
+		}
+		m.mu.Lock()
+		sc.Provider = provider
+		if provider != "" && !m.modelBelongsToProvider(provider, sc.Model) {
+			sc.Model = m.firstProviderModel(provider)
+		}
+		m.mu.Unlock()
+		logger.L.Info("manager.set_session_provider", "id", id, "provider", provider, "started", false)
+		return sc.Model, nil
+	}
+	sess := ms.session
+	if sess.Config.IsHermes() && provider != "" {
+		return "", fmt.Errorf("providers run inside the claude runtime; session %q is on hermes", id)
+	}
+	var model string
+	if _, sc, err := m.findConfig(ms.project, ms.name); err == nil && sc != nil {
+		m.mu.Lock()
+		sc.Provider = provider
+		if provider != "" && !m.modelBelongsToProvider(provider, sc.Model) {
+			sc.Model = m.firstProviderModel(provider)
+		}
+		model = sc.Model
+		m.mu.Unlock()
+	}
+	if model == "" {
+		model = sess.Config.Model
+	}
+	logger.L.Info("manager.set_session_provider", "id", id, "provider", provider, "model", model)
+
+	if provider == sess.Config.Provider {
+		// Same brain line: the next start (or task) picks it up; a running
+		// interactive process keeps its conversation without a restart.
+		return model, nil
+	}
+	st := sess.Status()
+	if st == config.StatusIdle || st == config.StatusError {
+		return model, nil
+	}
+	resumeID := sess.CLISessionID
+	project, name := ms.project, ms.name
+	if err := m.StopSession(id, false); err != nil {
+		return "", err
+	}
+	for i := 0; i < 50; i++ {
+		if ms.session.Status() == config.StatusIdle {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return model, m.startSessionResuming(project, name, resumeID, model)
 }
 
 // startSessionResuming is StartSessionWithOverride plus a pre-seeded
@@ -1458,6 +1571,7 @@ func (m *SessionManager) GetAllSessions() []SessionState {
 					Effort:         s.Effort,
 					PermissionMode: s.PermissionMode,
 					Runtime:        s.Runtime,
+					Provider:       s.Provider,
 					Prompt:         s.Prompt,
 					Todos:          []TodoItem{},
 				})
@@ -1509,6 +1623,7 @@ func (m *SessionManager) GetSession(id string) (SessionState, bool) {
 		Effort:         ms.session.Config.Effort,
 		PermissionMode: ms.session.Config.PermissionMode,
 		Runtime:        ms.session.Config.Runtime,
+		Provider:       ms.session.Config.Provider,
 		StartedAt:      snap.StartedAt,
 		LastActivity:   snap.LastActivity,
 		RateLimitUntil: ms.rateLimitUntil,

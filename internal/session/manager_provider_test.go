@@ -127,3 +127,50 @@ func TestStartSessionRefusesForeignRuntime(t *testing.T) {
 		t.Fatalf("StartSessionWithProvider on foreign runtime = %v, want a refusal", err)
 	}
 }
+
+// TestSetSessionProvider: the "which AI" dropdown switch — provider set with
+// the provider's first model on a crossing, cleared back to plain Claude,
+// unknown refused, hermes refused for providers.
+func TestSetSessionProvider(t *testing.T) {
+	m, _ := newProviderTestManager(t)
+
+	if _, err := m.SetSessionProvider("lumen/P1", "nobody"); err == nil || !strings.Contains(err.Error(), "unknown provider") {
+		t.Errorf("unknown provider err = %v", err)
+	}
+
+	// Not-started session: provider set, model jumps to the provider's first.
+	model, err := m.SetSessionProvider("lumen/P1", "prov")
+	if err != nil {
+		t.Fatalf("SetSessionProvider: %v", err)
+	}
+	if model != "m1" {
+		t.Errorf("resolved model = %q, want m1", model)
+	}
+	_, sc, _ := m.findConfig("lumen", "P1")
+	if sc.Provider != "prov" || sc.Model != "m1" {
+		t.Errorf("config = (%q, %q), want (prov, m1)", sc.Provider, sc.Model)
+	}
+
+	// A provider model already set keeps its place on a re-select.
+	sc.Model = "m1"
+	if _, err := m.SetSessionProvider("lumen/P1", "prov"); err != nil {
+		t.Fatalf("re-select: %v", err)
+	}
+
+	// Back to plain Claude: provider cleared, model stays.
+	if _, err := m.SetSessionProvider("lumen/P1", ""); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	_, sc, _ = m.findConfig("lumen", "P1")
+	if sc.Provider != "" || sc.Model != "m1" {
+		t.Errorf("after clear = (%q, %q), want (\"\", m1)", sc.Provider, sc.Model)
+	}
+
+	// SetSessionModelWithEffort writes both.
+	if err := m.SetSessionModelWithEffort("lumen/P1", "m1", "low"); err != nil {
+		t.Fatalf("SetSessionModelWithEffort: %v", err)
+	}
+	if sc.Effort != "low" || sc.Provider != "prov" || sc.Model != "m1" {
+		t.Errorf("after effort switch = %+v", sc)
+	}
+}

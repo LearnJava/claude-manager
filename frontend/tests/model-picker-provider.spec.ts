@@ -69,13 +69,29 @@ test.describe('Model picker: provider segment', () => {
                 )
                 .toEqual({ model: 'glm-5.3', provider: 'glm', effort: 'low' });
 
-            // The sidebar's live-switch dropdown shows the provider model.
+            // The session row's "which AI" dropdown: Claude | Hermes | Claude
+            // GLM, with GLM selected; the model dropdown is the flat 6-combo
+            // list with the started combo selected.
+            const aiSel = page.locator(`[data-testid="runtime-select-${ID(SESSION)}"]`);
+            const modelSel = page.locator(`[data-testid="model-select-${ID(SESSION)}"]`);
             await expect
-                .poll(
-                    () => page.locator(`[data-testid="model-select-${ID(SESSION)}"]`).inputValue(),
-                    { timeout: 10_000 },
-                )
-                .toBe('glm-5.3');
+                .poll(() => aiSel.inputValue(), { timeout: 10_000 })
+                .toBe('prov:glm');
+            await expect(aiSel.locator('option')).toHaveText(['Claude', '☤ Hermes', 'Claude GLM']);
+            await expect
+                .poll(() => modelSel.inputValue(), { timeout: 10_000 })
+                // The live session's effort is what the CLI reported back in
+                // its init event (may differ from the requested one), so the
+                // selected combo is matched by model, not by exact effort.
+                .toMatch(/^glm-5\.3::(low|high|max)$/);
+            await expect(modelSel.locator('option')).toHaveText([
+                'GLM-5.3 low',
+                'GLM-5.3 high',
+                'GLM-5.3 max',
+                'GLM-5.3-Flash low',
+                'GLM-5.3-Flash high',
+                'GLM-5.3-Flash max',
+            ]);
         } finally {
             await ctrl.rpc('StopSession', { id: ID(SESSION), soft: false }).catch(() => {});
             const cfg = await ctrl.rpc('GetConfig', {});
