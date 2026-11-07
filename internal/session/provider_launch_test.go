@@ -81,3 +81,29 @@ func TestApplyEnvPairs(t *testing.T) {
 		t.Errorf("malformed pair must be skipped: %v", out)
 	}
 }
+
+// TestDrainStderrUnrecognizedModelIsInfo: the CLI prints
+// "[claude-code:unrecognized_model]" for any model id it does not know —
+// a provider brain is proxied as-is and the session works, so the feed must
+// not paint that line red. Any other stderr line stays an error.
+func TestDrainStderrUnrecognizedModelIsInfo(t *testing.T) {
+	var got []config.LogEntry
+	s := New(Params{
+		ID: "t/P1", ProjectName: "t", Config: config.SessionConfig{Name: "P1"},
+		OnEvent: func(sid string, ev SessionEvent) {
+			if ev.Type == EvtLog && ev.Entry != nil {
+				got = append(got, *ev.Entry)
+			}
+		},
+	})
+	s.drainStderr(strings.NewReader("[claude-code:unrecognized_model] {\"model\":\"x\"}\nsomething actually broke\n"))
+	if len(got) != 2 {
+		t.Fatalf("entries = %d, want 2", len(got))
+	}
+	if got[0].Level != "info" || !strings.Contains(got[0].Message, "не ошибка") {
+		t.Errorf("unrecognized_model entry = %+v, want info with a note", got[0])
+	}
+	if got[1].Level != "error" {
+		t.Errorf("plain stderr entry level = %s, want error", got[1].Level)
+	}
+}
