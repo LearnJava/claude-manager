@@ -56,9 +56,10 @@
 
     function providerOfSession(s: SessionState): string {
         if (s.provider) return s.provider;
-        // Fallback while the state predates the field: derive from the model.
-        const m = (s.model ?? '').trim();
-        return providers.find((p) => (p.models ?? []).some((mm) => mm.id === m))?.id ?? '';
+        // Fallback while the state predates the field: derive from the model
+        // (case-insensitive — the CLI may echo the id back in its own case).
+        const m = (s.model ?? '').trim().toLowerCase();
+        return providers.find((p) => (p.models ?? []).some((mm) => mm.id.toLowerCase() === m))?.id ?? '';
     }
 
     function aiValueOf(s: SessionState): string {
