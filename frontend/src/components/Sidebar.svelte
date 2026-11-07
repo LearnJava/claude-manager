@@ -7,7 +7,7 @@
     import PlanReview from './PlanReview.svelte';
     import QueueMiniBar from './QueueMiniBar.svelte';
     import { syncQueue } from '../stores/queues';
-    import { MODELS, normalizeModel, type ProviderUI } from '../lib/models';
+    import { MODELS, normalizeModel, providerCombos, type ProviderUI } from '../lib/models';
     import { t } from '../lib/i18n';
 
     const dispatch = createEventDispatcher();
@@ -24,6 +24,8 @@
         StartSessionWithProviderAndModel,
         GetProviders,
         SetSessionModel,
+        SetSessionModelAndEffort,
+        SetSessionProvider,
         SetSessionRuntime,
         HasClaudeMd,
         GenerateClaudeMdSession,
@@ -44,22 +46,77 @@
     let modelBusy: Record<string, boolean> = {};
     let modelError: Record<string, string> = {};
 
-    // Providers (backend-configured brains) for the live-switch dropdown: a
-    // session already running on a provider gets that provider's models as
-    // options — a provider model id carries its provider with it (the
-    // backend derives it from the model id). Plain Claude sessions keep the
-    // plain Claude list, byte-identical to before providers existed.
+    // Providers (backend-configured brains). The session row's first
+    // dropdown is "which AI": Claude | Hermes | each provider; the second
+    // shows that AI's models — for a provider, the flat model×effort list.
     let providers: ProviderUI[] = [];
     GetProviders()
         .then((ps: ProviderUI[]) => { providers = ps ?? []; })
         .catch(() => { providers = []; });
 
-    function providerOptionsFor(s: SessionState): { value: string; label: string }[] {
-        const model = modelValue(s);
-        if (!model) return [];
-        const owner = providers.find((p) => (p.models ?? []).some((m) => m.id === model));
-        if (!owner) return [];
-        return (owner.models ?? []).map((m) => ({ value: m.id, label: m.label }));
+    function providerOfSession(s: SessionState): string {
+        if (s.provider) return s.provider;
+        // Fallback while the state predates the field: derive from the model.
+        const m = (s.model ?? '').trim();
+        return providers.find((p) => (p.models ?? []).some((mm) => mm.id === m))?.id ?? '';
+    }
+
+    function aiValueOf(s: SessionState): string {
+        const p = providerOfSession(s);
+        return p ? `prov:${p}` : runtimeOf(s);
+    }
+
+    function providerCombosFor(s: SessionState): { value: string; label: string; model: string; effort: string }[] {
+        const p = providers.find((x) => x.id === providerOfSession(s));
+        return p ? providerCombos(p) : [];
+    }
+
+    function comboValueOf(s: SessionState): string {
+        const m = modelValue(s);
+        const combos = providerCombosFor(s);
+        return (combos.find((c) => c.model === m && c.effort === s.effort)
+            ?? combos.find((c) => c.model === m)
+            ?? { value: m }).value;
+    }
+
+    async function onAIChange(e: Event, s: SessionState) {
+        e.stopPropagation();
+        const v = (e.target as HTMLSelectElement).value;
+        if (v.startsWith('prov:')) {
+            modelBusy = { ...modelBusy, [s.id]: true };
+            modelError = { ...modelError, [s.id]: '' };
+            try {
+                await SetSessionProvider(s.id, v.slice(5));
+                await refreshSessions();
+            } catch (err: any) {
+                modelError = { ...modelError, [s.id]: err?.message ?? String(err) };
+            } finally {
+                modelBusy = { ...modelBusy, [s.id]: false };
+            }
+            return;
+        }
+        await onRuntimeChange(e, s);
+    }
+
+    async function onComboChange(e: Event, s: SessionState) {
+        e.stopPropagation();
+        const v = (e.target as HTMLSelectElement).value;
+        const c = providerCombosFor(s).find((x) => x.value === v);
+        if (!c || (c.model === modelValue(s) && c.effort === s.effort)) return;
+        modelBusy = { ...modelBusy, [s.id]: true };
+        modelError = { ...modelError, [s.id]: '' };
+        try {
+            await SetSessionModelAndEffort(s.id, c.model, c.effort);
+            sessions.update((map) => {
+                const cur = map[s.id];
+                if (!cur) return map;
+                return { ...map, [s.id]: { ...cur, model: c.model, effort: c.effort } };
+            });
+        } catch (err: any) {
+            modelError = { ...modelError, [s.id]: err?.message ?? String(err) };
+        } finally {
+            modelBusy = { ...modelBusy, [s.id]: false };
+        }
     }
 
     async function onModelChange(e: Event, s: SessionState) {
@@ -511,23 +568,26 @@
                                     class="ml-1.5 shrink-0 inline-flex"
                                     title={isRunning(s) ? $t('sidebar.runtimeLockedTooltip') : $t('sidebar.runtimeTooltip')}>
                                 <select
-                                    value={runtimeOf(s)}
+                                    value={aiValueOf(s)}
                                     disabled={!!modelBusy[s.id] || isRunning(s)}
                                     on:focus={() => select(s.id)}
-                                    on:change={(e) => onRuntimeChange(e, s)}
+                                    on:change={(e) => onAIChange(e, s)}
                                     data-testid="runtime-select-{s.id}"
                                     class="bg-bg border border-bg-border rounded px-1 disabled:opacity-60 disabled:pointer-events-none
-                                           {s.runtime === 'hermes' ? 'text-amber-400' : 'text-text-muted'}"
+                                           {providerOfSession(s) ? 'text-blue-400' : s.runtime === 'hermes' ? 'text-amber-400' : 'text-text-muted'}"
                                     style="font-size: 10px; line-height: 1.4;">
                                     <option value="claude">Claude</option>
                                     <option value="hermes">☤ Hermes</option>
+                                    {#each providers as p}
+                                        <option value={'prov:' + p.id}>{p.label}</option>
+                                    {/each}
                                 </select>
                                 </span>
                                 <select
-                                    value={modelValue(s)}
+                                    value={providerOfSession(s) ? comboValueOf(s) : modelValue(s)}
                                     disabled={!!modelBusy[s.id]}
                                     on:focus={() => select(s.id)}
-                                    on:change={(e) => onModelChange(e, s)}
+                                    on:change={(e) => (providerOfSession(s) ? onComboChange(e, s) : onModelChange(e, s))}
                                     data-testid="model-select-{s.id}"
                                     title={s.runtime === 'hermes'
                                         ? $t('sidebar.hermesTooltip', { model: s.model || '—' })
@@ -535,20 +595,22 @@
                                     class="ml-1 shrink-0 bg-bg border border-bg-border rounded px-1 text-text-muted max-w-[11rem]
                                            disabled:opacity-50 disabled:pointer-events-none"
                                     style="font-size: 10px; line-height: 1.4;">
-                                    {#if !s.model}
-                                        <option value="" disabled>—</option>
-                                    {/if}
-                                    {#each MODELS as m}
-                                        <option value={m.value}>{m.label}</option>
-                                    {/each}
-                                    {#each providerOptionsFor(s) as m}
-                                        {#if !MODELS.some((x) => x.value === m.value)}
-                                            <option value={m.value}>{m.label}</option>
+                                    {#if providerOfSession(s)}
+                                        <!-- A provider brain: one flat model×effort list -->
+                                        {#each providerCombosFor(s) as c}
+                                            <option value={c.value}>{c.label}</option>
+                                        {/each}
+                                    {:else}
+                                        {#if !s.model}
+                                            <option value="" disabled>—</option>
                                         {/if}
-                                    {/each}
-                                    {#if hasCustomModel(s)}
-                                        <!-- A custom/pinned id from config (or a Hermes provider id) that isn't one of ours -->
-                                        <option value={modelValue(s)}>{s.model}</option>
+                                        {#each MODELS as m}
+                                            <option value={m.value}>{m.label}</option>
+                                        {/each}
+                                        {#if hasCustomModel(s)}
+                                            <!-- A custom/pinned id from config (or a Hermes provider id) that isn't one of ours -->
+                                            <option value={modelValue(s)}>{s.model}</option>
+                                        {/if}
                                     {/if}
                                 </select>
                                 {#if modelBusy[s.id]}

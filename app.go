@@ -1089,7 +1089,9 @@ func (a *App) rememberSessionModel(project, name, model, effort, provider string
 	model = strings.TrimSpace(model)
 	effort = strings.TrimSpace(effort)
 	provider = strings.TrimSpace(provider)
-	if a.cfg == nil || model == "" {
+	// A provider-only switch (model resolved empty) still counts: the stored
+	// default must carry the provider even when the model stays as it was.
+	if a.cfg == nil || (model == "" && provider == "") {
 		return
 	}
 
@@ -1123,11 +1125,17 @@ func setSessionModelInConfig(cfg *config.AppConfig, project, name, model, effort
 			if sc.Name != name {
 				continue
 			}
-			if sc.Model == model && sc.Provider == provider && (effort == "" || sc.Effort == effort) {
+			// model == "" means "keep the current model" (a provider-only
+			// switch from SetSessionProvider).
+			target := model
+			if target == "" {
+				target = sc.Model
+			}
+			if sc.Model == target && sc.Provider == provider && (effort == "" || sc.Effort == effort) {
 				return false
 			}
 			sessions := append([]config.SessionConfig(nil), cfg.Projects[pi].Sessions...)
-			sessions[si].Model = model
+			sessions[si].Model = target
 			if effort != "" {
 				sessions[si].Effort = effort
 			}
@@ -1145,6 +1153,39 @@ func setSessionModelInConfig(cfg *config.AppConfig, project, name, model, effort
 // session's config, the same field Settings edits. The runtime is fixed for
 // the lifetime of a process, so a running session is refused: stop it first,
 // the next start picks the new CLI up.
+// SetSessionProvider switches the session's brain provider — the "which AI"
+// dropdown in the sidebar: "" = plain Claude, else a [providers.<id>] id.
+// The whole choice (provider + the model the manager resolved) is remembered
+// as the session's stored default, same rule as SetSessionModel.
+func (a *App) SetSessionProvider(id, provider string) error {
+	provider = strings.TrimSpace(provider)
+	if provider != "" {
+		if _, ok := a.cfg.Providers[provider]; !ok {
+			return fmt.Errorf("unknown provider %q", provider)
+		}
+	}
+	model, err := a.manager.SetSessionProvider(id, provider)
+	if err != nil {
+		return err
+	}
+	if project, name, ok := splitSessionID(id); ok {
+		a.rememberSessionModel(project, name, model, "", provider)
+	}
+	return nil
+}
+
+// SetSessionModelAndEffort is SetSessionModel plus an effort override — the
+// provider combo dropdown picks model and effort in one choice.
+func (a *App) SetSessionModelAndEffort(id, model, effort string) error {
+	if err := a.manager.SetSessionModelWithEffort(id, model, effort); err != nil {
+		return err
+	}
+	if project, name, ok := splitSessionID(id); ok {
+		a.rememberSessionModel(project, name, model, effort, config.ProviderForModel(a.cfg, model))
+	}
+	return nil
+}
+
 func (a *App) SetSessionRuntime(id, runtime string) error {
 	runtime = strings.TrimSpace(strings.ToLower(runtime))
 	if runtime == "claude" {

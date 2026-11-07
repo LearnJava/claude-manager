@@ -69,6 +69,8 @@ export interface SessionState {
     permission_mode: string;
     /** "hermes" for a Hermes CLI session (HERMES-TASKS.md), "" for Claude Code CLI. */
     runtime?: string;
+    /** Non-Anthropic brain id ([providers.<id>]) inside the claude runtime; "" = plain Claude. */
+    provider?: string;
     started_at: string;
     last_activity: string;
     rate_limit_until: string;
