@@ -551,8 +551,12 @@ type ProviderModelInfo struct {
 }
 
 type ProviderInfo struct {
-	ID          string              `json:"id"`
-	DisplayName string              `json:"displayName"`
+	ID string `json:"id"`
+	// DisplayName serializes as "label": the one shape the frontend and the
+	// test bridge agree on (a mismatch rendered the option text as
+	// "undefined" in the live app while the bridge-backed specs stayed
+	// green).
+	DisplayName string              `json:"label"`
 	Models      []ProviderModelInfo `json:"models"`
 }
 
