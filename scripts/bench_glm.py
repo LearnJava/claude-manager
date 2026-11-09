@@ -49,10 +49,14 @@ SESSION = "bench"
 SID = f"{PROJECT}/{SESSION}"
 EFFORT = "high"
 
-# model id -> (cm model id, zcode providerId, zcode modelId)
+# model id -> (cm model id, zcode providerId, zcode modelId).
+# Flash rides the individual plan on the zcode arm too: the start-plan pool
+# rejects the Coding Plan API key ("Provider authentication failed", probed
+# live 2026-11-09), while individual serves GLM-5.3-Flash when the selection
+# carries an explicit reasoningLevel.
 MODELS = {
     "glm-5.3": ("glm-5.3", "account:zai-individual-coding-plan", "GLM-5.3"),
-    "glm-5.3-flash": ("glm-5.3-flash", "account:zai-start-plan", "GLM-5.3-Flash"),
+    "glm-5.3-flash": ("glm-5.3-flash", "account:zai-individual-coding-plan", "GLM-5.3-Flash"),
 }
 CM_MODEL, ZC_PROVIDER, ZC_MODEL = MODELS["glm-5.3"]
 ZC_EXE = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "ZCode" / "ZCode.exe"
@@ -151,8 +155,14 @@ def ensure_manager(cm: Cm) -> None:
             log("manager: уже запущен, control OK")
             return
         except Exception as e:
-            log(f"manager: endpoint есть, но RPC падает ({e}); пробуем всё равно")
-            return
+            # stale control.json (manager killed without RemoveEndpoint):
+            # drop it and relaunch below
+            log(f"manager: endpoint не отвечает ({e}); перезапускаю")
+            try:
+                CONTROL_JSON.unlink()
+            except OSError:
+                pass
+            cm.addr = cm.token = None
     if not MANAGER_EXE.exists():
         raise SystemExit(f"нет {MANAGER_EXE} — соберите менеджер")
     log("manager: запускаю " + str(MANAGER_EXE))
@@ -170,7 +180,10 @@ def ensure_manager(cm: Cm) -> None:
     raise SystemExit("manager не поднялся за 120 с (нет control.json/RPC)")
 
 
-def ensure_project(cm: Cm) -> None:
+def ensure_sandbox_config() -> None:
+    """The project-local session config must exist BEFORE the manager starts:
+    it loads project configs once at startup, so a file written later is
+    invisible until the next restart (cost me a 'session not found')."""
     SANDBOX.mkdir(parents=True, exist_ok=True)
     proj_cfg_dir = SANDBOX / ".claude-manager"
     proj_cfg_dir.mkdir(exist_ok=True)
@@ -180,6 +193,9 @@ def ensure_project(cm: Cm) -> None:
             '[[session]]\nname = "bench"\nmodel = "glm-5.3"\n'
             'effort = "high"\npermission_mode = "bypassPermissions"\n',
             encoding="utf-8")
+
+
+def ensure_project(cm: Cm) -> None:
     projects = cm.call("GetProjects")
     items = projects if isinstance(projects, list) else projects.get("projects") or projects.get("items") or []
     paths = []
@@ -694,6 +710,7 @@ def cmd_run(arms: list[str], tasks: list[str], reps: int,
     cm_model, zc_provider, zc_model = MODELS[model]
     globals()["ZC_PROVIDER"] = zc_provider
     cm = Cm()
+    ensure_sandbox_config()
     ensure_manager(cm)
     ensure_project(cm)
     if "all" in tasks:
@@ -727,39 +744,44 @@ def cmd_report() -> None:
     if not rows:
         raise SystemExit("нет результатов в results.csv")
     lines = [f"# GLM A/B отчёт — {time.strftime('%Y-%m-%d %H:%M')}", "",
-             "Плечо cm = Claude Code через claude-manager (Claude GLM, glm-5.3/high);",
-             "плечо zcode = ZCode app-server (GLM-5.3, reasoningLevel high).", ""]
-    for arm in ("cm", "zcode"):
-        rs = [r for r in rows if r["arm"] == arm]
-        if not rs:
-            continue
-        done = [r for r in rs if r["status"].startswith("completed") and "+" not in r["status"]]
-        vok = [r for r in rs if r["verify_pass"] == "PASS"]
-        def med(f, xs=None):
-            xs = xs if xs is not None else rs
-            vals = [float(r[f]) for r in xs if str(r.get(f) or "").replace(".", "", 1).isdigit()]
-            return statistics.median(vals) if vals else 0
-        lines += [
-            f"## {arm} — {len(rs)} прогонов",
-            f"- verify PASS: {len(vok)}/{len(rs)}",
-            f"- полностью успешных (completed, verify PASS): {len([r for r in done if r['verify_pass']=='PASS'])}/{len(rs)}",
-            f"- медиана wall: {med('wall_s'):.0f} с; ходов: {med('turns'):.0f}; tool-вызовов: {med('tool_calls'):.0f}",
-            f"- медиана токенов/прогон: in {med('in_tokens'):.0f}, out {med('out_tokens'):.0f}, "
-            f"cache_read {med('cache_read'):.0f}, cache_write {med('cache_write'):.0f}",
-            f"- суммарно токенов: " + ", ".join(
-                f"{k}={sum(int(r[k] or 0) for r in rs):,}" for k in
-                ("in_tokens", "out_tokens", "cache_read", "cache_write")),
-            f"- ошибок tool: {sum(int(r['tool_failures'] or 0) for r in rs)}; "
-            f"прогонов с ненулевым статусом-ошибкой: {sum(1 for r in rs if not r['status'].startswith('completed'))}",
-            "",
-        ]
+             "Плечо cm = Claude Code через claude-manager (провайдер Claude GLM);",
+             "плечо zcode = ZCode app-server (прямой NDJSON-клиент).", ""]
+
+    def med(field, xs):
+        vals = [float(r[field]) for r in xs
+                if str(r.get(field) or "").replace(".", "", 1).isdigit()]
+        return statistics.median(vals) if vals else 0.0
+
+    for model in sorted({r["model"] for r in rows}):
+        lines.append(f"## Модель {model}")
+        for arm in ("cm", "zcode"):
+            rs = [r for r in rows if r["arm"] == arm and r["model"] == model]
+            if not rs:
+                continue
+            vok = [r for r in rs if r["verify_pass"] == "PASS"]
+            ctx = [int(r["in_tokens"] or 0) + int(r["cache_read"] or 0) for r in rs]
+            cache_share = (sum(int(r["cache_read"] or 0) for r in rs) /
+                           max(1, sum(ctx))) * 100
+            lines += [
+                f"### {arm} — {len(rs)} прогонов",
+                f"- verify PASS: {len(vok)}/{len(rs)}; ошибок-статусов: "
+                f"{sum(1 for r in rs if not r['status'].startswith('completed'))}",
+                f"- медиана wall: {med('wall_s', rs):.0f} с; ходов: {med('turns', rs):.0f}; "
+                f"tool-вызовов: {med('tool_calls', rs):.0f}",
+                f"- медиана токенов/прогон: in {med('in_tokens', rs):,.0f}, "
+                f"out {med('out_tokens', rs):,.0f}, cacheR {med('cache_read', rs):,.0f}; "
+                f"контекст (in+cacheR) {statistics.median(ctx)/1000:.0f}k",
+                f"- суммарно контекст: {sum(ctx)/1e6:.2f}M токенов, "
+                f"из кэша {cache_share:.0f}%",
+                "",
+            ]
     lines.append("## По задачам")
-    lines.append("| arm | task | rep | status | verify | wall | turns | in | out | cR | cW |")
+    lines.append("| model | arm | task | rep | status | verify | wall | turns | in | out | cR |")
     lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
     for r in rows:
-        lines.append(f"| {r['arm']} | {r['task']} | {r['rep']} | {r['status']} | "
+        lines.append(f"| {r['model']} | {r['arm']} | {r['task']} | {r['rep']} | {r['status']} | "
                      f"{r['verify_pass']} | {r['wall_s']} | {r['turns']} | {r['in_tokens']} | "
-                     f"{r['out_tokens']} | {r['cache_read']} | {r['cache_write']} |")
+                     f"{r['out_tokens']} | {r['cache_read']} |")
     out = LAB / f"report-{time.strftime('%Y-%m-%d')}.md"
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
