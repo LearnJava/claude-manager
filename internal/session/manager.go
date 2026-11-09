@@ -322,6 +322,16 @@ type managedSession struct {
 	lastContextTokens int // input+cache of the last usage event: the context fill, unlike the summed counters
 	durationMs        int64
 
+	// Token counts summed from result events, kept separate from the
+	// per-assistant counters above: some Anthropic-compatible facades report
+	// zero usage on every assistant message and real numbers only on the
+	// result event, so finishRun substitutes these when the per-assistant
+	// counters stayed at zero for the whole run (measured 2026-11-09).
+	resultInTokens       int64
+	resultOutputTokens   int64
+	resultCacheReadTok   int64
+	resultCacheCreateTok int64
+
 	rateLimit      *RateLimitInfo
 	rateLimitUntil time.Time
 
@@ -2178,6 +2188,10 @@ func (m *SessionManager) beginRun(ms *managedSession) {
 	ms.outputTokens = 0
 	ms.cacheReadTokens = 0
 	ms.cacheCreateTokens = 0
+	ms.resultInTokens = 0
+	ms.resultOutputTokens = 0
+	ms.resultCacheReadTok = 0
+	ms.resultCacheCreateTok = 0
 	ms.numTurns = 0
 	ms.totalCostUSD = 0
 	ms.contextUtil = 0
@@ -2274,6 +2288,11 @@ func (m *SessionManager) handleResult(ms *managedSession, res *SessionResult) {
 	if res.DurationMs > 0 {
 		ms.durationMs = res.DurationMs
 	}
+	// SessionResult.Usage is a value type; a zero usage adds zeros.
+	ms.resultInTokens += int64(res.Usage.InputTokens)
+	ms.resultOutputTokens += int64(res.Usage.OutputTokens)
+	ms.resultCacheReadTok += int64(res.Usage.CacheReadInputTokens)
+	ms.resultCacheCreateTok += int64(res.Usage.CacheCreationInputTokens)
 	// Pick up contextWindow from any modelUsage entry.
 	for _, mu := range res.ModelUsage {
 		if mu.ContextWindow > 0 {
@@ -2333,6 +2352,20 @@ func (m *SessionManager) finishRun(ms *managedSession, status, errMsg, finishedC
 		return
 	}
 	ms.runID = 0
+
+	// Facade fallback: a run whose per-assistant usage events were all zero
+	// (facades that zero assistant-message usage) must not be recorded as a
+	// zero-token run — its result events carried the real spend, so
+	// substitute that into the counters the run row and daily metrics read.
+	// Real-Anthropic runs keep their per-assistant sums untouched: the
+	// substitution only fires when every counter is still zero.
+	if ms.inputTokens == 0 && ms.outputTokens == 0 &&
+		ms.cacheReadTokens == 0 && ms.cacheCreateTokens == 0 {
+		ms.inputTokens = ms.resultInTokens
+		ms.outputTokens = ms.resultOutputTokens
+		ms.cacheReadTokens = ms.resultCacheReadTok
+		ms.cacheCreateTokens = ms.resultCacheCreateTok
+	}
 
 	now := time.Now()
 	var runWall time.Duration // wall-clock time of the run, for daily_metrics
