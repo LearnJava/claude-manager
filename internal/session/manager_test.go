@@ -311,6 +311,47 @@ func TestGetAllSessionsReturnsAll(t *testing.T) {
 	}
 }
 
+// TestFinishRunSubstitutesResultUsage: a facade that zeroes assistant-message
+// usage (every usage event carries zeros) must not produce a zero-token run
+// row — finishRun substitutes the result events' usage instead. A run with
+// real per-assistant usage keeps its own sums (no double counting).
+func TestFinishRunSubstitutesResultUsage(t *testing.T) {
+	m, st := newTestManagerWithStore(t)
+	ms := addStubSession(m, "lumen", "P1")
+
+	m.beginRun(ms)
+	// facade shape: usage events fire but carry zeros; the numbers live on
+	// the result event only
+	m.handleUsage(ms, &TokenUsage{InputTokens: 0, OutputTokens: 0, CacheReadInputTokens: 0, CacheCreationInputTokens: 0})
+	m.handleResult(ms, &SessionResult{Usage: TokenUsage{InputTokens: 37, OutputTokens: 23, CacheReadInputTokens: 41984}})
+	m.finishRun(ms, "completed", "", "")
+
+	runs, err := st.ListRuns("lumen", "P1", 1)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("ListRuns: %v (n=%d)", err, len(runs))
+	}
+	r := runs[0]
+	if r.InputTokens != 37 || r.OutputTokens != 23 || r.CacheReadTokens != 41984 {
+		t.Errorf("substituted tokens = in:%d out:%d cacheR:%d, want 37/23/41984",
+			r.InputTokens, r.OutputTokens, r.CacheReadTokens)
+	}
+
+	// control: real per-assistant usage wins, result usage must not add on top
+	ms2 := addStubSession(m, "lumen", "P2")
+	m.beginRun(ms2)
+	m.handleUsage(ms2, &TokenUsage{InputTokens: 100, OutputTokens: 50, CacheReadInputTokens: 200})
+	m.handleResult(ms2, &SessionResult{Usage: TokenUsage{InputTokens: 900, OutputTokens: 900}})
+	m.finishRun(ms2, "completed", "", "")
+	runs2, err := st.ListRuns("lumen", "P2", 1)
+	if err != nil || len(runs2) != 1 {
+		t.Fatalf("ListRuns P2: %v (n=%d)", err, len(runs2))
+	}
+	if runs2[0].InputTokens != 100 || runs2[0].OutputTokens != 50 || runs2[0].CacheReadTokens != 200 {
+		t.Errorf("per-assistant tokens = in:%d out:%d cacheR:%d, want 100/50/200 (no double count)",
+			runs2[0].InputTokens, runs2[0].OutputTokens, runs2[0].CacheReadTokens)
+	}
+}
+
 func TestHandleUsageAccumulates(t *testing.T) {
 	m := newTestManager(t)
 	ms := addStubSession(m, "lumen", "P1")
