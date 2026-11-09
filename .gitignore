@@ -50,6 +50,11 @@ testdata/configs/playwright-runtime.toml
 # Worktree pool slots (scripts/worktree-pool.sh) — local checkouts, not sources
 .claude/worktrees/
 .tmp/
+
+# GLM A/B benchmark (scripts/bench_glm.py): sandbox is re-seeded per run,
+# runs/ holds transcripts + results.csv
+benchmarks/glmlab/sandbox/
+benchmarks/glmlab/runs/
 __pycache__/
 ~$*
 frontend/package.json.md5
