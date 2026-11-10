@@ -1733,6 +1733,7 @@ func (m *SessionManager) GetSession(id string) (SessionState, bool) {
 		st.Effort = cfgNow.Effort
 		st.PermissionMode = cfgNow.PermissionMode
 		st.Runtime = cfgNow.Runtime
+		st.Provider = cfgNow.Provider
 	}
 	if snap.PendingPerm != nil && snap.Status == config.StatusWaitingPermission {
 		req := permission.PermissionRequest{
