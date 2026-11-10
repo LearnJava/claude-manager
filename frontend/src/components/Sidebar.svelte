@@ -194,18 +194,17 @@
     async function onRuntimeChange(e: Event, s: SessionState) {
         e.stopPropagation();
         const runtime = (e.target as HTMLSelectElement).value;
-        if (runtime === runtimeOf(s) && !providerOfSession(s)) return;
+        if (runtime === runtimeOf(s)) return; // same runtime: nothing to do (a re-click must not wipe the provider)
         modelBusy = { ...modelBusy, [s.id]: true };
         modelError = { ...modelError, [s.id]: '' };
         try {
             if (providerOfSession(s)) {
-                // Leaving a provider brain: reset it so the session runs a
-                // plain claude/hermes model again.
+                // Crossing runtimes: the provider's artifacts (claude
+                // settings file vs hermes --provider) do not carry across,
+                // and a stale provider would refuse the next start.
                 await SetSessionProvider(s.id, '');
             }
-            if (runtime !== runtimeOf(s)) {
-                await SetSessionRuntime(s.id, runtime);
-            }
+            await SetSessionRuntime(s.id, runtime);
         } catch (err: any) {
             modelError = { ...modelError, [s.id]: err?.message ?? String(err) };
         } finally {
