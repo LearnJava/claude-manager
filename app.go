@@ -1121,6 +1121,15 @@ func (a *App) rememberSessionModel(project, name, model, effort, provider string
 // unconditionally (including back to ""), so a switch to a plain Claude model
 // clears a previous provider instead of leaving it stale.
 func setSessionModelInConfig(cfg *config.AppConfig, project, name, model, effort, provider string) bool {
+	// On a hermes session a provider switch also carries the registry's
+	// hermes_provider_id (--provider) into the persisted config; clearing
+	// the provider clears it back.
+	hermesProvider := ""
+	if provider != "" {
+		if p, ok := cfg.Providers[provider]; ok {
+			hermesProvider = p.HermesProviderID
+		}
+	}
 	for pi := range cfg.Projects {
 		if cfg.Projects[pi].Name != project {
 			continue
@@ -1144,6 +1153,7 @@ func setSessionModelInConfig(cfg *config.AppConfig, project, name, model, effort
 				sessions[si].Effort = effort
 			}
 			sessions[si].Provider = provider
+			sessions[si].HermesProvider = hermesProvider
 			cfg.Projects[pi].Sessions = sessions
 			return true
 		}

@@ -386,9 +386,27 @@ func defaultProviders() map[string]ProviderConfig {
 			BaseURL:     "https://api.z.ai/api/anthropic",
 			KeyEnv:      "ZAI_API_KEY",
 			SettingsDir: "state/glm",
+			// The same GLM brain is reachable by the hermes runtime through
+			// the CLI's own `zai` provider (GLM_API_KEY in hermes' .env).
+			HermesProviderID: "zai",
 			Models: []ProviderModel{
 				{ID: "glm-5.3", Label: "GLM-5.3", Efforts: []string{"low", "high", "max"}},
 				{ID: "glm-5.3-flash", Label: "GLM-5.3-Flash", Efforts: []string{"low", "high", "max"}},
+			},
+		},
+		"kimi": {
+			DisplayName: "Kimi",
+			// Kimi Coding Plan behind the local OpenAI-compatible proxy the
+			// hermes CLI is already configured against (model.provider =
+			// "custom", base_url http://127.0.0.1:8412/v1). The claude
+			// runtime has no Anthropic-compatible endpoint here, so this
+			// provider is hermes-only (no settings_dir, no key_env).
+			BaseURL:          "http://127.0.0.1:8412/v1",
+			HermesProviderID: "custom",
+			Models: []ProviderModel{
+				{ID: "kimi-for-coding", Label: "Kimi-for-Coding", Efforts: []string{"low", "high", "max"}},
+				{ID: "k3", Label: "K3", Efforts: []string{"low", "high", "max"}},
+				{ID: "k3.1-pro", Label: "K3.1-Pro", Efforts: []string{"low", "high", "max"}},
 			},
 		},
 	}
@@ -504,6 +522,9 @@ func applyProviderDefaults(cfg *AppConfig) {
 			if p.SettingsDir == "" {
 				p.SettingsDir = def.SettingsDir
 			}
+			if p.HermesProviderID == "" {
+				p.HermesProviderID = def.HermesProviderID
+			}
 			if len(p.Models) == 0 {
 				p.Models = def.Models
 			}
@@ -514,7 +535,11 @@ func applyProviderDefaults(cfg *AppConfig) {
 		if p.DisplayName == "" {
 			p.DisplayName = id
 		}
-		if p.SettingsDir == "" {
+		// A provider with no KeyEnv has no Anthropic-compatible credentials
+		// to put in a settings file — it is hermes-only, so no settings_dir
+		// (an empty SettingsDir keeps providerArtifacts refusing it on the
+		// claude runtime).
+		if p.SettingsDir == "" && p.KeyEnv != "" {
 			p.SettingsDir = filepath.Join("state", id)
 		}
 		cfg.Providers[id] = p
@@ -709,6 +734,23 @@ var providerEfforts = map[string]bool{
 	"low": true, "medium": true, "high": true, "xhigh": true, "max": true,
 }
 
+// hermesProviderIDs is the hermes CLI's own `--provider` vocabulary (the
+// model.provider list in a hermes config.yaml): named providers plus the
+// "custom" escape hatch for any OpenAI-compatible endpoint. A
+// hermes_provider_id outside this list would make every `hermes chat` launch
+// fail with its own "unknown provider" error.
+var hermesProviderIDs = map[string]bool{
+	"auto": true, "openrouter": true, "nous": true, "nous-api": true,
+	"anthropic": true, "openai-codex": true, "copilot": true, "gemini": true,
+	"zai": true, "kimi-coding": true, "minimax": true, "minimax-cn": true,
+	"huggingface": true, "nvidia": true, "xiaomi": true, "arcee": true,
+	"ollama-cloud": true, "deepinfra": true, "kilocode": true,
+	"ai-gateway": true, "azure-foundry": true, "lmstudio": true,
+	"custom": true, "ollama": true, "vllm": true, "llamacpp": true,
+}
+
+func isHermesProviderID(id string) bool { return hermesProviderIDs[id] }
+
 func validateProvider(id string, p ProviderConfig) error {
 	if id == "" {
 		return fmt.Errorf("config: provider with empty id")
@@ -720,8 +762,15 @@ func validateProvider(id string, p ProviderConfig) error {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return fmt.Errorf("config: provider %q has invalid base_url %q", id, p.BaseURL)
 	}
-	if !isEnvName(p.KeyEnv) {
+	// A hermes-only provider (hermes_provider_id set, no settings dir) never
+	// generates claude-runtime artifacts, so it needs no key_env; on any
+	// other provider the key_env remains mandatory.
+	hermesOnly := p.HermesProviderID != "" && p.SettingsDir == ""
+	if !hermesOnly && !isEnvName(p.KeyEnv) {
 		return fmt.Errorf("config: provider %q key_env %q must be the *name* of an environment variable holding the API key (the key itself is never stored in config)", id, p.KeyEnv)
+	}
+	if p.HermesProviderID != "" && !isEnvName(p.HermesProviderID) && !isHermesProviderID(p.HermesProviderID) {
+		return fmt.Errorf("config: provider %q has invalid hermes_provider_id %q", id, p.HermesProviderID)
 	}
 	if len(p.Models) == 0 {
 		return fmt.Errorf("config: provider %q has no models", id)

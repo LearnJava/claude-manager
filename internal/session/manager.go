@@ -812,6 +812,13 @@ func (m *SessionManager) providerArtifacts(provider, model string) (string, []st
 	if model == "" {
 		return "", nil, fmt.Errorf("provider %q session needs a model (settings files are per-model)", provider)
 	}
+	// A hermes-only provider (no settings dir: nothing to generate for the
+	// claude runtime) has no claude-side artifacts at all — hermes resolves
+	// the provider itself via --provider. Refuse rather than generate a
+	// settings file that points the claude CLI at a non-Anthropic endpoint.
+	if p.SettingsDir == "" {
+		return "", nil, fmt.Errorf("provider %q has no claude-runtime settings (hermes-only provider)", provider)
+	}
 	if err := config.EnsureProviderSettings(m.cfg, m.cfgPath); err != nil {
 		return "", nil, err
 	}
@@ -872,6 +879,15 @@ func (m *SessionManager) StartSessionWithProvider(project, name, provider, model
 	}
 	if provider != "" {
 		sessionCfg.Provider = provider
+		// The hermes runtime carries the provider as the CLI's own
+		// --provider flag (from the registry's hermes_provider_id), not as
+		// a generated claude settings file; hermes-only providers (no
+		// settings dir) are refused by providerArtifacts below on claude.
+		if sessionCfg.IsHermes() {
+			if hp, ok := m.cfg.Providers[provider]; ok && hp.HermesProviderID != "" {
+				sessionCfg.HermesProvider = hp.HermesProviderID
+			}
+		}
 	} else if model != "" {
 		// A model override may cross the provider boundary in either
 		// direction (a provider model id → that provider, a Claude alias
@@ -879,10 +895,15 @@ func (m *SessionManager) StartSessionWithProvider(project, name, provider, model
 		// actually being launched.
 		sessionCfg.Provider = config.ProviderForModel(m.cfg, sessionCfg.Model)
 	}
-
-	settingsFile, providerEnv, err := m.providerArtifacts(sessionCfg.Provider, sessionCfg.Model)
-	if err != nil {
-		return err
+	// Hermes ignores claude-runtime artifacts (settings file, auth env);
+	// its provider rides the command line instead.
+	var settingsFile string
+	var providerEnv []string
+	if !sessionCfg.IsHermes() {
+		settingsFile, providerEnv, err = m.providerArtifacts(sessionCfg.Provider, sessionCfg.Model)
+		if err != nil {
+			return err
+		}
 	}
 
 	ms := &managedSession{project: project, name: name}
@@ -1128,6 +1149,14 @@ func (m *SessionManager) SetSessionModelWithEffort(id, model, effort string) err
 	// switch then also crosses that provider boundary, so the provider is
 	// derived here and carried into the config copy and the restart below.
 	provider := config.ProviderForModel(m.cfg, model)
+	// On a hermes session the derived provider rides the CLI's --provider
+	// flag (registry hermes_provider_id), not a claude settings file.
+	hermesProvider := ""
+	if provider != "" {
+		if p, ok := m.cfg.Providers[provider]; ok {
+			hermesProvider = p.HermesProviderID
+		}
+	}
 	ms := m.get(id)
 	if ms == nil {
 		parts := strings.SplitN(id, "/", 2)
@@ -1141,6 +1170,9 @@ func (m *SessionManager) SetSessionModelWithEffort(id, model, effort string) err
 		m.mu.Lock()
 		sc.Model = model
 		sc.Provider = provider
+		if sc.IsHermes() {
+			sc.HermesProvider = hermesProvider
+		}
 		if effort != "" {
 			sc.Effort = effort
 		}
@@ -1156,6 +1188,9 @@ func (m *SessionManager) SetSessionModelWithEffort(id, model, effort string) err
 		m.mu.Lock()
 		sc.Model = model
 		sc.Provider = provider
+		if sc.IsHermes() {
+			sc.HermesProvider = hermesProvider
+		}
 		if effort != "" {
 			sc.Effort = effort
 		}
@@ -1245,6 +1280,18 @@ func (m *SessionManager) SetSessionProvider(id, provider string) (string, error)
 		}
 		m.mu.Lock()
 		sc.Provider = provider
+		// A hermes session carries the provider as the CLI's --provider
+		// flag; a claude-only provider (no hermes_provider_id) refuses.
+		if sc.IsHermes() && provider != "" {
+			if hp := m.cfg.Providers[provider]; hp.HermesProviderID != "" {
+				sc.HermesProvider = hp.HermesProviderID
+			} else {
+				m.mu.Unlock()
+				return "", fmt.Errorf("provider %q has no hermes runtime (set hermes_provider_id to enable it)", provider)
+			}
+		} else {
+			sc.HermesProvider = ""
+		}
 		if provider != "" && !m.modelBelongsToProvider(provider, sc.Model) {
 			sc.Model = m.firstProviderModel(provider)
 		}
@@ -1253,10 +1300,35 @@ func (m *SessionManager) SetSessionProvider(id, provider string) (string, error)
 		return sc.Model, nil
 	}
 	sess := ms.session
-	if sess.Config.IsHermes() && provider != "" {
-		return "", fmt.Errorf("providers run inside the claude runtime; session %q is on hermes", id)
-	}
 	var model string
+	if sess.Config.IsHermes() && provider != "" {
+		// On the hermes runtime the provider is not a claude settings file
+		// but the CLI's own --provider flag: carry the registry's
+		// hermes_provider_id into the session config (hermes-only
+		// providers become usable this way; claude-only ones still refuse).
+		hp, ok := m.cfg.Providers[provider]
+		if !ok || hp.HermesProviderID == "" {
+			return "", fmt.Errorf("provider %q has no hermes runtime (set hermes_provider_id to enable it)", provider)
+		}
+		if _, sc, err := m.findConfig(ms.project, ms.name); err == nil && sc != nil {
+			m.mu.Lock()
+			sc.Provider = provider
+			sc.HermesProvider = hp.HermesProviderID
+			if !m.modelBelongsToProvider(provider, sc.Model) {
+				sc.Model = m.firstProviderModel(provider)
+			}
+			model = sc.Model
+			m.mu.Unlock()
+		}
+		if model == "" {
+			model = sess.Config.Model
+		}
+		logger.L.Info("manager.set_session_provider", "id", id, "provider", provider,
+			"hermes_provider", hp.HermesProviderID, "model", model)
+		// Hermes runs one process per turn: the next turn's --provider/-m
+		// already pick the new brain up — no restart, nothing interrupted.
+		return model, nil
+	}
 	if _, sc, err := m.findConfig(ms.project, ms.name); err == nil && sc != nil {
 		m.mu.Lock()
 		sc.Provider = provider

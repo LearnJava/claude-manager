@@ -152,14 +152,24 @@
     // session's runtime/model from config — so the row shows what the next
     // start will really run. Locked while the session runs: the CLI is fixed
     // for the lifetime of its process.
+    // Switching the runtime also clears a previously selected brain provider:
+    // its artifacts (claude settings file vs hermes --provider) do not carry
+    // across runtimes, and a stale provider would refuse the next start.
     async function onRuntimeChange(e: Event, s: SessionState) {
         e.stopPropagation();
         const runtime = (e.target as HTMLSelectElement).value;
-        if (runtime === runtimeOf(s)) return;
+        if (runtime === runtimeOf(s) && !providerOfSession(s)) return;
         modelBusy = { ...modelBusy, [s.id]: true };
         modelError = { ...modelError, [s.id]: '' };
         try {
-            await SetSessionRuntime(s.id, runtime);
+            if (providerOfSession(s)) {
+                // Leaving a provider brain: reset it so the session runs a
+                // plain claude/hermes model again.
+                await SetSessionProvider(s.id, '');
+            }
+            if (runtime !== runtimeOf(s)) {
+                await SetSessionRuntime(s.id, runtime);
+            }
         } catch (err: any) {
             modelError = { ...modelError, [s.id]: err?.message ?? String(err) };
         } finally {
