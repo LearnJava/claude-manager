@@ -507,6 +507,12 @@ function subscribeEvents() {
             // The "stopped on request" mark lasts until the session runs again.
             stopped_after_task_at: evt.status === 'starting' ? '' : s.stopped_after_task_at,
         }));
+        // A new run may carry a different model/provider/runtime than the
+        // store's copy (a start-with-provider rebuilds the session from the
+        // fresh config). No event carries those fields on its own, so pull
+        // the authoritative snapshot once — otherwise the row keeps showing
+        // the previous brain's pickers for the whole run.
+        if (evt.status === 'starting') scheduleRefresh();
     });
 
     EventsOn('session:stop_requested', (evt: { id: string; stop_requested: boolean; stopped_after_task_at?: string }) => {

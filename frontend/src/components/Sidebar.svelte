@@ -54,12 +54,15 @@
         .then((ps: ProviderUI[]) => { providers = ps ?? []; })
         .catch(() => { providers = []; });
 
+    // The provider a session's pickers describe. Only an explicit
+    // provider="" (set by SetSessionProvider / persisted in config) counts:
+    // a session whose model merely looks like a provider model id (a legacy
+    // config or a CLI echo) does NOT run through the provider's artifacts,
+    // so painting it as that provider showed a list the next start would
+    // not honour — and a claude-runtime session even got a hermes-only
+    // provider's list it can never run (Kimi on the claude CLI).
     function providerOfSession(s: SessionState): string {
-        if (s.provider) return s.provider;
-        // Fallback while the state predates the field: derive from the model
-        // (case-insensitive — the CLI may echo the id back in its own case).
-        const m = (s.model ?? '').trim().toLowerCase();
-        return providers.find((p) => (p.models ?? []).some((mm) => mm.id.toLowerCase() === m))?.id ?? '';
+        return s.provider ?? '';
     }
 
     // A hermes session with no provider selected: hermes resolves its own
@@ -194,17 +197,24 @@
     async function onRuntimeChange(e: Event, s: SessionState) {
         e.stopPropagation();
         const runtime = (e.target as HTMLSelectElement).value;
-        if (runtime === runtimeOf(s)) return; // same runtime: nothing to do (a re-click must not wipe the provider)
+        // Compare against the full current choice (runtime or provider):
+        // a provider session re-selecting its own underlying runtime is a
+        // real change (leaving the provider), while a plain session
+        // re-selecting its runtime is a no-op that must not wipe anything.
+        if (runtime === aiValueOf(s)) return;
         modelBusy = { ...modelBusy, [s.id]: true };
         modelError = { ...modelError, [s.id]: '' };
         try {
             if (providerOfSession(s)) {
-                // Crossing runtimes: the provider's artifacts (claude
-                // settings file vs hermes --provider) do not carry across,
-                // and a stale provider would refuse the next start.
+                // Leaving a provider brain: its artifacts (claude settings
+                // file vs hermes --provider) must not survive the switch —
+                // SetSessionProvider('') clears provider, model mismatch
+                // and the hermes flag in one step.
                 await SetSessionProvider(s.id, '');
             }
-            await SetSessionRuntime(s.id, runtime);
+            if (runtime !== runtimeOf(s)) {
+                await SetSessionRuntime(s.id, runtime);
+            }
         } catch (err: any) {
             modelError = { ...modelError, [s.id]: err?.message ?? String(err) };
         } finally {
@@ -633,7 +643,7 @@
                                 </select>
                                 </span>
                                 <select
-                                    value={providerOfSession(s) ? comboValueOf(s) : modelValue(s)}
+                                    value={providerOfSession(s) || isPlainHermes(s) ? comboValueOf(s) : modelValue(s)}
                                     disabled={!!modelBusy[s.id]}
                                     on:focus={() => select(s.id)}
                                     on:change={(e) => (providerOfSession(s) || isPlainHermes(s)

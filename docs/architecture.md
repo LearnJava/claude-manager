@@ -448,7 +448,7 @@ All exported methods become async JS functions via auto-generated bindings in `f
 | `StartSession(project, name)` | Launch session with config model/effort |
 | `StartSessionWithModel(project, name, model, effort)` | Launch with model/effort override; the override is remembered as the session's default |
 | `GetProviders()` | Configured providers (id, display name, models×efforts) for the model picker's "which AI" segment (GLM-PLAN.md); no MCP tool by design (`parityExcluded`) |
-| `SetSessionProvider(id, provider)` | Switch the session's brain from the sidebar's "which AI" dropdown (claude/hermes/provider); remembered as the stored default; provider's first model on a crossing |
+| `SetSessionProvider(id, provider)` | Switch the session's brain from the sidebar's "which AI" dropdown (claude/hermes/provider); remembered as the stored default; provider's first model on a crossing; on a live hermes session the switch also lands in the running session's argv inputs (`--provider`/`-m`) so the next turn rides the new brain without a restart |
 | `SetSessionModelAndEffort(id, model, effort)` | Pick model and effort in one choice (the provider combo dropdown in a session row); remembered like SetSessionModel |
 | `StartSessionWithProviderAndModel(project, name, provider, model, effort)` | Launch on a `[providers.<id>]` brain: settings file via `--settings`, API key in the process env only; the whole choice is remembered as the session's default |
 | `SetSessionModel(id, model)` | Switch a running session's model live and remember it (see "Live Model Switching") |

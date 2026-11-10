@@ -134,15 +134,29 @@ export async function installBridge(page: Page, port: string, token: string): Pr
             .then(() => rpc('StartSessionWithOverride', { project, session, model, effort }));
         },
         // No control-plane RPC (GUI-only, parityExcluded): return the same
-        // seeded default the real backend reports for a stock config.
+        // seeded default the real backend reports for a stock config —
+        // including the hermes-only kimi provider and both providers'
+        // hermesProviderId, which the sidebar's plain-hermes union list and
+        // provider pickers are built from.
         GetProviders: () =>
           Promise.resolve([
             {
               id: 'glm',
               label: 'Claude GLM',
+              hermesProviderId: 'zai',
               models: [
                 { id: 'glm-5.3', label: 'GLM-5.3', efforts: ['low', 'high', 'max'] },
                 { id: 'glm-5.3-flash', label: 'GLM-5.3-Flash', efforts: ['low', 'high', 'max'] },
+              ],
+            },
+            {
+              id: 'kimi',
+              label: 'Kimi',
+              hermesProviderId: 'custom',
+              models: [
+                { id: 'kimi-for-coding', label: 'Kimi-for-Coding', efforts: ['low', 'high', 'max'] },
+                { id: 'k3', label: 'K3', efforts: ['low', 'high', 'max'] },
+                { id: 'k3.1-pro', label: 'K3.1-Pro', efforts: ['low', 'high', 'max'] },
               ],
             },
           ]),
@@ -219,9 +233,46 @@ export async function installBridge(page: Page, port: string, token: string): Pr
         SetSessionRuntime: (id: string, runtime: string) =>
           setSessionField(id, 'Runtime', runtime === 'claude' ? '' : runtime),
         SetSessionModel: (id: string, model: string) => setSessionField(id, 'Model', model),
-        // GUI-only "which AI" dropdown extras: plain config round-trips, the
-        // same update_session does server-side.
-        SetSessionProvider: (id: string, provider: string) => setSessionField(id, 'Provider', provider),
+        // GUI-only "which AI" dropdown extras: the same config round-trips
+        // the real App.SetSessionProvider performs server-side — provider
+        // set, the provider's first model when the current one does not
+        // belong to it, and the HermesProvider flag on hermes sessions
+        // (refused for claude-only providers, same as the backend).
+        SetSessionProvider: (id: string, provider: string) => {
+          const slash = id.indexOf('/');
+          const project = id.slice(0, slash);
+          const session = id.slice(slash + 1);
+          return rpc('GetConfig', {}).then(async (raw: unknown) => {
+            const cfg = raw as Cfg;
+            const pr = cfg?.Projects?.find((p) => p.Name === project);
+            const sc = pr?.Sessions?.find((s) => s.Name === session) as
+              | Record<string, unknown>
+              | undefined;
+            if (!sc) throw new Error(`session "${id}" not found`);
+            const reg = await App.GetProviders() as Array<{
+              id: string; hermesProviderId?: string;
+              models: Array<{ id: string }>;
+            }>;
+            const p = provider ? reg.find((x) => x.id === provider) : undefined;
+            if (provider && !p) throw new Error(`unknown provider "${provider}"`);
+            const runtime = (sc.Runtime as string) ?? '';
+            let hermesProvider = '';
+            if (provider) {
+              if (runtime === 'hermes') {
+                if (!p!.hermesProviderId) {
+                  throw new Error(`provider "${provider}" has no hermes runtime`);
+                }
+                hermesProvider = p!.hermesProviderId;
+              }
+              if (!p!.models.some((m) => m.id === sc.Model)) {
+                sc.Model = p!.models[0]?.id ?? sc.Model;
+              }
+            }
+            sc.Provider = provider;
+            if (runtime === 'hermes') sc.HermesProvider = hermesProvider;
+            await rpc('UpdateConfig', { config: cfg });
+          });
+        },
         SetSessionModelAndEffort: (id: string, model: string, effort: string) =>
           setSessionField(id, 'Model', model).then(() =>
             effort ? setSessionField(id, 'Effort', effort) : Promise.resolve(),
