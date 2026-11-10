@@ -126,6 +126,7 @@ display_name = "Claude GLM"
 base_url = "https://api.z.ai/api/anthropic"
 key_env = "ZAI_API_KEY"                # env var NAME holding the key — never the key itself
 settings_dir = "state/glm"             # relative to this config file
+hermes_provider_id = "zai"             # --provider for hermes-runtime sessions on this brain
 
 [[providers.glm.models]]
 id = "glm-5.3"                         # goes to --model as-is
@@ -135,6 +136,30 @@ efforts = ["low", "high", "max"]
 [[providers.glm.models]]
 id = "glm-5.3-flash"
 label = "GLM-5.3-Flash"
+efforts = ["low", "high", "max"]
+
+# A hermes-only provider: no settings_dir/key_env (no claude artifacts), the
+# hermes CLI resolves the endpoint itself (here: its own "custom" provider,
+# the local Kimi proxy in the hermes config). Built-in default; override
+# fields or add models here.
+[providers.kimi]
+display_name = "Kimi"
+base_url = "http://127.0.0.1:8412/v1"
+hermes_provider_id = "custom"
+
+[[providers.kimi.models]]
+id = "kimi-for-coding"
+label = "Kimi-for-Coding"
+efforts = ["low", "high", "max"]
+
+[[providers.kimi.models]]
+id = "k3"
+label = "K3"
+efforts = ["low", "high", "max"]
+
+[[providers.kimi.models]]
+id = "k3.1-pro"
+label = "K3.1-Pro"
 efforts = ["low", "high", "max"]
 
 # ─── Mixed-programming workers (MIXED-TASKS.md) ──────────────────────────────

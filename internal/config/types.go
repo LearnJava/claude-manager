@@ -25,8 +25,13 @@ type ProviderConfig struct {
 	KeyEnv string `toml:"key_env"`
 	// SettingsDir is where the per-model settings files are generated,
 	// relative to the manager config dir.
-	SettingsDir string          `toml:"settings_dir"`
-	Models      []ProviderModel `toml:"models"`
+	SettingsDir string `toml:"settings_dir"`
+	// HermesProviderID is the `--provider` value a hermes-runtime session
+	// gets when this provider is selected (e.g. "zai" for GLM, "custom"
+	// for a local Kimi proxy). Empty means the provider is claude-runtime
+	// only: hermes sessions cannot select it.
+	HermesProviderID string          `toml:"hermes_provider_id"`
+	Models           []ProviderModel `toml:"models"`
 }
 
 // ProviderModel is one model offered by a provider. ID goes to --model as-is

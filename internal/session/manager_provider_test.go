@@ -174,3 +174,84 @@ func TestSetSessionProvider(t *testing.T) {
 		t.Errorf("after effort switch = %+v", sc)
 	}
 }
+
+// newHermesProviderTestManager: same as newProviderTestManager but the P1
+// session runs on the hermes runtime, and the provider carries a
+// hermes_provider_id ("zai"-like).
+func newHermesProviderTestManager(t *testing.T) (*SessionManager, string) {
+	t.Helper()
+	dir := t.TempDir()
+	cfg := &config.AppConfig{
+		Settings: config.GlobalSettings{ClaudePath: "claude", HermesPath: "hermes", DefaultRetryDelay: 1, RateLimitPause: 1},
+		Providers: map[string]config.ProviderConfig{
+			"prov": {
+				DisplayName: "Prov", BaseURL: "https://example.invalid/api",
+				KeyEnv: "PROV_TEST_KEY", SettingsDir: "state/prov",
+				HermesProviderID: "zai",
+				Models:           []config.ProviderModel{{ID: "m1", Label: "M1", Efforts: []string{"low", "high"}}},
+			},
+			"honly": {
+				DisplayName: "HermesOnly", BaseURL: "http://127.0.0.1:8412/v1",
+				HermesProviderID: "custom",
+				Models:           []config.ProviderModel{{ID: "k3", Label: "K3", Efforts: []string{"low"}}},
+			},
+		},
+		Projects: []config.ProjectConfig{{
+			Name: "lumen", Path: dir,
+			Sessions: []config.SessionConfig{
+				{Name: "P1", Model: "sonnet", Runtime: "hermes"},
+			},
+		}},
+	}
+	return NewSessionManager(cfg, filepath.Join(dir, "config.toml"), nil, nil), dir
+}
+
+// TestSetSessionProviderHermes: a hermes session selects a provider and gets
+// the registry's hermes_provider_id in HermesProvider plus the provider's
+// first model; a provider without hermes_provider_id is refused; the
+// hermes-only provider works the same way.
+func TestSetSessionProviderHermes(t *testing.T) {
+	m, _ := newHermesProviderTestManager(t)
+
+	model, err := m.SetSessionProvider("lumen/P1", "prov")
+	if err != nil {
+		t.Fatalf("SetSessionProvider on hermes: %v", err)
+	}
+	if model != "m1" {
+		t.Errorf("resolved model = %q, want m1", model)
+	}
+	_, sc, _ := m.findConfig("lumen", "P1")
+	if sc.Provider != "prov" || sc.HermesProvider != "zai" || sc.Model != "m1" {
+		t.Errorf("config = (provider %q, hermes %q, model %q), want (prov, zai, m1)",
+			sc.Provider, sc.HermesProvider, sc.Model)
+	}
+
+	// Back to plain hermes (no provider): both cleared.
+	if _, err := m.SetSessionProvider("lumen/P1", ""); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	_, sc, _ = m.findConfig("lumen", "P1")
+	if sc.Provider != "" || sc.HermesProvider != "" {
+		t.Errorf("after clear = (%q, %q), want empty", sc.Provider, sc.HermesProvider)
+	}
+
+	// The hermes-only provider (no settings dir) is selectable on hermes.
+	if model, err := m.SetSessionProvider("lumen/P1", "honly"); err != nil || model != "k3" {
+		t.Errorf("hermes-only provider = (%q, %v), want (k3, nil)", model, err)
+	}
+	_, sc, _ = m.findConfig("lumen", "P1")
+	if sc.HermesProvider != "custom" || sc.Model != "k3" {
+		t.Errorf("hermes-only config = (%q, %q), want (custom, k3)", sc.HermesProvider, sc.Model)
+	}
+}
+
+// TestProviderArtifactsHermesOnlyRefused: a hermes-only provider (no settings
+// dir) is refused on the claude runtime — no settings file could ever point
+// the claude CLI at its OpenAI-compatible endpoint.
+func TestProviderArtifactsHermesOnlyRefused(t *testing.T) {
+	m, _ := newHermesProviderTestManager(t)
+	_, _, err := m.providerArtifacts("honly", "k3")
+	if err == nil || !strings.Contains(err.Error(), "hermes-only") {
+		t.Errorf("hermes-only on claude = %v, want a refusal", err)
+	}
+}

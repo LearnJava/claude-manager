@@ -60,6 +60,7 @@ type ProviderConfig struct {
     BaseURL     string          `toml:"base_url"`
     KeyEnv      string          `toml:"key_env"`       // имя env-переменной с ключом; сам ключ в конфиге НЕ хранится (прецедент — types.go:21)
     SettingsDir string          `toml:"settings_dir"`  // относительно каталога конфига менеджера
+    HermesProviderID string     `toml:"hermes_provider_id"` // --provider для hermes-сессий этого «мозга»; пусто = только claude-рантайм
     Models      []ProviderModel `toml:"models"`
 }
 type ProviderModel struct {
@@ -78,16 +79,41 @@ display_name = "Claude GLM"
 base_url = "https://api.z.ai/api/anthropic"
 key_env = "ZAI_API_KEY"
 settings_dir = "state/glm"
+hermes_provider_id = "zai"   # тот же «мозг» на hermes-рантайме (GLM_API_KEY в .env hermes)
 [[providers.glm.models]]
   id = "glm-5.3"; label = "GLM-5.3"; efforts = ["low","high","max"]
 [[providers.glm.models]]
   id = "glm-5.3-flash"; label = "GLM-5.3-Flash"; efforts = ["low","high","max"]
+
+# hermes-only провайдер: без key_env/settings_dir (нет claude-артефактов),
+# endpoint резолвит сам hermes CLI (здесь — его "custom"-провайдер, локальный
+# Kimi-прокси из конфига hermes).
+[providers.kimi]
+display_name = "Kimi"
+base_url = "http://127.0.0.1:8412/v1"
+hermes_provider_id = "custom"
+[[providers.kimi.models]]
+  id = "kimi-for-coding"; label = "Kimi-for-Coding"; efforts = ["low","high","max"]
+[[providers.kimi.models]]
+  id = "k3"; label = "K3"; efforts = ["low","high","max"]
+[[providers.kimi.models]]
+  id = "k3.1-pro"; label = "K3.1-Pro"; efforts = ["low","high","max"]
 ```
+
+Семантика по рантаймам: на claude-рантайме провайдер = settings-файл + env
+(как раньше); на hermes-рантайме провайдер = `--provider <hermes_provider_id>`
++ `-m <model>` (settings-файлы не генерируются). Провайдер без
+`hermes_provider_id` на hermes-сессии отклоняется; hermes-only провайдер
+(без settings_dir) отклоняется на claude-рантайме. Переключение живой
+hermes-сессии не прерывает её: следующий ход стартует новый процесс уже с
+новым флагом.
 
 Пользователь может доопределить `[1m]`-варианты в своём config.toml (для них в
 файл настроек добавляется `CLAUDE_CODE_AUTO_COMPACT_WINDOW`). Валидация
 (`config/validate.go`): id непустые и уникальны, efforts ⊆ известного набора,
-key_env непустое имя переменной (не значение!).
+key_env непустое имя переменной (не значение!) — кроме hermes-only провайдеров
+(у них key_env не нужен); hermes_provider_id ∈ словарю `--provider` самого
+hermes CLI.
 
 ## 4. Файлы настроек (генерация, «разные файлы на модель»)
 
