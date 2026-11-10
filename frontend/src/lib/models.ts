@@ -47,6 +47,8 @@ export interface ProviderUI {
     id: string;
     label: string;
     models: ProviderModelUI[];
+    /** The hermes CLI --provider this brain maps to ("" = claude-only). */
+    hermesProviderId?: string;
 }
 
 /** One flat "model × effort" row of a provider's picker list. */
