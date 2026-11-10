@@ -62,14 +62,37 @@
         return providers.find((p) => (p.models ?? []).some((mm) => mm.id.toLowerCase() === m))?.id ?? '';
     }
 
+    // A hermes session with no provider selected: hermes resolves its own
+    // default (here: the local Kimi proxy), so Claude CLI aliases are lies —
+    // the model list is the hermes-capable providers' combos instead.
+    function isPlainHermes(s: SessionState): boolean {
+        return s.runtime === 'hermes' && !providerOfSession(s);
+    }
+
+    // The provider whose combos a session's model dropdown shows: the
+    // selected one, or — for a plain hermes session — the hermes-capable
+    // provider matching its current model (else the first hermes-capable).
+    function comboProviderOf(s: SessionState): ProviderUI | undefined {
+        const sel = providerOfSession(s);
+        if (sel) return providers.find((x) => x.id === sel);
+        if (s.runtime !== 'hermes') return undefined;
+        const hermesCapable = providers.filter((p) => p.hermesProviderId);
+        const m = (s.model ?? '').trim().toLowerCase();
+        return hermesCapable.find((p) => (p.models ?? []).some((mm) => mm.id.toLowerCase() === m))
+            ?? hermesCapable[0];
+    }
+
     function aiValueOf(s: SessionState): string {
         const p = providerOfSession(s);
         return p ? `prov:${p}` : runtimeOf(s);
     }
 
     function providerCombosFor(s: SessionState): { value: string; label: string; model: string; effort: string }[] {
-        const p = providers.find((x) => x.id === providerOfSession(s));
-        return p ? providerCombos(p) : [];
+        const p = comboProviderOf(s);
+        if (!p) return [];
+        if (providerOfSession(s)) return providerCombos(p);
+        // Plain hermes: the union of every hermes-capable provider's combos.
+        return providers.filter((x) => x.hermesProviderId).flatMap((x) => providerCombos(x));
     }
 
     function comboValueOf(s: SessionState): string {
@@ -77,10 +100,19 @@
         // case; the display must never go blank over a spelling difference.
         const m = (modelValue(s) || '').toLowerCase();
         const combos = providerCombosFor(s);
-        return (combos.find((c) => c.model.toLowerCase() === m && c.effort === s.effort)
-            ?? combos.find((c) => c.model.toLowerCase() === m)
-            ?? combos[0]
-            ?? { value: modelValue(s) }).value;
+        if (combos.some((c) => c.model.toLowerCase() === m)) {
+            return (combos.find((c) => c.model.toLowerCase() === m && c.effort === s.effort)
+                ?? combos.find((c) => c.model.toLowerCase() === m)).value;
+        }
+        // The pinned model is not among the combos: show it verbatim (the
+        // matching extra option) instead of silently selecting another.
+        if (combos.length > 0) return 'custom';
+        return modelValue(s);
+    }
+
+    function comboMatchesModel(s: SessionState): boolean {
+        const m = (modelValue(s) || '').toLowerCase();
+        return providerCombosFor(s).some((c) => c.model.toLowerCase() === m);
     }
 
     async function onAIChange(e: Event, s: SessionState) {
@@ -110,6 +142,10 @@
         modelBusy = { ...modelBusy, [s.id]: true };
         modelError = { ...modelError, [s.id]: '' };
         try {
+            // One call for both shapes: a provider session and a plain
+            // hermes session picking from the hermes-capable combos —
+            // SetSessionModelAndEffort derives the provider from the model
+            // id and carries the hermes --provider flag.
             await SetSessionModelAndEffort(s.id, c.model, c.effort);
             sessions.update((map) => {
                 const cur = map[s.id];
@@ -601,7 +637,9 @@
                                     value={providerOfSession(s) ? comboValueOf(s) : modelValue(s)}
                                     disabled={!!modelBusy[s.id]}
                                     on:focus={() => select(s.id)}
-                                    on:change={(e) => (providerOfSession(s) ? onComboChange(e, s) : onModelChange(e, s))}
+                                    on:change={(e) => (providerOfSession(s) || isPlainHermes(s)
+                                        ? onComboChange(e, s)
+                                        : onModelChange(e, s))}
                                     data-testid="model-select-{s.id}"
                                     title={s.runtime === 'hermes'
                                         ? $t('sidebar.hermesTooltip', { model: s.model || '—' })
@@ -609,11 +647,18 @@
                                     class="ml-1 shrink-0 bg-bg border border-bg-border rounded px-1 text-text-muted max-w-[11rem]
                                            disabled:opacity-50 disabled:pointer-events-none"
                                     style="font-size: 10px; line-height: 1.4;">
-                                    {#if providerOfSession(s)}
-                                        <!-- A provider brain: one flat model×effort list -->
+                                    {#if providerOfSession(s) || isPlainHermes(s)}
+                                        <!-- A provider brain (or a plain hermes session, whose model
+                                             list is the hermes-capable providers'): one flat model×effort list -->
                                         {#each providerCombosFor(s) as c}
                                             <option value={c.value}>{c.label}</option>
                                         {/each}
+                                        {#if isPlainHermes(s) && !comboMatchesModel(s)}
+                                            <!-- The pinned model id (e.g. a leftover CLI alias) is not
+                                                 among the combos — show it as its own option rather
+                                                 than silently selecting a different model. -->
+                                            <option value="custom">{s.model}</option>
+                                        {/if}
                                     {:else}
                                         {#if !s.model}
                                             <option value="" disabled>—</option>
@@ -622,7 +667,7 @@
                                             <option value={m.value}>{m.label}</option>
                                         {/each}
                                         {#if hasCustomModel(s)}
-                                            <!-- A custom/pinned id from config (or a Hermes provider id) that isn't one of ours -->
+                                            <!-- A custom/pinned id from config that isn't one of ours -->
                                             <option value={modelValue(s)}>{s.model}</option>
                                         {/if}
                                     {/if}

@@ -556,8 +556,12 @@ type ProviderInfo struct {
 	// test bridge agree on (a mismatch rendered the option text as
 	// "undefined" in the live app while the bridge-backed specs stayed
 	// green).
-	DisplayName string              `json:"label"`
-	Models      []ProviderModelInfo `json:"models"`
+	DisplayName string `json:"label"`
+	// HermesProviderID is the hermes CLI --provider value this brain maps
+	// to ("" = claude-runtime only). The sidebar uses it to offer a plain
+	// hermes session the models of hermes-capable providers.
+	HermesProviderID string              `json:"hermesProviderId"`
+	Models           []ProviderModelInfo `json:"models"`
 }
 
 // GetProviders returns every configured provider for the model picker's
@@ -575,7 +579,7 @@ func (a *App) GetProviders() []ProviderInfo {
 	out := make([]ProviderInfo, 0, len(ids))
 	for _, id := range ids {
 		p := a.cfg.Providers[id]
-		pi := ProviderInfo{ID: id, DisplayName: p.DisplayName}
+		pi := ProviderInfo{ID: id, DisplayName: p.DisplayName, HermesProviderID: p.HermesProviderID}
 		if pi.DisplayName == "" {
 			pi.DisplayName = id
 		}
