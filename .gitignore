@@ -58,3 +58,7 @@ benchmarks/glmlab/runs/
 __pycache__/
 ~$*
 frontend/package.json.md5
+
+# Local agent tool state: ZCode session plans, scratch test logs
+.zcode/
+frontend/.tmp-*.log
