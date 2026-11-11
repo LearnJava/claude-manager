@@ -667,6 +667,16 @@ func (s *Session) SetModel(model string) {
 	s.mu.Unlock()
 }
 
+// SetHermesProvider switches the hermes CLI --provider of a live session
+// (SetSessionProvider on a running hermes session). The config copy is
+// updated separately by the manager; this keeps the live argv in step with
+// it, so the next turn rides the new brain.
+func (s *Session) SetHermesProvider(p string) {
+	s.mu.Lock()
+	s.Config.HermesProvider = p
+	s.mu.Unlock()
+}
+
 // PendingPermission returns a snapshot of the pending request (or nil).
 func (s *Session) PendingPermission() *PermissionRequest {
 	s.mu.Lock()

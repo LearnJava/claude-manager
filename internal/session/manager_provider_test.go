@@ -255,3 +255,99 @@ func TestProviderArtifactsHermesOnlyRefused(t *testing.T) {
 		t.Errorf("hermes-only on claude = %v, want a refusal", err)
 	}
 }
+
+// TestSetSessionProviderHermesLive: a LIVE hermes session (a managedSession
+// exists) switching providers must update the live session's argv inputs —
+// hermes builds every turn's --provider/-m from the Session's own Config
+// copy, which SetSessionProvider used to leave stale, so the switch showed
+// in the UI while every following turn kept riding the previous brain.
+// Leaving a provider (back to plain hermes) clears the live flag the same way.
+func TestSetSessionProviderHermesLive(t *testing.T) {
+	m, _ := newHermesProviderTestManager(t)
+
+	// Register a live hermes session the way a real start does: a Session
+	// whose Config copy carries the runtime and the current brain.
+	sc := config.SessionConfig{Name: "P1", Model: "sonnet", Runtime: config.RuntimeHermes}
+	sess := New(Params{
+		ID:          sessionID("lumen", "P1"),
+		ProjectName: "lumen",
+		ProjectPath: ".",
+		Config:      sc,
+		OnEvent:     func(id string, ev SessionEvent) { m.onSessionEvent(id, ev) },
+	})
+	ms := &managedSession{session: sess, project: "lumen", name: "P1"}
+	m.mu.Lock()
+	m.sessions[sess.ID] = ms
+	m.mu.Unlock()
+	t.Cleanup(func() { m.mu.Lock(); delete(m.sessions, sess.ID); m.mu.Unlock() })
+
+	// Select a provider: model resolves to its first, and the live copy
+	// must carry both the --provider flag and the model for the next turn.
+	model, err := m.SetSessionProvider("lumen/P1", "prov")
+	if err != nil {
+		t.Fatalf("SetSessionProvider live hermes: %v", err)
+	}
+	if model != "m1" {
+		t.Errorf("resolved model = %q, want m1", model)
+	}
+	_, cfgSc, _ := m.findConfig("lumen", "P1")
+	if cfgSc.Provider != "prov" || cfgSc.HermesProvider != "zai" || cfgSc.Model != "m1" {
+		t.Errorf("config = (%q, %q, %q), want (prov, zai, m1)", cfgSc.Provider, cfgSc.HermesProvider, cfgSc.Model)
+	}
+	if got := sess.ActiveModel(); got != "m1" {
+		t.Errorf("live activeModel = %q, want m1 (the next turn rides the old model otherwise)", got)
+	}
+	args := sess.buildHermesArgs("", "")
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--provider zai") {
+		t.Errorf("hermes argv %v lacks --provider zai — the next turn would not ride the new brain", args)
+	}
+
+	// Leave the provider: the live flag must clear too, or the next turn
+	// keeps --provider zai while the UI shows plain Hermes.
+	if _, err := m.SetSessionProvider("lumen/P1", ""); err != nil {
+		t.Fatalf("clear live hermes: %v", err)
+	}
+	args = sess.buildHermesArgs("", "")
+	if joined := strings.Join(args, " "); strings.Contains(joined, "--provider") {
+		t.Errorf("hermes argv %v still carries --provider after clearing", args)
+	}
+	_, cfgSc, _ = m.findConfig("lumen", "P1")
+	if cfgSc.Provider != "" || cfgSc.HermesProvider != "" {
+		t.Errorf("after clear = (%q, %q), want empty", cfgSc.Provider, cfgSc.HermesProvider)
+	}
+}
+
+// TestSetSessionProviderRefusalLeavesConfigUntouched: a refused switch (a
+// hermes session picking a claude-only provider) must not leave a half-set
+// provider behind — findConfig returns a pointer into the live config, so
+// the validation has to run before any mutation.
+func TestSetSessionProviderRefusalLeavesConfigUntouched(t *testing.T) {
+	m, _ := newHermesProviderTestManager(t)
+
+	_, before, _ := m.findConfig("lumen", "P1")
+	beforeModel := before.Model
+
+	if _, err := m.SetSessionProvider("lumen/P1", "claudeonly"); err == nil {
+		t.Fatal("unknown provider accepted")
+	}
+
+	// The registry has no claude-only provider; make one to test the refusal.
+	m.mu.Lock()
+	m.cfg.Providers["claudeonly"] = config.ProviderConfig{
+		DisplayName: "ClaudeOnly", BaseURL: "https://example.invalid/api",
+		KeyEnv: "PROV_TEST_KEY", SettingsDir: "state/prov",
+		Models: []config.ProviderModel{{ID: "c1", Label: "C1", Efforts: []string{"low"}}},
+	}
+	m.mu.Unlock()
+
+	if _, err := m.SetSessionProvider("lumen/P1", "claudeonly"); err == nil || !strings.Contains(err.Error(), "no hermes runtime") {
+		t.Fatalf("claude-only on hermes = %v, want a refusal", err)
+	}
+	_, after, _ := m.findConfig("lumen", "P1")
+	if after.Provider != before.Provider || after.HermesProvider != before.HermesProvider || after.Model != beforeModel {
+		t.Errorf("refused switch mutated the config: before=(%q,%q,%q) after=(%q,%q,%q)",
+			before.Provider, before.HermesProvider, beforeModel,
+			after.Provider, after.HermesProvider, after.Model)
+	}
+}

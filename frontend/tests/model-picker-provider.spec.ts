@@ -69,15 +69,16 @@ test.describe('Model picker: provider segment', () => {
                 )
                 .toEqual({ model: 'glm-5.3', provider: 'glm', effort: 'low' });
 
-            // The session row's "which AI" dropdown: Claude | Hermes | Claude
-            // GLM, with GLM selected; the model dropdown is the flat 6-combo
-            // list with the started combo selected.
+            // The session row's "which AI" dropdown: Claude | Hermes | the
+            // configured providers, with GLM selected; the model dropdown
+            // is the provider's flat 6-combo list with the started combo
+            // selected.
             const aiSel = page.locator(`[data-testid="runtime-select-${ID(SESSION)}"]`);
             const modelSel = page.locator(`[data-testid="model-select-${ID(SESSION)}"]`);
             await expect
                 .poll(() => aiSel.inputValue(), { timeout: 10_000 })
                 .toBe('prov:glm');
-            await expect(aiSel.locator('option')).toHaveText(['Claude', '☤ Hermes', 'Claude GLM']);
+            await expect(aiSel.locator('option')).toHaveText(['Claude', '☤ Hermes', 'Claude GLM', 'Kimi']);
             await expect
                 .poll(() => modelSel.inputValue(), { timeout: 10_000 })
                 // The live session's effort is what the CLI reported back in

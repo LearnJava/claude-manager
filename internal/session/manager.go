@@ -1278,22 +1278,29 @@ func (m *SessionManager) SetSessionProvider(id, provider string) (string, error)
 		if err != nil {
 			return "", err
 		}
-		m.mu.Lock()
-		sc.Provider = provider
-		// A hermes session carries the provider as the CLI's --provider
-		// flag; a claude-only provider (no hermes_provider_id) refuses.
+		// Validate before mutating: findConfig returns a pointer into the
+		// live config, so an error return must leave it untouched — a
+		// refused switch used to leave provider set with no hermes_provider,
+		// and the next start then failed on the stale artifacts.
 		if sc.IsHermes() && provider != "" {
-			if hp := m.cfg.Providers[provider]; hp.HermesProviderID != "" {
-				sc.HermesProvider = hp.HermesProviderID
-			} else {
-				m.mu.Unlock()
+			if hp := m.cfg.Providers[provider]; hp.HermesProviderID == "" {
 				return "", fmt.Errorf("provider %q has no hermes runtime (set hermes_provider_id to enable it)", provider)
 			}
-		} else {
-			sc.HermesProvider = ""
 		}
+		m.mu.Lock()
+		// The switch must never inherit a model the new provider does not
+		// serve: a stale Claude alias ("sonnet") on a hermes session 404s
+		// every launch, and a foreign provider model leaks across brains.
 		if provider != "" && !m.modelBelongsToProvider(provider, sc.Model) {
 			sc.Model = m.firstProviderModel(provider)
+		}
+		sc.Provider = provider
+		// A hermes session carries the provider as the CLI's --provider
+		// flag; leaving a provider clears it back.
+		if sc.IsHermes() && provider != "" {
+			sc.HermesProvider = m.cfg.Providers[provider].HermesProviderID
+		} else {
+			sc.HermesProvider = ""
 		}
 		m.mu.Unlock()
 		logger.L.Info("manager.set_session_provider", "id", id, "provider", provider, "started", false)
@@ -1301,32 +1308,40 @@ func (m *SessionManager) SetSessionProvider(id, provider string) (string, error)
 	}
 	sess := ms.session
 	var model string
-	if sess.Config.IsHermes() && provider != "" {
+	if sess.Config.IsHermes() {
 		// On the hermes runtime the provider is not a claude settings file
-		// but the CLI's own --provider flag: carry the registry's
-		// hermes_provider_id into the session config (hermes-only
-		// providers become usable this way; claude-only ones still refuse).
-		hp, ok := m.cfg.Providers[provider]
-		if !ok || hp.HermesProviderID == "" {
-			return "", fmt.Errorf("provider %q has no hermes runtime (set hermes_provider_id to enable it)", provider)
+		// but the CLI's own --provider flag. Hermes runs one process per
+		// turn, so any switch (selecting a provider or leaving one) is
+		// picked up by the next turn — no restart, nothing interrupted.
+		hermesID := ""
+		if provider != "" {
+			hp, ok := m.cfg.Providers[provider]
+			if !ok || hp.HermesProviderID == "" {
+				return "", fmt.Errorf("provider %q has no hermes runtime (set hermes_provider_id to enable it)", provider)
+			}
+			hermesID = hp.HermesProviderID
 		}
 		if _, sc, err := m.findConfig(ms.project, ms.name); err == nil && sc != nil {
 			m.mu.Lock()
-			sc.Provider = provider
-			sc.HermesProvider = hp.HermesProviderID
-			if !m.modelBelongsToProvider(provider, sc.Model) {
+			if provider != "" && !m.modelBelongsToProvider(provider, sc.Model) {
 				sc.Model = m.firstProviderModel(provider)
 			}
+			sc.Provider = provider
+			sc.HermesProvider = hermesID
 			model = sc.Model
 			m.mu.Unlock()
 		}
 		if model == "" {
 			model = sess.Config.Model
 		}
+		// The live session's Config is a copy captured at New(); hermes
+		// builds every turn's argv from it, so without pushing the switch
+		// into the live copy the next turn keeps the OLD --provider (and
+		// the old -m) no matter what the config now says.
+		sess.SetHermesProvider(hermesID)
+		sess.SetModel(model)
 		logger.L.Info("manager.set_session_provider", "id", id, "provider", provider,
-			"hermes_provider", hp.HermesProviderID, "model", model)
-		// Hermes runs one process per turn: the next turn's --provider/-m
-		// already pick the new brain up — no restart, nothing interrupted.
+			"hermes_provider", hermesID, "model", model)
 		return model, nil
 	}
 	if _, sc, err := m.findConfig(ms.project, ms.name); err == nil && sc != nil {
