@@ -115,6 +115,38 @@ Hermes-specific mechanics not present in Claude's format:
   *output* (`ev.Output`, the authoritative merged list after the call) since
   the input may be a partial merge or absent for a read-only call.
 
+### OpenCode CLI (`opencode_parser.go`)
+
+OpenCode v2 (`opencode run --format json`, recorded live from v2.2.7) writes
+one JSON object per line with its own vocabulary; `opencodeStream` maps it to
+the same `ParsedEvent` values:
+
+| opencode stdout line (`type`) | Handler | `ParsedEvent`(s) |
+|---|---|---|
+| `{"type":"step_start",...}` | first line with a `sessionID` | one `EventInit` (the id seeds crash recovery / `--session` resume); later step_starts are no-ops |
+| `{"type":"text","part":{"text":…}}` | `Parse` case `"text"` | buffered like Hermes, one `EventLog` `level:"text"` entry on the next non-text event or `Flush()`; ask-user / continue markers ride the `step_finish` result |
+| `{"type":"tool_use","part":{"tool":…,"state":{input,output}}}` | `Parse` case `"tool_use"` | flushed text + an `EventLog` `level:"tool"` entry **and** its paired `level:"tool_result"` entry under the same `ToolUseID` (`part.id`) — the wire delivers input and output in one completed part, so the parser splits it into the pair every feed renderer expects |
+| `{"type":"step_finish","part":{"reason":…,"tokens":…}}` | `Parse` case `"step_finish"` | flushed text + a bare `EventLog{Usage}` (input/output/cache). `reason:"tool-calls"` is an intermediate step — usage only, **no** `EventResult` (the feed would render every tool round-trip as the done badge); only `reason:"stop"` yields `EventResult` |
+| `{"type":"error","error":{"message":…}}` | `Parse` case `"error"` | flushed text + an error `EventLog` + `EventResult{StopReason:"error"}` (`lastError` → sentinel classification) |
+| anything else / malformed JSON | fallback in `Parse` | flushed text + `EventLog`, one raw `level:"system"` entry |
+
+Runtime mechanics (`opencode_runtime.go`), mirroring Hermes unless noted:
+
+- **One process per turn** (`PerTurnProcess()`); the prompt goes to stdin
+  (run reads it when no message argument is given). Hermes-only extras (the
+  `state.db` step-limit scrape, the `agent.log` 429 scrape) have no
+  opencode counterpart and are absent.
+- **Conversation id**: a fresh turn passes no `--session` — opencode mints
+  its own `ses…` id, reported on the init event; later turns pass
+  `--session <id>`. (The CLI refuses ids not starting with "ses".)
+- **Model = full `provider/model` selector** (opencode's own vocabulary),
+  the session's effort rides as the `#variant` suffix. Providers resolve
+  through opencode's own connected integrations — the manager's provider
+  registry only supplies the selector prefix (`opencode_provider_id`).
+- **Headless permissions**: `run` has no interactive prompt, so every
+  launch passes `--auto` and `--archived` (kept out of the user's session
+  lists; resume still works — verified live).
+
 ## 4. Turn/task lifecycle per runtime
 
 | | Claude (`session.go`) | Hermes (`hermes_runtime.go`) |

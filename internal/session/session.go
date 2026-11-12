@@ -198,7 +198,10 @@ type Params struct {
 	ClaudePath  string
 	// HermesPath is the `hermes` binary for Config.Runtime == "hermes"
 	// (HERMES-TASKS.md HR-04); default "hermes".
-	HermesPath        string
+	HermesPath string
+	// OpenCodePath is the `opencode` binary for Config.Runtime == "opencode";
+	// default "opencode".
+	OpenCodePath      string
 	RetryDelay        int // seconds, fallback for non-rate-limit errors
 	RateLimitPauseSec int // seconds, fallback when no resetsAt is provided
 	OnEvent           EventCallback
@@ -326,7 +329,8 @@ type Session struct {
 	// lock. Provider names never appear here.
 	settingsFile string
 	providerEnv  []string
-	hermesPath string
+	hermesPath   string
+	openCodePath string
 	// runtime is the Runtime implementation selected once in New() from
 	// Config.Runtime (RUNTIME-TASKS.md RT-05). RT-06 routes runOnce's/
 	// runOnceHermes's argv building (Runtime.Args), atomics reset
@@ -426,10 +430,11 @@ type Session struct {
 	// (see Params.ExcludeDynamic / Params.MaxTurns).
 	excludeDynamic bool
 	maxTurns       int
-	// lastHermesConv is the Hermes conversation the last runOnceHermes left
-	// off in (protected by mu). A run that dies on a rate limit or an API
-	// error resumes it instead of starting the task over in a fresh one.
-	lastHermesConv string
+	// lastConvID is the conversation the last per-turn-process run left off
+	// in — Hermes' --resume id or opencode's --session id (protected by mu).
+	// A run that dies on a rate limit or an API error resumes it instead of
+	// starting the task over in a fresh one.
+	lastConvID string
 	// pendingHandoff is the distilled recap text (LEARN-TASKS.md LN-15) to
 	// send as the first user turn of the next runOnce call, set by
 	// checkContextRestart just before it kills the current process. Cleared
@@ -576,6 +581,9 @@ func New(p Params) *Session {
 	if p.HermesPath == "" {
 		p.HermesPath = "hermes"
 	}
+	if p.OpenCodePath == "" {
+		p.OpenCodePath = "opencode"
+	}
 	if p.RetryDelay <= 0 {
 		p.RetryDelay = 30
 	}
@@ -593,6 +601,7 @@ func New(p Params) *Session {
 		CLISessionID:      uuid.NewString(),
 		claudePath:        p.ClaudePath,
 		hermesPath:        p.HermesPath,
+		openCodePath:      p.OpenCodePath,
 		runtime:           newRuntime(p.Config),
 		retryDelay:        p.RetryDelay,
 		rateLimitPauseSec: p.RateLimitPauseSec,
@@ -1245,8 +1254,8 @@ func (s *Session) Run(ctx context.Context) {
 				Message: fmt.Sprintf("API unreachable (attempt %d) — resuming the same conversation in %s",
 					transientStreak, delay.Round(time.Second)),
 			}})
-			if s.Config.IsHermes() {
-				s.resumeHermesAfterFailure()
+			if s.Config.IsHermes() || s.Config.IsOpenCode() {
+				s.resumePerTurnAfterFailure()
 			} else {
 				s.mu.Lock()
 				s.resumeSessionID = s.CLISessionID
@@ -1260,7 +1269,7 @@ func (s *Session) Run(ctx context.Context) {
 			logger.L.Warn("session.run.rate_limited", "id", s.ID, "using_fallback", s.usingFallback)
 			s.setStatus(config.StatusRateLimited)
 			s.emitErr(err)
-			s.resumeHermesAfterFailure()
+			s.resumePerTurnAfterFailure()
 			// Fallback model: switch to FallbackModel immediately instead of waiting.
 			if s.Config.FallbackModelOnRateLimit && s.Config.FallbackModel != "" && !s.usingFallback {
 				s.usingFallback = true
@@ -1289,7 +1298,7 @@ func (s *Session) Run(ctx context.Context) {
 			}
 			s.mu.Lock()
 			s.resumeSessionID = ""
-			s.lastHermesConv = ""
+			s.lastConvID = ""
 			s.CLISessionID = uuid.NewString()
 			s.mu.Unlock()
 			if !s.sleepCtx(ctx, time.Duration(s.retryDelay)*time.Second) {
@@ -1345,7 +1354,7 @@ func (s *Session) Run(ctx context.Context) {
 			s.mu.Lock()
 			s.CLISessionID = uuid.NewString()
 			s.mu.Unlock()
-			s.resumeHermesAfterFailure()
+			s.resumePerTurnAfterFailure()
 			if !s.sleepCtx(ctx, time.Duration(s.retryDelay)*time.Second) {
 				s.setStatus(config.StatusIdle)
 				return
@@ -1649,6 +1658,9 @@ func (s *Session) runOnce(ctx context.Context, forceInteractive bool) error {
 	// Runtime.Args, atomics reset via resetRunAtomics, outcome
 	// classification via classifySentinelError) is already shared.
 	if s.runtime.PerTurnProcess() {
+		if s.Config.IsOpenCode() {
+			return s.runOnceOpenCode(ctx, forceInteractive)
+		}
 		return s.runOnceHermes(ctx, forceInteractive)
 	}
 
@@ -2299,7 +2311,7 @@ func (s *Session) askContextQuestion(util float64, question string) {
 		ID:       uuid.NewString(),
 		Question: question,
 		Options:  contextRestartOptions,
-		AskedAt: time.Now(),
+		AskedAt:  time.Now(),
 	}
 	pq.onAnswer = func(answer string) error {
 		switch answer {

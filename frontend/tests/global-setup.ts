@@ -59,6 +59,10 @@ export default async function globalSetup(): Promise<void> {
     './cmd/fakehermes',
     path.join(ROOT, 'cmd', 'fakehermes', exeName('fakehermes')),
   );
+  const fakeopencodeBin = buildBinary(
+    './cmd/fakeopencode',
+    path.join(ROOT, 'cmd', 'fakeopencode', exeName('fakeopencode')),
+  );
   const fakeworkerBin = buildBinary(
     './cmd/fakeworker',
     path.join(ROOT, 'cmd', 'fakeworker', exeName('fakeworker')),
@@ -88,11 +92,16 @@ export default async function globalSetup(): Promise<void> {
   }
 
   // 4. Write the runtime TOML.
-  const cfgPath = writeTestConfig(tmpDir, fakeclaudeBin, fakehermesBin, {
+  const cfgPath = writeTestConfig(tmpDir, fakeclaudeBin, fakehermesBin, fakeopencodeBin, {
     mixedEnabled,
     workerUrl,
     seedRepo,
   });
+
+  // 4b. The fake CLI binaries log their invocations here, so the opencode
+  // spec can assert exactly what the manager launched (the server inherits
+  // this env and passes it through to the fake).
+  process.env.FAKEOPENCODE_LOG = path.join(tmpDir, 'fakeopencode-calls.jsonl');
 
   // 5. Start the server and read the token.
   const { proc, token } = await startServer(serverBin, cfgPath);
@@ -227,11 +236,13 @@ function writeTestConfig(
   tmpDir: string,
   fakeclaudePath: string,
   fakehermesPath: string,
+  fakeopencodePath: string,
   mixed: MixedOpts,
 ): string {
   // Normalise to forward slashes for TOML string compatibility on Windows.
   const claudePathToml = fakeclaudePath.replace(/\\/g, '/');
   const hermesPathToml = fakehermesPath.replace(/\\/g, '/');
+  const opencodePathToml = fakeopencodePath.replace(/\\/g, '/');
   // The "test" project's path must NOT be ROOT (this checkout): fakeclaude is
   // fully scripted and never touches the filesystem, but config.go's project
   // overlay does — it reads a real `<path>/.claude-manager/config.toml` off
@@ -252,6 +263,7 @@ function writeTestConfig(
     '[settings]',
     `claude_path = "${claudePathToml}"`,
     `hermes_path = "${hermesPathToml}"`,
+    `opencode_path = "${opencodePathToml}"`,
     'log_retention_days = 1',
     'crash_recovery = false',
     'preflight_analysis = false',
@@ -302,6 +314,18 @@ function writeTestConfig(
     'prompt = "Run the feed-demo walkthrough"',
     'auto_restart = false',
     'model = "claude-sonnet-4-6"',
+    'permission_mode = "default"',
+    '',
+    // S6 — OpenCode runtime session. fakeopencode is fully scripted like
+    // fakehermes (echoes the first line of the query); the model is a full
+    // opencode provider/model selector and the effort becomes the #variant.
+    '[[project.session]]',
+    'name = "S6"',
+    'prompt = "Please do the simple hello task"',
+    'runtime = "opencode"',
+    'model = "zai-coding-plan/glm-5.3"',
+    'effort = "high"',
+    'auto_restart = false',
     'permission_mode = "default"',
   ];
 

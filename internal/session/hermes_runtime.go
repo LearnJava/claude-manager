@@ -143,13 +143,13 @@ func (s *Session) runOnceHermes(ctx context.Context, forceInteractive bool) erro
 	s.cancelRun = cancel
 	s.inputCh = inputCh
 	convID := s.resumeSessionID
-	s.lastHermesConv = ""
+	s.lastConvID = ""
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
 		s.cancelRun = nil
 		s.inputCh = nil
-		s.lastHermesConv = convID
+		s.lastConvID = convID
 		if s.questionTimer != nil {
 			s.questionTimer.Stop()
 			s.questionTimer = nil

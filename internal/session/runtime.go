@@ -74,7 +74,10 @@ type Parser interface {
 // backend. The only call site of this selection (New()) — everywhere else
 // goes through the Runtime interface (RUNTIME-TASKS.md RT-05).
 func newRuntime(cfg config.SessionConfig) Runtime {
-	if cfg.IsHermes() {
+	switch {
+	case cfg.IsOpenCode():
+		return openCodeRuntime{}
+	case cfg.IsHermes():
 		return hermesRuntime{}
 	}
 	return claudeRuntime{}

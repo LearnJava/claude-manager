@@ -140,7 +140,7 @@ type startIn struct {
 	sessionRef
 	Model   string `json:"model,omitempty" jsonschema:"Model for this and later starts, e.g. opus or sonnet; omit to keep the configured one"`
 	Effort  string `json:"effort,omitempty" jsonschema:"Reasoning effort, e.g. low, medium, high, xhigh or max; omit to keep the configured one"`
-	Runtime string `json:"runtime,omitempty" jsonschema:"Agent CLI to drive the session: claude or hermes; persisted in the session config; omit to keep the configured one"`
+	Runtime string `json:"runtime,omitempty" jsonschema:"Agent CLI to drive the session: claude, hermes or opencode; persisted in the session config; omit to keep the configured one"`
 }
 
 type sessionSlashIn struct {
@@ -163,7 +163,7 @@ type modelIn struct {
 
 type runtimeIn struct {
 	sessionRef
-	Runtime string `json:"runtime" jsonschema:"claude or hermes"`
+	Runtime string `json:"runtime" jsonschema:"claude, hermes or opencode"`
 }
 
 type permissionIn struct {
@@ -502,7 +502,7 @@ func buildCoreTools() []Tool {
 				Example: `{"session_id":"lumen/P1","model":"opus","effort":"high"}`,
 			},
 			Input: func(props map[string]*jsonschema.Schema) {
-				props["runtime"].Enum = []any{"claude", "hermes"}
+				props["runtime"].Enum = []any{"claude", "hermes", "opencode"}
 			},
 			Level: LevelOperate, Annotations: op, Covers: []string{"StartSession", "StartSessionWithModel"},
 			Translate: func(in startIn) (string, any, error) {
@@ -626,7 +626,7 @@ func buildCoreTools() []Tool {
 		sessionTool(spec[runtimeIn, sessionAck]{
 			Name: "set_session_runtime", Title: "Set session runtime",
 			Doc: Doc{
-				What:    "Choose which agent CLI (claude or hermes) a session drives.",
+				What:    "Choose which agent CLI (claude, hermes or opencode) a session drives.",
 				UseWhen: "a stopped session should run on another CLI the next time it starts.",
 				NotFor:  "a running session (stop_session first) or changing the model (use set_session_model).",
 				Returns: "ok and the session_id.",
@@ -634,7 +634,7 @@ func buildCoreTools() []Tool {
 				Example: `{"session_id":"lumen/P1","runtime":"hermes"}`,
 			},
 			Input: func(props map[string]*jsonschema.Schema) {
-				props["runtime"].Enum = []any{"claude", "hermes"}
+				props["runtime"].Enum = []any{"claude", "hermes", "opencode"}
 			},
 			Level: LevelOperate, Annotations: ToolAnnotations{Idempotent: true}, Covers: []string{"SetSessionRuntime"},
 			Translate: func(in runtimeIn) (string, any, error) {
@@ -643,7 +643,7 @@ func buildCoreTools() []Tool {
 					return "", nil, err
 				}
 				if in.Runtime == "" {
-					return "", nil, fmt.Errorf("runtime is required: claude or hermes")
+					return "", nil, fmt.Errorf("runtime is required: claude, hermes or opencode")
 				}
 				return "/rpc", rpcCallBody("SetSessionRuntime", map[string]string{"id": id, "runtime": in.Runtime}), nil
 			},

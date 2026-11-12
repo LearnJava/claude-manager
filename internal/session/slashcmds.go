@@ -91,6 +91,11 @@ func (s *Session) ListSlashCommands() []SlashCommand {
 	if s.Config.IsHermes() {
 		return hermesSkillCommands(hermesHome(s.Config.HermesProfile))
 	}
+	if s.Config.IsOpenCode() {
+		// opencode's commands/skills live in its own global config with no
+		// cheap file scan; offer no catalog rather than Claude's wrong one.
+		return nil
+	}
 	s.mu.Lock()
 	init := s.initCommands
 	s.mu.Unlock()

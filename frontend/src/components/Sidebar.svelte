@@ -7,7 +7,7 @@
     import PlanReview from './PlanReview.svelte';
     import QueueMiniBar from './QueueMiniBar.svelte';
     import { syncQueue } from '../stores/queues';
-    import { MODELS, normalizeModel, providerCombos, type ProviderUI } from '../lib/models';
+    import { MODELS, normalizeModel, openCodeCombos, providerCombos, type ProviderUI } from '../lib/models';
     import { t } from '../lib/i18n';
 
     const dispatch = createEventDispatcher();
@@ -72,6 +72,19 @@
         return s.runtime === 'hermes' && !providerOfSession(s);
     }
 
+    // Same idea for an opencode session: its models are the full
+    // `provider/model` selectors of the opencode-capable providers.
+    function isPlainOpenCode(s: SessionState): boolean {
+        return s.runtime === 'opencode' && !providerOfSession(s);
+    }
+
+    // A plain per-turn session (hermes/opencode, no provider brain): its
+    // model dropdown shows the union of the capable providers' combos, and a
+    // pinned id outside them stays visible as its own "custom" option.
+    function isPlainPerTurn(s: SessionState): boolean {
+        return isPlainHermes(s) || isPlainOpenCode(s);
+    }
+
     // The provider whose combos a session's model dropdown shows: the
     // selected one, or — for a plain hermes session — the hermes-capable
     // provider matching its current model (else the first hermes-capable).
@@ -98,11 +111,19 @@
         return providers.filter((x) => x.hermesProviderId).flatMap((x) => providerCombos(x));
     }
 
+    // The model dropdown list for a session: provider combos for a provider
+    // brain or a plain hermes session, opencode selectors for a plain
+    // opencode session, undefined otherwise (the plain Claude list).
+    function pickerCombosFor(s: SessionState): { value: string; label: string; model: string; effort: string }[] {
+        if (isPlainOpenCode(s)) return openCodeCombos(providers);
+        return providerCombosFor(s);
+    }
+
     function comboValueOf(s: SessionState): string {
         // Case-insensitive: the CLI may echo the model id back in its own
         // case; the display must never go blank over a spelling difference.
         const m = (modelValue(s) || '').toLowerCase();
-        const combos = providerCombosFor(s);
+        const combos = pickerCombosFor(s);
         if (combos.some((c) => c.model.toLowerCase() === m)) {
             return (combos.find((c) => c.model.toLowerCase() === m && c.effort === s.effort)
                 ?? combos.find((c) => c.model.toLowerCase() === m)).value;
@@ -115,7 +136,7 @@
 
     function comboMatchesModel(s: SessionState): boolean {
         const m = (modelValue(s) || '').toLowerCase();
-        return providerCombosFor(s).some((c) => c.model.toLowerCase() === m);
+        return pickerCombosFor(s).some((c) => c.model.toLowerCase() === m);
     }
 
     async function onAIChange(e: Event, s: SessionState) {
@@ -140,7 +161,7 @@
     async function onComboChange(e: Event, s: SessionState) {
         e.stopPropagation();
         const v = (e.target as HTMLSelectElement).value;
-        const c = providerCombosFor(s).find((x) => x.value === v);
+        const c = pickerCombosFor(s).find((x) => x.value === v);
         if (!c || (c.model.toLowerCase() === modelValue(s).toLowerCase() && c.effort === s.effort)) return;
         modelBusy = { ...modelBusy, [s.id]: true };
         modelError = { ...modelError, [s.id]: '' };
@@ -224,15 +245,18 @@
     }
 
     function runtimeOf(s: SessionState): string {
-        return s.runtime === 'hermes' ? 'hermes' : 'claude';
+        if (s.runtime === 'hermes') return 'hermes';
+        if (s.runtime === 'opencode') return 'opencode';
+        return 'claude';
     }
 
     // Value for the model <select>. Claude sessions fold resolved ids onto
     // our aliases (see lib/models). Hermes takes any provider id
     // (`anthropic/claude-sonnet-4.6`), and folding that onto "sonnet" would
     // show a model the session isn't actually using — only exact aliases fold.
+    // OpenCode's models are full `provider/model` selectors, same rule.
     function modelValue(s: SessionState): string {
-        if (s.runtime === 'hermes') {
+        if (s.runtime === 'hermes' || s.runtime === 'opencode') {
             const raw = (s.model ?? '').trim();
             return MODELS.some((m) => m.value === raw.toLowerCase()) ? raw.toLowerCase() : raw;
         }
@@ -633,20 +657,21 @@
                                     on:change={(e) => onAIChange(e, s)}
                                     data-testid="runtime-select-{s.id}"
                                     class="bg-bg border border-bg-border rounded px-1 disabled:opacity-60 disabled:pointer-events-none
-                                           {providerOfSession(s) ? 'text-blue-400' : s.runtime === 'hermes' ? 'text-amber-400' : 'text-text-muted'}"
+                                           {providerOfSession(s) ? 'text-blue-400' : s.runtime === 'hermes' ? 'text-amber-400' : s.runtime === 'opencode' ? 'text-emerald-400' : 'text-text-muted'}"
                                     style="font-size: 10px; line-height: 1.4;">
                                     <option value="claude">Claude</option>
                                     <option value="hermes">☤ Hermes</option>
+                                    <option value="opencode">◎ OpenCode</option>
                                     {#each providers as p}
                                         <option value={'prov:' + p.id}>{p.label}</option>
                                     {/each}
                                 </select>
                                 </span>
                                 <select
-                                    value={providerOfSession(s) || isPlainHermes(s) ? comboValueOf(s) : modelValue(s)}
+                                    value={providerOfSession(s) || isPlainPerTurn(s) ? comboValueOf(s) : modelValue(s)}
                                     disabled={!!modelBusy[s.id]}
                                     on:focus={() => select(s.id)}
-                                    on:change={(e) => (providerOfSession(s) || isPlainHermes(s)
+                                    on:change={(e) => (providerOfSession(s) || isPlainPerTurn(s)
                                         ? onComboChange(e, s)
                                         : onModelChange(e, s))}
                                     data-testid="model-select-{s.id}"
@@ -656,13 +681,15 @@
                                     class="ml-1 shrink-0 bg-bg border border-bg-border rounded px-1 text-text-muted max-w-[11rem]
                                            disabled:opacity-50 disabled:pointer-events-none"
                                     style="font-size: 10px; line-height: 1.4;">
-                                    {#if providerOfSession(s) || isPlainHermes(s)}
-                                        <!-- A provider brain (or a plain hermes session, whose model
-                                             list is the hermes-capable providers'): one flat model×effort list -->
-                                        {#each providerCombosFor(s) as c}
+                                    {#if providerOfSession(s) || isPlainPerTurn(s)}
+                                        <!-- A provider brain, a plain hermes session (whose model
+                                             list is the hermes-capable providers'), or a plain
+                                             opencode session (the opencode-capable selectors): one
+                                             flat model×effort list -->
+                                        {#each pickerCombosFor(s) as c}
                                             <option value={c.value}>{c.label}</option>
                                         {/each}
-                                        {#if isPlainHermes(s) && !comboMatchesModel(s)}
+                                        {#if isPlainPerTurn(s) && !comboMatchesModel(s)}
                                             <!-- The pinned model id (e.g. a leftover CLI alias) is not
                                                  among the combos — show it as its own option rather
                                                  than silently selecting a different model. -->

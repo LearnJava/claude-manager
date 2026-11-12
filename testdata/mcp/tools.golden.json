@@ -4861,15 +4861,16 @@
       "readOnlyHint": false,
       "title": "Set session runtime"
     },
-    "description": "Choose which agent CLI (claude or hermes) a session drives. Use when: a stopped session should run on another CLI the next time it starts. Not for: a running session (stop_session first) or changing the model (use set_session_model). Returns: ok and the session_id. Side effects: rewrites the session's runtime in the saved configuration; refused while the session runs. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"runtime\":\"hermes\"}",
+    "description": "Choose which agent CLI (claude, hermes or opencode) a session drives. Use when: a stopped session should run on another CLI the next time it starts. Not for: a running session (stop_session first) or changing the model (use set_session_model). Returns: ok and the session_id. Side effects: rewrites the session's runtime in the saved configuration; refused while the session runs. Access: operate. Example: {\"session_id\":\"lumen/P1\",\"runtime\":\"hermes\"}",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "runtime": {
-          "description": "claude or hermes",
+          "description": "claude, hermes or opencode",
           "enum": [
             "claude",
-            "hermes"
+            "hermes",
+            "opencode"
           ],
           "type": "string"
         },
@@ -5129,10 +5130,11 @@
           "type": "string"
         },
         "runtime": {
-          "description": "Agent CLI to drive the session: claude or hermes; persisted in the session config; omit to keep the configured one",
+          "description": "Agent CLI to drive the session: claude, hermes or opencode; persisted in the session config; omit to keep the configured one",
           "enum": [
             "claude",
-            "hermes"
+            "hermes",
+            "opencode"
           ],
           "type": "string"
         },

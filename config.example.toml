@@ -4,6 +4,7 @@
 [settings]
 claude_path = "claude"                  # path to CLI; "claude" if it's in PATH
 hermes_path = "hermes"                  # Hermes CLI, used by sessions with runtime = "hermes"
+opencode_path = "opencode"              # OpenCode CLI (v2), used by sessions with runtime = "opencode"
 default_retry_delay = 30               # seconds between retries on error
 rate_limit_pause = 300                 # seconds to pause when rate-limited
 log_retention_days = 30                # days to keep session history in SQLite
@@ -127,6 +128,7 @@ base_url = "https://api.z.ai/api/anthropic"
 key_env = "ZAI_API_KEY"                # env var NAME holding the key — never the key itself
 settings_dir = "state/glm"             # relative to this config file
 hermes_provider_id = "zai"             # --provider for hermes-runtime sessions on this brain
+opencode_provider_id = "zai-coding-plan" # provider part of opencode's `provider/model` selector (built-in default; `opencode models` lists the ids)
 
 [[providers.glm.models]]
 id = "glm-5.3"                         # goes to --model as-is
@@ -377,6 +379,19 @@ path = 'D:\RustProjects\lumen-browser'
   # hermes_profile = "cm-lumen"            # -p <profile>: own memory/skills/hooks
   # hermes_skills = ["my-skill"]           # -s, preloaded every turn
   # hermes_max_turns = 500                 # --max-turns per turn; 0 = 500, not Hermes' own agent.max_turns
+
+  # Runtime = "opencode": a session runs `opencode run --format json`, one
+  # process per turn, resuming the conversation by id (OpenCode CLI v2).
+  # `model` is a full provider/model selector from opencode's own catalog
+  # (`opencode models`); `effort` becomes the #variant suffix. The provider's
+  # brain must expose an opencode_provider_id (below) for the model dropdown,
+  # and providers themselves are connected inside opencode (`opencode auth
+  # login`). Ignored under opencode: max_budget_usd, fallback_model,
+  # allowed/disallowed_tools, add_dirs; permissions are always auto-approved
+  # in headless runs (--auto).
+  # runtime = "opencode"
+  # model = "zai-coding-plan/glm-5.3"
+  # effort = "high"
 
   # Auto-approve rules evaluated in order; first match wins
   [[project.session.permission_rule]]

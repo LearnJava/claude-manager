@@ -49,6 +49,8 @@ export interface ProviderUI {
     models: ProviderModelUI[];
     /** The hermes CLI --provider this brain maps to ("" = claude-only). */
     hermesProviderId?: string;
+    /** The provider part of the opencode `provider/model` selector ("" = not offered to opencode). */
+    opencodeProviderId?: string;
 }
 
 /** One flat "model × effort" row of a provider's picker list. */
@@ -65,6 +67,25 @@ export function providerCombos(p: ProviderUI): ProviderComboUI[] {
     for (const m of p.models ?? []) {
         for (const e of m.efforts ?? []) {
             out.push({ value: `${m.id}::${e}`, label: `${m.label} ${e}`, model: m.id, effort: e });
+        }
+    }
+    return out;
+}
+
+/**
+ * The picker list for an opencode session: the union of every
+ * opencode-capable provider's models × efforts, where the model value is
+ * the full `provider/model` selector the runtime passes to `--model` (the
+ * effort rides along as the `#variant` suffix the runtime appends).
+ */
+export function openCodeCombos(providers: ProviderUI[]): ProviderComboUI[] {
+    const out: ProviderComboUI[] = [];
+    for (const p of providers.filter((x) => x.opencodeProviderId)) {
+        for (const m of p.models ?? []) {
+            for (const e of m.efforts ?? []) {
+                const id = `${p.opencodeProviderId}/${m.id}`;
+                out.push({ value: `${id}::${e}`, label: `${m.label} ${e}`, model: id, effort: e });
+            }
         }
     }
     return out;

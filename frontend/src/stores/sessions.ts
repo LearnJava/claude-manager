@@ -67,7 +67,7 @@ export interface SessionState {
     model: string;
     effort: string;
     permission_mode: string;
-    /** "hermes" for a Hermes CLI session (HERMES-TASKS.md), "" for Claude Code CLI. */
+    /** "hermes" or "opencode" for a per-turn CLI session (HERMES-TASKS.md / OpenCode runtime), "" for Claude Code CLI. */
     runtime?: string;
     /** Non-Anthropic brain id ([providers.<id>]) inside the claude runtime; "" = plain Claude. */
     provider?: string;
@@ -511,8 +511,10 @@ function subscribeEvents() {
         // store's copy (a start-with-provider rebuilds the session from the
         // fresh config). No event carries those fields on its own, so pull
         // the authoritative snapshot once — otherwise the row keeps showing
-        // the previous brain's pickers for the whole run.
-        if (evt.status === 'starting') scheduleRefresh();
+        // the previous brain's pickers for the whole run. On idle/error the
+        // manager itself re-reads the stored config (cfgNow), so a refresh
+        // there picks up a provider change the next start will use.
+        if (evt.status === 'starting' || evt.status === 'idle' || evt.status === 'error') scheduleRefresh();
     });
 
     EventsOn('session:stop_requested', (evt: { id: string; stop_requested: boolean; stopped_after_task_at?: string }) => {
@@ -653,9 +655,15 @@ function subscribeEvents() {
         if (!evt || !evt.id) return;
         setSession(evt.id, (s) => ({
             ...s,
-            model: evt.info?.model ?? s.model,
+            // An empty model (opencode's init carries none) must not wipe the
+            // configured one the dropdown is showing.
+            model: evt.info?.model || s.model,
             cli_session_id: evt.info?.session_id ?? s.cli_session_id,
         }));
+        // The init echo carries the run's real model, so the snapshot the
+        // 'starting' refresh fetched may predate the manager stamping the
+        // provider/model on the live session — pull an authoritative copy.
+        scheduleRefresh();
     });
 
     EventsOn('session:result', (evt: { id: string; result: TurnSummary }) => {

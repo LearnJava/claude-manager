@@ -387,8 +387,11 @@ func defaultProviders() map[string]ProviderConfig {
 			KeyEnv:      "ZAI_API_KEY",
 			SettingsDir: "state/glm",
 			// The same GLM brain is reachable by the hermes runtime through
-			// the CLI's own `zai` provider (GLM_API_KEY in hermes' .env).
-			HermesProviderID: "zai",
+			// the CLI's own `zai` provider (GLM_API_KEY in hermes' .env),
+			// and by the opencode runtime through its connected
+			// zai-coding-plan integration (`opencode models`).
+			HermesProviderID:   "zai",
+			OpenCodeProviderID: "zai-coding-plan",
 			Models: []ProviderModel{
 				{ID: "glm-5.3", Label: "GLM-5.3", Efforts: []string{"low", "high", "max"}},
 				{ID: "glm-5.3-flash", Label: "GLM-5.3-Flash", Efforts: []string{"low", "high", "max"}},
@@ -443,6 +446,9 @@ func applyDefaults(cfg *AppConfig) {
 	}
 	if s.HermesPath == "" {
 		s.HermesPath = "hermes"
+	}
+	if s.OpenCodePath == "" {
+		s.OpenCodePath = "opencode"
 	}
 	if s.DefaultRetryDelay == 0 {
 		s.DefaultRetryDelay = 30
@@ -524,6 +530,9 @@ func applyProviderDefaults(cfg *AppConfig) {
 			}
 			if p.HermesProviderID == "" {
 				p.HermesProviderID = def.HermesProviderID
+			}
+			if p.OpenCodeProviderID == "" {
+				p.OpenCodeProviderID = def.OpenCodeProviderID
 			}
 			if len(p.Models) == 0 {
 				p.Models = def.Models
