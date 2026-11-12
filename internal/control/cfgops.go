@@ -357,8 +357,8 @@ func updateSession(c *config.AppConfig, project, name string, patch map[string]a
 	}
 	// The runtime enum is enforced on writes (loads are tolerant of values
 	// another line's build stores in the shared home config).
-	if rt := n.Projects[i].Sessions[j].Runtime; rt != "" && rt != "claude" && rt != config.RuntimeHermes {
-		return nil, fmt.Errorf("invalid runtime %q (want claude|hermes)", rt)
+	if rt := n.Projects[i].Sessions[j].Runtime; rt != "" && rt != "claude" && rt != config.RuntimeHermes && rt != config.RuntimeOpenCode {
+		return nil, fmt.Errorf("invalid runtime %q (want claude|hermes|opencode)", rt)
 	}
 	return finishEdit(n, changes)
 }

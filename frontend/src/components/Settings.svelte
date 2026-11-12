@@ -124,6 +124,7 @@
     interface GlobalSettings {
         ClaudePath: string;
         HermesPath: string;
+        OpenCodePath: string;
         DefaultRetryDelay: number;
         RateLimitPause: number;
         LogRetentionDays: number;
@@ -309,6 +310,7 @@
         const settings: GlobalSettings = {
             ClaudePath: '',
             HermesPath: '',
+            OpenCodePath: '',
             DefaultRetryDelay: 30,
             RateLimitPause: 300,
             LogRetentionDays: 30,
@@ -949,6 +951,15 @@
                                     bind:value={gs.HermesPath}
                                     placeholder="hermes"
                                     data-testid="hermes-path"
+                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                            </label>
+                            <label class="flex flex-col text-xs text-text-muted gap-1">
+                                {$t('settings.general.opencodePath')}
+                                <input
+                                    type="text"
+                                    bind:value={gs.OpenCodePath}
+                                    placeholder="opencode"
+                                    data-testid="opencode-path"
                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                             </label>
                             <label class="flex flex-col text-xs text-text-muted gap-1">
@@ -1730,6 +1741,7 @@
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text">
                                                     <option value="">Claude Code CLI</option>
                                                     <option value="hermes">Hermes CLI</option>
+                                                    <option value="opencode">OpenCode CLI</option>
                                                 </select>
                                             </label>
                                             {#if sess.Runtime === 'hermes'}
@@ -1755,6 +1767,9 @@
                                         {#if sess.Runtime === 'hermes'}
                                             <p class="text-xs text-text-muted mb-3">{$t('settings.sessions.hermesNote')}</p>
                                         {/if}
+                                        {#if sess.Runtime === 'opencode'}
+                                            <p class="text-xs text-text-muted mb-3">{$t('settings.sessions.opencodeNote')}</p>
+                                        {/if}
                                         <div class="grid grid-cols-3 gap-3">
                                             <label class="flex flex-col text-xs text-text-muted gap-1">
                                                 {$t('settings.field.model')}
@@ -1765,6 +1780,14 @@
                                                     bind:value={sess.Model}
                                                     placeholder="anthropic/claude-sonnet-4.6"
                                                     data-testid="hermes-model"
+                                                    class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
+                                                {:else if sess.Runtime === 'opencode'}
+                                                <!-- OpenCode takes a full provider/model selector from its own catalog -->
+                                                <input
+                                                    type="text"
+                                                    bind:value={sess.Model}
+                                                    placeholder="zai-coding-plan/glm-5.3"
+                                                    data-testid="opencode-model"
                                                     class="bg-bg border border-bg-border rounded px-2 py-1 text-sm text-text" />
                                                 {:else}
                                                 <select

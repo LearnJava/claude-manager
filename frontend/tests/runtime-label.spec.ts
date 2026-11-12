@@ -1,10 +1,12 @@
 /**
  * Runtime label spec — VIEW-TASKS.md UI-06 (SessionCard.svelte — SC-07).
  *
- * SessionCard's second row must show a large "Use Hermes" / "Use Claude Code"
- * label next to the model, driven purely by `session.runtime`:
+ * SessionCard's second row must show a large "Use Hermes" / "Use OpenCode" /
+ * "Use Claude Code" label next to the model, driven purely by
+ * `session.runtime`:
  *   - S1 (runtime unset, the default) -> "Use Claude Code"
  *   - S4 (runtime = "hermes", fakehermes) -> "Use Hermes"
+ *   - S6 (runtime = "opencode", fakeopencode) -> "Use OpenCode"
  */
 
 import { test, expect } from './fixtures';
@@ -16,6 +18,7 @@ test.describe('SessionCard runtime label', () => {
   test.beforeEach(async ({ ctrl }) => {
     await ctrl.rpc('StopSession', { id: SESSION_ID('S1'), soft: false }).catch(() => {});
     await ctrl.rpc('StopSession', { id: SESSION_ID('S4'), soft: false }).catch(() => {});
+    await ctrl.rpc('StopSession', { id: SESSION_ID('S6'), soft: false }).catch(() => {});
     await new Promise((r) => setTimeout(r, 200));
   });
 
@@ -45,5 +48,19 @@ test.describe('SessionCard runtime label', () => {
     const label = page.locator('[data-testid="runtime-label"]');
     await expect(label).toBeVisible({ timeout: 5_000 });
     await expect(label).toHaveText('Use Hermes');
+  });
+
+  test('opencode-runtime session shows "Use OpenCode"', async ({ page, ctrl }) => {
+    await page.goto('/');
+    await ctrl.rpc('StartSession', { project: PROJECT, session: 'S6' });
+    await ctrl.wait('session:status', { id: SESSION_ID('S6'), status: 'working' }, 12_000);
+
+    const sessionRow = page.locator('[role="button"]', { hasText: 'S6' }).first();
+    await expect(sessionRow).toBeVisible({ timeout: 5_000 });
+    await sessionRow.click();
+
+    const label = page.locator('[data-testid="runtime-label"]');
+    await expect(label).toBeVisible({ timeout: 5_000 });
+    await expect(label).toHaveText('Use OpenCode');
   });
 });

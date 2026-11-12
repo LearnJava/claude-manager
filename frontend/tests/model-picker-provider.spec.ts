@@ -78,7 +78,7 @@ test.describe('Model picker: provider segment', () => {
             await expect
                 .poll(() => aiSel.inputValue(), { timeout: 10_000 })
                 .toBe('prov:glm');
-            await expect(aiSel.locator('option')).toHaveText(['Claude', '☤ Hermes', 'Claude GLM', 'Kimi']);
+            await expect(aiSel.locator('option')).toHaveText(['Claude', '☤ Hermes', '◎ OpenCode', 'Claude GLM', 'Kimi']);
             await expect
                 .poll(() => modelSel.inputValue(), { timeout: 10_000 })
                 // The live session's effort is what the CLI reported back in

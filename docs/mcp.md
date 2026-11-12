@@ -385,7 +385,7 @@ idle ──start_session──▶ starting ──▶ working ◀──send_messa
 | `restart_session` | operate | запускает модель | Restart a session, fresh or resuming its saved conversation. |
 | `send_message` | operate | запускает модель | Send a user message, optionally with images, to a running session. |
 | `set_session_model` | operate | идемпотентное | Switch a session's model, live if it is running. |
-| `set_session_runtime` | operate | идемпотентное | Choose which agent CLI (claude or hermes) a session drives. |
+| `set_session_runtime` | operate | идемпотентное | Choose which agent CLI (claude, hermes or opencode) a session drives. |
 | `clear_session_state` | admin | разрушительное, идемпотентное | Delete a session's saved crash-recovery state so its next start opens a fresh conversation. |
 | `start_project` | operate | идемпотентное, запускает модель | Start every configured session of a project. |
 | `stop_project` | admin | разрушительное, идемпотентное | Stop every running session of a project. |

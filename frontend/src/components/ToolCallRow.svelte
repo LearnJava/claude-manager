@@ -6,6 +6,7 @@
     import { formatCallDuration } from '../lib/formatters';
     import { locale } from '../lib/i18n';
     import LogEntryRow from './LogEntryRow.svelte';
+    import { logCompactTools } from '../stores/logView';
 
     export let tc: ToolCall;
     // A search hit inside this call opens the row (UI-11); a manual click wins.
@@ -35,7 +36,13 @@
         ? formatCallDuration(isNaN(startMs) ? undefined : Math.max(0, now - startMs))
         : formatCallDuration(tc.durationMs);
     $: errorText = tc.state === 'error' ? (tc.result?.message ?? '').trim().replace(/\s+/g, ' ').slice(0, ERROR_CHARS) : '';
+    // Compact tools mode: the header button already carries the call's info,
+    // so the expansion shows just the output — the raw call entry would be
+    // the same line twice.
     $: members = tc.result ? [tc.call, tc.result] : [tc.call];
+    $: shownMembers = $logCompactTools
+        ? members.filter((e) => (e.level ?? '').toLowerCase() !== 'tool')
+        : members;
 </script>
 
 <div class="py-px" data-testid="tool-call-row" data-state={tc.state}>
@@ -68,7 +75,7 @@
     </button>
     {#if open}
         <div class="pl-6 border-l border-bg-border ml-2">
-            {#each members as e, i (entryKey(e, i))}
+            {#each shownMembers as e, i (entryKey(e, i))}
                 <LogEntryRow entry={e} entryKey={entryKey(e, i)} />
             {/each}
         </div>

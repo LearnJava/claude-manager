@@ -220,6 +220,8 @@ export default {
     'settings.sessions.hermesProfile': 'Hermes profile',
     'settings.sessions.hermesProfileTitle': 'Named Hermes profile (hermes -p): its own memory, skills, hooks and session history.',
     'settings.sessions.hermesNote': 'Hermes runs one process per turn and resumes the conversation by id. Not applied: budget limit, fallback model, allowed/disallowed tools, extra dirs. Permission modes other than bypass follow the Hermes approval policy: dangerous commands are blocked, not asked.',
+    'settings.general.opencodePath': 'OpenCode CLI path',
+    'settings.sessions.opencodeNote': 'OpenCode runs one process per turn and resumes the conversation by id. The model is a full "provider/model" selector from opencode\'s own catalog (`opencode models`); the effort becomes the #variant. Providers resolve through opencode\'s own connected integrations (opencode auth login). Not applied: budget limit, fallback model, allowed/disallowed tools, extra dirs.',
     'settings.sessions.effort': 'Effort',
     'settings.sessions.fallbackModel': 'Fallback model',
     'settings.sessions.fallbackModelTitle': 'Model used when the primary model is rate-limited or overloaded.',

@@ -37,9 +37,9 @@ type refCapture struct {
 }
 
 // refCasesOn reports whether this session records reference cases: the flag,
-// and a Claude work folder (Hermes keeps its own turn loop).
+// and a Claude work folder (the per-turn runtimes keep their own turn loop).
 func (s *Session) refCasesOn() bool {
-	return s.refCasesFlag && !s.Config.IsHermes()
+	return s.refCasesFlag && !s.Config.IsHermes() && !s.Config.IsOpenCode()
 }
 
 // beginReferenceCase notes the task a run starts on (pointer is the queue's

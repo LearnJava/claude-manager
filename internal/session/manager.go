@@ -1,10 +1,10 @@
 package session
 
 import (
-	"os"
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -237,15 +237,15 @@ type ErrorEvent struct {
 
 // SessionState is a snapshot of a session's full state returned to the UI.
 type SessionState struct {
-	ID             string     `json:"id"`
-	Project        string     `json:"project"`
-	Name           string     `json:"name"`
-	Status         string     `json:"status"`
-	Model          string     `json:"model"`
-	Effort         string     `json:"effort"`
-	PermissionMode string     `json:"permission_mode"`
+	ID             string `json:"id"`
+	Project        string `json:"project"`
+	Name           string `json:"name"`
+	Status         string `json:"status"`
+	Model          string `json:"model"`
+	Effort         string `json:"effort"`
+	PermissionMode string `json:"permission_mode"`
 	// Runtime is "hermes" for a Hermes CLI session, "" for Claude Code CLI.
-	Runtime        string     `json:"runtime"`
+	Runtime string `json:"runtime"`
 	// Provider is the non-Anthropic brain id ([providers.<id>]) the session
 	// runs on inside the claude runtime; "" = plain Claude.
 	Provider       string     `json:"provider,omitempty"`
@@ -452,12 +452,12 @@ func NewSessionManager(cfg *config.AppConfig, cfgPath string, st *store.Store, e
 		stateStore:     NewStateStore(stateDir),
 		journalAnalyze: analysis.GenerateJournalEntry,
 		runtimeRules:   permission.NewRuntimeRuleSet(),
-		queue:        permission.NewPendingQueue(),
-		workerStore:  worker.NewStore(stateDir),
-		taskStore:    worker.NewTaskStore(stateDir),
-		worktreeDir:  filepath.Join(filepath.Dir(cfgPath), "worktrees"),
-		mixedTasks:   make(map[string]context.CancelFunc),
-		mixedBriefs:  make(map[string]worker.Brief),
+		queue:          permission.NewPendingQueue(),
+		workerStore:    worker.NewStore(stateDir),
+		taskStore:      worker.NewTaskStore(stateDir),
+		worktreeDir:    filepath.Join(filepath.Dir(cfgPath), "worktrees"),
+		mixedTasks:     make(map[string]context.CancelFunc),
+		mixedBriefs:    make(map[string]worker.Brief),
 	}
 }
 
@@ -675,7 +675,7 @@ func (m *SessionManager) reserveStartSlot() time.Duration {
 // another line's build) load and display fine — only their launch is
 // refused, with a clear error instead of silently running the claude CLI.
 func runtimeStartable(rt string) bool {
-	return rt == "" || rt == "claude" || rt == config.RuntimeHermes
+	return rt == "" || rt == "claude" || rt == config.RuntimeHermes || rt == config.RuntimeOpenCode
 }
 
 // StartSession launches a session by project/session name. Honours the
@@ -745,6 +745,7 @@ func (m *SessionManager) StartSession(project, name string) error {
 		ProviderEnv:       providerEnv,
 		ClaudePath:        m.cfg.Settings.ClaudePath,
 		HermesPath:        m.cfg.Settings.HermesPath,
+		OpenCodePath:      m.cfg.Settings.OpenCodePath,
 		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
@@ -896,10 +897,11 @@ func (m *SessionManager) StartSessionWithProvider(project, name, provider, model
 		sessionCfg.Provider = config.ProviderForModel(m.cfg, sessionCfg.Model)
 	}
 	// Hermes ignores claude-runtime artifacts (settings file, auth env);
-	// its provider rides the command line instead.
+	// its provider rides the command line instead. OpenCode likewise:
+	// providers resolve through its own connected integrations.
 	var settingsFile string
 	var providerEnv []string
-	if !sessionCfg.IsHermes() {
+	if !sessionCfg.IsHermes() && !sessionCfg.IsOpenCode() {
 		settingsFile, providerEnv, err = m.providerArtifacts(sessionCfg.Provider, sessionCfg.Model)
 		if err != nil {
 			return err
@@ -920,6 +922,7 @@ func (m *SessionManager) StartSessionWithProvider(project, name, provider, model
 		ProviderEnv:       providerEnv,
 		ClaudePath:        m.cfg.Settings.ClaudePath,
 		HermesPath:        m.cfg.Settings.HermesPath,
+		OpenCodePath:      m.cfg.Settings.OpenCodePath,
 		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
@@ -1199,9 +1202,10 @@ func (m *SessionManager) SetSessionModelWithEffort(id, model, effort string) err
 	logger.L.Info("manager.set_session_model", "id", id, "model", model, "provider", provider, "effort", effort)
 
 	// Hermes runs one process per turn, so the next turn's `-m` already
-	// picks up the new model — no restart, nothing interrupted. Providers
-	// are a claude-runtime concept; hermes launches ignore their artifacts.
-	if sess.Config.IsHermes() {
+	// picks up the new model — no restart, nothing interrupted. OpenCode is
+	// the same (one `--model` per `opencode run`). Providers are a
+	// claude-runtime concept; per-turn runtimes ignore their artifacts.
+	if sess.Config.IsHermes() || sess.Config.IsOpenCode() {
 		return nil
 	}
 	if sess.Autonomous() && provider == sess.Config.Provider {
@@ -1434,6 +1438,7 @@ func (m *SessionManager) startSessionResuming(project, name, resumeID, model str
 		Config:            sessionCfg,
 		ClaudePath:        m.cfg.Settings.ClaudePath,
 		HermesPath:        m.cfg.Settings.HermesPath,
+		OpenCodePath:      m.cfg.Settings.OpenCodePath,
 		RetryDelay:        m.cfg.Settings.DefaultRetryDelay,
 		RateLimitPauseSec: m.cfg.Settings.RateLimitPause,
 		StateStore:        m.stateStore,
@@ -1941,12 +1946,12 @@ func (m *SessionManager) GetDailyCost(date string) (float64, error) {
 // because cache reads are an order of magnitude cheaper than fresh input —
 // two days with the same total can differ several-fold in real cost.
 type DailyTokens struct {
-	Date          string `json:"date"`
-	InputTokens   int64  `json:"input_tokens"`
-	OutputTokens  int64  `json:"output_tokens"`
-	CacheRead     int64  `json:"cache_read"`
-	CacheCreation int64  `json:"cache_creation"`
-	Total         int64  `json:"total"`
+	Date          string  `json:"date"`
+	InputTokens   int64   `json:"input_tokens"`
+	OutputTokens  int64   `json:"output_tokens"`
+	CacheRead     int64   `json:"cache_read"`
+	CacheCreation int64   `json:"cache_creation"`
+	Total         int64   `json:"total"`
 	CostUSD       float64 `json:"cost_usd"`
 	// DurationMs is the wall-clock time of the runs the figures cover
 	// (WASTE-TASKS.md WS-02: the subscription readout leads with tokens and time).

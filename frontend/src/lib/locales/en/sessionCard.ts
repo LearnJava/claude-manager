@@ -35,6 +35,8 @@ export default {
     'sessionCard.contextTooltip': 'Context window utilization',
     'sessionCard.useHermesLabel': 'Use Hermes',
     'sessionCard.useHermesTooltip': 'This session is driven by Hermes CLI',
+    'sessionCard.useOpenCodeLabel': 'Use OpenCode',
+    'sessionCard.useOpenCodeTooltip': 'This session is driven by OpenCode CLI',
     'sessionCard.useClaudeCodeLabel': 'Use Claude Code',
     'sessionCard.useClaudeCodeTooltip': 'This session is driven by Claude Code CLI',
 } as Record<string, string>;

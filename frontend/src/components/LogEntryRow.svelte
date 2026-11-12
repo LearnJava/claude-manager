@@ -3,9 +3,9 @@
     // inline in its {#each}. Pulled into its own component so both the
     // classic view and an expanded feed group (VIEW-TASKS.md UI-02) render
     // identically instead of duplicating the collapse/markdown logic.
-    import { t } from '../lib/i18n';
+    import { t, locale } from '../lib/i18n';
     import type { LogEntry } from '../stores/sessions';
-    import { logMarkdown } from '../stores/logView';
+    import { logMarkdown, logCompactTools } from '../stores/logView';
     import {
         hasMarkdown,
         hasStrongMarkdown,
@@ -13,6 +13,7 @@
         renderMarkdown,
     } from '../lib/markdown';
     import { formatTime, logEntryColor, logEntryIcon } from '../lib/formatters';
+    import { toolDisplay } from '../lib/toolDisplay';
     import { copyText, COPY_FEEDBACK_MS } from '../lib/clipboard';
     import { codeCopy } from '../lib/codeCopy';
     import { foldDoneMarkers } from '../lib/askUserMarker';
@@ -98,11 +99,21 @@
     $: shown = foldDoneMarkers(msg, (s) =>
         '✓ ' + (s ? $t('logStream.doneMarkerWith', { s }) : $t('logStream.doneMarker')),
     );
+    // A tool-call entry (level 'tool') with the "Tools" checkbox on shows a
+    // pretty one-liner (lib/toolDisplay, the same feed vocabulary) instead of
+    // its raw dump; the row stays expandable to the full raw entry.
+    $: isToolCall =
+        (entry.level ?? '').toLowerCase() === 'tool' && !!(entry.tool_name || entry.tool_input);
+    $: compact = $logCompactTools && isToolCall;
+    $: disp = isToolCall ? toolDisplay(entry, $locale) : null;
+    $: prettyLabel = compact
+        ? [disp?.emoji, disp?.verb, disp?.detail].filter(Boolean).join(' ')
+        : '';
     $: mdSrc = mdForced ?? autoMarkdown(entry);
     $: md = $logMarkdown && mdSrc;
     $: offered = $logMarkdown && offersMarkdown(entry);
-    $: collapsible = isCollapsible(shown);
-    $: isOpen = collapsible ? openForced ?? mdSrc : true;
+    $: collapsible = compact || isCollapsible(shown);
+    $: isOpen = collapsible ? openForced ?? (compact ? false : mdSrc) : true;
     $: html = md && isOpen ? renderCached(shown) : '';
 </script>
 
@@ -154,7 +165,11 @@
         </div>
     {:else}
         <span class="whitespace-pre-wrap break-words">
-            {collapsible && !isOpen ? summarize(shown) : shown}
+            {#if compact && !isOpen}
+                <span class="font-semibold">{prettyLabel}</span>
+            {:else}
+                {collapsible && !isOpen ? summarize(shown) : shown}
+            {/if}
         </span>
     {/if}
     {#if msg}

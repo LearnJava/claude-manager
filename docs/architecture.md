@@ -309,11 +309,14 @@ claude-manager/
 │   │   ├── LogStream.svelte         # Real-time log with color coding, autoscroll, search filter,
 │   │   │                            #   "Markdown" checkbox, "Лента" (feed) layout toggle: groups
 │   │   │                            #   tool calls via lib/logGroups.ts (UI-02); feed is the default
-│   │   │                            #   since UI-05, classic stays one click away and unchanged
+│   │   │                            #   since UI-05, classic stays one click away and unchanged;
+│   │   │                            #   "Tools" checkbox: level='tool' rows collapse to a one-line
+│   │   │                            #   summary (lib/toolDisplay), raw entry one click away (logView)
 │   │   ├── LiveStatus.svelte        # Sticky live line under the feed (spinner, verb/tool phrase, time) from
 │   │   │                            #   session.activity; lib/liveStatus.ts holds text + ticking clock
 │   │   ├── LogEntryRow.svelte       # One log row (collapse, markdown render/raw, M override);
-│   │   │                            #   shared by LogStream's classic view and expanded feed groups
+│   │   │                            #   shared by LogStream's classic view and expanded feed groups;
+│   │   │                            #   compact tool-call one-liner when logCompactTools is on
 │   │   ├── TaskPanel.svelte         # Right of the log, two tabs — "Queue · N": QueuePanel (only
 │   │   │                            #   when the session has a queue, then the default);
 │   │   │                            #   "Roadmap": RoadmapTree

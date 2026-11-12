@@ -147,6 +147,11 @@
                 data-testid="runtime-label"
                 class="text-lg font-extrabold bg-gradient-to-r from-violet-600 to-blue-600 dark:from-violet-400 dark:to-blue-400 bg-clip-text text-transparent"
                 title={$t('sessionCard.useHermesTooltip')}>{$t('sessionCard.useHermesLabel')}</span>
+        {:else if session.runtime === 'opencode'}
+            <span
+                data-testid="runtime-label"
+                class="text-lg font-extrabold bg-gradient-to-r from-emerald-600 to-teal-600 dark:from-emerald-400 dark:to-teal-400 bg-clip-text text-transparent"
+                title={$t('sessionCard.useOpenCodeTooltip')}>{$t('sessionCard.useOpenCodeLabel')}</span>
         {:else}
             <span
                 data-testid="runtime-label"

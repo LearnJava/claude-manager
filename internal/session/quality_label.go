@@ -48,7 +48,7 @@ type labelCapture struct {
 }
 
 func (s *Session) qualityLabelsOn() bool {
-	return s.qualityLabelsFlag && !s.Config.IsHermes()
+	return s.qualityLabelsFlag && !s.Config.IsHermes() && !s.Config.IsOpenCode()
 }
 
 // beginLabelCapture notes the task a run starts on. Another pointer than the

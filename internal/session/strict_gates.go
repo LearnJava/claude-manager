@@ -35,7 +35,7 @@ const (
 // gate_rounds set, gates configured, a runtime that can resume its
 // conversation as a fresh process (Claude — Hermes keeps its own turn loop).
 func (s *Session) strictGatesOn() bool {
-	return s.Config.GateRounds > 0 && len(s.gates) > 0 && !s.Config.IsHermes()
+	return s.Config.GateRounds > 0 && len(s.gates) > 0 && !s.Config.IsHermes() && !s.Config.IsOpenCode()
 }
 
 // gateRoot is the folder the gates run in: the session's work folder (pool

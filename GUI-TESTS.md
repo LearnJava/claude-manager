@@ -130,6 +130,11 @@ Legend: **✓ exists** = spec already written; **○ missing** = not yet covered
 | LS-31 | Collapsed row copies the full message | Classic view, push a multi-line `tool_result`, hover, click ⧉ | Clipboard gets all lines, not the `…` summary | ✓ |
 | LS-32 | Code block header copies only the code | Push an entry with a ```` ```go ```` fence | One `.code-head` showing `go`; `Copy` puts just the fence body on the clipboard, shows `Copied` | ✓ |
 | LS-33 | Code header survives re-render, failures are shown | Toggle Markdown off/on; separately make `clipboard.writeText` reject | Still exactly one header; buttons show `Copy failed` | ✓ |
+| LS-34 | Tools checkbox: tool call collapses to one line | Push a `tool` entry (Write + file_path) | `✍️ write <file>` visible, raw `write: {"path"` hidden | ✓ |
+| LS-35 | Tools checkbox off → raw as before | Uncheck "Tools" | Raw `write: {"path"` visible, one-liner gone | ✓ |
+| LS-36 | + still expands the full raw entry | Tools on, click the row's `＋` | Raw entry text visible | ✓ |
+| LS-37 | Expanded feed group hides the duplicated raw call | Tools on, push call+result pair, expand | Output row only, no second raw call line | ✓ |
+| LS-38 | Tools choice persists | Uncheck "Tools", reload the app | Checkbox still unchecked (localStorage) | ✓ |
 
 ---
 

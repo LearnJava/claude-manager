@@ -220,6 +220,8 @@ export default {
     'settings.sessions.hermesProfile': 'Профиль Hermes',
     'settings.sessions.hermesProfileTitle': 'Именованный профиль Hermes (hermes -p): своя память, навыки, хуки и история сессий.',
     'settings.sessions.hermesNote': 'Hermes запускает отдельный процесс на каждый ход и продолжает разговор по id. Не применяются: лимит бюджета, резервная модель, allowed/disallowed tools, доп. каталоги. Режимы разрешений, кроме bypass, работают по политике Hermes: опасные команды блокируются, а не спрашиваются.',
+    'settings.general.opencodePath': 'Путь к OpenCode CLI',
+    'settings.sessions.opencodeNote': 'OpenCode запускает отдельный процесс на каждый ход и продолжает разговор по id. Модель — полный селектор «provider/model» из каталога самого opencode (`opencode models`); уровень становится суффиксом #variant. Провайдеры подключаются через собственные интеграции opencode (opencode auth login). Не применяются: лимит бюджета, резервная модель, allowed/disallowed tools, доп. каталоги.',
     'settings.sessions.effort': 'Уровень',
     'settings.sessions.fallbackModel': 'Резервная модель',
     'settings.sessions.fallbackModelTitle': 'Модель, используемая при превышении лимита запросов или перегрузке основной модели.',

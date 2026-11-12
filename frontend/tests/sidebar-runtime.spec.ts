@@ -1,9 +1,10 @@
 /**
  * Sidebar CLI/model pickers — every session row carries a CLI picker
- * (Claude / Hermes) next to the model picker, both mirroring the session's
- * config (what the next start really runs):
- *   - S1 (runtime unset)   -> "claude", model from config
- *   - S4 (runtime=hermes)  -> "hermes"
+ * (Claude / Hermes / OpenCode) next to the model picker, both mirroring the
+ * session's config (what the next start really runs):
+ *   - S1 (runtime unset)     -> "claude", model from config
+ *   - S4 (runtime=hermes)    -> "hermes"
+ *   - S6 (runtime=opencode)  -> "opencode"
  *   - switching S1's CLI persists `runtime` in config and survives a reload
  *   - the CLI picker is locked while the session runs (S3)
  */
@@ -43,8 +44,11 @@ test.describe('Sidebar CLI picker', () => {
     await page.goto('/');
     await expect(page.getByTestId(`runtime-select-${SESSION_ID('S1')}`)).toHaveValue('claude', { timeout: 5_000 });
     await expect(page.getByTestId(`runtime-select-${SESSION_ID('S4')}`)).toHaveValue('hermes');
+    await expect(page.getByTestId(`runtime-select-${SESSION_ID('S6')}`)).toHaveValue('opencode');
     // claude-sonnet-4-6 in config folds onto the "sonnet" alias for Claude.
     await expect(page.getByTestId(`model-select-${SESSION_ID('S1')}`)).toHaveValue('sonnet');
+    // The opencode session's full provider/model selector is shown verbatim.
+    await expect(page.getByTestId(`model-select-${SESSION_ID('S6')}`)).toContainText('zai-coding-plan/glm-5.3');
   });
 
   test('switching the CLI persists it in config', async ({ page, ctrl }) => {
@@ -56,8 +60,12 @@ test.describe('Sidebar CLI picker', () => {
     await expect.poll(() => configuredRuntime(ctrl, 'S1')).toBe('hermes');
     await expect(picker).toHaveValue('hermes');
 
+    await page.getByTestId(`runtime-select-${SESSION_ID('S1')}`).selectOption('opencode');
+    await expect.poll(() => configuredRuntime(ctrl, 'S1')).toBe('opencode');
+    await expect(picker).toHaveValue('opencode');
+
     await page.reload();
-    await expect(page.getByTestId(`runtime-select-${SESSION_ID('S1')}`)).toHaveValue('hermes', { timeout: 5_000 });
+    await expect(page.getByTestId(`runtime-select-${SESSION_ID('S1')}`)).toHaveValue('opencode', { timeout: 5_000 });
 
     await page.getByTestId(`runtime-select-${SESSION_ID('S1')}`).selectOption('claude');
     await expect.poll(() => configuredRuntime(ctrl, 'S1')).toBe('');

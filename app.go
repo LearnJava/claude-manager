@@ -560,8 +560,12 @@ type ProviderInfo struct {
 	// HermesProviderID is the hermes CLI --provider value this brain maps
 	// to ("" = claude-runtime only). The sidebar uses it to offer a plain
 	// hermes session the models of hermes-capable providers.
-	HermesProviderID string              `json:"hermesProviderId"`
-	Models           []ProviderModelInfo `json:"models"`
+	HermesProviderID string `json:"hermesProviderId"`
+	// OpenCodeProviderID is the provider part of the opencode
+	// `provider/model` selector this brain's models map to ("" = not
+	// offered to opencode sessions).
+	OpenCodeProviderID string              `json:"opencodeProviderId"`
+	Models             []ProviderModelInfo `json:"models"`
 }
 
 // GetProviders returns every configured provider for the model picker's
@@ -579,7 +583,8 @@ func (a *App) GetProviders() []ProviderInfo {
 	out := make([]ProviderInfo, 0, len(ids))
 	for _, id := range ids {
 		p := a.cfg.Providers[id]
-		pi := ProviderInfo{ID: id, DisplayName: p.DisplayName, HermesProviderID: p.HermesProviderID}
+		pi := ProviderInfo{ID: id, DisplayName: p.DisplayName, HermesProviderID: p.HermesProviderID,
+			OpenCodeProviderID: p.OpenCodeProviderID}
 		if pi.DisplayName == "" {
 			pi.DisplayName = id
 		}
@@ -1167,10 +1172,10 @@ func setSessionModelInConfig(cfg *config.AppConfig, project, name, model, effort
 }
 
 // SetSessionRuntime switches which agent CLI a session drives — "claude"
-// (Claude Code CLI) or "hermes" (Hermes CLI) — and persists it in the
-// session's config, the same field Settings edits. The runtime is fixed for
-// the lifetime of a process, so a running session is refused: stop it first,
-// the next start picks the new CLI up.
+// (Claude Code CLI), "hermes" (Hermes CLI) or "opencode" (OpenCode CLI) —
+// and persists it in the session's config, the same field Settings edits.
+// The runtime is fixed for the lifetime of a process, so a running session
+// is refused: stop it first, the next start picks the new CLI up.
 // SetSessionProvider switches the session's brain provider — the "which AI"
 // dropdown in the sidebar: "" = plain Claude, else a [providers.<id>] id.
 // The whole choice (provider + the model the manager resolved) is remembered
@@ -1209,8 +1214,8 @@ func (a *App) SetSessionRuntime(id, runtime string) error {
 	if runtime == "claude" {
 		runtime = "" // config default; keeps untouched configs byte-identical
 	}
-	if runtime != "" && runtime != config.RuntimeHermes {
-		return fmt.Errorf("unknown runtime %q (want claude|hermes)", runtime)
+	if runtime != "" && runtime != config.RuntimeHermes && runtime != config.RuntimeOpenCode {
+		return fmt.Errorf("unknown runtime %q (want claude|hermes|opencode)", runtime)
 	}
 	project, name, ok := splitSessionID(id)
 	if !ok {

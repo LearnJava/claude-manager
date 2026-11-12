@@ -30,8 +30,15 @@ type ProviderConfig struct {
 	// gets when this provider is selected (e.g. "zai" for GLM, "custom"
 	// for a local Kimi proxy). Empty means the provider is claude-runtime
 	// only: hermes sessions cannot select it.
-	HermesProviderID string          `toml:"hermes_provider_id"`
-	Models           []ProviderModel `toml:"models"`
+	HermesProviderID string `toml:"hermes_provider_id"`
+	// OpenCodeProviderID is the provider part of the `provider/model`
+	// selector an opencode-runtime session builds from this provider's
+	// models (e.g. "zai-coding-plan" → "zai-coding-plan/glm-5.3"). The ids
+	// are opencode's own vocabulary (`opencode models`); no validation
+	// here — a wrong id fails visibly at launch. Empty = not offered to
+	// opencode sessions.
+	OpenCodeProviderID string          `toml:"opencode_provider_id"`
+	Models             []ProviderModel `toml:"models"`
 }
 
 // ProviderModel is one model offered by a provider. ID goes to --model as-is
@@ -188,7 +195,10 @@ type GlobalSettings struct {
 	ClaudePath string `toml:"claude_path"`
 	// HermesPath is the `hermes` binary used by sessions with
 	// runtime = "hermes" (HERMES-TASKS.md HR-02). Default "hermes".
-	HermesPath        string `toml:"hermes_path"`
+	HermesPath string `toml:"hermes_path"`
+	// OpenCodePath is the `opencode` binary used by sessions with
+	// runtime = "opencode". Default "opencode".
+	OpenCodePath      string `toml:"opencode_path"`
 	DefaultRetryDelay int    `toml:"default_retry_delay"`
 	RateLimitPause    int    `toml:"rate_limit_pause"`
 	LogRetentionDays  int    `toml:"log_retention_days"`
@@ -399,10 +409,10 @@ type ProjectConfig struct {
 }
 
 type SessionConfig struct {
-	Name            string `toml:"name"`
-	Prompt          string `toml:"prompt"`
-	AutoRestart     bool   `toml:"auto_restart"`
-	MaxTasks        int    `toml:"max_tasks"`
+	Name        string `toml:"name"`
+	Prompt      string `toml:"prompt"`
+	AutoRestart bool   `toml:"auto_restart"`
+	MaxTasks    int    `toml:"max_tasks"`
 	// RunWithoutTasks keeps launching runs when task_source has no pending
 	// tasks. Off (zero) = stop and open a plain interactive session.
 	RunWithoutTasks bool `toml:"run_without_tasks"`
@@ -492,8 +502,9 @@ type SessionConfig struct {
 	HandoffContextTokens int `toml:"handoff_context_tokens"`
 
 	// Runtime selects the agent CLI the session drives (HERMES-TASKS.md
-	// HR-02): "claude" (default, also when empty) or "hermes" (`hermes chat
-	// --format stream-json`, one process per turn). With it empty or
+	// HR-02): "claude" (default, also when empty), "hermes" (`hermes chat
+	// --format stream-json`, one process per turn) or "opencode"
+	// (`opencode run --format json`, one process per turn). With it empty or
 	// "claude" nothing about the launch changes.
 	Runtime string `toml:"runtime"`
 	// HermesProvider is passed as `--provider` (e.g. "openrouter",
@@ -515,6 +526,16 @@ const RuntimeHermes = "hermes"
 
 // IsHermes reports whether the session runs on the Hermes CLI runtime.
 func (s SessionConfig) IsHermes() bool { return s.Runtime == RuntimeHermes }
+
+// RuntimeOpenCode is the SessionConfig.Runtime value that drives `opencode`.
+const RuntimeOpenCode = "opencode"
+
+// IsOpenCode reports whether the session runs on the OpenCode CLI runtime.
+// Structurally it is a per-turn-process runtime like Hermes (one
+// `opencode run` process answers one turn and exits; the conversation is
+// resumed by its session id), so callers that branch on IsHermes for
+// process-model reasons usually include it.
+func (s SessionConfig) IsOpenCode() bool { return s.Runtime == RuntimeOpenCode }
 
 type PermissionRule struct {
 	Tool     string `toml:"tool"`     // "Bash", "Edit", "Write", "*"
