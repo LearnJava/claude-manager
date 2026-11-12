@@ -2,7 +2,7 @@
     import { tick, beforeUpdate, afterUpdate, onMount } from 'svelte';
     import { sessionLogs, sessions, type LogEntry } from '../stores/sessions';
     import { logSearch, logSearchText, logSearchFocus } from '../stores/logSearch';
-    import { logMarkdown, logLayout } from '../stores/logView';
+    import { logMarkdown, logLayout, logCompactTools } from '../stores/logView';
     import { t } from '../lib/i18n';
     import { groupEntries, entryKey, turnSummaryData } from '../lib/logGroups';
     import RunBoundary from './RunBoundary.svelte';
@@ -235,6 +235,16 @@
                 on:change={onLayoutToggle}
                 class="w-3 h-3 accent-blue-500 cursor-pointer" />
             {$t('logStream.feedLayoutLabel')}
+        </label>
+        <label
+            title={$t('logStream.toolsTitle')}
+            class="flex items-center gap-1 shrink-0 text-[11px] text-text-muted
+                   select-none cursor-pointer whitespace-nowrap">
+            <input
+                type="checkbox"
+                bind:checked={$logCompactTools}
+                class="w-3 h-3 accent-blue-500 cursor-pointer" />
+            {$t('logStream.toolsLabel')}
         </label>
     </div>
 

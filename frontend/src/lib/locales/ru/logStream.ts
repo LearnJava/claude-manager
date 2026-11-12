@@ -14,6 +14,9 @@ export default {
     'logStream.jumpToLatest': 'К последним записям',
     'logStream.feedLayoutLabel': 'Лента',
     'logStream.feedLayoutTitle': 'Группировать вызовы инструментов в ленту, как в Hermes Desktop',
+    'logStream.toolsLabel': 'Инструменты',
+    'logStream.toolsTitle':
+        'Сворачивать вызовы инструментов в одну строку; полная запись остаётся по клику на +',
     'logStream.moreCommands': 'команд',
     'logStream.readOnlySummary': 'Просмотрено',
     'logStream.thoughtFor': 'Думал {s}s',

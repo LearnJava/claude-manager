@@ -14,6 +14,8 @@ export default {
     'logStream.jumpToLatest': 'Jump to latest',
     'logStream.feedLayoutLabel': 'Feed',
     'logStream.feedLayoutTitle': 'Group tool calls into a Hermes Desktop-style feed',
+    'logStream.toolsLabel': 'Tools',
+    'logStream.toolsTitle': 'Collapse tool calls into one line; the full entry stays one click away on +',
     'logStream.moreCommands': 'commands',
     'logStream.readOnlySummary': 'Viewed',
     'logStream.thoughtFor': 'Thought for {s}s',

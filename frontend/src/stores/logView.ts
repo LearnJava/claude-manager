@@ -72,3 +72,34 @@ export function setLogLayout(v: LogLayout) {
 export function toggleLogLayout() {
     logLayout.update((v) => (v === 'feed' ? 'classic' : 'feed'));
 }
+
+// Pretty tool-call lines (the "Tools" checkbox): a level='tool' entry shows a
+// one-line summary (emoji, verb, detail — lib/toolDisplay) instead of its raw
+// dump; the full entry stays one click away on the row's + toggle. Same
+// persistence pattern as the two checkboxes above.
+const TOOLS_STORAGE_KEY = 'cm.logCompactTools';
+
+function readStoredTools(): boolean | null {
+    try {
+        const v = localStorage.getItem(TOOLS_STORAGE_KEY);
+        if (v === '1') return true;
+        if (v === '0') return false;
+    } catch (_) {
+        // localStorage may be unavailable (sandboxed contexts).
+    }
+    return null;
+}
+
+export const logCompactTools = writable<boolean>(readStoredTools() ?? true);
+
+logCompactTools.subscribe((on) => {
+    try {
+        localStorage.setItem(TOOLS_STORAGE_KEY, on ? '1' : '0');
+    } catch (_) {
+        /* ignore */
+    }
+});
+
+export function setLogCompactTools(on: boolean) {
+    logCompactTools.set(on);
+}
