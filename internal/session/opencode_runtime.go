@@ -44,6 +44,11 @@ var openCodeVariants = map[string]bool{
 // openCodeTurn is the outcome of one `opencode run` process.
 type openCodeTurn struct {
 	finished  bool   // handleEvent reported the turn as finished
+	// endedOnQuestion: the turn's result carried an ask-user question
+	// (handleEvent parked it as pendingQuestion). The answer arrives as the
+	// next turn even though this process is gone — the run loop must park
+	// instead of treating the clean exit as "nothing will ever come".
+	endedOnQuestion bool
 	sessionID string // opencode session id from the first wire line
 	failed    string // non-empty when the turn reported an error
 }
@@ -123,7 +128,9 @@ func (s *Session) runOnceOpenCode(ctx context.Context, forceInteractive bool) er
 		if turn.failed != "" {
 			return fmt.Errorf("opencode turn failed: %s", turn.failed)
 		}
-		if autonomous && turn.finished {
+		// An ask-user question outlives its process (the answer is the next
+		// `--resume` turn): parking here is the point, not a hang.
+		if autonomous && turn.finished && !turn.endedOnQuestion {
 			return nil
 		}
 		// Interactive session, or an autonomous one paused on an ask-user
@@ -223,6 +230,8 @@ func (s *Session) openCodeRunTurn(ctx context.Context, prompt string, images []I
 			}
 			if s.handleEvent(ev, autonomous) {
 				turn.finished = true
+			} else if len(ev.Questions) > 0 {
+				turn.endedOnQuestion = true
 			}
 		}
 	}
@@ -247,8 +256,10 @@ func (s *Session) openCodeRunTurn(ctx context.Context, prompt string, images []I
 	// A clean process exit ends the turn even when the last step_finish said
 	// "tool-calls" (a truncated stream must not park an autonomous run loop
 	// waiting for input no one will send). Interactive sessions keep
-	// finished=false — the next turn is the user's next message.
-	if autonomous && !turn.finished && turn.failed == "" && ctx.Err() == nil {
+	// finished=false — the next turn is the user's next message. An ask-user
+	// question is the exception: input will come (human or the timeout
+	// fallback), so the run loop must park instead of dropping the question.
+	if autonomous && !turn.finished && !turn.endedOnQuestion && turn.failed == "" && ctx.Err() == nil {
 		turn.finished = true
 	}
 	logger.L.Info("session.process_exit", "id", s.ID, "ok", turn.failed == "", "runtime", "opencode")

@@ -11,7 +11,10 @@
 //   - the reply is "echo: <first line of the query>";
 //   - "FAIL_429": one {"type":"error"} line and exit 1;
 //   - "FAIL_403": the same plus a 403 line on stderr, the shape
-//     ClassifyStderrLine recognizes as KindAuth.
+//     ClassifyStderrLine recognizes as KindAuth;
+//   - "ASK_USER_MARKER": the reply ends in a ```ask-user question block
+//     (parser.go's marker), then the process exits — the manager must keep
+//     the question pending and feed the answer back as the next invocation.
 //
 // FAKEOPENCODE_LOG, when set, is a file each invocation appends one JSON
 // line to ({"args":[…],"query":"…"}), so a test can assert on exactly what
@@ -86,6 +89,14 @@ func run(args []string, in io.Reader, out io.Writer) int {
 
 	first := strings.TrimSpace(strings.SplitN(strings.TrimSpace(q), "\n", 2)[0])
 	reply := "echo: " + first
+	// "ASK_USER_MARKER": the turn ends with a ```ask-user question — the
+	// process exits right after, which is exactly the state that must leave
+	// the question pending manager-side (the answer arrives as the next
+	// invocation's query).
+	if strings.Contains(q, "ASK_USER_MARKER") {
+		reply = "deciding.\n\n```ask-user\n" +
+			`{"question": "What next?", "options": ["Option A", "Option B"]}` + "\n```"
+	}
 	emitStep("text", map[string]any{"type": "text", "text": reply})
 	emitStep("step_finish", map[string]any{"type": "step-finish", "reason": "stop", "cost": 0,
 		"tokens": map[string]any{"input": 10, "output": 5, "reasoning": 3,

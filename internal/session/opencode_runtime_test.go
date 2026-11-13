@@ -234,3 +234,73 @@ func TestOpenCodeRuntime_FailedTurn(t *testing.T) {
 		t.Fatalf("runOnceOpenCode error = %v, want the rate-limit sentinel", err)
 	}
 }
+
+// An autonomous opencode turn that ends on an ask-user question: the process
+// exits cleanly right after emitting the question, and the question must stay
+// pending manager-side (the answer continues the conversation as the next
+// `--resume` process). Regression: the clean-exit guard used to force
+// turn.finished, runOnce dropped the question silently, and the UI's answer
+// failed with "no pending question with id …" while the banner was up.
+func TestOpenCodeRuntime_QuestionSurvivesProcessExit(t *testing.T) {
+	bin := buildFakeopencode(t)
+	logPath := filepath.Join(t.TempDir(), "calls.jsonl")
+	t.Setenv("FAKEOPENCODE_LOG", logPath)
+
+	questions := make(chan PendingQuestion, 4)
+	s := New(Params{
+		ID: "p/OC4", ProjectName: "p", ProjectPath: t.TempDir(), OpenCodePath: bin,
+		RetryDelay: 1, RateLimitPauseSec: 1,
+		Config: config.SessionConfig{
+			Name: "OC4", Runtime: config.RuntimeOpenCode, Model: "zai-coding-plan/glm-5.3",
+			PermissionMode: "bypassPermissions",
+			AutoRestart:    true, MaxTasks: 1, Prompt: "ASK_USER_MARKER please",
+		},
+		OnEvent: func(_ string, ev SessionEvent) {
+			if ev.Type == EvtQuestion && ev.Question != nil {
+				questions <- *ev.Question
+			}
+		},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	go func() { s.Run(ctx); close(done) }()
+
+	var q PendingQuestion
+	select {
+	case q = <-questions:
+	case <-time.After(20 * time.Second):
+		t.Fatal("timed out waiting for the ask-user question")
+	}
+	if st := s.Status(); st != config.StatusWaitingForUser {
+		t.Errorf("status = %s, want waiting_for_user", st)
+	}
+	// The fake process has exited by now — this is the regression itself.
+	if pq := s.PendingQuestion(); pq == nil || pq.ID != q.ID {
+		t.Fatalf("PendingQuestion after process exit = %+v, want id %q", pq, q.ID)
+	}
+	if err := s.AnswerQuestion(q.ID, "Option B"); err != nil {
+		t.Fatalf("AnswerQuestion: %v", err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("Run did not finish after the answer")
+	}
+	if st := s.Status(); st != config.StatusIdle {
+		t.Errorf("final status = %s, want idle", st)
+	}
+
+	calls := readFakeOpenCodeLog(t, logPath)
+	if len(calls) != 2 {
+		t.Fatalf("launched %d processes, want question turn + answer turn", len(calls))
+	}
+	conv := argValue(calls[1].Args, "--session")
+	if conv == "" || !strings.HasPrefix(conv, "ses") {
+		t.Errorf("answer turn must resume the question turn's conversation: %v", calls[1].Args)
+	}
+	if calls[1].Query != "Option B" {
+		t.Errorf("answer turn query = %q, want the answer verbatim", calls[1].Query)
+	}
+}
